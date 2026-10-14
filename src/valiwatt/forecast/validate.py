@@ -33,7 +33,7 @@ from valiwatt.forecast.features import BASE_C, AsOf
 from valiwatt.forecast.guards import DESIGN_LAST_DAY, require_design_window, require_known_at_origin
 from valiwatt.forecast.model import HOUR_BLOCKS
 from valiwatt.monitor.drift import REFERENCE_HALF_WINDOW_WEEKS, weekly_drift
-from valiwatt.monitor.rules import MIN_WEEK_HOURS, QUANTILES, rules_sha256
+from valiwatt.monitor.rules import MIN_WEEK_HOURS, QUANTILES, WEEK_DAYS, not_judged_because, rules_sha256
 from valiwatt.paths import INTERIM
 from valiwatt.quality.checks import jsonable
 from valiwatt.quality.run import EXPERIMENT as DQ_EXPERIMENT
@@ -119,15 +119,38 @@ def _quantiles(values: pd.Series) -> dict:
 
 
 def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_days: pd.Series,
-               forecast: pd.Series, forecast_days: pd.Series, first_year: int, last_year: int) -> dict:
+               forecast: pd.Series, forecast_days: pd.Series, first_year: int, last_year: int,
+               day_verdicts: dict) -> dict:
     """Per-season weekly thresholds and drift alarm levels, from the validation weeks of first_year..last_year.
 
     Weeks are labelled by the year of their first day; a week straddling New Year belongs to the earlier year and its
-    days in the next year stay out (the cut is on days, so no hour after last_year is read)."""
+    days in the next year stay out (the cut is on days, so no hour after last_year is read).
+
+    Only the weeks the replay would judge enter: the replay's predicate (rules.not_judged_because) is applied to each
+    week, with its days inside first_year..last_year, its days that fail the replay's day-level data quality
+    (`day_verdicts`: local standard day -> its problems, from monitor/replay.py day_verdicts) and its scored hours. A
+    week that is set aside is listed with why under "excluded_weeks". A day of a week without a verdict is refused:
+    without it the week's population cannot be checked."""
     e = err_p[(err_p["year"] >= first_year) & (err_p["year"] <= last_year)]
     w = weekly_stats(e, covered)
-    w = w[w["hours"] >= MIN_WEEK_HOURS]
-    last_day = pd.Timestamp(f"{last_year}-12-31")
+    first_day, last_day = pd.Timestamp(f"{first_year}-01-01"), pd.Timestamp(f"{last_year}-12-31")
+    verdicts = {pd.Timestamp(d): p for d, p in day_verdicts.items()}
+    judged, excluded = [], []
+    for label, hours in w["hours"].items():
+        start = pd.Timestamp(label.split("/")[0])
+        inside = pd.date_range(max(start, first_day), min(start + pd.Timedelta(days=WEEK_DAYS - 1), last_day))
+        unknown = [d for d in inside if d not in verdicts]
+        if unknown:
+            raise LineageError(f"week {label}: no day-level data-quality verdict for {unknown[0].date()}; the weeks "
+                               "that calibrate the thresholds cannot be checked")
+        failed = [d for d in inside if verdicts[d]]
+        why = not_judged_because(len(inside), len(failed), int(hours))
+        judged.append(not why)
+        if why:
+            excluded.append({"week": label, "first_day": start, "why": why, "days": len(inside), "hours": int(hours),
+                             "failed_days": [{"day": d, "problems": sorted({p["kind"] for p in verdicts[d]})}
+                                             for d in failed]})
+    w = w[judged]
     temp, temp_days = temp[pd.to_datetime(temp_days) <= last_day], temp_days[pd.to_datetime(temp_days) <= last_day]
     keep = pd.to_datetime(forecast_days) <= last_day
     forecast, forecast_days = forecast[keep], forecast_days[keep]
@@ -153,6 +176,8 @@ def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_da
         },
         "quantiles": QUANTILES,
         "min_week_hours": MIN_WEEK_HOURS,
+        "week_days": WEEK_DAYS,
+        "excluded_weeks": excluded,
         "first_year": first_year,
         "last_year": last_year,
         "weekly_validation": w.reset_index(names="week").to_dict("records"),
@@ -197,11 +222,13 @@ def peak_case(f: pd.DataFrame, out: pd.DataFrame, iv: pd.DataFrame) -> dict:
 def run_validation(f_primary: pd.DataFrame, f_panel: pd.DataFrame, n_boot: int = N_BOOT,
                    first_fold: str = FIRST_FOLD, last_fold: str = LAST_FOLD,
                    train_primary: Callable[[pd.Timestamp], pd.DataFrame] | None = None,
-                   train_panel: Callable[[pd.Timestamp], pd.DataFrame] | None = None) -> dict:
+                   train_panel: Callable[[pd.Timestamp], pd.DataFrame] | None = None, *, day_verdicts: dict) -> dict:
     """Pure: the whole validation on given feature tables. Returns results and the frames to log.
 
     train_primary, train_panel: the feature tables as seen at a clock, which each fold trains on at its fit clock
-    (`walkforward.run`); without them, training rows come from the test tables."""
+    (`walkforward.run`); without them, training rows come from the test tables.
+    day_verdicts: the replay's day-level data-quality verdict on each design day (monitor/replay.py day_verdicts); the
+    thresholds are calibrated only on the weeks the replay would judge."""
     for name, f in (("primary features", f_primary), ("panel features", f_panel)):
         require_design_window(f, name)
         require_known_at_origin(f)
@@ -251,7 +278,7 @@ def run_validation(f_primary: pd.DataFrame, f_panel: pd.DataFrame, n_boot: int =
     last_year = int(pd.Period(last_fold).year)
     # One set of thresholds per replay: the 2024 replay reads weeks up to 2023; the 2023 pseudo-replay up to 2022.
     th = {str(y + 1): thresholds(err["persistence"], iv["covered"], f_primary["temp_observed"], f_primary["day"],
-                                 out["pred_persistence"], out["day"], first_interval_year, y)
+                                 out["pred_persistence"], out["day"], first_interval_year, y, day_verdicts)
           for y in range(first_interval_year, last_year + 1)}
     results = {
         "folds": {"first": first_fold, "last": last_fold, "count": len(fl), "embargo_days": wf.EMBARGO_DAYS,
@@ -275,13 +302,18 @@ def run_validate(n_boot: int = N_BOOT) -> int:
 
     from valiwatt.tracking import start_run
 
+    from valiwatt.monitor.replay import day_verdicts
+    from valiwatt.monitor.run import load_raw  # monitor/run.py imports this module
+
     dq, _, weather = load_inputs()
-    asof = AsOf(load_raw_demand(dq))
+    raw_demand, raw_temp = load_raw(dq)
+    asof = AsOf(raw_demand)
     src = temperature_sources(weather)
     f_primary = design_features(asof, src["primary"])
     f_panel = design_features(asof, src["panel"])
+    verdicts = day_verdicts(raw_demand, raw_temp, f_primary["day"].min(), DESIGN_LAST_DAY)
     v = run_validation(f_primary, f_panel, n_boot, train_primary=lambda c: asof.table(c, src["primary"]),
-                       train_panel=lambda c: asof.table(c, src["panel"]))
+                       train_panel=lambda c: asof.table(c, src["panel"]), day_verdicts=verdicts)
     res = v["results"]
     with start_run(EXPERIMENT, "validation", tags={"kind": "validation", "dq_run_id": dq.info.run_id,
                                                     "rules_sha256": rules_sha256(),
@@ -295,6 +327,8 @@ def run_validate(n_boot: int = N_BOOT) -> int:
             for season, t in th["performance"].items():
                 mlflow.log_params({f"th{replay_year}_{season}_{k}": round(val, 6) for k, val in t.items()})
             mlflow.log_params({f"th{replay_year}_drift_{k}": v2 for k, v2 in th["drift"].items()})
+            # The weeks set aside, with why, are in results/validation.json (thresholds -> excluded_weeks).
+            mlflow.log_param(f"th{replay_year}_excluded_weeks", len(th["excluded_weeks"]))
         for name, p in res["performance"].items():
             mlflow.log_metrics({f"mape.{name}": p["overall"]["mean"], f"bias.{name}": p["overall"]["bias"]["mean"]})
         mlflow.log_metric("coverage.relative", res["coverage"]["relative"]["overall"]["mean"])

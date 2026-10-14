@@ -2,6 +2,7 @@
 file, a frozen model from another validation run, year or rule set, and a model file that no longer matches itself.
 The replay itself stops at each gate it calls, before the step the gate protects."""
 
+import json
 import subprocess
 from types import SimpleNamespace
 
@@ -65,20 +66,67 @@ def test_a_rule_file_added_after_the_tag_is_refused(repo):
         mrun.check_freeze()
 
 
+NO_LEDGER = {"replays": []}
+
+
 def test_a_moved_tag_is_refused_unless_recorded_as_a_departure():
     freeze = {"freeze_commit": "b" * 40}
-    assert mrun.check_tag_not_moved(freeze, {"b" * 40: ["r1"]}, departure=False) == []
+    assert mrun.check_tag_not_moved(freeze, {"b" * 40: ["r1"]}, departure=False, ledger=NO_LEDGER) == []
     with pytest.raises(mrun.FreezeError):
-        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=False)
+        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=False, ledger=NO_LEDGER)
     with pytest.raises(mrun.FreezeError):  # a bare flag is not a record
-        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True, recorded="None yet.")
+        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True, recorded="None yet.", ledger=NO_LEDGER)
     other = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'c' * 12}: reason.\n\n## Other\n"
     with pytest.raises(mrun.FreezeError):  # a departure recorded for another commit is not a record of this one
         mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True,
-                                 recorded=mrun.recorded_departures(other))
+                                 recorded=mrun.recorded_departures(other), ledger=NO_LEDGER)
     agents =f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'b' * 12}: reason.\n\n## Other\n"
     assert mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True,
-                                    recorded=mrun.recorded_departures(agents)) == ["r0"]
+                                    recorded=mrun.recorded_departures(agents), ledger=NO_LEDGER) == ["r0"]
+
+
+def ledger_of(*entries):
+    return {"replays": [{"run_id": r, "year": y, "freeze_tag": rules.FREEZE_TAG, "freeze_commit": c,
+                         "status": "FINISHED"} for r, y, c in entries]}
+
+
+def test_a_ledger_naming_an_earlier_freeze_commit_is_a_moved_tag_even_with_an_empty_store(repo, monkeypatch):
+    """A fresh clone has no MLflow store, but the committed ledger lists the 2024 replays that ran: one under another
+    freeze commit means the tag moved. The replay runs only with --departure and the new commit recorded."""
+    git(repo, "tag", rules.FREEZE_TAG)
+    freeze = mrun.check_freeze()
+    head = freeze["freeze_commit"]
+    agents = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {head[:12]}: reason.\n\n## Other\n"
+    earlier = ledger_of(("r0", 2024, "a" * 40))
+    with pytest.raises(mrun.FreezeError, match="moving the tag is a departure"):
+        mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=earlier)
+    with pytest.raises(mrun.FreezeError, match="does not name commit"):  # the flag alone is not a record
+        mrun.check_tag_not_moved(freeze, {}, departure=True, recorded="None yet.", ledger=earlier)
+    assert mrun.check_tag_not_moved(freeze, {}, departure=True, recorded=mrun.recorded_departures(agents),
+                                    ledger=earlier) == ["r0"]
+    # The controls: the ledger's replays under the tagged commit, or of another year, are no departure.
+    assert mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=ledger_of(("r1", 2024, head))) == []
+    assert mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=ledger_of(("r2", 2023, "a" * 40))) == []
+
+    # The same through the gate itself, reading the committed file, with an empty store.
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {})
+    assert mrun.held_out_gate() == (freeze, [])  # no ledger file: no entries
+    (repo / "docs").mkdir()
+    (repo / mrun.LEDGER).write_text(json.dumps(earlier))
+    with pytest.raises(mrun.FreezeError, match="moving the tag is a departure"):
+        mrun.held_out_gate()
+    (repo / "AGENTS.md").write_text(agents)
+    assert mrun.held_out_gate(departure=True) == (freeze, ["r0"])
+
+
+@pytest.mark.parametrize("text", ["{not json", json.dumps({"replays": {}}),
+                                  json.dumps({"replays": [{"run_id": "r0", "year": 2024}]})],
+                         ids=["not_json", "no_list", "no_freeze_commit"])
+def test_a_ledger_that_cannot_be_read_is_refused(repo, text):
+    (repo / "docs").mkdir()
+    (repo / mrun.LEDGER).write_text(text)
+    with pytest.raises(mrun.FreezeError, match="replay-ledger"):
+        mrun.ledger_freeze_commits(2024)
 
 
 def test_earlier_replays_are_found_even_when_deleted(tmp_path, monkeypatch):
@@ -97,7 +145,8 @@ def test_earlier_replays_are_found_even_when_deleted(tmp_path, monkeypatch):
     assert mrun.earlier_freeze_commits(2024, c) == {"a" * 40: [r.info.run_id]}
     assert c.search_runs([exp], "tags.kind = 'replay'", run_view_type=ViewType.ALL)
     with pytest.raises(mrun.FreezeError):
-        mrun.check_tag_not_moved({"freeze_commit": "b" * 40}, mrun.earlier_freeze_commits(2024, c), departure=False)
+        mrun.check_tag_not_moved({"freeze_commit": "b" * 40}, mrun.earlier_freeze_commits(2024, c), departure=False,
+                                 ledger=NO_LEDGER)
 
 
 def test_raw_files_other_than_the_checked_ones_are_refused(monkeypatch):
@@ -214,7 +263,7 @@ def replay_inputs(repo, monkeypatch):
     monkeypatch.setattr(mrun, "load_validation", lambda dq: (fake_run("val"), oos))
     monkeypatch.setattr(mrun, "validation_results", lambda val: {"thresholds": {"2024": {}}})
     monkeypatch.setattr(mrun, "load_raw", lambda dq: (None, None))
-    monkeypatch.setattr(mrun, "replay", lambda *a: SimpleNamespace(model_sha256="a", clock_end=None))
+    monkeypatch.setattr(mrun, "replay", lambda *a, **k: SimpleNamespace(model_sha256="a", clock_end=None))
     monkeypatch.setattr(mrun, "summarize", reached("summarize"))
 
     def frozen(sha="a", **tags):
@@ -274,3 +323,63 @@ def test_the_frozen_model_refuses_training_rows_inside_its_embargo(monkeypatch):
     monkeypatch.setattr(wf, "split", lambda f_, fold: (f_[f_["day"] < fold.test_first_day], real(f_, fold)[1]))
     with pytest.raises(LookaheadError):
         fz.fit_frozen(f, oos, 2022)
+
+
+def test_the_2024_replay_measures_false_alarms_and_blind_spots_too(repo, replay_inputs, monkeypatch):
+    """The sensitivity measures run on 2024 as on 2023, so the report can set the two years side by side; their
+    replays carry the departure flag into the gate inside replay()."""
+    git(repo, "tag", rules.FREEZE_TAG)
+    frozen, serve = replay_inputs
+    model, run = frozen()
+    model.q, model.train_last_day = 0.05, "2023-12-31"
+    serve((model, run), (model, run))
+    seen = {}
+    monkeypatch.setattr(mrun, "replay", lambda *a, **k: SimpleNamespace(model_sha256="a", clock_end=None, days=[],
+                                                                         weeks=[], decisions=[]))
+    monkeypatch.setattr(mrun, "summarize", lambda r, n_boot: {})
+    monkeypatch.setattr(mrun, "detection_power", lambda r, th: {})
+
+    def measure(*args, **kwargs):
+        seen.update(kwargs)
+        raise Reached("sensitivity")
+
+    monkeypatch.setattr(mrun.sensitivity, "measure", measure)
+    with pytest.raises(Reached, match="sensitivity"):
+        mrun.run_replay(2024)
+    assert seen == {"departure": False}
+
+
+def direct_replay(first, last, data_end, **th):
+    """replay() called directly, as any caller other than `valiwatt replay` would, on the synthetic world."""
+    from replay_world import thresholds as world_thresholds
+    from valiwatt.monitor import replay as rp
+
+    raw, obs = world()
+    frozen, ref = frozen_and_reference()
+    return rp.replay(raw, obs, frozen, world_thresholds() | th, ref, first, last, pd.Timestamp(data_end))
+
+
+def test_replay_called_directly_on_the_held_out_year_passes_the_freeze_gate(repo, monkeypatch):
+    """No entry point skips the gate: replay() itself refuses the held-out year without the tag, under a rule file
+    that differs from it, or under a moved tag; a replay inside the design years does not ask for it."""
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {})
+    for first, last, end in (("2024-01-01", "2024-01-07", "2025-01-01T05:00Z"),
+                             ("2023-12-25", "2024-01-07", "2024-01-08T05:00Z"),  # a window that crosses into 2024
+                             ("2023-12-25", "2023-12-31", "2025-01-01T05:00Z")):  # records of 2024 in view
+        with pytest.raises(mrun.FreezeError, match="no `rules-frozen` tag"):
+            direct_replay(first, last, end)
+    git(repo, "tag", rules.FREEZE_TAG)
+    (repo / "src/valiwatt/monitor/rules.py").write_text("MIN = 3\n")
+    with pytest.raises(mrun.FreezeError, match="monitor/rules.py"):
+        direct_replay("2024-01-01", "2024-01-07", "2025-01-01T05:00Z")
+    git(repo, "checkout", "--", "src/valiwatt/monitor/rules.py")
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {"c" * 40: ["r0"]})
+    with pytest.raises(mrun.FreezeError, match="moving the tag is a departure"):
+        direct_replay("2024-01-01", "2024-01-07", "2025-01-01T05:00Z")
+    # The control: with the gate passed, the replay reaches its next check (thresholds that include the replayed year).
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {})
+    with pytest.raises(LookaheadError, match="cannot judge a replay starting 2024-01-01"):
+        direct_replay("2024-01-01", "2024-01-07", "2025-01-01T05:00Z", last_year=2024)
+    # A replay inside the design years never asks for the gate: without the tag, the world's own week replays.
+    git(repo, "tag", "-d", rules.FREEZE_TAG)
+    assert len(direct_replay("2022-01-03", "2022-01-09", LAST).days) == 7

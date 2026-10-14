@@ -1,6 +1,8 @@
-"""How the rules answer demand the year never held: measured by the pseudo-replay on its own year, never acted on.
+"""How the rules answer demand the year never held: measured by each replay on its own year (2023, the year the rules
+were designed on, and 2024, out of sample), never acted on.
 
-Each measurement runs the same clock-guarded replay and the same decision table as the replay itself.
+Each measurement runs the same clock-guarded replay and the same decision table as the replay itself; on the held-out
+year, each of those replays passes the freeze gate (monitor/replay.py).
 
 - Short episodes. Demand is multiplied by a factor for 1, 3, 5 or 7 days, from every start day from the first judged
   week on, as long as the episode ends at least two weeks before the year's last judged day. An episode is not a model failure, so any *retrain* or
@@ -17,6 +19,7 @@ Each measurement runs the same clock-guarded replay and the same decision table 
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 from itertools import groupby
@@ -41,6 +44,9 @@ NOISE_SDS = (0.06, 0.10, 0.15)
 NOISE_SEEDS = 20
 NOISE_HORIZON_WEEKS = 8
 ALARMS = (RETRAIN, RECALIBRATE)
+# Workers start from a fresh process, never a fork: on the held-out year each replay's freeze gate reads the MLflow
+# store, and a forked worker would read it through the parent's open SQLite connection.
+POOL_CONTEXT = "forkserver"
 
 _INPUTS: dict = {}
 
@@ -55,7 +61,8 @@ def _map(fn, jobs: list, inputs: dict, workers: int | None) -> list:
     if workers == 1:
         _init(inputs)
         return [fn(j) for j in jobs]
-    with ProcessPoolExecutor(workers, initializer=_init, initargs=(inputs,)) as pool:
+    with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context(POOL_CONTEXT), initializer=_init,
+                             initargs=(inputs,)) as pool:
         return list(pool.map(fn, jobs, chunksize=8))
 
 
@@ -95,7 +102,7 @@ def _replay_window(raw: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp, b
     lo = max(first - pd.Timedelta(days=first.dayofweek) - pd.Timedelta(weeks=before), i["first_day"])
     hi = min(last + pd.Timedelta(days=6 - last.dayofweek) + pd.Timedelta(weeks=after), i["last_day"])
     return replay(raw, i["raw_temperature"], i["model"], i["thresholds"], i["reference"], str(lo.date()),
-                  str(hi.date()), i["data_end"])
+                  str(hi.date()), i["data_end"], departure=i["departure"])
 
 
 def _episode(job: tuple) -> dict:
@@ -118,10 +125,11 @@ def _level_shift(job: tuple) -> dict:
             "weekly_bias": [w["stats"]["rel_bias"] for w in r.weeks if w["evaluated"] and start <= w["week_start"]]}
 
 
-def _inputs(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end) -> dict:
+def _inputs(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
+            departure: bool = False) -> dict:
     return {"raw_demand": raw_demand, "raw_temperature": raw_temperature, "model": model, "thresholds": thresholds,
             "reference": reference, "data_end": data_end, "baseline": baseline(r),
-            "first_day": r.days[0]["day"], "last_day": r.days[-1]["day"]}
+            "first_day": r.days[0]["day"], "last_day": r.days[-1]["day"], "departure": departure}
 
 
 def _judged_span(r: ReplayResult) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -130,7 +138,8 @@ def _judged_span(r: ReplayResult) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 
 def episodes(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-             days=EPISODE_DAYS, factors=EPISODE_FACTORS, starts=None, workers: int | None = None) -> dict:
+             days=EPISODE_DAYS, factors=EPISODE_FACTORS, starts=None, workers: int | None = None,
+             departure: bool = False) -> dict:
     """False alarms from short episodes, from every start day whose episode and echo fall in judged weeks."""
     first, last = _judged_span(r)
     jobs = []
@@ -138,8 +147,8 @@ def episodes(raw_demand, raw_temperature, model, thresholds, reference, r: Repla
         days_from = starts if starts is not None else pd.date_range(
             first, last - pd.Timedelta(days=n - 1 + ECHO_MARGIN_DAYS), freq="D")
         jobs += [(pd.Timestamp(s), n, f) for s in days_from for f in factors]
-    out = _map(_episode, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end),
-               workers)
+    out = _map(_episode, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end,
+                                       departure), workers)
     rows = []
     for (n, f), group in groupby(sorted(out, key=lambda j: (j["days"], j["factor"])),
                                  key=lambda j: (j["days"], j["factor"])):
@@ -166,11 +175,11 @@ def _season_starts(r: ReplayResult) -> list[pd.Timestamp]:
 
 
 def level_shifts(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-                 factors=STEP_FACTORS, starts=None, workers: int | None = None) -> list[dict]:
+                 factors=STEP_FACTORS, starts=None, workers: int | None = None, departure: bool = False) -> list[dict]:
     """Weeks until *retrain* when demand shifts by a factor from the first full week of each season on."""
     jobs = [(pd.Timestamp(s), f) for s in (starts if starts is not None else _season_starts(r)) for f in factors]
-    return _map(_level_shift, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end),
-                workers)
+    return _map(_level_shift, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end,
+                                            departure), workers)
 
 
 def _first_retrain(decisions: list[dict], start: pd.Timestamp, horizon: int) -> int | None:
@@ -218,7 +227,8 @@ def echo_exclusion_cost(r: ReplayResult, thresholds: dict, sds=NOISE_SDS, seeds:
 
 
 def measure(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-            workers: int | None = None) -> dict:
+            workers: int | None = None, departure: bool = False) -> dict:
     args = (raw_demand, raw_temperature, model, thresholds, reference, r, data_end)
-    return {"episodes": episodes(*args, workers=workers), "level_shifts": level_shifts(*args, workers=workers),
+    return {"episodes": episodes(*args, workers=workers, departure=departure),
+            "level_shifts": level_shifts(*args, workers=workers, departure=departure),
             "echo_exclusion_cost": echo_exclusion_cost(r, thresholds)}

@@ -20,15 +20,14 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from valiwatt.config import DEMAND_FIRST, LST_OFFSET
+from valiwatt.config import DEMAND_FIRST, DESIGN_LAST, LST_OFFSET
 from valiwatt.forecast.features import build, origin_of
 from valiwatt.forecast.freeze import FrozenModel
 from valiwatt.forecast.guards import LookaheadError, require_known_at_origin
 from valiwatt.monitor.clock import Clock, RawFeed
 from valiwatt.monitor.drift import normed_wasserstein, seasonal_reference
-from valiwatt.monitor.rules import MAX_SILENT_TEMPERATURE_HOURS, MIN_WEEK_HOURS, decide, week_record
+from valiwatt.monitor.rules import MIN_WEEK_HOURS, day_problems, decide, week_record
 from valiwatt.quality.demand import (
-    BOUNDS_MW,
     SPIKE_Z,
     STATUS_MASKED_DST,
     USABLE,
@@ -77,12 +76,44 @@ class _State:
     def canonical(self) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame]:
         """Demand frame (out-of-bounds values unusable), temperature (duplicates and out-of-bounds values blanked),
         and the raw demand and temperature records."""
-        raw = self.demand.visible()
-        frame = build_demand(raw, DEMAND_FIRST, self.clock.now, scale_last=self.scale_last).frame
-        raw_t = self.temperature.visible()
-        temp_raw = station_series(raw_t, DEMAND_FIRST, self.clock.now)["temp_c"]
-        temp = temp_raw.where((temp_raw >= BOUNDS_C[0]) & (temp_raw <= BOUNDS_C[1]))
+        raw, raw_t = self.demand.visible(), self.temperature.visible()
+        frame, temp = canonical(raw, raw_t, self.clock.now, self.scale_last)
         return frame, temp, raw, raw_t
+
+
+def canonical(raw: pd.DataFrame, raw_t: pd.DataFrame, now: pd.Timestamp,
+              scale_last: pd.Timestamp) -> tuple[pd.DataFrame, pd.Series]:
+    """The canonical demand frame and temperature built from raw records up to `now`. Pure."""
+    frame = build_demand(raw, DEMAND_FIRST, now, scale_last=scale_last).frame
+    temp_raw = station_series(raw_t, DEMAND_FIRST, now)["temp_c"]
+    return frame, temp_raw.where((temp_raw >= BOUNDS_C[0]) & (temp_raw <= BOUNDS_C[1]))
+
+
+def day_verdicts(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, first_day: pd.Timestamp,
+                 last_day: pd.Timestamp) -> dict[pd.Timestamp, list[dict]]:
+    """The replay's day-level data-quality verdict (rules.day_problems) on every local standard day in
+    [first_day, last_day]: day -> its problems (an empty list: the day passes). Raw records after the last day's last
+    hour are never read.
+
+    The replay judges a day on the series rebuilt from the raw cut one hour after the day's last hour; this builds the
+    series once, from the cut at the last day's last hour. The verdict reads, on the day's own hours, the raw records
+    stamped in the day, the demand status (a fall-back pair is masked by the two records of that pair alone) and the
+    temperature (a record and its duplicates share one timestamp); none of these moves when records stamped after the
+    day are added, so each day's verdict is the replay's. The last day is judged as at the end of the data, as a replay
+    judges its last day when the data end with it (a fall-back pair that straddles the end, which never happens on
+    31 December, is the one case where the two could differ)."""
+    days = pd.date_range(pd.Timestamp(first_day), pd.Timestamp(last_day), freq="D")
+    end = origin(days[-1]) + 24 * H
+    raw, raw_t = (r[r["ts_utc"] <= end].sort_values("ts_utc", kind="stable").reset_index(drop=True)
+                  for r in (raw_demand, raw_temperature))
+    frame, temp = canonical(raw, raw_t, end, end)
+    out = {}
+    for d in days:
+        o = origin(d)
+        hours = pd.date_range(o + H, o + 24 * H, freq="h")
+        cut = [int(r["ts_utc"].searchsorted(x, side="right")) for r in (raw, raw_t) for x in (o, hours[-1])]
+        out[d] = day_problems(hours, raw.iloc[cut[0]:cut[1]], raw_t.iloc[cut[2]:cut[3]], frame["status"], temp)
+    return out
 
 
 def issue(state: _State, model: FrozenModel, day: pd.Timestamp) -> pd.DataFrame:
@@ -130,32 +161,9 @@ def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame, final: boo
     s["rel_bias"] = ((s["target"] - s["forecast"]) / s["target"]).where(ok)
     s["covered"] = ((s["target"] >= s["lower"]) & (s["target"] <= s["upper"])).astype(float).where(ok)
 
-    day_raw = raw[(raw["ts_utc"] > o) & (raw["ts_utc"] <= hours[-1])]
-    counts = day_raw[day_raw["ts_utc"].isin(hours)].groupby("ts_utc").size().reindex(hours, fill_value=0)
     expected = f["status"] == STATUS_MASKED_DST
-    problems = []
-    for t in hours[(counts == 0) & ~expected]:
-        problems.append({"kind": "missing_hour", "utc": t})
-    for t in day_raw.loc[day_raw["mw"].isna(), "ts_utc"]:
-        problems.append({"kind": "blank_value", "utc": t})
-    for t in hours[(counts > 1) & ~expected]:
-        problems.append({"kind": "duplicate", "utc": t, "records": int(counts[t])})
-    for t in day_raw.loc[~day_raw["ts_utc"].isin(hours), "ts_utc"]:
-        problems.append({"kind": "off_grid_record", "utc": t})
-    # Bounds are judged on every raw record, so a value inside a masked fall-back pair is still seen.
-    bad = day_raw["mw"].notna() & ((day_raw["mw"] < BOUNDS_MW[0]) | (day_raw["mw"] > BOUNDS_MW[1]))
-    for _, rec in day_raw[bad].iterrows():
-        problems.append({"kind": "demand_out_of_bounds", "utc": rec["ts_utc"], "mw": float(rec["mw"])})
-    day_t = raw_t[(raw_t["ts_utc"] > o) & (raw_t["ts_utc"] <= hours[-1])]
-    for t, n in day_t.groupby("ts_utc").size().items():
-        if n > 1:
-            problems.append({"kind": "temperature_duplicate", "utc": t, "records": int(n)})
-    bad_t = day_t["temp_c"].notna() & ((day_t["temp_c"] < BOUNDS_C[0]) | (day_t["temp_c"] > BOUNDS_C[1]))
-    for _, rec in day_t[bad_t].iterrows():
-        problems.append({"kind": "temperature_out_of_bounds", "utc": rec["ts_utc"], "temp_c": float(rec["temp_c"])})
-    silent = int(s["temp_observed"].isna().sum())
-    if silent > MAX_SILENT_TEMPERATURE_HOURS:
-        problems.append({"kind": "temperature_silent", "hours": silent, "limit": MAX_SILENT_TEMPERATURE_HOURS})
+    problems = day_problems(hours, raw[(raw["ts_utc"] > o) & (raw["ts_utc"] <= hours[-1])],
+                            raw_t[(raw_t["ts_utc"] > o) & (raw_t["ts_utc"] <= hours[-1])], f["status"], temp)
     record = {
         "day": day, "failed": bool(problems), "problems": problems,
         "expected": [{"kind": "fall_back", "utc": t} for t in hours[expected]],
@@ -184,13 +192,26 @@ def week_drift(state: _State, week_start: pd.Timestamp, week_hours: pd.DataFrame
     return values, {"temperature": (cur_t, ref_t), "forecast": (cur_f, ref_f)}
 
 
+def reads_held_out(last_day: str, data_end: pd.Timestamp) -> bool:
+    """Whether a replay of days up to `last_day`, with raw records up to `data_end`, reads the held-out year."""
+    return pd.Timestamp(data_end) > DESIGN_LAST or origin(pd.Timestamp(last_day)) + 24 * H > DESIGN_LAST
+
+
 def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: FrozenModel, thresholds: dict,
-           reference_forecasts: pd.DataFrame, first_day: str, last_day: str, data_end: pd.Timestamp) -> ReplayResult:
+           reference_forecasts: pd.DataFrame, first_day: str, last_day: str, data_end: pd.Timestamp,
+           departure: bool = False) -> ReplayResult:
     """Replay [first_day, last_day] (local standard days). Raw records after `data_end` are never loaded.
 
     thresholds: the validation thresholds for this replay; refused unless they come from years before first_day's.
     reference_forecasts: out-of-sample forecasts of earlier years (columns day, forecast), the forecast-drift reference.
+    A replay that reads the held-out year passes the freeze gate first, here, whoever calls it (the command, or the
+    measurements of monitor/sensitivity.py): rule files equal to the tagged freeze, and no earlier replay of that
+    year under another freeze commit unless `departure` is given and recorded (monitor/run.py, held_out_gate).
     """
+    if reads_held_out(last_day, data_end):
+        from valiwatt.monitor.run import held_out_gate  # run.py imports this module
+
+        held_out_gate(departure)
     sha_before = model.sha256()
     first = pd.Timestamp(first_day)
     last_year = thresholds.get("last_year")

@@ -1,12 +1,15 @@
 """`valiwatt replay --year Y`: replay a year with its frozen model and log every daily and weekly judgement.
 
 - Y = 2023 is the pseudo-replay: design years only (records after the end of 2023 are cut before the replay's feeds
-  are built), thresholds from validation weeks up to 2022, a side-by-side with the monthly-refitted 2023 folds, and
-  the rules' false alarms and blind spots measured on that year (monitor/sensitivity.py).
+  are built), thresholds from validation weeks up to 2022, and a side-by-side with the monthly-refitted 2023 folds.
 - Y = 2024 is the replay proper. It refuses to run unless the rule files are exactly those of the `rules-frozen` tag,
   the validation and frozen-model runs it reads were made with those same rules, and no earlier 2024 replay ran
-  under another freeze commit (a moved tag is a departure, run only with `--departure` once it is recorded).
-Both refuse raw files that differ from the ones the data-quality run checked.
+  under another freeze commit, in the MLflow store or in the committed ledger `docs/replay-ledger.json` (a moved tag
+  is a departure, run only with `--departure` once it is recorded). The same gate runs inside the replay itself
+  (monitor/replay.py), so no caller reaches the held-out year without it.
+Both measure the rules' false alarms and blind spots on their own year (monitor/sensitivity.py): 2023, the year the
+rules were designed on, and 2024, out of sample. Both refuse raw files that differ from the ones the data-quality run
+checked.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -102,11 +106,48 @@ def recorded_departures(agents: str | None = None) -> str:
     return section.split("\n## ", 1)[0]
 
 
+LEDGER = "docs/replay-ledger.json"
+
+
+def ledger_freeze_commits(year: int, ledger: dict | None = None) -> dict[str, list[str]]:
+    """The freeze commit of every replay of `year` the committed ledger lists, with their run IDs. The ledger travels
+    with the repository, so a fresh clone with an empty MLflow store still sees the replays that ran before.
+
+    ledger: the parsed file; None reads `docs/replay-ledger.json` (absent: no entries). A ledger that cannot be read,
+    or an entry without a freeze commit or a run ID, is refused: an unreadable record of earlier replays is not an
+    empty one."""
+    if ledger is None:
+        path = REPO_ROOT / LEDGER
+        if not path.exists():
+            return {}
+        try:
+            ledger = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise FreezeError(f"{LEDGER} cannot be read: {e}") from e
+    if not isinstance(ledger, dict) or not isinstance(ledger.get("replays", []), list):
+        raise FreezeError(f"{LEDGER} holds no list of replays")
+    out: dict[str, list[str]] = {}
+    for e in ledger.get("replays", []):
+        if not isinstance(e, dict) or not e.get("freeze_commit") or not e.get("run_id"):
+            raise FreezeError(f"{LEDGER}: an entry without a freeze commit or a run ID: {e!r}")
+        # An entry that does not name its year counts as a replay of this one: the ledger's writer records only
+        # replays of the held-out year, and counting one too many can only refuse.
+        if int(e.get("year", year)) == year:
+            out.setdefault(e["freeze_commit"], []).append(str(e["run_id"]))
+    return out
+
+
 def check_tag_not_moved(freeze: dict, earlier: dict[str, list[str]], departure: bool,
-                        recorded: str | None = None) -> list[str]:
+                        recorded: str | None = None, ledger: dict | None = None) -> list[str]:
     """A 2024 replay already ran under another freeze commit: the tag moved, which is a departure. It runs only with
-    `departure` AND the new freeze commit named in AGENTS.md's departures section. Returns the earlier run IDs."""
-    moved = {c: ids for c, ids in earlier.items() if c != freeze["freeze_commit"]}
+    `departure` AND the new freeze commit named in AGENTS.md's departures section. Returns the earlier run IDs.
+
+    earlier: the freeze commits of the replays in the MLflow store (earlier_freeze_commits); the committed ledger's
+    are added to them (ledger_freeze_commits; `ledger` None reads the file)."""
+    merged = {c: list(ids) for c, ids in earlier.items()}
+    for c, ids in ledger_freeze_commits(REPLAY_YEAR, ledger).items():
+        merged[c] = sorted(set(merged.get(c, [])) | set(ids))
+    moved = {c: ids for c, ids in merged.items() if c != freeze["freeze_commit"]}
     if not moved:
         return []
     if not departure:
@@ -117,7 +158,7 @@ def check_tag_not_moved(freeze: dict, earlier: dict[str, list[str]], departure: 
     if freeze["freeze_commit"][:12] not in section:
         raise FreezeError(f"--departure given, but AGENTS.md's departures section does not name commit "
                           f"{freeze['freeze_commit'][:12]}")
-    return sorted(i for ids in moved.values() for i in ids)
+    return sorted({i for ids in moved.values() for i in ids})
 
 
 def summarize(r: ReplayResult, n_boot: int = N_BOOT) -> dict:
@@ -287,6 +328,15 @@ def earlier_freeze_commits(year: int, client=None) -> dict[str, list[str]]:
     return out
 
 
+def held_out_gate(departure: bool = False) -> tuple[dict, list[str]]:
+    """The gate before any replay that reads the held-out year: the rule files equal the tagged freeze, and no earlier
+    replay of that year ran under another freeze commit unless the departure is requested and recorded. Returns the
+    freeze and the run IDs of the replays a recorded departure departs from. run_replay calls it before reading any
+    input, and replay() again, so that no entry point skips it."""
+    freeze = check_freeze()
+    return freeze, check_tag_not_moved(freeze, earlier_freeze_commits(REPLAY_YEAR), departure)
+
+
 def check_unchanged(registered_sha: str, replayed_sha: str, run_sha: str) -> None:
     """After the replay, the registered model must still be the one the replay used and its run recorded."""
     if not (registered_sha == replayed_sha == run_sha):
@@ -302,8 +352,7 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
         raise ValueError(f"replay years are {PSEUDO_YEAR} (pseudo-replay) and {REPLAY_YEAR}")
     departure_from: list[str] = []
     if year == REPLAY_YEAR:
-        freeze = check_freeze()
-        departure_from = check_tag_not_moved(freeze, earlier_freeze_commits(year), departure)
+        freeze, departure_from = held_out_gate(departure)
     else:
         freeze = {"freeze_tag": "", "freeze_commit": "", "rules_sha256": rules_sha256()}
     dq, _, _ = load_inputs()
@@ -315,7 +364,8 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     data_end = DESIGN_LAST if year == PSEUDO_YEAR else DEMAND_LAST
     reference = oos.loc[oos["day"] < pd.Timestamp(f"{year}-01-01"), ["day"]].assign(
         forecast=oos["pred_persistence"])
-    r = replay(raw_demand, raw_temp, frozen, thresholds, reference, f"{year}-01-01", f"{year}-12-31", data_end)
+    r = replay(raw_demand, raw_temp, frozen, thresholds, reference, f"{year}-01-01", f"{year}-12-31", data_end,
+               departure=departure)
 
     again, _ = load_frozen(year)
     check_unchanged(again.sha256(), r.model_sha256, frozen_run.data.tags["coefficient_sha256"])
@@ -330,7 +380,12 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
         intervals = pd.read_parquet(mlflow.artifacts.download_artifacts(
             run_id=val.info.run_id, artifact_path="frames/intervals.parquet"))
         results["refitted"] = compare_refitted(r, oos, intervals, thresholds, reference, year, n_boot)
-        results["sensitivity"] = sensitivity.measure(raw_demand, raw_temp, frozen, thresholds, reference, r, data_end)
+    # The false alarms and blind spots on both years, side by side: 2023, the year the rules were designed on, and
+    # 2024, out of sample. Their replays of the held-out year pass the freeze gate inside replay().
+    started = time.monotonic()
+    results["sensitivity"] = sensitivity.measure(raw_demand, raw_temp, frozen, thresholds, reference, r, data_end,
+                                                 departure=departure)
+    results["sensitivity_seconds"] = time.monotonic() - started
 
     with start_run(EXPERIMENT, results["kind"], tags={
         "kind": results["kind"], "year": str(year), "validation_run_id": val.info.run_id,
@@ -341,7 +396,8 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     }) as run:
         s = results["summary"]
         mlflow.log_metrics({"mape": s["mape"]["mean"], "bias": s["bias"]["mean"], "coverage": s["coverage"]["mean"],
-                            "days_failed": s["days_failed"], **{f"rec.{k}": v for k, v in s["recommendations"].items()}})
+                            "days_failed": s["days_failed"], "sensitivity_seconds": results["sensitivity_seconds"],
+                            **{f"rec.{k}": v for k, v in s["recommendations"].items()}})
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             r.hourly.to_parquet(tmp / "hourly.parquet")

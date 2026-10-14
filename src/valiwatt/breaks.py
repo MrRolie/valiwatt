@@ -123,6 +123,9 @@ BREAKS = [
     _b(LOOK, f"{T_FRZ}::test_the_frozen_model_refuses_training_rows_inside_its_embargo",
        "Le modèle figé refuse des lignes d'entraînement dans son embargo",
        "The frozen model refuses training rows inside its embargo"),
+    _b(LOOK, f"{T_REP}::test_the_day_verdicts_read_no_record_after_the_last_day",
+       "Le verdict de qualité des jours qui sert au calibrage ne lit aucun enregistrement postérieur au dernier jour",
+       "The day-level data-quality verdict used for calibration reads no record after the last day"),
     _b(LOOK, f"{T_GRD}::test_an_origin_moved_earlier_than_the_lag_allows_is_refused",
        "Une origine avancée au-delà de ce que permet le retard de 24 heures est refusée",
        "An origin moved earlier than the 24-hour lag allows is refused"),
@@ -219,6 +222,27 @@ BREAKS = [
     _b(MON, f"{T_REP}::test_a_week_with_too_few_full_days_has_no_trimmed_statistic_and_is_never_broad",
        "Une semaine de trop peu de jours complets n'a pas de statistique tronquée et n'est jamais hors bande étendue",
        "A week with too few full days has no trimmed statistic and is never broadly out of band"),
+    _b(MON, f"{T_REP}::test_one_predicate_says_which_weeks_are_judged",
+       "Une semaine incomplète, une semaine avec un jour en échec et une semaine de trop peu d'heures ne sont pas "
+       "jugées, chaque condition à elle seule",
+       "A partial week, a week with a failed day and a week with too few hours are not judged, each condition alone"),
+    _b(MON, f"{T_REP}::test_a_partial_week_with_enough_hours_is_not_judged",
+       "Une semaine coupée par la fin de la période n'est pas jugée, même avec assez d'heures",
+       "A week cut by the end of the period is not judged, even with enough hours"),
+    _b(MON, f"{T_REP}::test_the_day_verdicts_for_calibration_are_the_replays_own",
+       "Le verdict de qualité des jours lu par le calibrage est, jour par jour, celui du rejeu, sur sept défauts "
+       "injectés et les jours propres",
+       "The day-level data-quality verdict the calibration reads is, day by day, the replay's own, on seven injected "
+       "faults and the clean days"),
+    _b(MON, f"{T_VAL}::test_a_week_holding_a_day_the_replay_would_fail_does_not_calibrate_the_thresholds",
+       "Une semaine contenant un jour que le rejeu ferait échouer ne sert pas au calcul des seuils, et la raison est "
+       "consignée",
+       "A week holding a day the replay would fail does not calibrate the thresholds, and why is logged"),
+    _b(MON, f"{T_VAL}::test_weeks_cut_by_the_calibration_years_are_set_aside_and_a_day_without_a_verdict_is_refused",
+       "Une semaine coupée par les années de calibrage est écartée ; un jour sans verdict de qualité fait refuser "
+       "le calcul des seuils",
+       "A week cut by the calibration years is set aside; a day without a data-quality verdict makes the thresholds "
+       "refuse"),
     _b(ACT, f"{T_REP}::test_a_replay_that_changes_the_model_fails",
        "Un rejeu qui modifie le modèle ou ses intervalles échoue",
        "A replay that changes the model or its intervals fails"),
@@ -232,6 +256,22 @@ BREAKS = [
     _b(FREEZE, f"{T_FRZ}::test_a_moved_tag_is_refused_unless_recorded_as_a_departure",
        "Une étiquette de gel déplacée est refusée sauf écart déclaré",
        "A moved freeze tag is refused unless recorded as a departure"),
+    _b(FREEZE, f"{T_FRZ}::test_replay_called_directly_on_the_held_out_year_passes_the_freeze_gate",
+       "Le rejeu appelé directement sur l'année réservée passe la porte du gel : sans étiquette, avec un fichier de "
+       "règles modifié ou sous une étiquette déplacée, il est refusé",
+       "The replay called directly on the held-out year passes the freeze gate: without the tag, with an edited rule "
+       "file or under a moved tag, it is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_ledger_naming_an_earlier_freeze_commit_is_a_moved_tag_even_with_an_empty_store",
+       "Le registre versionné des rejeux révèle une étiquette déplacée même sans dépôt MLflow : refus sauf dérogation "
+       "consignée",
+       "The committed replay ledger shows a moved tag even with no MLflow store: refused unless a departure is "
+       "recorded"),
+    _b(FREEZE, f"{T_FRZ}::test_a_ledger_that_cannot_be_read_is_refused[not_json]",
+       "Un registre des rejeux illisible est refusé", "A replay ledger that cannot be parsed is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_ledger_that_cannot_be_read_is_refused[no_list]",
+       "Un registre des rejeux sans liste de rejeux est refusé", "A replay ledger with no list of replays is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_ledger_that_cannot_be_read_is_refused[no_freeze_commit]",
+       "Une entrée du registre sans commit de gel est refusée", "A ledger entry without a freeze commit is refused"),
     _b(FREEZE, f"{T_FRZ}::test_earlier_replays_are_found_even_when_deleted",
        "Les rejeux antérieurs sont retrouvés même supprimés", "Earlier replays are found even when deleted"),
     _b(FREEZE, f"{T_FRZ}::test_raw_files_other_than_the_checked_ones_are_refused",

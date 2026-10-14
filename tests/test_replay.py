@@ -409,3 +409,69 @@ def test_a_week_with_too_few_full_days_has_no_trimmed_statistic_and_is_never_bro
     w = judged_week([24] * (full - 1) + [MIN_DAY_HOURS - 1] * (8 - full))
     assert w["evaluated"] and w["flags"]["mape_high"]
     assert all(np.isnan(v) for v in w["trimmed"].values()) and not any(w["broad"].values())
+
+
+def test_one_predicate_says_which_weeks_are_judged():
+    """The replay and the calibration of the thresholds share this predicate; each condition fails a week alone."""
+    from valiwatt.monitor.rules import MIN_WEEK_HOURS, WEEK_DAYS, not_judged_because
+
+    assert not_judged_because(WEEK_DAYS, 0, MIN_WEEK_HOURS) == []
+    assert not_judged_because(WEEK_DAYS - 1, 0, 24 * WEEK_DAYS) == ["partial_week"]
+    assert not_judged_because(WEEK_DAYS, 1, 24 * WEEK_DAYS) == ["data_quality"]
+    assert not_judged_because(WEEK_DAYS, 0, MIN_WEEK_HOURS - 1) == ["too_few_hours"]
+    assert not_judged_because(1, 1, 0) == ["partial_week", "data_quality", "too_few_hours"]
+
+
+def test_a_partial_week_with_enough_hours_is_not_judged():
+    """Six full days hold more than MIN_WEEK_HOURS scored hours, yet a week cut by the end of the replayed period is
+    not judged: the thresholds are calibrated on whole weeks only."""
+    from valiwatt.monitor.rules import MIN_WEEK_HOURS, week_record
+
+    w = judged_week([24] * 7)
+    assert w["evaluated"] and w["not_judged_because"] == []  # the control: the whole week is judged
+    ws = pd.Timestamp("2024-01-01")
+    six = [{"day": ws + pd.Timedelta(days=i), "failed": False} for i in range(6)]
+    scored = pd.DataFrame([{"day": d["day"], "ape": 0.1, "rel_bias": 0.0, "covered": 1.0} for d in six
+                           for _ in range(24)])
+    assert len(scored) > MIN_WEEK_HOURS
+    th = {"performance": {s: w["thresholds"] for s in ("winter", "spring", "summer", "fall")},
+          "drift": {"temperature_high": 1.0, "forecast_high": 1.0}}
+    rec = week_record(ws, scored, six, {"temperature": 0.1, "forecast": 0.1}, th)
+    assert not rec["evaluated"] and rec["not_judged_because"] == ["partial_week"] and rec["stats"] is None
+
+
+def test_the_day_verdicts_for_calibration_are_the_replays_own():
+    """day_verdicts (what the validation reads) gives, on every day, the problems the replay recorded when it scored
+    that day at its own clock: a missing record, a duplicate, an off-grid record, an out-of-bounds value, duplicated
+    and impossible temperatures and a sensor gap, each on its own day, and the clean days."""
+    raw, obs = world()
+    t = pd.Timestamp
+    ts = pd.DatetimeIndex(raw["ts_utc"])
+    broken = pd.concat([
+        raw[ts != t("2022-01-11T15:00Z")],
+        raw[ts == t("2022-01-13T15:00Z")].assign(mw=lambda d: d["mw"] + 50),
+    ])
+    broken.loc[broken["ts_utc"] == t("2022-01-14T15:00Z"), "ts_utc"] = t("2022-01-14T15:30Z")
+    broken.loc[broken["ts_utc"] == t("2022-01-18T15:00Z"), "mw"] = 70_000.0
+    obs2 = pd.concat([obs, obs[obs["ts_utc"] == t("2022-01-20T15:00Z")].assign(temp_c=25.0)])
+    obs2.loc[obs2["ts_utc"] == t("2022-01-21T15:00Z"), "temp_c"] = 80.0
+    day = rp.lst_day(pd.DatetimeIndex(obs2["ts_utc"])) == t("2022-01-25")
+    obs2 = obs2.assign(temp_c=obs2["temp_c"].where(~(day & (pd.DatetimeIndex(obs2["ts_utc"]).hour < 10))))
+    r = run(raw=broken, obs=obs2)
+    verdicts = rp.day_verdicts(broken, obs2, r.days[0]["day"], r.days[-1]["day"])
+    assert list(verdicts) == [d["day"] for d in r.days]
+    assert verdicts == {d["day"]: d["problems"] for d in r.days}
+    kinds = {d.date().isoformat(): sorted({p["kind"] for p in v}) for d, v in verdicts.items() if v}
+    assert kinds == {"2022-01-11": ["missing_hour"], "2022-01-13": ["duplicate"],
+                     "2022-01-14": ["missing_hour", "off_grid_record"], "2022-01-18": ["demand_out_of_bounds"],
+                     "2022-01-20": ["temperature_duplicate"], "2022-01-21": ["temperature_out_of_bounds"],
+                     "2022-01-25": ["temperature_silent"]}
+
+
+def test_the_day_verdicts_read_no_record_after_the_last_day():
+    raw, obs = world()
+    first, last = pd.Timestamp("2022-01-10"), pd.Timestamp("2022-01-16")
+    late = raw["ts_utc"] > rp.origin(last + pd.Timedelta(days=1))
+    dirty = pd.concat([raw.assign(mw=np.where(late, raw["mw"] * 9, raw["mw"])), raw[late].head(3)])
+    assert rp.day_verdicts(dirty, obs, first, last) == rp.day_verdicts(raw, obs, first, last)
+    assert not any(rp.day_verdicts(raw, obs, first, last).values())

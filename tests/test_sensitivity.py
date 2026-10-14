@@ -73,6 +73,17 @@ def test_an_alarm_resting_on_a_week_already_out_of_band_is_assisted_and_old_alar
     assert S.alarms([a, b, c], decisions, base)["alarms"] == []
 
 
+def test_the_measures_run_in_fresh_worker_processes_and_find_what_one_process_finds(clean):
+    """With several workers, each starts from a fresh process (never a fork holding the parent's MLflow connection),
+    receives the inputs and finds the same alarms as one process."""
+    assert S.POOL_CONTEXT == "forkserver"
+    kw = dict(days=(5,), factors=(0.6, 1.4), starts=["2022-01-05", "2022-01-06"])
+    one = S.episodes(*args(clean), **kw, workers=1)
+    two = S.episodes(*args(clean), **kw, workers=2)
+    assert two["rows"] == one["rows"] and two["jobs_with_alarms"] == one["jobs_with_alarms"]
+    assert any(r["retrain"] for r in two["rows"])
+
+
 def test_the_echo_exclusion_only_ever_removes_or_delays_retrain(clean):
     out = S.echo_exclusion_cost(clean, thresholds(), sds=(0.0, 0.3), seeds=3, horizon=4, starts=["2022-01-10"])
     rows = {r["sd"]: r for r in out["rows"]}

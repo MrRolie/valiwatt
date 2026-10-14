@@ -42,6 +42,8 @@ import pandas as pd
 
 from valiwatt.forecast.evaluate import SEASONS
 from valiwatt.paths import REPO_ROOT
+from valiwatt.quality.demand import BOUNDS_MW, STATUS_MASKED_DST
+from valiwatt.quality.weather import BOUNDS_C
 
 # Quantiles of the validation weeks that become the thresholds (per season for performance).
 QUANTILES = {"mape_high": 0.95, "bias_low": 0.025, "bias_high": 0.975, "coverage_low": 0.05, "drift_high": 0.95}
@@ -49,6 +51,9 @@ QUANTILES = {"mape_high": 0.95, "bias_low": 0.025, "bias_high": 0.975, "coverage
 # statistic; a day with fewer scored hours does not enter the trimmed statistic.
 MIN_WEEK_HOURS = 120
 MIN_DAY_HOURS = 18
+# A week is judged only when all its days lie in the judged period (a replayed year, or the validation years that
+# calibrate a threshold set).
+WEEK_DAYS = 7
 CONSECUTIVE_WEEKS = 2
 SUSTAINED_WEEKS = 3  # the sustained-bias arm of rule 2
 TRIM_DAYS = 2
@@ -101,6 +106,61 @@ def rules_sha256(commit: str | None = None) -> str:
     return h.hexdigest()
 
 
+def day_problems(hours: pd.DatetimeIndex, raw: pd.DataFrame, raw_t: pd.DataFrame, status: pd.Series,
+                 temperature: pd.Series) -> list[dict]:
+    """Day-level data quality of one day: the problems that fail it (none: the day passes). Pure.
+
+    hours: the day's 24 hour-ending UTC labels; raw, raw_t: the raw demand and primary-station temperature records
+    stamped after the day's origin (hours[0] - 1 h) and up to its last hour; status: the canonical demand status on
+    `hours`; temperature: the canonical temperature on `hours` (duplicates and out-of-bounds values blank).
+
+    The replay calls it when it scores a day, on the canonical series rebuilt from the raw cut at that clock; the
+    validation calls it on every day of the years that calibrate the thresholds (monitor/replay.py, day_verdicts), so a
+    week is calibrated on exactly when the replay would judge it."""
+    counts = raw[raw["ts_utc"].isin(hours)].groupby("ts_utc").size().reindex(hours, fill_value=0)
+    expected = (status.reindex(hours) == STATUS_MASKED_DST).to_numpy()
+    problems = []
+    for t in hours[(counts.to_numpy() == 0) & ~expected]:
+        problems.append({"kind": "missing_hour", "utc": t})
+    for t in raw.loc[raw["mw"].isna(), "ts_utc"]:
+        problems.append({"kind": "blank_value", "utc": t})
+    for t in hours[(counts.to_numpy() > 1) & ~expected]:
+        problems.append({"kind": "duplicate", "utc": t, "records": int(counts[t])})
+    for t in raw.loc[~raw["ts_utc"].isin(hours), "ts_utc"]:
+        problems.append({"kind": "off_grid_record", "utc": t})
+    # Bounds are judged on every raw record, so a value inside a masked fall-back pair is still seen.
+    bad = raw["mw"].notna() & ((raw["mw"] < BOUNDS_MW[0]) | (raw["mw"] > BOUNDS_MW[1]))
+    for _, rec in raw[bad].iterrows():
+        problems.append({"kind": "demand_out_of_bounds", "utc": rec["ts_utc"], "mw": float(rec["mw"])})
+    for t, n in raw_t.groupby("ts_utc").size().items():
+        if n > 1:
+            problems.append({"kind": "temperature_duplicate", "utc": t, "records": int(n)})
+    bad_t = raw_t["temp_c"].notna() & ((raw_t["temp_c"] < BOUNDS_C[0]) | (raw_t["temp_c"] > BOUNDS_C[1]))
+    for _, rec in raw_t[bad_t].iterrows():
+        problems.append({"kind": "temperature_out_of_bounds", "utc": rec["ts_utc"], "temp_c": float(rec["temp_c"])})
+    silent = int(temperature.reindex(hours).isna().sum())
+    if silent > MAX_SILENT_TEMPERATURE_HOURS:
+        problems.append({"kind": "temperature_silent", "hours": silent, "limit": MAX_SILENT_TEMPERATURE_HOURS})
+    return problems
+
+
+def not_judged_because(days: int, failed_days: int, hours: int) -> list[str]:
+    """Why a week gets no performance statistics (none: it is judged). The replay's weekly judgement and the
+    calibration of the thresholds both read this one predicate, so the thresholds come from the weeks the replay
+    would judge.
+
+    days: the week's days inside the judged period; failed_days: how many of them failed their day-level data quality
+    (day_problems); hours: the week's scored hours."""
+    why = []
+    if days < WEEK_DAYS:
+        why.append("partial_week")
+    if failed_days:
+        why.append("data_quality")
+    if hours < MIN_WEEK_HOURS:
+        why.append("too_few_hours")
+    return why
+
+
 def season_thresholds(thresholds: dict, season: str) -> dict:
     perf = thresholds["performance"]
     if season not in perf:
@@ -131,8 +191,10 @@ def week_record(week_start: pd.Timestamp, scored: pd.DataFrame, days: list[dict]
                 thresholds: dict) -> dict:
     """Everything the decision table reads about one week, with the numbers behind each flag.
 
-    scored: the week's scored hours (columns day, ape, rel_bias, covered); days: the week's day-level data-quality
-    records; drift: {"temperature": value, "forecast": value} (NaN when the week is too short to judge)."""
+    scored: the week's scored hours (columns day, ape, rel_bias, covered); days: the day-level data-quality records
+    of the week's days inside the replayed period; drift: {"temperature": value, "forecast": value} (NaN when the
+    week is too short to judge). Whether the week is judged is not_judged_because's answer, the one the thresholds
+    were calibrated with."""
     season = SEASONS[(week_start + pd.Timedelta(days=3)).month]  # the season of the week's Thursday
     t = season_thresholds(thresholds, season)
     failed_days = [d for d in days if d["failed"]]
@@ -141,7 +203,8 @@ def week_record(week_start: pd.Timestamp, scored: pd.DataFrame, days: list[dict]
            "drift": drift, "drift_thresholds": {"temperature": thresholds["drift"]["temperature_high"],
                                                 "forecast": thresholds["drift"]["forecast_high"]}}
     rec["drift_flags"] = {k: bool(np.isfinite(v) and v > rec["drift_thresholds"][k]) for k, v in drift.items()}
-    rec["evaluated"] = (not rec["dq_failed"]) and len(scored) >= MIN_WEEK_HOURS
+    rec["not_judged_because"] = not_judged_because(len(days), len(failed_days), len(scored))
+    rec["evaluated"] = not rec["not_judged_because"]
     if not rec["evaluated"]:
         rec.update(stats=None, flags=None, trimmed=None, broad=None)
         return rec
