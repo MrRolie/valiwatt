@@ -304,13 +304,63 @@ def constants(v: dict, frozen24: dict, p: dict) -> dict:
 
 
 def level_shift(p: dict, size: float) -> dict:
-    """The largest level shift measured on the rehearsal year: rises missed and falls caught within the horizon."""
+    """The largest level shift measured on a replay's year: rises missed and falls caught within the horizon."""
     rows = p["sensitivity"]["level_shifts"]
     up = [x for x in rows if abs(x["shift"] - size) < 1e-9]
     down = [x for x in rows if abs(x["shift"] + size) < 1e-9]
     return {"size": size, "up_n": len(up), "up_missed": sum(x["weeks"] is None for x in up),
             "down_n": len(down), "down_caught": sum(x["weeks"] is not None for x in down),
             "months": [pd.Timestamp(x["start"]).month for x in up]}
+
+
+SENSITIVITY_PARTS = ("episodes", "level_shifts", "echo_exclusion_cost")
+
+
+def sensitivity(run: dict) -> dict:
+    """A replay's false-alarm and blind-spot measures (monitor/sensitivity.py). The 2023 pseudo-replay and, since the
+    departure of 2026-10-14, the 2024 replay both carry them; a run without them (made before) is refused, so the
+    report never prints one year's measures where it says two."""
+    S = run.get("sensitivity")
+    if not isinstance(S, dict) or any(k not in S for k in SENSITIVITY_PARTS):
+        raise ReportRefused(f"the {run.get('year')} replay run holds no false-alarm and blind-spot measures (episodes, "
+                            "level shifts, echo-exclusion cost): it was made before they were measured on its year; "
+                            "run the replay again")
+    return S
+
+
+def sensitivity_design(S: dict) -> dict:
+    """What the measures were made of: episode lengths and factors, level-shift sizes, noise levels and horizon."""
+    return {"episodes": sorted({(x["days"], x["factor"]) for x in S["episodes"]["rows"]}),
+            "shifts": sorted({round(x["shift"], 6) for x in S["level_shifts"]}),
+            "sds": sorted({x["sd"] for x in S["echo_exclusion_cost"]["rows"]}),
+            "horizon": S["echo_exclusion_cost"]["horizon_weeks"]}
+
+
+def same_sensitivity_design(p: dict, r: dict) -> None:
+    """The report states one design for both years' measures (lengths, factors, shifts, noise), read from the
+    pseudo-replay: the 2024 replay's must be the same, or those sentences would be false for it."""
+    a, b = sensitivity_design(sensitivity(p)), sensitivity_design(sensitivity(r))
+    diff = [k for k in a if a[k] != b[k]]
+    if diff:
+        raise ReportRefused(f"the {p['year']} and {r['year']} false-alarm and blind-spot measures were made with "
+                            f"different designs ({', '.join(diff)}); the report states one for both")
+
+
+def episode_limits(S: dict, mild_factors: list) -> dict:
+    """What section 8 sums up of one year's measures: the episode of several days that most often yields *retrain*
+    (None when none does) and its share of starts; the largest share for the mildest factors; the alarms (*retrain*
+    or *recalibrate*) one-day shocks gave; and the echo exclusion's cost, summed over its noise levels."""
+    worst, share, mild = None, 0.0, 0.0
+    for row in S["episodes"]["rows"]:
+        rate = row["retrain"] / row["starts"]
+        if row["days"] > 1 and rate > share:
+            worst, share = row, rate
+        if row["factor"] in mild_factors and rate > mild:
+            mild = rate
+    ec = S["echo_exclusion_cost"]["rows"]
+    return {"worst": worst, "share": share, "mild": mild,
+            "one_day_alarms": sum(x["retrain"] + x["recalibrate"] for x in S["episodes"]["rows"] if x["days"] == 1),
+            "echo": {k: sum(x[k] for x in ec) for k in ("suppressed", "runs", "delayed")}}
 
 
 def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.DataFrame) -> dict:
@@ -321,6 +371,7 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
     for row in b["breaks"]:
         if "control" not in row:
             raise ReportRefused("the breaks run does not say which breaks are controls; run `valiwatt breaks` again")
+    same_sensitivity_design(p, r)
     nominal = 1 - v["conformal"]["alpha"]
     C = v["coverage"]
     K = constants(v, frozen[max(frozen)], p)
@@ -343,7 +394,9 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
         "shift_diff": {"persistence": shift_difference(oos, "pred_persistence"),
                        "observed": shift_difference(oos, "pred_observed")},
         "drift_years": drift_reference_years(th24["first_year"], th24["last_year"], r["year"], v["folds"]["first"]),
-        "level": level_shift(p, K["shift"]),
+        "level": level_shift(p, K["shift"]), "level24": level_shift(r, K["shift"]),
+        "episode_limits": {"pseudo": episode_limits(p["sensitivity"], K["mild_factors"]),
+                           "replay": episode_limits(r["sensitivity"], K["mild_factors"])},
         "peak_above": sum(h["upper"] is not None and h["target"] > h["upper"] for h in peak),
         "peak_in_month": bool(peak) and all(
             pd.Timestamp(h["utc"]).tz_convert(LOCAL_TZ).strftime("%Y-%m") == v["cases"]["peak"]["named_month"]
@@ -352,12 +405,40 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
     }
 
 
+def recommendations(decisions: list[dict]) -> list[dict]:
+    """A replay's recommendations as the ledger lists them: the week (its first day) and the word."""
+    return [{"week_start": str(d["week_start"])[:10], "recommendation": d["recommendation"]}
+            for d in decisions if d["recommendation"]]
+
+
 def departure(c, run) -> dict:
     """A departed replay as the report shows it: from the store, or from its ledger entry when the store lacks it."""
     if isinstance(run, RecordedReplay):
         return ledger.as_departure(run.entry)
+    results = _json(c, run, "results/replay.json")
     return {"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""), "recorded": False,
-            "summary": _json(c, run, "results/replay.json")["summary"]}
+            "summary": results["summary"], "recommendations": recommendations(results["decisions"])}
+
+
+# The one departure from the frozen monitoring rules (AGENTS.md, "Departures from the frozen monitoring rules"): its
+# date and what it changed, each item named in one sentence by the templates (`departure_item` in sentences.*.md.j2).
+DEPARTURE = {"date": "2026-10-14", "changes": ("A3", "A4", "B1", "B2", "B3", "B4", "B5", "B6")}
+
+
+def departure_record(departures: list[dict]) -> dict | None:
+    """The departure the report describes, for a replay that departs from earlier ones; None for a plain replay.
+
+    The report's sentences describe one departure, from the rules first frozen: the replays it departs from must all
+    have run under one freeze commit. A replay departing from replays under two (a second departure) is refused until
+    the report describes that one too."""
+    if not departures:
+        return None
+    commits = sorted({d["freeze_commit"] for d in departures})
+    if len(commits) != 1 or not commits[0]:
+        raise ReportRefused(f"the 2024 replay departs from replays under freeze commits {[c[:12] for c in commits]}; "
+                            "the report describes one departure, from the rules first frozen (report/validation.py "
+                            "DEPARTURE): a second departure needs its own sentences")
+    return {"date": DEPARTURE["date"], "changes": list(DEPARTURE["changes"]), "from_commit": commits[0]}
 
 
 def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
@@ -373,10 +454,11 @@ def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
     for year, run in chain.frozen.items():
         frozen[year] = {"run_id": run.info.run_id, "params": run.data.params, "tags": run.data.tags,
                         "coefficients": _frame(c, run, "coefficients.csv").to_dict("records")}
+    departures = [departure(c, run) for run in chain.departed]
     return {
         "v": v, "dq": dq, "p": p, "r": r, "b": b, "frozen": frozen,
         **derive(v, dq, p, r, b, frozen, oos),
-        "departures": [departure(c, run) for run in chain.departed],
+        "departures": departures, "departure_record": departure_record(departures),
         "runs": {k: {"id": run.info.run_id, "when": _when(run)} for k, run in chain.runs().items()},
         "code_sha": code_sha, "rules_sha": rules_sha, "freeze": chain.freeze,
         "commit": chain.replay.data.tags.get("git_commit", "none"),

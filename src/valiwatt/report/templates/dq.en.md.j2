@@ -1,4 +1,4 @@
-{% from 'repair.en.md.j2' import misplaced %}
+{% from 'repair.en.md.j2' import misplaced, move_rule, bounds_pass %}
 {% set c = r.checks %}
 {% set rep = r.representativeness %}
 {% set hq = r.sources.hydroquebec %}
@@ -109,7 +109,7 @@ The margin ranges from {{ c['demand_dst'].metrics.min_margin_mw|num }} to {{ c['
 {% for e in c['demand_misplaced'].evidence %}
 {{ misplaced(e, c['demand_misplaced'].metrics.min_ratio, c['demand_bounds'].metrics.low_mw, c['demand_bounds'].metrics.high_mw) }}
 {% else %}
-No misplaced record in the window.
+No misplaced record in the window. An hour that carries two values, while another has none, is handled by one rule. {{ move_rule(c['demand_misplaced'].metrics.min_ratio, c['demand_bounds'].metrics.low_mw, c['demand_bounds'].metrics.high_mw) }} {{ bounds_pass() }}
 {% endfor %}
 
 ### 3.3 Missing values

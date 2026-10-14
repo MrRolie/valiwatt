@@ -2,7 +2,8 @@
 
 How v1 is built, in the order it is built. `BRIEF.md` says what v1 is; `AGENTS.md` holds the rules and the owner's
 rulings. This page fixes the design choices the brief left to the build. It quotes no result: results live in the
-reports, generated from runs. It was revised on 2026-10-14 after a fresh-context review; the changes are in git.
+reports, generated from runs. It was revised on 2026-10-14 after a fresh-context review, and again for the departure
+from the frozen monitoring rules of the same day (section 4); the changes are in git.
 
 ## 1. The forecast
 
@@ -74,16 +75,16 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
     cannot cover 2020 (section below), and the report says so.
   - *The February 2023 cold peak:* the busiest hours of the design years (the data-quality run already finds them in
     February 2023), reported as one event: hours covered out of hours, with each hour's error. Not a rate.
-- **Conformal prediction intervals (persistence weather).** Nominal 90 %. The score is the *relative* error
-  |actual − forecast| / forecast, because demand errors grow with the load; the half-width is that score's conformal
-  quantile times the forecast. Each month is calibrated on the out-of-sample scores of the previous 12 monthly folds,
-  so intervals start in January 2021 and 2020 has none. The absolute-error form is a sensitivity run. Coverage is
-  measured overall, by season, by hour group and by forecast load decile, each with a bootstrap interval. Conformal
-  coverage assumes calibration errors resemble future errors; under drift it may not hold, and the measured coverage,
-  not the nominal one, is the result. Named for what it is: the interval has the shape of a split-conformal one, but
-  not its finite-sample guarantee, which needs exchangeable scores. Here the scores are autocorrelated hourly errors,
-  each month's from its own refitted fold model, and the frozen model (section 4) applies a quantile of errors it did
-  not make.
+- **Conformal prediction intervals (persistence weather).** Nominal 90 %. The score is the *relative* error |actual −
+  forecast| / forecast, because demand errors grow with the load; the half-width is that score's conformal quantile
+  times the forecast. Each month is calibrated on the out-of-sample scores of the previous 12 monthly folds that are
+  already scored when the month's model is fitted (section 1), so intervals start in January 2021 and 2020 has none. The
+  absolute-error form is a sensitivity run. Coverage is measured overall, by season, by hour group and by forecast load
+  decile, each with a bootstrap interval. Conformal coverage assumes calibration errors resemble future errors; under
+  drift it may not hold, and the measured coverage, not the nominal one, is the result. Named for what it is: the
+  interval has the shape of a split-conformal one, but not its finite-sample guarantee, which needs exchangeable scores.
+  Here the scores are autocorrelated hourly errors, each month's from its own refitted fold model, and the frozen model
+  (section 4) applies a quantile of errors it did not make.
 - **Is a frozen model like a refitted one?** Fold models are refitted monthly; the production model is frozen for a
   year. A *pseudo-replay* answers it on design years only: freeze at the end of 2022 (embargo kept), replay 2023 with
   intervals and thresholds from folds up to 2022, and compare its errors, coverage and alarm days with the refitted
@@ -96,13 +97,17 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   same step. It is logged to MLflow with the hash of its coefficients and half-width, registered as a model version
   with the alias `replay-2024`, and never refitted during the replay. Its half-width is the conformal quantile of the
   out-of-sample relative scores of the 12 folds just before the replayed year (2023 for the replay, 2022 for the
-  pseudo-replay): the validation rule applied to one more month, conformal in shape only (section 3).
+  pseudo-replay) that are already scored when the frozen model is fitted (section 1): the validation rule applied
+  to one more month, conformal in shape only (section 3).
 - **Performance thresholds (persistence weather), from validation, per season.** The monitor reads *weekly* statistics
-  (Monday to Sunday, local standard time): weekly MAPE, weekly signed relative bias, weekly interval coverage. For
-  each meteorological season, the thresholds are quantiles of the same weekly statistics over the 2021–2023 validation
-  folds of that season: MAPE above its 95th percentile; bias outside its 2.5th–97.5th percentiles (two-sided);
-  coverage below its 5th percentile. With per-season thresholds, winter is not mistaken for decay. Each replay has
-  its own set: the 2024 replay reads the 2021–2023 weeks, the 2023 pseudo-replay the 2021–2022 weeks only.
+  (Monday to Sunday, local standard time): weekly MAPE, weekly signed relative bias, weekly interval coverage. For each
+  meteorological season, the thresholds are quantiles of the same weekly statistics over the 2021–2023 validation folds
+  of that season: MAPE above its 95th percentile; bias outside its 2.5th–97.5th percentiles (two-sided); coverage below
+  its 5th percentile. With per-season thresholds, winter is not mistaken for decay. Each replay has its own set: the
+  2024 replay reads the 2021–2023 weeks, the 2023 pseudo-replay the 2021–2022 weeks only. A threshold calibrates on the
+  weeks the replay would judge, by one shared test: all seven days inside the years it is drawn from, none failing the
+  replay's day-level data-quality check (below), and at least 120 scored hours. The validation run lists every week set
+  aside, with its reason.
 - **Drift thresholds, also from validation.** Each week's temperature and forecast distributions are compared, with
   Evidently's normed Wasserstein distance, to a reference of the same calendar weeks (±2 weeks) in earlier years only.
   The alarm level is the 95th percentile of that weekly statistic over the design-year weeks, each computed against
@@ -111,21 +116,38 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   blank or duplicated outside the documented fall-back shape, a demand or temperature value is outside the
   data-quality layer's bounds (the value is then unusable), or the primary station is silent for more than 6 of the
   day's hours. A documented fall-back night is recorded as *expected*, not a failure. Spikes are recorded, not failed.
+- **The misplaced-record repair and the bounds,** in the data-quality layer that both the full-window checks and the
+  replay's clock cuts use. A duplicated record is moved to an empty hour only when the data say both which value and
+  where: among the empty hours whose two neighbours are known, the chosen assignment fits at least twice as well as the
+  swapped one, and the destination is unambiguous (the next-best of those hours costs at least twice the chosen one, or
+  there is none). A duplicate holding a value outside the bounds is never repaired, and a last pass marks any usable
+  hour whose value lies outside them out of bounds, so no path returns one as usable.
 - All thresholds, quantiles and windows are logged as parameters of the validation run. The replay reads them from
   that run.
 - **Freeze before 2024.** The monitoring rules (statistics, windows, quantiles, the decision table of section 5, the
   Evidently test) may be tuned on the 2023 pseudo-replay. They are then frozen in a named commit, the `rules-frozen`
-  tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the
-  package and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a
-  file added later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a
-  tag moved since an earlier 2024 replay (deleted runs included) unless `AGENTS.md` records that move by commit and
-  the run is asked for with `--departure`; such a run names the replays it departs from. Every run, the data-quality
-  run included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed in
-  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. A change to
+  tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the package
+  and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a file added
+  later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a tag moved
+  since an earlier 2024 replay unless `AGENTS.md` records that move by commit and the run is asked for with
+  `--departure`; such a run names the replays it departs from. The earlier replays are those of the MLflow store
+  (deleted runs included) and those of the committed replay ledger (below), so a fresh clone sees them too. The gate
+  runs inside the replay function itself, so no entry point replays 2024 without it. Every run, the data-quality run
+  included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed
+  in `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. A change to
   the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash, takes the same path by hand: it
   is recorded in `AGENTS.md` and the tag is moved to its commit. Every finished 2024 replay is also entered in the
-  committed, append-only replay ledger (`docs/replay-ledger.json`), so an earlier replay shown beside a post hoc one
-  is still shown, from its entry and labelled as not re-run, in a clone whose `mlruns/` lacks it.
+  committed, append-only replay ledger (`docs/replay-ledger.json`), so an earlier replay shown beside a post hoc one is
+  still shown, from its entry and labelled as not re-run, in a clone whose `mlruns/` lacks it.
+- **The one departure, 2026-10-14.** The rules changed once after the 2024 results had been seen: on 2026-10-14, by the
+  owner's ruling, after an independent review of the code by another AI model (not independent validation in SR 11-7's
+  sense). The change is recorded in `AGENTS.md`; the report labels the 2024 replay that ran again post hoc and shows the
+  earlier replay beside it. It carries: the misplaced-record repair's unambiguous destination and in-bounds values
+  (above); design code that sees each decision time as the replay sees its clock, with half-widths calibrated only on
+  scores already made at their fit (section 1); a lookahead guard without its 168-hour term, which the 24-hour term
+  implies and so could never fire alone; thresholds calibrated on the weeks the replay judges; the freeze gate inside
+  the replay function; the moved-tag check reading the committed ledger; and the false-alarm and blind-spot measures run
+  on 2024 too (section 5). Rule 4 is unchanged; the report states its limit.
 
 ## 5. Monitoring: 2024 replayed as production
 
@@ -177,13 +199,15 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   as when the stretch crosses a Monday), the pair counts and rule 2 says *retrain*. A bad week beside a week already
   out of band on the same side can do the same. A pre-freeze review found this on the 2023 rehearsal, through the
   real replay. Weekly statistics cannot tell an episode of several days that passes the data-quality checks from two
-  weeks of model failure. The rules stay as written, and the pseudo-replay measures the price
-  (`monitor/sensitivity.py`), which the report states:
+  weeks of model failure. The rules stay as written, and each replay measures the price on its own year
+  (`monitor/sensitivity.py`): the pseudo-replay on 2023, the year the rules were designed on, and, since the
+  departure of 2026-10-14, the 2024 replay on 2024, out of sample, a measurement added after the 2024 results. The
+  report states both, side by side:
   - **false alarms from short episodes:** demand multiplied by 0.7, 0.85, 1.15 or 1.3 for 1, 3, 5 or 7 days, from
-    every start day from the first judged week of 2023 on, as long as the episode ends at least two weeks before
+    every start day from the first judged week of the year on, as long as the episode ends at least two weeks before
     the year's last judged day, each through the real
     replay. An alarm is *clean* when none of the weeks it rests on was already beyond any of its performance
-    thresholds in 2023 as it was, and *assisted* otherwise;
+    thresholds in the year as it was, and *assisted* otherwise;
   - **level shifts in demand:** demand multiplied by 0.9 to 1.1 from the first full week of each season (weeks until
     *retrain*). The persistence forecast follows demand through its lags, so a shift in demand leaves a much smaller
     gap between forecast and demand; the power table measures the gap, not the shift;
@@ -215,17 +239,19 @@ built:
   change; the level-shift measure finds a 12 % rise in demand; the episode measure finds the false alarm of five
   days across a Monday, stays quiet on one-day shocks and counts every start, and calls an alarm resting on a week
   already out of band assisted; the echo exclusion only ever removes or delays *retrain*.
-- *Freeze:* the 2024 replay is refused with no tag, with a rule file edited or added after it, or under a moved tag;
-  a frozen model or validation run from other data, another year or other rules is refused; so is a model file or
-  registered model whose hash no longer matches.
+- *Freeze:* the 2024 replay is refused with no tag, with a rule file edited or added after it, or under a moved tag
+  (seen in the store or in the committed ledger), and the replay function refuses 2024 on its own; a frozen model or
+  validation run from other data, another year or other rules is refused; so is a model file or registered model whose
+  hash no longer matches.
 - *Never acts:* a replay that writes to the model or the half-widths fails.
 - *In place:* the 2024 replay is seen to call each of its gates (no tag, a moved tag, a model from another
   validation, a model changed during the run each stop it before or after the right step), the report's run chain
   is refused at each broken link, and a breaks run with a break that did not fire is marked failed.
 - *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused; so is one whose 2024
   replay does not match the departures recorded in `AGENTS.md`, and one whose validation run is missing a season's
-  coverage; a report figure whose metadata carries a private path, or with bytes after its end, fails the
-  public-safety scan.
+  coverage, one whose 2024 replay lacks its false-alarm and blind-spot measures or made them differently from 2023's,
+  and one whose 2024 replay departs from replays under two freeze commits; a report figure whose metadata carries a
+  private path, or with bytes after its end, fails the public-safety scan.
 
 CI has no data, so it runs every break on synthetic frames. `valiwatt all` also runs the same break suite as a tracked
 `breaks` run; the report renders the break table from it and refuses to render if any break did not fire.

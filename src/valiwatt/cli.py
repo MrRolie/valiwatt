@@ -121,7 +121,8 @@ def main(argv: list[str] | None = None) -> int:
                                       "(2023: pseudo-replay on design years; 2024: needs the rules-frozen tag)")
     p.add_argument("--year", type=int, required=True, choices=[2023, 2024])
     p.add_argument("--departure", action="store_true",
-                   help="allow a 2024 replay under a moved freeze tag (record the departure in AGENTS.md first)")
+                   help="allow a 2024 replay under a moved freeze tag, once AGENTS.md records the new freeze commit "
+                        "(the earlier 2024 replays are read from mlruns/ and from docs/replay-ledger.json)")
     p.set_defaults(func=cmd_replay)
     p = sub.add_parser("breaks", help="run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
@@ -141,8 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("all", help="fetch, check, validate, freeze, replay, break and render: every figure")
     p.add_argument("--force", action="store_true")
     p.add_argument("--departure", action="store_true",
-                   help="run the 2024 replay with --departure (after a departure recorded in AGENTS.md; the earlier "
-                        "replays must be in mlruns/)")
+                   help="run the 2024 replay with --departure, after a departure recorded in AGENTS.md: the earlier "
+                        "2024 replays it departs from are found in mlruns/ or in the committed docs/replay-ledger.json, "
+                        "and the report shows one that mlruns/ lacks from its ledger entry")
     p.set_defaults(func=cmd_all)
     args = parser.parse_args(argv)
     return args.func(args)

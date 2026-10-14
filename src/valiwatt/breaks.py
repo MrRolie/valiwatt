@@ -443,7 +443,12 @@ BREAKS = [
        "A replay ledger edited or removed after the render fails the report's stamp test"),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
-    _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers",
+    _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers[fr]",
+       "Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict "
+       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres",
+       "A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the "
+       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers"),
+    _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers[en]",
        "Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict "
        "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres",
        "A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the "
@@ -453,6 +458,18 @@ BREAKS = [
        "l'horloge même la calibre",
        "A row scored an hour after the fit clock does not calibrate the half-width; a row scored at the fit clock "
        "itself does"),
+    _b(RENDER, "tests/test_report_render.py::test_a_2024_replay_without_its_sensitivity_measures_is_refused",
+       "Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport",
+       "A 2024 replay without its false-alarm and blind-spot measures makes the report refuse"),
+    _b(RENDER, "tests/test_report_render.py::test_2024_measures_made_with_another_design_are_refused",
+       "Des mesures de 2024 faites avec d'autres durées, facteurs, changements de niveau ou bruits que celles de 2023 "
+       "font refuser le rapport",
+       "2024 measures made with other lengths, factors, level shifts or noise than 2023's make the report refuse"),
+    _b(RENDER, "tests/test_report_render.py::test_a_replay_departing_from_replays_under_two_freeze_commits_is_refused",
+       "Un rejeu de 2024 qui déroge à des rejeux faits sous deux commits de gel, une dérogation que le rapport ne "
+       "décrit pas, fait refuser le rapport",
+       "A 2024 replay departing from replays made under two freeze commits, a departure the report does not describe, "
+       "makes the report refuse"),
 ]
 
 

@@ -6,9 +6,10 @@ trusted, how it is watched once it runs, and what it says when it should no long
 
 **What it found.** The validation report measures the forecast's error on 2020–2023, out of sample, against a naive
 baseline; how often its prediction intervals cover the actual demand, overall and season by season; what the monitor
-recommended when 2024 was replayed hour by hour under rules frozen before 2024 was seen; and how often those rules
-raise a false alarm or miss a real change, measured on a 2023 rehearsal. The numbers are in the « En bref » block at
-the top of each report ("In brief" in English), and every one of them comes from a tracked run:
+recommended when 2024 was replayed hour by hour under rules frozen before 2024 was seen, and again after the one
+change made to those rules since; and how often the rules raise a false alarm or miss a real change, measured on a
+2023 rehearsal and on 2024. The numbers are in the « En bref » block at the top of each report ("In brief" in
+English), and every one of them comes from a tracked run:
 
 - validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF:
   [French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md);
@@ -19,15 +20,18 @@ forecast: yesterday's temperature, the only one known at issue time, stands in f
 the weather it could not know. The report also gives the bound with the observed weather of the target hour, which
 stands in for a perfect weather forecast; that bound is optimistic, and it issues no recommendation.
 
-**Status: v1, rendered on the frozen rules.** What is built:
+**Status: v1.** The monitoring rules were frozen by the `rules-frozen` tag before 2024 was replayed, then changed
+once after the 2024 results had been seen: on 2026-10-14, by the owner's ruling, recorded in `AGENTS.md`. The 2024
+replay ran again as a departure; the report labels it post hoc and shows the earlier replay beside it. What is built:
 
 - the data layer and its gates;
 - a day-ahead forecast (ordinary least squares on named features) with walk-forward validation, conformal prediction
   intervals and two test cases;
 - a frozen model registered in MLflow;
 - a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
-  rules frozen by the `rules-frozen` tag before 2024 was replayed;
-- the rules' false alarms and blind spots, measured on the 2023 rehearsal.
+  rules frozen by the `rules-frozen` tag before 2024 was replayed and changed once since, as above;
+- the rules' false alarms and blind spots, measured on the 2023 rehearsal and, since that change, on 2024 out of
+  sample.
 
 Every gate and monitor has a break that makes it fire.
 
@@ -63,7 +67,10 @@ Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --
 After a departure from the frozen rules (each is listed in `AGENTS.md`), the report shows the 2024 replay as post hoc
 beside the earlier replays it departs from. Where `mlruns/` lacks one of those earlier replays (a fresh clone), the
 report shows it from its ledger entry, labelled as recorded in the ledger and not re-run here. The render still refuses
-a 2024 replay that does not carry the recorded departure.
+a 2024 replay that does not carry the recorded departure. So after a departure, `uv run valiwatt all --departure` is
+the command that reproduces the report: its 2024 replay finds the earlier replays it departs from in `mlruns/` or in
+the committed ledger and, finding them, runs only when `AGENTS.md` names the commit the tag now points to. Without
+`--departure`, the 2024 replay refuses to run once an earlier one ran under another freeze commit.
 
 How it is built, and why each choice was made before any result was seen: [`docs/plan.md`](docs/plan.md). The
 standards the report maps to, quoted and checked against their PDFs: [`docs/standards.md`](docs/standards.md).
