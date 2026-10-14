@@ -108,7 +108,8 @@ def test_a_one_day_shock_never_yields_retrain(day):
 def test_a_bad_week_and_its_lag_echo_do_not_yield_retrain(factor):
     """One bad Monday-to-Sunday week comes back the next week through the 168 h lag with the opposite sign: both weeks
     are out of band (bias on opposite sides, MAPE high in both), and the two-week rule alone would retrain; the rules
-    do not. A bad stretch that crosses a Monday can: the pseudo-replay measures how often (test_sensitivity.py)."""
+    do not, when its neighbouring weeks are inside their bands. An episode of three days or more can: the pseudo-replay
+    measures how often (monitor/sensitivity.py)."""
     raw, _ = world()
     week = (raw["ts_utc"] > pd.Timestamp("2022-01-10T05:00Z")) & (raw["ts_utc"] <= pd.Timestamp("2022-01-17T05:00Z"))
     r = run(raw=raw.assign(mw=raw["mw"] * np.where(week, factor, 1.0)))
@@ -308,8 +309,8 @@ def test_a_mape_pair_with_bias_on_opposite_sides_is_an_echo_not_retrain():
     assert decide(b, a)["recommendation"] is None
     assert decide(b, a, echo_exclusion=False)["recommendation"] == RETRAIN  # the switch only lifts the exclusion
     c = week("2024-01-08", 0.0, broad=("mape_high",), flags=("mape_high",))
-    # Variance decay with no bias flip still fires; so does a stretch across a Monday whose second week's bias falls
-    # back inside its band (the echo week also holds days of the stretch): the exclusion needs the flip flagged.
+    # Variance decay with no bias flip still fires; so does an episode whose echo week's bias stays inside its band
+    # (a wide band, or a week that also holds days of the episode): the exclusion needs the flip flagged.
     assert decide(c, a)["recommendation"] == RETRAIN
 
 

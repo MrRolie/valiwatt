@@ -2,9 +2,10 @@
 
 Each measurement runs the same clock-guarded replay and the same decision table as the replay itself.
 
-- Short episodes. Demand is multiplied by a factor for 1 to 7 days, from every start day of the year. An episode is
-  not a model failure, so any *retrain* or *recalibrate* it brings is a false alarm. The alarm is *assisted* when one
-  of the weeks it rests on was already out of band in the year as it was, and *clean* otherwise. The episodes are
+- Short episodes. Demand is multiplied by a factor for 1, 3, 5 or 7 days, from every start day between the first
+  judged week and two weeks before the end of the year. An episode is not a model failure, so any *retrain* or
+  *recalibrate* it brings is a false alarm. The alarm is *assisted* when one of the weeks it rests on was already
+  beyond any of its performance thresholds in the year as it was, and *clean* otherwise. The episodes are
   decided again without the echo exclusion, which counts the alarms the exclusion prevents.
 - Level shifts in demand. Demand is multiplied by a factor from the first full week of each season on: weeks until
   *retrain*. The persistence forecast follows demand through its lags, so a shift in demand leaves a smaller gap

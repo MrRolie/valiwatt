@@ -10,18 +10,21 @@ one episode: the week's statistic must stay beyond the threshold when its TRIM_D
 direction of the failure) are set aside. Why two: the forecast reuses demand from one day and one week before, so a
 single bad day of demand also spoils the next day's forecast and the same day's a week later, and that never puts more
 than two spoiled days into one week. With those two days set aside, the trimmed statistic is no further out than the
-mean of the five untouched days, so one bad day alone can never yield *retrain* or *recalibrate*.
+mean of the five untouched days. So one bad day can make a week broad only when the week's five other days already
+average beyond the threshold (the trim had been setting aside the week's own two worst days, and the bad day takes
+their place): it never yields *retrain* or *recalibrate* without failing days the weeks already held.
 
-That bound is all trimming promises. The two days an episode takes up are days the trim would otherwise have spent on
-the week's own most extreme days, so a week whose untouched days sit just inside a narrow band can be pushed out by
-an episode of two days. And a stretch of several bad days that crosses a Monday spoils both calendar weeks: each holds
-part of the stretch, so the same failure can stand two weeks running, and a stretch of a few days can yield
-*retrain*. The pseudo-replay measures how often, on its own year (monitor/sensitivity.py).
+A stretch of several bad days does more. Through the 24-hour lag a stretch of n days spoils n + 1 days, and through
+the 168-hour lag n days of the following week; from three days on it can spoil more days than the trim sets aside both
+in its own week and in that echo week, and both weeks can be broad on the same failure without any failing days of
+their own. A stretch that crosses a Monday, putting part of itself into two calendar weeks, is the common case. Weekly
+statistics cannot tell such an episode from two weeks of model failure; the pseudo-replay measures how often it yields
+*retrain* on its own year (monitor/sensitivity.py).
 
 A bad Monday-to-Sunday week comes back a week later through the 168-hour lag as an echo of the OPPOSITE sign. So a
 MAPE pair whose two weeks have their bias flagged on opposite sides is an episode and its echo, not the same failure
-twice, and does not count. The exclusion needs the echo week's bias flagged: when the echo week also holds days of
-the stretch, its bias can fall back inside its band, and the pair counts.
+twice, and does not count. The exclusion needs both biases flagged: when one week's bias stays inside its band (the
+band is wide on that side, or the week also holds days of the stretch), the pair counts.
 
 Trimming costs power against a slow, sustained shift. So rule 2 has a second arm: the weekly bias beyond the SAME side
 of its band three weeks running (untrimmed). One bad day, or a stretch of up to a week, lies in at most two calendar

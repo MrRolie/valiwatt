@@ -37,6 +37,18 @@ def test_one_day_episodes_bring_no_alarm_and_every_start_is_counted(clean):
     assert all(r["retrain"] == 0 and r["recalibrate"] == 0 for r in out["rows"])
 
 
+def test_a_stretch_across_a_monday_is_measured_as_a_false_alarm_and_the_echo_exclusion_keeps_others(clean):
+    """The measure fires: five low days from a Thursday spoil two calendar weeks and yield a clean retrain; five high
+    days are an episode and its echo, which the exclusion keeps from retrain."""
+    out = S.episodes(*args(clean), days=(5,), factors=(0.6, 1.4), starts=["2022-01-05", "2022-01-06"], workers=1)
+    rows = {r["factor"]: r for r in out["rows"]}
+    assert rows[0.6]["retrain"] == rows[0.6]["retrain_clean"] == 1
+    job = next(j for j in out["jobs_with_alarms"] if j["alarms"])
+    assert (job["start"], job["factor"]) == (pd.Timestamp("2022-01-06"), 0.6)
+    assert [(a["week_start"], a["recommendation"]) for a in job["alarms"]] == [(pd.Timestamp("2022-01-10"), RETRAIN)]
+    assert rows[1.4]["retrain"] == 0 and rows[1.4]["kept_from_retrain_by_echo_exclusion"] == 2
+
+
 def test_the_episode_grid_starts_on_the_first_judged_week_and_leaves_room_for_the_echo(clean):
     out = S.episodes(*args(clean), days=(7,), factors=(1.0,), workers=1)
     row = out["rows"][0]
