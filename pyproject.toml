@@ -6,6 +6,8 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "evidently==0.7.23",
+    "holidays==0.105",
     "jinja2>=3.1",
     "matplotlib>=3.9",
     "mlflow==3.16.1",

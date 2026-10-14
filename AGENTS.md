@@ -42,7 +42,9 @@ the gap goes to the owner as a question.
 - **ECCC data: the Open Government Licence – Canada** (2026-10-13), the most permissive of the texts that bear on it.
   Attribution and quotations: `docs/data-licences.md`.
 - **Hydro-Québec data: this project's use is NonCommercial under CC BY-NC 4.0** (2026-10-13).
-- Still open: the public home and its timing; whether the English report ships in v1.
+- **The English report ships in v1** (2026-10-13), derived from the French one, which stays the reference.
+- **Public home: a public GitHub repository under the owner's account, created and pushed only at his go** after he
+  reviews v1 (2026-10-13). Until then, no remote.
 
 ## Departures from the brief
 
