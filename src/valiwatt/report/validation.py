@@ -170,11 +170,14 @@ def near_misses(alone: list[dict], weeks: list[dict], decisions: list[dict]) -> 
 # on each side. Each batch resamples the two sides with its own pair of seeds, all distinct, so the sides and the
 # batches are independent. The batches also measure the Monte Carlo error of each bound (batch means: the spread of
 # the bound across batches over the square root of their number). A bound within SHIFT_DIFF_MC_MULTIPLE of those
-# errors of zero leaves the verdict undetermined at this resolution.
+# errors of zero leaves the verdict undetermined at this resolution. The rule is applied to the bounds and errors as
+# the verdict prints them, SHIFT_DIFF_DIGITS decimals of a point (two significant figures of the errors measured on
+# the real runs, about 0.002 to 0.003 pt), so the verdict never contradicts its own printed numbers.
 SHIFT_DIFF_BATCHES = 20
 SHIFT_DIFF_BATCH_DRAWS = 20_000
 SHIFT_DIFF_SEEDS = tuple((2 * k, 2 * k + 1) for k in range(SHIFT_DIFF_BATCHES))  # (spring 2020, the other springs)
 SHIFT_DIFF_MC_MULTIPLE = 3
+SHIFT_DIFF_DIGITS = 4
 
 
 def _boot_means(d: pd.DataFrame, value: str, n_boot: int, seed: int) -> np.ndarray:
@@ -184,17 +187,31 @@ def _boot_means(d: pd.DataFrame, value: str, n_boot: int, seed: int) -> np.ndarr
     return (W @ g["sum"].to_numpy()) / (W @ g["count"].to_numpy())
 
 
-def shift_verdict(lo: float, hi: float, se_lo: float, se_hi: float, multiple: float = SHIFT_DIFF_MC_MULTIPLE) -> dict:
+def printed_pt(x: float, digits: int):
+    """A fraction as the report prints it in points (`pp(x, digits)`, `mc_se`), exactly, as a decimal."""
+    from decimal import Decimal
+
+    return Decimal(f"{100 * x:.{digits}f}")
+
+
+def shift_verdict(lo: float, hi: float, se_lo: float, se_hi: float, multiple: float = SHIFT_DIFF_MC_MULTIPLE,
+                  digits: int = SHIFT_DIFF_DIGITS) -> dict:
     """Section 1's rule on an interval of the difference whose bounds carry Monte Carlo error.
 
     "undetermined" when a bound lies within `multiple` Monte Carlo standard errors of zero (`by` "mc"), or, farther
     out, rounds to zero as the report prints it, two decimals of a point (`by` "print"): the draws cannot tell which
     side of zero it is on, or the verdict would contradict the printed bound. Otherwise "confirmed" when the interval
     excludes zero and "not_confirmed" when it holds it. `near` is the bound nearest zero among those that leave the
-    verdict undetermined."""
+    verdict undetermined.
+
+    The Monte Carlo rule compares the bound and its error as the verdict prints them, `digits` decimals of a point,
+    in exact decimal arithmetic: a bound printed at most `multiple` printed errors from zero is undetermined, one
+    printed farther out is not, so no printed number can contradict the verdict."""
+    from decimal import Decimal
+
     near = []
     for bound, x, se in (("low", lo, se_lo), ("high", hi, se_hi)):
-        if abs(x) <= multiple * se:
+        if abs(printed_pt(x, digits)) <= Decimal(str(multiple)) * printed_pt(se, digits):
             near.append({"bound": bound, "value": x, "se": se, "by": "mc"})
         elif printed(x, 2) == 0:
             near.append({"bound": bound, "value": x, "se": se, "by": "print"})
@@ -228,7 +245,8 @@ def shift_difference(oos: pd.DataFrame, pred_col: str, seeds=SHIFT_DIFF_SEEDS,
     se_lo, se_hi = (float(x) for x in per.std(axis=0, ddof=1) / np.sqrt(len(seeds)))
     return {"difference": float(a["rel_bias"].mean() - b["rel_bias"].mean()), "ci95_low": lo, "ci95_high": hi,
             "mc_se_low": se_lo, "mc_se_high": se_hi, "draws": len(seeds) * batch_draws, "batches": len(seeds),
-            "batch_draws": batch_draws, "mc_multiple": SHIFT_DIFF_MC_MULTIPLE, **shift_verdict(lo, hi, se_lo, se_hi)}
+            "batch_draws": batch_draws, "mc_multiple": SHIFT_DIFF_MC_MULTIPLE, "digits": SHIFT_DIFF_DIGITS,
+            **shift_verdict(lo, hi, se_lo, se_hi, SHIFT_DIFF_MC_MULTIPLE, SHIFT_DIFF_DIGITS)}
 
 
 def drift_reference_years(first_year: int, last_year: int, replay_year: int, folds_first: str) -> dict:

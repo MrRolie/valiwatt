@@ -67,6 +67,24 @@ def test_rows_without_the_time_they_were_scored_calibrate_no_half_width():
         relative_conformal(blind, "pred")
 
 
+def test_a_row_scored_at_the_fit_clock_calibrates_and_one_scored_an_hour_later_does_not():
+    """The cap is `scored_at <= fit_clock`. A row scored at the fit clock itself is in view when the half-width is
+    fixed and calibrates it; one scored an hour later is not. On the real data, the frozen 2024 model's half-width
+    calibrates on day 2023-12-31, scored at the end of the design data, which is its fit clock."""
+    clock = pd.Timestamp("2023-12-31T05:00Z")
+    rows = pd.DataFrame({"scored_at": [clock - pd.Timedelta(hours=1), clock, clock + pd.Timedelta(hours=1)]},
+                        index=["before", "at", "after"])
+    assert list(calibration_rows(rows, clock).index) == ["before", "at"]
+    # The last day of the data is scored at its end: a fit clock at the end of the data keeps it, an hour earlier
+    # does not.
+    out = oos(months=2)
+    end = out.index.max()
+    last = out["day"] == out["day"].max()
+    assert (out.loc[last, "scored_at"] == end).all()
+    assert len(calibration_rows(out, end)) == len(out)
+    assert len(calibration_rows(out, end - pd.Timedelta(hours=1))) == int((~last).sum())
+
+
 def test_inflated_errors_drop_coverage():
     out = oos()
     late = out["fold"] >= "2022-07"

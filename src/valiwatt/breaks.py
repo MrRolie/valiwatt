@@ -443,6 +443,16 @@ BREAKS = [
        "A replay ledger edited or removed after the render fails the report's stamp test"),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
+    _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers",
+       "Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict "
+       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres",
+       "A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the "
+       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers"),
+    _b(LOOK, f"{T_EVAL}::test_a_row_scored_at_the_fit_clock_calibrates_and_one_scored_an_hour_later_does_not",
+       "Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur ; une ligne notée à "
+       "l'horloge même la calibre",
+       "A row scored an hour after the fit clock does not calibrate the half-width; a row scored at the fit clock "
+       "itself does"),
 ]
 
 

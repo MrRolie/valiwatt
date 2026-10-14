@@ -1,7 +1,10 @@
 """The validation report's computed sentences: what derive() reads from the runs, and every branch of the sentence
 macros, in both languages, says only what its data show."""
 
+import inspect
 import itertools
+import re
+from decimal import Decimal
 
 import numpy as np
 import pandas as pd
@@ -267,7 +270,7 @@ def test_the_difference_uses_the_codes_week_block_bootstrap_on_each_side():
         "not_confirmed"
 
 
-def test_the_seeds_are_pinned_and_each_side_of_each_batch_has_its_own():
+def test_the_seeds_are_pinned_and_each_side_of_each_batch_has_its_own(monkeypatch):
     assert RV.SHIFT_DIFF_SEEDS == tuple((2 * k, 2 * k + 1) for k in range(RV.SHIFT_DIFF_BATCHES))
     flat = [s for pair in RV.SHIFT_DIFF_SEEDS for s in pair]
     assert len(set(flat)) == len(flat) == 2 * RV.SHIFT_DIFF_BATCHES
@@ -283,11 +286,44 @@ def test_the_seeds_are_pinned_and_each_side_of_each_batch_has_its_own():
         assert (got["ci95_low"], got["ci95_high"]) == (lo, hi)
         assert (got["mc_se_low"], got["mc_se_high"]) == tuple(se)
         assert (got["draws"], got["batches"], got["batch_draws"]) == (300 * len(seeds), len(seeds), 300)
-    # The constants the report prints are the ones the render uses.
+    # The constants the report prints are the ones the render uses, and the verdict is judged on them: the call that
+    # judges it receives the multiple and the digits the result reports, read from the module at call time (a
+    # default bound when the function was defined, or a literal at the call, would print one rule and judge another).
+    verdict = RV.shift_verdict
+    calls = []
+
+    def recording(*args, **kwargs):
+        bound = inspect.signature(verdict).bind(*args, **kwargs)
+        bound.apply_defaults()
+        calls.append(tuple(bound.arguments.values()))
+        return verdict(*args, **kwargs)
+
+    def judged(d):
+        return verdict(d["ci95_low"], d["ci95_high"], d["mc_se_low"], d["mc_se_high"], d["mc_multiple"], d["digits"])
+
+    def judged_on_what_it_reports(d):
+        assert calls == [(d["ci95_low"], d["ci95_high"], d["mc_se_low"], d["mc_se_high"], d["mc_multiple"],
+                          d["digits"])]
+        assert {k: d[k] for k in ("verdict", "near")} == judged(d)
+        calls.clear()
+
+    monkeypatch.setattr(RV, "shift_verdict", recording)
     full = RV.shift_difference(oos, "pred_persistence")
-    assert (full["draws"], full["batches"], full["batch_draws"], full["mc_multiple"]) == (
+    assert (full["draws"], full["batches"], full["batch_draws"], full["mc_multiple"], full["digits"]) == (
         RV.SHIFT_DIFF_BATCHES * RV.SHIFT_DIFF_BATCH_DRAWS, RV.SHIFT_DIFF_BATCHES, RV.SHIFT_DIFF_BATCH_DRAWS,
-        RV.SHIFT_DIFF_MC_MULTIPLE)
+        RV.SHIFT_DIFF_MC_MULTIPLE, RV.SHIFT_DIFF_DIGITS)
+    judged_on_what_it_reports(full)
+    # Constants the render reads at call time, unlike the defaults, tell a verdict judged on the printed rule from one
+    # judged on another. A multiple so wide that every bound lies within it leaves the verdict undetermined; at one
+    # decimal of a point the spring's errors print as zero, so the same wide multiple of them confirms the gap, and a
+    # verdict judged at the default precision would print a rule it did not apply.
+    for multiple, digits, expected in ((10**9, RV.SHIFT_DIFF_DIGITS, "undetermined"),
+                                       (RV.SHIFT_DIFF_MC_MULTIPLE, 6, full["verdict"]), (10**9, 1, "confirmed")):
+        monkeypatch.setattr(RV, "SHIFT_DIFF_MC_MULTIPLE", multiple)
+        monkeypatch.setattr(RV, "SHIFT_DIFF_DIGITS", digits)
+        got = RV.shift_difference(oos, "pred_persistence", batch_draws=300)
+        assert (got["mc_multiple"], got["digits"], got["verdict"]) == (multiple, digits, expected)
+        judged_on_what_it_reports(got)
 
 
 def test_a_spring_difference_whose_sides_share_a_seed_is_refused():
@@ -323,63 +359,165 @@ def test_a_validation_frame_without_its_spring_is_refused():
         RV.shift_difference(oos, "pred_persistence", batch_draws=50)
 
 
-def spring_d(verdict, by="mc", bound="high"):
-    near = None if verdict != "undetermined" else {"bound": bound, "value": -0.00002 if by == "mc" else -0.00004,
-                                                   "se": 0.00003 if by == "mc" else 0.000001, "by": by}
-    return {"difference": -0.0127, "ci95_low": -0.0251, "ci95_high": -0.0002, "mc_se_low": 0.000026,
-            "mc_se_high": 0.000031, "draws": 400_000, "batches": 20, "batch_draws": 20_000, "mc_multiple": 3,
-            "verdict": verdict, "near": near}
+# The fixture's constants are unlike the real ones (3, 400 000 draws in 20 batches of 20 000) and its two standard
+# errors print unlike each other, so a sentence that prints a constant, or one bound's error for the other, fails.
+SPRING_K, SPRING_DIGITS, SPRING_BATCHES, SPRING_BATCH_DRAWS = 4, 4, 7, 17_571
+SPRING_CASES = {  # (verdict, by, bound): ci95_low, ci95_high, mc_se_low, mc_se_high
+    ("confirmed", None, None): (-0.0251, -0.0002, 0.0000213, 0.0000347),
+    ("not_confirmed", None, None): (-0.0251, 0.0050, 0.0000213, 0.0000347),
+    ("undetermined", "mc", "high"): (-0.0251, -0.00002, 0.0000213, 0.0000347),
+    ("undetermined", "mc", "low"): (0.00003, 0.0251, 0.0000213, 0.0000347),
+    ("undetermined", "print", "high"): (-0.0251, -0.00004, 0.0000213, 0.0000062),
+}
 
 
+def spring_d(verdict, by=None, bound=None):
+    lo, hi, se_lo, se_hi = SPRING_CASES[(verdict, by, bound)]
+    d = {"difference": -0.0127, "ci95_low": lo, "ci95_high": hi, "mc_se_low": se_lo, "mc_se_high": se_hi,
+         "draws": SPRING_BATCHES * SPRING_BATCH_DRAWS, "batches": SPRING_BATCHES, "batch_draws": SPRING_BATCH_DRAWS,
+         "mc_multiple": SPRING_K, "digits": SPRING_DIGITS,
+         **RV.shift_verdict(lo, hi, se_lo, se_hi, SPRING_K, SPRING_DIGITS)}
+    # The fixture is what the gate says of its bounds.
+    assert d["verdict"] == verdict and (d["near"] is None if by is None else
+                                        (d["near"]["by"], d["near"]["bound"]) == (by, bound))
+    return d
+
+
+NB = " "
 SPRING = {"fr": {"confirmed": "selon la règle de la section 1, l'écart est confirmé",
                  "not_confirmed": "selon la règle de la section 1, l'écart n'est pas confirmé",
-                 "undetermined": "indéterminé à cette résolution", "mc": "à moins de 3 erreurs types de Monte-Carlo",
+                 "undetermined": "indéterminé à cette résolution",
+                 "mc": "n'est pas à plus de 4 erreurs types de Monte-Carlo",
                  "print": "s'arrondit à zéro", "low": "la borne inférieure", "high": "la borne supérieure",
-                 "draws": "400 000 tirages par côté, en 20 lots indépendants de 20 000",
-                 "se": "0,003 pt et 0,003 pt", "far": "chaque borne à plus de 3 de ses erreurs types de zéro",
+                 "draws": f"122{NB}997 tirages par côté, en 7 lots indépendants de 17{NB}571",
+                 "se": "{} pt et {} pt", "far": "chacune à plus de 4 de ses erreurs types de zéro",
+                 "bounds": "bornes à cette précision : {} pt et {} pt,",
+                 "near": "{}, {} pt, n'est pas à plus de 4 erreurs types de Monte-Carlo ({} pt) de zéro",
                  "card": {"confirmed": "confirme l'écart", "not_confirmed": "ne confirme pas l'écart",
-                          "mc": "ne tranche pas à cette résolution : une borne est à moins de 3 erreurs types",
+                          "mc": "ne tranche pas à cette résolution : une borne n'est pas à plus de 4 erreurs types",
                           "print": "ne tranche pas à cette résolution : une borne s'arrondit à zéro"},
                  "disjoint": ("écart confirmé par des intervalles disjoints",
                               "écart non confirmé par des intervalles disjoints")},
           "en": {"confirmed": "under section 1's rule, the gap is confirmed",
                  "not_confirmed": "under section 1's rule, the gap is not confirmed",
-                 "undetermined": "undetermined at this resolution", "mc": "within 3 Monte Carlo standard errors",
+                 "undetermined": "undetermined at this resolution",
+                 "mc": "lies no more than 4 Monte Carlo standard errors",
                  "print": "rounds to zero", "low": "the lower bound", "high": "the upper bound",
-                 "draws": "400,000 draws per side, in 20 independent batches of 20,000",
-                 "se": "0.003 pt and 0.003 pt", "far": "each bound more than 3 of its standard errors from zero",
+                 "draws": "122,997 draws per side, in 7 independent batches of 17,571",
+                 "se": "{} pt and {} pt", "far": "each more than 4 of its standard errors from zero",
+                 "bounds": "bounds at this precision: {} pt and {} pt,",
+                 "near": "{}, {} pt, lies no more than 4 Monte Carlo standard errors ({} pt) from zero",
                  "card": {"confirmed": "confirms the gap", "not_confirmed": "does not confirm the gap",
-                          "mc": "does not decide at this resolution: a bound lies within 3 Monte Carlo",
+                          "mc": "does not decide at this resolution: a bound lies no more than 4 Monte Carlo",
                           "print": "does not decide at this resolution: a bound rounds to zero"},
                  "disjoint": ("a gap confirmed by disjoint intervals", "a gap not confirmed by disjoint intervals")}}
+# How each case's numbers print, four decimals of a point: the two standard errors, then the bounds.
+SPRING_PRINTED = {
+    ("confirmed", None, None): (("0,0021", "0,0035"), ("−2,5100", "−0,0200")),
+    ("not_confirmed", None, None): (("0,0021", "0,0035"), ("−2,5100", "+0,5000")),
+    ("undetermined", "mc", "high"): (("0,0021", "0,0035"), ("−2,5100", "−0,0020")),
+    ("undetermined", "mc", "low"): (("0,0021", "0,0035"), ("+0,0030", "+2,5100")),
+    ("undetermined", "print", "high"): (("0,0021", "0,0006"), ("−2,5100", "−0,0040")),
+}
 
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_spring_verdict_branch_renders_its_own_sentence(lang):
     m, W = macros(lang), SPRING[lang]
-    cases = [("confirmed", None, None), ("not_confirmed", None, None), ("undetermined", "mc", "high"),
-             ("undetermined", "mc", "low"), ("undetermined", "print", "high")]
-    for (verdict, by, bound), separated in itertools.product(cases, (True, False)):
+
+    def tr(s):
+        return s if lang == "fr" else s.replace(",", ".")
+
+    for (verdict, by, bound), separated in itertools.product(SPRING_CASES, (True, False)):
         d = spring_d(verdict, by, bound)
+        (se_lo, se_hi), (lo, hi) = (tuple(tr(s) for s in pair) for pair in SPRING_PRINTED[(verdict, by, bound)])
         text = str(m.diff_verdict(d))
         assert "None" not in text and "\n" not in text
-        assert W["draws"] in text and W["se"] in text
+        assert W["draws"] in text and W["se"].format(se_lo, se_hi) in text  # each error in its own place
         assert W[verdict] in text
         assert not any(W[o] in text for o in {"confirmed", "not_confirmed", "undetermined"} - {verdict})
         if verdict == "undetermined":
             assert W[by] in text and W[{"mc": "print", "print": "mc"}[by]] not in text and W[bound] in text
             assert W["far"] not in text
+            if by == "mc":  # the bound judged, with its own standard error
+                assert W["near"].format(W[bound], lo if bound == "low" else hi,
+                                        se_lo if bound == "low" else se_hi) in text
+            else:  # the bound is not printed beside the rounding claim: the interval shows it at two decimals
+                assert (lo if bound == "low" else hi) not in text
         else:
-            assert W["far"] in text
+            assert W["bounds"].format(lo, hi) + " " + W["far"] in text
         card = str(m.spring_card({"separated": separated}, d))
         assert "None" not in card and card.startswith(W["disjoint"][0 if separated else 1])
         branch = verdict if verdict != "undetermined" else by
         assert W["card"][branch] in card
         assert not any(phrase in card for key, phrase in W["card"].items() if key != branch)
-    near = str(m.diff_verdict(spring_d("undetermined", "mc", "high")))
-    assert ("la borne supérieure, −0,002 pt, est à moins de 3 erreurs types de Monte-Carlo (0,003 pt) de zéro"
+
+
+NUMBER_PT = re.compile(r"([+−]?[0-9][0-9,. ]*) pt")
+
+
+def numbers_pt(text, lang):
+    """Every number the sentence prints in points, as the reader reads it: exact decimals."""
+    out = []
+    for s in NUMBER_PT.findall(text):
+        s = s.replace("−", "-")
+        s = s.replace(" ", "").replace(",", ".") if lang == "fr" else s.replace(",", "")
+        out.append(Decimal(s))
+    return out
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_no_spring_verdict_contradicts_its_own_printed_numbers(lang):
+    """The rule is judged on the bound and its standard error as the verdict prints them. A bound printed at most k
+    printed standard errors from zero is undetermined; one printed farther out is judged, never undetermined; so a
+    reader who redoes the comparison on the printed numbers always agrees with the sentence. Swept across the gate,
+    at several errors and both multiples, on both sides of zero."""
+    m = macros(lang)
+    seen = set()
+    for k, se_pt in itertools.product((3, 4), (0.00334, 0.0021, 0.00151, 0.0049, 0.00049)):
+        se = se_pt / 100
+        edge = k * se_pt
+        for step, which, sign in itertools.product(range(-80, 81), ("low", "high"), (1, -1)):
+            x = sign * (edge + step * 0.00001) / 100
+            lo, hi = (x, 0.025) if which == "low" else (-0.025, x)
+            se_lo, se_hi = (se, 1e-6) if which == "low" else (1e-6, se)
+            v = RV.shift_verdict(lo, hi, se_lo, se_hi, k)
+            d = {"draws": 1, "batches": 2, "batch_draws": 1, "mc_multiple": k, "digits": RV.SHIFT_DIFF_DIGITS,
+                 "ci95_low": lo, "ci95_high": hi, "mc_se_low": se_lo, "mc_se_high": se_hi, **v}
+            nums = numbers_pt(str(m.diff_verdict(d)), lang)
+            if v["verdict"] == "undetermined" and v["near"]["by"] == "mc":
+                value, near_se = nums[0], nums[1]
+                assert abs(value) <= k * near_se, (lang, k, se_pt, x)
+                assert near_se == nums[2 if v["near"]["bound"] == "low" else 3]
+            elif v["verdict"] == "undetermined":
+                assert str(m.pp(v["near"]["value"], 2)).startswith("0")  # the interval prints it as 0.00
+            else:
+                s_lo, s_hi, p_lo, p_hi = nums
+                assert abs(p_lo) > k * s_lo and abs(p_hi) > k * s_hi, (lang, k, se_pt, x)
+                assert (p_lo > 0 or p_hi < 0) == (v["verdict"] == "confirmed")
+            seen.add(v["verdict"] if v["verdict"] != "undetermined" else v["near"]["by"])
+    assert seen == {"confirmed", "not_confirmed", "mc", "print"}  # the sweep crosses the gate both ways
+
+    # The reviewer's case: a bound of -0.0096 pt with an error of 0.00334 pt, undetermined by the draws, used to
+    # print as -0.010 pt within 3 errors of 0.003 pt (3 x 0.003 = 0.009 < 0.010).
+    V = RV.shift_verdict(-0.025, -0.000096, 1e-6, 0.0000334, 3)
+    assert V["verdict"] == "undetermined" and V["near"]["by"] == "mc"
+    d = {"draws": 1, "batches": 2, "batch_draws": 1, "mc_multiple": 3, "digits": RV.SHIFT_DIFF_DIGITS,
+         "ci95_low": -0.025, "ci95_high": -0.000096, "mc_se_low": 1e-6, "mc_se_high": 0.0000334, **V}
+    assert ("la borne supérieure, −0,0096 pt, n'est pas à plus de 3 erreurs types de Monte-Carlo (0,0033 pt) de zéro"
             if lang == "fr" else
-            "the upper bound, −0.002 pt, lies within 3 Monte Carlo standard errors (0.003 pt) of zero") in near
+            "the upper bound, −0.0096 pt, lies no more than 3 Monte Carlo standard errors (0.0033 pt) from zero"
+            ) in str(m.diff_verdict(d))
+    # And the symmetric case: -0.0100 pt lies within 3 x 0.00334 pt of zero, but prints more than 3 x 0.0033 pt
+    # from it, so it is judged, and the sentence says so with the numbers it prints.
+    V = RV.shift_verdict(-0.025, -0.0001, 1e-6, 0.0000334, 3)
+    assert V["verdict"] == "confirmed"
+    d = {**d, "ci95_high": -0.0001, **V}
+    assert ("bornes à cette précision : −2,5000 pt et −0,0100 pt, chacune à plus de 3"
+            if lang == "fr" else "bounds at this precision: −2.5000 pt and −0.0100 pt, each more than 3"
+            ) in str(m.diff_verdict(d))
+    # Exactly at the gate as printed (0.0099 = 3 x 0.0033): not more than 3 errors out, so undetermined.
+    assert RV.shift_verdict(-0.025, -0.000099, 1e-6, 0.0000334, 3)["verdict"] == "undetermined"
 
 
 # --- drift references, constants, breaks ---------------------------------------------------------------------------
