@@ -1,0 +1,14 @@
+{
+  "code_sha256": "c5805d8516d3c0e191a53f5d74d10fa770ccf3c1d26df40978ebff210578d6c9",
+  "rules_sha256": "addf19afe5cd7959702740426462862989d5f377967077cdaf7099568fcd40dc",
+  "freeze_commit": "8ad0fd0123542163007d1c7ebe21c0837d88e9ad",
+  "runs": {
+    "dq": "acabb0f7c15446ddbd44f264889b9b83",
+    "validation": "eaa2b2a5d89045288dd9663a2dd34e3e",
+    "frozen_2023": "e102fa42655e404fb27921570f84f56a",
+    "frozen_2024": "7e8bfcae5e494227a5e36c35ec2a2ff2",
+    "pseudo_replay": "55047fb2d73b46d7bbd815ec0f0ae2af",
+    "replay": "9ef349267e31437f9d81481a474d8d90",
+    "breaks": "1c6d4d6a828b480c967ca99816d8411c"
+  }
+}
