@@ -15,6 +15,8 @@ the gap goes to the owner as a question.
 - **A check that cannot fail is not a check.** Each monitor and gate has a recorded break that must make it fire.
   CI runs every break.
 - **Numbers come from runs.** Report and README figures are generated from tracked MLflow runs, never typed.
+- **Anyone can re-run it.** Data and run outputs stay out of git, so one command fetches the data and regenerates
+  every figure in the report and the README. Stored figures are never the source of truth.
 - **Claims are scoped to the checks.** No public line claims more than a passing check shows.
 - **The monitor recommends; it never acts.** A tripped threshold produces a written recommendation with its evidence.
   Nothing retrains on its own.
