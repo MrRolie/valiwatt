@@ -1,14 +1,24 @@
 """Every demand gate, with the break that must make it fire."""
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from conftest import synth_demand
+from replay_world import FIRST as WORLD_FIRST
+from replay_world import LAST as WORLD_LAST
+from replay_world import frozen_and_reference, world
+from valiwatt.monitor import replay as rp
+from valiwatt.monitor.clock import Clock, RawFeed
 from valiwatt.quality.demand import (
+    BOUNDS_MW,
     STATUS_MASKED_DST,
     STATUS_MISSING_VALUE,
+    STATUS_OUT_OF_BOUNDS,
     STATUS_REPAIRED,
+    USABLE,
     build_demand,
     demand_checks,
     same_wall_clock,
@@ -242,3 +252,100 @@ def test_an_out_of_bounds_value_is_set_aside_before_a_repair_reads_it():
     assert not build.misplaced_events and not c["demand_bounds"].passed
     best = build.unresolved_duplicates[0]["best_candidate"]
     assert best is None or best["cost_mw"] < 1e5
+
+
+def set_mw(raw, hours, mw):
+    raw = raw.copy()
+    raw.loc[raw["ts_utc"].isin(pd.DatetimeIndex(hours)), "mw"] = mw
+    return raw
+
+
+def test_a_misplaced_record_that_fits_two_empty_hours_is_not_moved_and_fails_the_gate():
+    """Two empty hours whose neighbours read 10,000 and 10,020 MW, and a 10,010 MW record misplaced elsewhere: it fits
+    both hours equally well, so the data cannot say where it belongs. The swap test alone would pass."""
+    first, last = "2021-12-28T00:00Z", "2022-01-10T00:00Z"
+    s1, s2, t = (pd.Timestamp(x) for x in ("2022-01-02T10:00Z", "2022-01-04T10:00Z", "2022-01-07T10:00Z"))
+    raw = set_mw(synth_demand(first, last), [s1 - H, s1 + H], 10_000.0)
+    raw = set_mw(set_mw(raw, [s2 - H, s2 + H], 10_020.0), [t - H, t, t + H], 20_000.0)
+    one_empty = add_record(drop_record(raw, s1), t, 10_010.0)
+
+    build, c = run(one_empty, first, last)  # control: with one empty hour the record is moved
+    assert c["demand_duplicates_resolved"].passed and build.frame.loc[s1, "status"] == STATUS_REPAIRED
+    ev = build.misplaced_events[0]
+    assert ev["destinations"] == 1 and ev["runner_up"] is None and ev["destination_ratio"] is None
+
+    far = drop_record(set_mw(one_empty, [s2 - H, s2 + H], 14_000.0), s2)  # control: the other empty hour fits worse
+    build, c = run(far, first, last)
+    ev = build.misplaced_events[0]
+    assert c["demand_duplicates_resolved"].passed and ev["moved_to_utc"] == s1
+    assert ev["destinations"] == 2 and ev["runner_up"]["slot"] == s2 and ev["destination_ratio"] >= 2.0
+    json.dumps(c["demand_misplaced"].to_dict())
+
+    build, c = run(drop_record(one_empty, s2), first, last)
+    assert not c["demand_duplicates_resolved"].passed and not build.misplaced_events
+    assert build.frame.loc[[s1, s2, t], "mw"].isna().all()
+    assert (build.frame.loc[[s1, s2], "status"] == "missing_record").all()
+    assert build.frame.loc[t, "status"] == "unresolved_duplicate"
+    ev = build.unresolved_duplicates[0]
+    assert ev["reason"] == "ambiguous_destination"
+    assert {ev["best_candidate"]["slot"], ev["runner_up"]["slot"]} == {s1, s2}
+    best = ev["best_candidate"]
+    assert best["swapped_cost_mw"] / best["cost_mw"] >= 2.0  # the swap test alone would move it
+    json.dumps(c["demand_duplicates_resolved"].to_dict())
+
+
+def low_load_world():
+    """The replay world with an empty low-load hour s (neighbours 5,500 MW) and, at an earlier high-load hour t, a
+    second record of 4,900 MW: below the bounds, yet it fits s far better than t."""
+    raw, obs = world()
+    day = pd.Timestamp("2022-01-12")
+    s, t = rp.origin(day) - 10 * H, rp.origin(day) - 100 * H
+    raw = add_record(drop_record(set_mw(raw, [s - H, s + H], 5_500.0), s), t, 4_900.0)
+    return raw, obs, day, s, t
+
+
+def replay_issue(raw, obs, day):
+    """The replay's own path at day's origin: the canonical frame from the raw cut, and the day's forecasts."""
+    frozen, _ = frozen_and_reference()
+    clock = Clock(rp.origin(day))
+    state = rp._State(RawFeed(raw, clock, "demand"), RawFeed(obs, clock, "temperature"), clock,
+                      scale_last=pd.Timestamp("2022-01-01T05:00Z"))
+    return state.canonical()[0], rp.issue(state, frozen, day)
+
+
+def assert_no_usable_out_of_bounds(frame, s):
+    usable = frame["status"].isin(USABLE)
+    assert not usable[s]
+    assert not (usable & ((frame["mw"] < BOUNDS_MW[0]) | (frame["mw"] > BOUNDS_MW[1]))).any()
+
+
+def assert_replay_never_reads(raw, obs, day, s):
+    frame, issued = replay_issue(raw, obs, day)
+    assert_no_usable_out_of_bounds(frame, s)
+    row = issued.loc[s + 24 * H]
+    assert np.isnan(row["lag24"]) and np.isnan(row["forecast"]) and "lag24" in row["not_predicted_because"]
+
+
+def test_an_out_of_bounds_duplicate_is_never_moved_into_a_usable_hour():
+    raw, obs, day, s, t = low_load_world()
+    build, c = run(raw, WORLD_FIRST, WORLD_LAST)
+    assert build.frame.loc[s, "status"] == "missing_record" and np.isnan(build.frame.loc[s, "mw"])
+    assert build.frame.loc[t, "status"] == "unresolved_duplicate" and not build.misplaced_events
+    assert build.unresolved_duplicates[0]["reason"] == "value_out_of_bounds"
+    assert not c["demand_duplicates_resolved"].passed and not c["demand_bounds"].passed
+    assert_no_usable_out_of_bounds(build.frame, s)
+    assert_replay_never_reads(raw, obs, day, s)
+
+
+def test_an_out_of_bounds_value_that_reaches_a_usable_hour_is_marked_out_of_bounds(monkeypatch):
+    """The last line: with the repair's bounds rule switched off, the 4,900 MW record is moved into s (the fault), and
+    the final pass still marks s out of bounds, in the data-quality layer and on the replay's issue path."""
+    import valiwatt.quality.demand as dm
+
+    monkeypatch.setattr(dm, "_eligible", lambda v: not np.isnan(v))
+    raw, obs, day, s, t = low_load_world()
+    build, _ = run(raw, WORLD_FIRST, WORLD_LAST)
+    assert build.misplaced_events and build.misplaced_events[0]["moved_to_utc"] == s  # the fault is injected
+    assert build.frame.loc[s, "status"] == STATUS_OUT_OF_BOUNDS and build.frame.loc[s, "mw"] == 4_900.0
+    assert_no_usable_out_of_bounds(build.frame, s)
+    assert_replay_never_reads(raw, obs, day, s)

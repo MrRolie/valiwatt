@@ -1,3 +1,4 @@
+{% from 'repair.fr.md.j2' import misplaced %}
 {% set c = r.checks %}
 {% set rep = r.representativeness %}
 {% set hq = r.sources.hydroquebec %}
@@ -106,7 +107,7 @@ L'écart va de {{ c['demand_dst'].metrics.min_margin_mw|num }} à {{ c['demand_d
 ### 3.2 Enregistrement déplacé : réparation avec preuve
 
 {% for e in c['demand_misplaced'].evidence %}
-L'horodatage {{ e.duplicated_utc|utc }} porte deux valeurs, alors que {{ e.moved_to_utc|utc }} n'en a aucune. La valeur {{ e.moved_mw|num(2) }} MW s'insère naturellement entre les voisines de {{ e.moved_to_utc|utc }}, et {{ e.kept_mw|num(2) }} MW entre celles de {{ e.duplicated_utc|utc }}. Le trajet total vaut {{ e.cost_mw|num }} MW dans cette affectation, contre {{ e.swapped_cost_mw|num }} MW dans l'affectation inverse : un rapport de {{ e.cost_ratio|num(1) }}. La règle exige un rapport d'au moins {{ c['demand_misplaced'].metrics.min_ratio|num(1) }} pour déplacer une valeur ; sinon rien n'est déplacé et le contrôle bloquant échoue. La valeur est donc replacée et l'heure porte l'étiquette « réparée » dans la série canonique.
+{{ misplaced(e, c['demand_misplaced'].metrics.min_ratio, c['demand_bounds'].metrics.low_mw, c['demand_bounds'].metrics.high_mw) }}
 {% else %}
 Aucun enregistrement déplacé dans la fenêtre.
 {% endfor %}

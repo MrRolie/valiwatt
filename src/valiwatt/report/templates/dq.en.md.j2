@@ -1,3 +1,4 @@
+{% from 'repair.en.md.j2' import misplaced %}
 {% set c = r.checks %}
 {% set rep = r.representativeness %}
 {% set hq = r.sources.hydroquebec %}
@@ -106,7 +107,7 @@ The margin ranges from {{ c['demand_dst'].metrics.min_margin_mw|num }} to {{ c['
 ### 3.2 Misplaced record: repair with evidence
 
 {% for e in c['demand_misplaced'].evidence %}
-The timestamp {{ e.duplicated_utc|utc }} carries two values while {{ e.moved_to_utc|utc }} has none. The value {{ e.moved_mw|num(2) }} MW fits naturally between the neighbours of {{ e.moved_to_utc|utc }}, and {{ e.kept_mw|num(2) }} MW between those of {{ e.duplicated_utc|utc }}. The total path is {{ e.cost_mw|num }} MW in this assignment against {{ e.swapped_cost_mw|num }} MW the other way round: a ratio of {{ e.cost_ratio|num(1) }}. The rule needs a ratio of at least {{ c['demand_misplaced'].metrics.min_ratio|num(1) }} to move a value; otherwise nothing moves and the gate fails. The value is therefore moved, and the hour is labelled "repaired" in the canonical series.
+{{ misplaced(e, c['demand_misplaced'].metrics.min_ratio, c['demand_bounds'].metrics.low_mw, c['demand_bounds'].metrics.high_mw) }}
 {% else %}
 No misplaced record in the window.
 {% endfor %}

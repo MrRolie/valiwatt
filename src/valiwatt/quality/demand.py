@@ -6,13 +6,20 @@ Three known shapes of index anomaly, each handled by an explicit rule:
   label 01:00 both arrive stamped with the later UTC hour, and the earlier UTC hour is missing. The order of the two
   values is not recorded, so both hours are MASKED (no value), never guessed. The continuity margin of each event is
   reported to show why a guess would not be reliable.
-- Misplaced record. A timestamp carries two values while another hour has none, and one value fits the empty hour's
-  neighbours far better than its own (cost ratio at least MISPLACED_MIN_RATIO). The value is moved to the empty hour
-  and the repair is logged with its evidence. Below the ratio, nothing is moved and the gate fails.
+- Misplaced record. A timestamp carries two values while another hour has none. The candidate destinations are the
+  hours with no record whose two neighbours are known. A value is moved only when the data say both which value and
+  where: (1) at the chosen destination, the assignment fits at least MISPLACED_MIN_RATIO times better than the swapped
+  one, and (2) the destination is unambiguous: the next-best destination's best cost is at least MISPLACED_MIN_RATIO
+  times the chosen one's, or there is no other candidate. Both values must be inside BOUNDS_MW: a pair holding a value
+  outside them is never repaired. The repair is logged with its evidence (both ratios, and the next-best destination).
+  Otherwise nothing is moved, the hour is an unresolved duplicate whose evidence names both candidate destinations, and
+  the gate fails.
 - Missing record or blank value: left missing, reported as runs. Never interpolated in the canonical series.
 
 Any other duplicate fails the gate: when two values claim one hour and the data cannot say which is right, the
-pipeline refuses rather than picks.
+pipeline refuses rather than picks. A final pass marks any usable hour whose value is outside BOUNDS_MW out of bounds,
+so no path through this function (the full-window data-quality layer or the replay's clock cuts) returns a usable
+out-of-bounds value.
 """
 
 from __future__ import annotations
@@ -66,6 +73,36 @@ def _fit(value: float, slot: pd.Timestamp, values: pd.Series) -> float:
     h = pd.Timedelta(hours=1)
     before, after = values.get(slot - h, np.nan), values.get(slot + h, np.nan)
     return abs(value - before) + abs(after - value)
+
+
+def _eligible(value: float) -> bool:
+    """A duplicate's value may take part in a repair only when it is a number inside BOUNDS_MW."""
+    return bool(np.isfinite(value)) and BOUNDS_MW[0] <= value <= BOUNDS_MW[1]
+
+
+def _mark_out_of_bounds(frame: pd.DataFrame) -> pd.DataFrame:
+    """The last line: a usable hour whose value is outside BOUNDS_MW becomes out_of_bounds (value kept as evidence)."""
+    bad = frame["status"].isin(USABLE) & ((frame["mw"] < BOUNDS_MW[0]) | (frame["mw"] > BOUNDS_MW[1]))
+    frame.loc[bad, "status"] = STATUS_OUT_OF_BOUNDS
+    return frame
+
+
+def _destinations(vals: list, t: pd.Timestamp, missing: set, values: pd.Series) -> list[dict]:
+    """For each empty hour with both neighbours known, its best assignment of the pair at t, cheapest first (ties keep
+    time order). cost_mw: moved value at the slot plus kept value at t; swapped_cost_mw: the two values the other way."""
+    out = []
+    for s in sorted(missing):
+        best = None
+        for a, b in ((vals[0], vals[1]), (vals[1], vals[0])):
+            cost = _fit(a, s, values) + _fit(b, t, values)
+            alt = _fit(b, s, values) + _fit(a, t, values)
+            if np.isnan(cost) or np.isnan(alt):
+                continue
+            if best is None or cost < best["cost_mw"]:
+                best = {"slot": s, "moved": a, "kept": b, "cost_mw": cost, "swapped_cost_mw": alt}
+        if best is not None:
+            out.append(best)
+    return sorted(out, key=lambda d: d["cost_mw"])
 
 
 def _pair_path(first: float, second: float, s: pd.Timestamp, t: pd.Timestamp, values: pd.Series) -> float:
@@ -129,17 +166,27 @@ def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd
     for t in remaining:
         recs = raw.loc[raw["ts_utc"] == t, ["mw", "source_line"]]
         vals = recs["mw"].tolist()
-        best = None
-        if len(vals) == 2 and not any(np.isnan(vals)):
-            for s in sorted(missing):
-                for a, b in ((vals[0], vals[1]), (vals[1], vals[0])):
-                    cost = _fit(a, s, values) + _fit(b, t, values)
-                    alt = _fit(b, s, values) + _fit(a, t, values)
-                    if np.isnan(cost) or np.isnan(alt):
-                        continue
-                    if best is None or cost < best["cost_mw"]:
-                        best = {"slot": s, "moved": a, "kept": b, "cost_mw": cost, "swapped_cost_mw": alt}
-        if best and best["cost_mw"] > 0 and best["swapped_cost_mw"] / best["cost_mw"] >= MISPLACED_MIN_RATIO:
+        best = runner_up = None
+        candidates = []
+        if len(vals) != 2:
+            reason = "not_a_pair"
+        elif any(np.isnan(vals)):
+            reason = "blank_value"
+        elif not all(_eligible(v) for v in vals):
+            reason = "value_out_of_bounds"
+        else:
+            candidates = _destinations(vals, t, missing, values)
+            best = candidates[0] if candidates else None
+            runner_up = candidates[1] if len(candidates) > 1 else None
+            if best is None:
+                reason = "no_destination"
+            elif not (best["cost_mw"] > 0 and best["swapped_cost_mw"] / best["cost_mw"] >= MISPLACED_MIN_RATIO):
+                reason = "swap_ratio"
+            elif runner_up is not None and runner_up["cost_mw"] / best["cost_mw"] < MISPLACED_MIN_RATIO:
+                reason = "ambiguous_destination"
+            else:
+                reason = None
+        if reason is None:
             s = best["slot"]
             values[s], values[t] = best["moved"], best["kept"]
             status[s], status[t] = STATUS_REPAIRED, STATUS_OK
@@ -155,19 +202,24 @@ def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd
                     "cost_mw": best["cost_mw"],
                     "swapped_cost_mw": best["swapped_cost_mw"],
                     "cost_ratio": best["swapped_cost_mw"] / best["cost_mw"],
+                    "destinations": len(candidates),
+                    "runner_up": runner_up,
+                    "destination_ratio": None if runner_up is None else runner_up["cost_mw"] / best["cost_mw"],
                 }
             )
         else:
             values[t] = np.nan
             status[t] = "unresolved_duplicate"
             build.unresolved_duplicates.append(
-                {"utc": t, "values_mw": vals, "source_lines": recs["source_line"].tolist(), "best_candidate": best}
+                {"utc": t, "values_mw": vals, "source_lines": recs["source_line"].tolist(), "reason": reason,
+                 "best_candidate": best, "runner_up": runner_up}
             )
 
     frame = pd.DataFrame({"mw": values, "status": status})
     frame.index.name = "ts_utc"
     frame.loc[oob_values.index, "mw"] = oob_values  # kept as evidence, never used
     frame.loc[oob_values.index, "status"] = STATUS_OUT_OF_BOUNDS
+    frame = _mark_out_of_bounds(frame)
     usable = frame["status"].isin(USABLE)
     series = frame["mw"].where(usable)
     stat = spike_statistic(series)
