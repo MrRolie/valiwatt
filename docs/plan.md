@@ -197,11 +197,16 @@ built:
   statistic never passes the untouched days (a property checked on 2,000 draws); a drift reference holding replayed
   days, and thresholds built on the replayed year, are refused; partial weeks have no drift statistic; bias beyond
   the same side three weeks running fires *retrain*, unless an echo or an unjudged week breaks the run.
+- *Measurements:* the power measure finds a sustained 8 % gap or intervals cut to 20 %, and nothing without a
+  change; the level-shift measure finds a 12 % rise in demand; the episode measure finds the false alarm of five
+  days across a Monday, stays quiet on one-day shocks and counts every start, and calls an alarm resting on a week
+  already out of band assisted; the echo exclusion only ever removes or delays *retrain*.
 - *Freeze:* the 2024 replay is refused with no tag, with a rule file edited or added after it, or under a moved tag;
   a frozen model or validation run from other data, another year or other rules is refused; so is a model file or
   registered model whose hash no longer matches.
 - *Never acts:* a replay that writes to the model or the half-widths fails.
-- *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused.
+- *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused; a report figure whose
+  metadata carries a private path, or with bytes after its end, fails the public-safety scan.
 
 CI has no data, so it runs every break on synthetic frames. `valiwatt all` also runs the same break suite as a tracked
 `breaks` run; the report renders the break table from it and refuses to render if any break did not fire.

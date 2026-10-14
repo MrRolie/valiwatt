@@ -4,11 +4,15 @@ valiwatt validates and monitors a forecast of Québec's hourly electricity deman
 The forecast is deliberately simple. The project is about the checks around it: how the model is tested before it is
 trusted, how it is watched once it runs, and what it says when it should no longer be trusted.
 
-**Status: v1 in progress.** In place: the data layer and its gates; a day-ahead forecast (ordinary least squares on
-named features) with walk-forward validation, conformal prediction intervals and two test cases; a frozen model
-registered in MLflow; and a monitor that replays a year hour by hour and recommends *investigate the data*,
-*recalibrate* or *retrain*. Every gate and monitor has a break that makes it fire. The validation report, with its
-model card and a mapping to SR 11-7 and the NIST AI RMF, lands in [`docs/report/`](docs/report/).
+**Status: v1, rendered on the frozen rules.** The data layer and its gates; a day-ahead forecast (ordinary least
+squares on named features) with walk-forward validation, conformal prediction intervals and two test cases; a frozen
+model registered in MLflow; a monitor that replays a year hour by hour and recommends *investigate the data*,
+*recalibrate* or *retrain*, its rules frozen by the `rules-frozen` tag before 2024 was replayed; and the rules' false
+alarms and blind spots, measured on the 2023 rehearsal. Every gate and monitor has a break that makes it fire.
+
+The reports, with the model card and a mapping to SR 11-7 and the NIST AI RMF: validation and monitoring
+([French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md)) and data quality
+([French](docs/report/dq.fr.md); [English](docs/report/dq.en.md)).
 
 ## Run it
 
