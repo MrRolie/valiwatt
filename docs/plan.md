@@ -166,7 +166,8 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   weeks of model failure. The rules stay as written, and the pseudo-replay measures the price
   (`monitor/sensitivity.py`), which the report states:
   - **false alarms from short episodes:** demand multiplied by 0.7, 0.85, 1.15 or 1.3 for 1, 3, 5 or 7 days, from
-    every start day between the first judged week of 2023 and two weeks before its end, each through the real
+    every start day from the first judged week of 2023 on, as long as the episode ends at least two weeks before
+    the year's last judged day, each through the real
     replay. An alarm is *clean* when none of the weeks it rests on was already beyond any of its performance
     thresholds in 2023 as it was, and *assisted* otherwise;
   - **level shifts in demand:** demand multiplied by 0.9 to 1.1 from the first full week of each season (weeks until

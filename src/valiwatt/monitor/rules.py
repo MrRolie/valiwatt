@@ -10,8 +10,8 @@ one episode: the week's statistic must stay beyond the threshold when its TRIM_D
 direction of the failure) are set aside. Why two: the forecast reuses demand from one day and one week before, so a
 single bad day of demand also spoils the next day's forecast and the same day's a week later, and that never puts more
 than two spoiled days into one week. With those two days set aside, the trimmed statistic is no further out than the
-mean of the five untouched days. So one bad day can make a week broad only when the week's five other days already
-average beyond the threshold (the trim had been setting aside the week's own two worst days, and the bad day takes
+mean of the five untouched days. So one bad day can make a week broad only when the week's other days already average
+beyond the threshold (the trim had been setting aside the week's own two worst days, and the bad day takes
 their place): it never yields *retrain* or *recalibrate* without failing days the weeks already held.
 
 A stretch of several bad days does more. Through the 24-hour lag a stretch of n days spoils n + 1 days, and through

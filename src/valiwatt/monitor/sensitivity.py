@@ -2,8 +2,8 @@
 
 Each measurement runs the same clock-guarded replay and the same decision table as the replay itself.
 
-- Short episodes. Demand is multiplied by a factor for 1, 3, 5 or 7 days, from every start day between the first
-  judged week and two weeks before the end of the year. An episode is not a model failure, so any *retrain* or
+- Short episodes. Demand is multiplied by a factor for 1, 3, 5 or 7 days, from every start day from the first judged
+  week on, as long as the episode ends at least two weeks before the year's last judged day. An episode is not a model failure, so any *retrain* or
   *recalibrate* it brings is a false alarm. The alarm is *assisted* when one of the weeks it rests on was already
   beyond any of its performance thresholds in the year as it was, and *clean* otherwise. The episodes are
   decided again without the echo exclusion, which counts the alarms the exclusion prevents.
@@ -33,7 +33,7 @@ EPISODE_FACTORS = (0.7, 0.85, 1.15, 1.3)
 # A replay window spans the episode's weeks, two weeks before (the three-week arm looks back two) and three after
 # (the echo, then the weeks a pair or a run of three ending on it needs).
 WEEKS_BEFORE, WEEKS_AFTER = 2, 3
-# Episodes start no later than this many days before the year's last judged day, so their echo is judged too.
+# Episodes end at least this many days before the year's last judged day, so their echo is judged too.
 ECHO_MARGIN_DAYS = 14
 STEP_FACTORS = (0.9, 0.95, 1.05, 1.1)
 STEP_HORIZON_WEEKS = 10
