@@ -68,10 +68,10 @@ def load_raw(dq):
     from valiwatt.quality.run import _verify_raw, eccc_manifests_sha256
     from valiwatt.sources import eccc, hydroquebec
 
-    hq, _ = _verify_raw()
+    hq, stations_manifests = _verify_raw()
     if hq["sha256"] != dq.data.params.get("hq_sha256"):
         raise LineageError(f"the Hydro-Québec file differs from the one data-quality run {dq.info.run_id} checked")
-    if eccc_manifests_sha256() != dq.data.params.get("eccc_manifests_sha256"):
+    if eccc_manifests_sha256(stations_manifests) != dq.data.params.get("eccc_manifests_sha256"):
         raise LineageError(f"the ECCC files differ from the ones data-quality run {dq.info.run_id} checked")
     primary = next(s for s in stations() if s.primary)
     return hydroquebec.load_raw(), eccc.load_station(primary)

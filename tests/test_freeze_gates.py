@@ -98,10 +98,13 @@ def test_earlier_replays_are_found_even_when_deleted(tmp_path, monkeypatch):
 def test_raw_files_other_than_the_checked_ones_are_refused(monkeypatch):
     from valiwatt.quality import run as qrun
 
-    monkeypatch.setattr(qrun, "_verify_raw", lambda: ({"sha256": "h" * 64}, []))
-    monkeypatch.setattr(qrun, "eccc_manifests_sha256", lambda: "e" * 64)
+    stations = [{"climate_id": "1", "months": {"2024-01": {"sha256": "m" * 64}}}]
+    monkeypatch.setattr(qrun, "_verify_raw", lambda: ({"sha256": "h" * 64}, stations))
     good = SimpleNamespace(info=SimpleNamespace(run_id="dq"), data=SimpleNamespace(
-        tags={}, params={"hq_sha256": "h" * 64, "eccc_manifests_sha256": "e" * 64}))
+        tags={}, params={"hq_sha256": "h" * 64, "eccc_manifests_sha256": qrun.eccc_manifests_sha256(stations)}))
+    monkeypatch.setattr(mrun, "stations", lambda: [])
+    with pytest.raises(StopIteration):  # the lineage passes; loading then needs a primary station
+        mrun.load_raw(good)
     for bad in ({"hq_sha256": "x" * 64}, {"eccc_manifests_sha256": "x" * 64}):
         dq = SimpleNamespace(info=good.info, data=SimpleNamespace(tags={}, params=good.data.params | bad))
         with pytest.raises(LineageError):
