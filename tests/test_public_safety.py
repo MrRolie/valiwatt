@@ -7,7 +7,7 @@ import pytest
 from valiwatt import attribution
 from valiwatt.paths import REPO_ROOT
 from valiwatt.report.render import ReportRefused, assert_public_safe, fmt_num
-from valiwatt.safety import private_patterns, scan_history, scan_index, scan_names, scan_text
+from valiwatt.safety import ScanError, main, private_patterns, scan, scan_history, scan_index, scan_names, scan_text
 
 
 def test_staged_tree_is_public_safe():
@@ -23,6 +23,7 @@ def test_scan_fires_on_private_content():
     samples = [
         "/ho" + "me/someone/project", "gh" + "p_" + "a" * 36, "-----BEGIN " + "RSA PRIVATE KEY-----",
         "/tmp/clau" + "de-1000/x", "s" + "k-" + "a" * 24, "AK" + "IA" + "A" * 16, "xo" + "xb-" + "1" * 12,
+        "C:" + "\\Users\\x", "/Us" + "ers/someone", "github" + "_pat_" + "a" * 22,
     ]
     for text in samples:
         assert scan_text("f.md", f"line\n{text}\n"), text
@@ -31,7 +32,7 @@ def test_scan_fires_on_private_content():
 def test_scan_fires_on_forbidden_files():
     names = ["data/raw/eccc/7025251/2019-01.csv", "ESTATE.local.md", "docs/audits/run.md", "x.args.json",
              "mlruns/mlflow.db", "mlartifacts/x", "reports/dq.fr.md", "data/interim/demand.parquet", ".env",
-             "prod.env", ".private-patterns"]
+             "prod.env", ".env.local", ".private-patterns"]
     assert len(scan_names(names)) == len(names)
     assert scan_names(["src/valiwatt/cli.py", "docs/data-licences.md"]) == []
 
@@ -105,3 +106,34 @@ def test_untracked_code_marks_a_run_dirty(repo, monkeypatch):
     (root / "src" / "new.py").write_text("print(1)\n")
     state = tracking.git_state()
     assert state["git_dirty"] == "true" and len(state["code_sha256"]) == 64
+
+
+def test_scan_flags_forbidden_binary_and_missing_staged_files(repo):
+    root, git = repo
+    (root / "data").mkdir()
+    (root / "data" / "x.parquet").write_bytes(b"\xff\xfe\x00binary")
+    (root / "a.md").write_text("x\n")
+    git("add", "-f", "data/x.parquet", "a.md")
+    (root / "a.md").unlink()
+    issues = "\n".join(scan_index(root))
+    assert "must never be tracked" in issues and "binary file tracked" in issues and "staged but missing" in issues
+
+
+def test_full_scan_includes_the_history(repo):
+    root, git = repo
+    (root / "a.md").write_text("x\n")
+    git("add", "a.md")
+    git("commit", "-q", "-m", "path /ho" + "me/someone/x")
+    assert any("message" in i for i in scan(root))
+
+
+def test_scan_refuses_outside_a_repository(tmp_path):
+    with pytest.raises(ScanError):
+        scan(tmp_path)
+
+
+def test_cli_refuses_without_private_patterns(monkeypatch):
+    import valiwatt.safety as sf
+
+    monkeypatch.setattr(sf, "private_patterns", lambda root=None: {})
+    assert main() == 2

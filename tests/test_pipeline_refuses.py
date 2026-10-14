@@ -52,6 +52,12 @@ def test_clean_run_writes_data_and_renders(sandbox, monkeypatch):
     written = rr.render()
     text = written[0].read_text(encoding="utf-8")
     assert "Qualité et représentativité" in text
+    from valiwatt import attribution
+
+    for path, lang in zip(written, ("fr", "en")):
+        body = path.read_text(encoding="utf-8")
+        for line in attribution.lines(lang, retrieved="2026-01-01"):
+            assert line in body, (lang, line)
     run = tracking.latest_run(dq.EXPERIMENT, "tags.gates = 'passed'")
     assert run.info.status == "FINISHED"
     assert np.isfinite(run.data.metrics["repr.r2.panel"])
@@ -116,3 +122,30 @@ def test_eccc_month_that_no_longer_matches_its_manifest_is_refused(tmp_path, mon
     month.write_text("b\n")
     with pytest.raises(FetchRefused, match="no longer matches"):
         dq._verify_raw()
+
+
+def test_failing_panel_gate_stops_the_chain(sandbox, monkeypatch):
+    tmp, raw = sandbox
+    monkeypatch.setattr(dq.hydroquebec, "load_raw", lambda: raw)
+    original = dq.eccc.load_station
+    silent = {s.climate_id for s in stations()[:3]}
+
+    def shared_outage(st):
+        obs = original(st).copy()
+        if st.climate_id in silent:
+            obs.loc[5000 : 5000 + int(len(obs) * 0.03), "temp_c"] = np.nan
+        return obs
+
+    monkeypatch.setattr(dq.eccc, "load_station", shared_outage)
+    assert dq.run_dq() == 1
+    run = tracking.latest_run(dq.EXPERIMENT)
+    assert run.data.tags["gates"] == "failed" and run.data.metrics["weather_panel_coverage.passed"] == 0.0
+
+
+def test_report_refuses_when_the_code_changed_since_the_run(sandbox, monkeypatch):
+    tmp, raw = sandbox
+    monkeypatch.setattr(dq.hydroquebec, "load_raw", lambda: raw)
+    assert dq.run_dq() == 0
+    monkeypatch.setattr(rr, "code_sha256", lambda: "0" * 64)
+    with pytest.raises(rr.ReportRefused, match="code changed"):
+        rr.render()

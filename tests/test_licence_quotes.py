@@ -30,6 +30,8 @@ def test_doc_has_quotes_for_every_source_section():
     urls = {q.url for q in quotes}
     assert any("attachment1_e" in u for u in urls) and any("open-government-licence-canada" in u for u in urls)
     assert any("hydroquebec" in u for u in urls) and any("by-nc/4.0/legalcode" in u for u in urls)
+    assert any("FAQ_e" in u for u in urls) and any("FAQ_f" in u for u in urls)
+    assert any("canada.ca/en/transparency/terms" in u for u in urls)
 
 
 @pytest.mark.network

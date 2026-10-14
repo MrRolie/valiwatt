@@ -67,7 +67,7 @@ def ols(X: np.ndarray, y: np.ndarray) -> dict:
 
 
 def representativeness(demand: pd.DataFrame, temps: dict[str, pd.Series]) -> dict:
-    """R^2 of daily demand on degree-days for each temperature source, on the days every source covers."""
+    """R^2 of daily demand on degree-days and day of week, per temperature source, on the days every source covers."""
     dd = daily_demand(demand)
     td = pd.DataFrame({k: daily_temperature(t) for k, t in temps.items()})
     common = dd.index.intersection(td.dropna().index)

@@ -34,14 +34,20 @@ FORBIDDEN_FILES = [
 PRIVATE_PATTERNS_FILE = ".private-patterns"
 
 
+class ScanError(RuntimeError):
+    """git could not answer; the scan refuses to call anything clean."""
+
+
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=root, capture_output=True, check=False)
 
 
 def tracked_files(root: Path = REPO_ROOT) -> list[str]:
     """Every path in the index: what the next commit would contain."""
-    out = _git(root, "ls-files", "--cached", "-z").stdout.decode()
-    return sorted(n for n in out.split("\0") if n)
+    out = _git(root, "ls-files", "--cached", "-z")
+    if out.returncode != 0:
+        raise ScanError(f"git ls-files failed: {out.stderr.decode().strip()}")
+    return sorted(n for n in out.stdout.decode().split("\0") if n)
 
 
 def private_patterns(root: Path = REPO_ROOT) -> dict:
@@ -86,9 +92,15 @@ def scan_index(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
 
 def scan_history(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
     """Commit messages travel with the history when it goes public."""
+    if _git(root, "rev-parse", "--git-dir").returncode != 0:
+        raise ScanError(f"{root} is not a git repository")
+    if _git(root, "rev-parse", "--verify", "-q", "HEAD").returncode != 0:
+        return []  # a repository with no commits has no messages
+    if _git(root, "rev-parse", "--is-shallow-repository").stdout.decode().strip() == "true":
+        raise ScanError("shallow clone: the history scan needs the full history (fetch-depth: 0)")
     log = _git(root, "log", "--all", "--format=%H%x00%B%x01")
     if log.returncode != 0:
-        return []  # no commits yet
+        raise ScanError(f"git log failed: {log.stderr.decode().strip()}")
     issues = []
     for entry in log.stdout.decode("utf-8", "replace").split("\x01"):
         if "\x00" not in entry:
@@ -103,11 +115,19 @@ def scan(root: Path = REPO_ROOT) -> list[str]:
     return scan_index(root, extra) + scan_history(root, extra)
 
 
-def main() -> int:
-    issues = scan()
+def main(allow_no_private_patterns: bool = False) -> int:
+    if not private_patterns() and not allow_no_private_patterns:
+        print(f"public-safety scan: REFUSED: no {PRIVATE_PATTERNS_FILE} file, so private names cannot be checked. "
+              "Pass --no-private-patterns to scan without them (CI does, and cannot check private names).")
+        return 2
+    try:
+        issues = scan()
+    except ScanError as exc:
+        print(f"public-safety scan: REFUSED: {exc}")
+        return 2
     for i in issues:
         print(i)
-    note = "" if private_patterns() else "; no .private-patterns file, so private names were not checked"
+    note = "" if private_patterns() else "; private names NOT checked (no .private-patterns)"
     print("public-safety scan: " + ("FAILED" if issues else "clean")
           + f" ({len(tracked_files())} staged files and the commit history{note})")
     return 1 if issues else 0

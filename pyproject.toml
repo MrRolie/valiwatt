@@ -3,6 +3,7 @@ name = "valiwatt"
 version = "0.1.0"
 description = "Validation and monitoring of a forecast of Québec's hourly electricity demand, the way a model-risk team would."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jinja2>=3.1",

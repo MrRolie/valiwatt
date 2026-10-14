@@ -39,7 +39,7 @@ def cmd_report(args) -> int:
 def cmd_safety(args) -> int:
     from valiwatt.safety import main as safety_main
 
-    return safety_main()
+    return safety_main(allow_no_private_patterns=args.no_private_patterns)
 
 
 def cmd_all(args) -> int:
@@ -64,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id")
     p.set_defaults(func=cmd_report)
     p = sub.add_parser("safety", help="scan tracked and staged files for anything private (run before each commit)")
+    p.add_argument("--no-private-patterns", action="store_true",
+                   help="scan without the gitignored private name list (CI); private names are then not checked")
     p.set_defaults(func=cmd_safety)
     p = sub.add_parser("all", help="fetch, check and render: regenerates every figure")
     p.add_argument("--force", action="store_true")

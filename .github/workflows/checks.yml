@@ -12,12 +12,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the safety scan reads every commit message
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.5.9"
       - name: Install
         run: uv sync --locked
       - name: Public-safety scan
-        run: uv run valiwatt safety
+        run: uv run valiwatt safety --no-private-patterns  # private names are only checked locally
       - name: Tests, including every injected break (offline)
         run: uv run pytest -m "not network"

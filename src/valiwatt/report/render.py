@@ -14,7 +14,7 @@ import pandas as pd
 from valiwatt import attribution
 from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.quality.run import EXPERIMENT, LANGS
-from valiwatt.tracking import client, latest_run
+from valiwatt.tracking import client, code_sha256, latest_run
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -91,6 +91,9 @@ def render(run_id: str | None = None) -> list[Path]:
         EXPERIMENT, "tags.kind = 'dq' and tags.gates = 'passed' and attributes.status = 'FINISHED'")
     if run.data.tags.get("gates") != "passed" or run.info.status != "FINISHED":
         raise ReportRefused(f"run {run.info.run_id} did not pass its gates; no report is rendered from it")
+    # The provenance line names the run's code; the templates and filters render at report time. They must be the same.
+    if run.data.tags.get("code_sha256") != code_sha256():
+        raise ReportRefused(f"the code changed since run {run.info.run_id}; run `valiwatt dq` again before rendering")
     with tempfile.TemporaryDirectory() as tmp:
         results = json.loads(Path(c.download_artifacts(run.info.run_id, "results/dq_results.json", tmp)).read_text())
         figs = Path(c.download_artifacts(run.info.run_id, "figures", tmp))

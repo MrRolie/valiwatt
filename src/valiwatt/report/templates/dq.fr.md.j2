@@ -66,13 +66,13 @@ Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les tél
 - **Demande.** Chaque valeur est la demande moyenne de l'heure qui **se termine** à l'horodatage, en UTC. La première heure de la série porte l'horodatage {{ c['demand_window'].metrics.first_utc|utc }}, soit l'heure de minuit à 1 h, heure normale de l'Est.
 - **Météo.** La température d'une heure UTC est l'observation faite à cet instant ; elle est demandée en UTC à ECCC. Sans fuseau explicite, le service renvoie des lignes sans valeurs : le téléchargement refuse toute réponse dont l'en-tête n'est pas en UTC.
 - **Jours.** Pour les agrégats journaliers, une heure appartient au jour (heure normale de l'Est, UTC−5) où elle **commence**.
-- **Heure avancée.** Tout est tenu en UTC, où chaque heure existe une seule fois. {% if dm.missing_record_hours == 0 %}Hors des cas des sections 3.1 et 3.2, aucune heure UTC n'est absente de l'export (les valeurs vides sont à la section 3.3) : le passage à l'heure avancée, au printemps, n'y laisse pas de trou.{% else %}Hors des cas des sections 3.1 et 3.2, {{ dm.missing_record_hours }} heures UTC sont absentes de l'export (section 3.3).{% endif %}
+- **Heure avancée.** Tout est tenu en UTC, où chaque heure existe une seule fois. {% if dm.missing_record_hours == 0 %}Hors des cas des sections 3.1 et 3.2, aucune heure UTC n'est absente de l'export (les valeurs vides sont à la section 3.3) : le passage à l'heure avancée, au printemps, n'y laisse pas de trou.{% else %}Hors des cas des sections 3.1 et 3.2, {{ dm.missing_record_hours }} heures UTC sont absentes de l'export (section 3.3).{% endif +%}
 
 ## 3. Demande : contrôles et anomalies
 
 ![Demande moyenne journalière, {{ years }}](figures/fr/daily_demand.png)
 
-_Demande moyenne journalière, {{ years }} (jours complets seulement). Les heures suivantes ne sont pas tracées : elles sont réservées au rejeu de production._
+_Demande moyenne journalière, {{ years }} (jours complets seulement). Les heures après {{ rep.design_last_year }} ne sont pas tracées : elles sont réservées au rejeu de production. Les contrôles des sections 3 et 4 couvrent toute la fenêtre._
 
 ### Contrôles bloquants
 
@@ -82,7 +82,7 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 |---|---|---|---|
 | Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | 0 |
 | Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | 0 |
-| Valeurs dans des bornes physiques larges | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
+| Valeurs dans des bornes physiques larges ({{ c['demand_window'].metrics.first_utc[:4] }}–{{ c['demand_window'].metrics.last_utc[:4] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Part des heures utilisables | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
 ### 3.1 Retour à l'heure normale : heures masquées
@@ -146,7 +146,7 @@ Aucune heure signalée.
 
 ## 4. Météo : couverture par station
 
-| Station | Index complet | Bornes ({{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.low_c|num }} à {{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.high_c|num }} °C) | Heures avec température (seuil {{ c['weather_coverage[' ~ primary.key ~ ']'].metrics.threshold|pct(0) }}) | Heures manquantes | Plus longue lacune | Pics signalés |
+| Station | Index complet | Bornes, toute la fenêtre ({{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.low_c|num }} à {{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.high_c|num }} °C) | Heures avec température (seuil {{ c['weather_coverage[' ~ primary.key ~ ']'].metrics.threshold|pct(0) }}) | Heures manquantes | Plus longue lacune | Pics signalés |
 |---|---|---|---|---|---|---|
 {% for s in r.sources.eccc %}
 {% set g = c['weather_gaps[' ~ s.key ~ ']'].metrics %}
@@ -157,7 +157,7 @@ Aucune heure signalée.
 
 {% set sg = c['weather_shared_gaps'] %}
 {% if sg.evidence %}
-**Lacunes partagées.** Pendant {{ sg.metrics.hours_half_or_more_missing }} heures, la moitié des stations ou plus étaient muettes en même temps, dont {{ sg.metrics.hours_all_missing }} heures sans aucune station. La plus longue de ces plages va de {{ sg.evidence[0].start|utc }} à {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} heures). {% if sg.metrics.hours_all_missing %}Pendant les heures sans aucune station, ajouter des stations du même réseau n'aurait rien changé.{% endif %}
+**Lacunes partagées.** Pendant {{ sg.metrics.hours_half_or_more_missing }} heures, la moitié des stations ou plus étaient muettes en même temps{% if sg.metrics.hours_all_missing %}, dont {{ sg.metrics.hours_all_missing }} heures sans aucune station{% endif %}. La plus longue de ces plages va de {{ sg.evidence[0].start|utc }} à {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} heures). {% if sg.metrics.hours_all_missing %}Pendant les heures sans aucune station, ajouter des stations du même réseau n'aurait rien changé.{% endif +%}
 {% else %}
 **Lacunes partagées.** À aucune heure la moitié des stations n'était muette en même temps.
 {% endif %}
@@ -166,7 +166,7 @@ Les pics de température sont signalés avec la même règle que la demande (sco
 
 ## 5. Représentativité des stations ({{ years }} seulement)
 
-**Pourquoi seulement {{ years }}.** L'année suivante sera rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }}. Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité des données sur toute la fenêtre, comme le ferait une chaîne de production.
+**Pourquoi seulement {{ years }}.** L'année suivante sera rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }}. Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
 
 **Méthode.** Pour chaque source de température, la demande moyenne de chaque jour est expliquée par les degrés-jours de chauffage (de combien la température moyenne du jour est sous {{ rep.base_c|num }} °C), les degrés-jours de climatisation (au-dessus de {{ rep.base_c|num }} °C) et le jour de la semaine, par moindres carrés. Le R² est la part de la variation de la demande journalière que ce modèle reproduit. Toutes les sources sont comparées sur les mêmes {{ rep.days|num }} jours ({{ rep.winter_days }} jours d'hiver, de décembre à février).
 

@@ -36,6 +36,14 @@ the gap goes to the owner as a question.
 - If `ESTATE.local.md` exists, read it: it holds private context for sessions on the owner's machine. Never commit it,
   quote it or reference its contents in a tracked file.
 
+## The owner's rulings on the brief's open decisions
+
+- **Code licence: MIT** (2026-10-13). `LICENSE` names the repository's GitHub owner.
+- **ECCC data: the Open Government Licence – Canada** (2026-10-13), the most permissive of the texts that bear on it.
+  Attribution and quotations: `docs/data-licences.md`.
+- **Hydro-Québec data: this project's use is NonCommercial under CC BY-NC 4.0** (2026-10-13).
+- Still open: the public home and its timing; whether the English report ships in v1.
+
 ## Departures from the brief
 
 None yet.

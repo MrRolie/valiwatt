@@ -66,13 +66,13 @@ Data never enters the repository: `valiwatt fetch` downloads it, and every file 
 - **Demand.** Each value is the mean demand over the hour that **ends** at the timestamp, in UTC. The first hour of the series is stamped {{ c['demand_window'].metrics.first_utc|utc }}: midnight to 1 a.m. Eastern Standard Time.
 - **Weather.** The temperature at a UTC hour is the observation made at that instant; it is requested from ECCC in UTC. Without an explicit time zone the service returns rows with no values, so the download refuses any response whose header is not in UTC.
 - **Days.** For daily aggregates, an hour belongs to the day (Eastern Standard Time, UTC−5) in which it **starts**.
-- **Daylight saving.** Everything is kept in UTC, where each hour exists once. {% if dm.missing_record_hours == 0 %}Outside the cases in sections 3.1 and 3.2, no UTC hour is absent from the export (blank values are in section 3.3): the spring change leaves no gap in it.{% else %}Outside the cases in sections 3.1 and 3.2, {{ dm.missing_record_hours }} UTC hours are absent from the export (section 3.3).{% endif %}
+- **Daylight saving.** Everything is kept in UTC, where each hour exists once. {% if dm.missing_record_hours == 0 %}Outside the cases in sections 3.1 and 3.2, no UTC hour is absent from the export (blank values are in section 3.3): the spring change leaves no gap in it.{% else %}Outside the cases in sections 3.1 and 3.2, {{ dm.missing_record_hours }} UTC hours are absent from the export (section 3.3).{% endif +%}
 
 ## 3. Demand: checks and anomalies
 
 ![Daily mean demand, {{ years }}](figures/en/daily_demand.png)
 
-_Daily mean demand, {{ years }} (complete days only). Later hours are not plotted: they are held back for the production replay._
+_Daily mean demand, {{ years }} (complete days only). Hours after {{ rep.design_last_year }} are not plotted: they are held back for the production replay. The checks in sections 3 and 4 cover the whole window._
 
 ### Gates
 
@@ -82,7 +82,7 @@ A gate that fails stops the chain: no canonical data is written and the command 
 |---|---|---|---|
 | Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | 0 |
 | Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | 0 |
-| Values within loose physical bounds | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
+| Values within loose physical bounds ({{ c['demand_window'].metrics.first_utc[:4] }}–{{ c['demand_window'].metrics.last_utc[:4] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Share of usable hours | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
 ### 3.1 Clocks going back: masked hours
@@ -146,7 +146,7 @@ No hour flagged.
 
 ## 4. Weather: coverage by station
 
-| Station | Complete index | Bounds ({{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.low_c|num }} to {{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.high_c|num }} °C) | Hours with a temperature (threshold {{ c['weather_coverage[' ~ primary.key ~ ']'].metrics.threshold|pct(0) }}) | Missing hours | Longest gap | Flagged spikes |
+| Station | Complete index | Bounds, whole window ({{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.low_c|num }} to {{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.high_c|num }} °C) | Hours with a temperature (threshold {{ c['weather_coverage[' ~ primary.key ~ ']'].metrics.threshold|pct(0) }}) | Missing hours | Longest gap | Flagged spikes |
 |---|---|---|---|---|---|---|
 {% for s in r.sources.eccc %}
 {% set g = c['weather_gaps[' ~ s.key ~ ']'].metrics %}
@@ -157,7 +157,7 @@ No hour flagged.
 
 {% set sg = c['weather_shared_gaps'] %}
 {% if sg.evidence %}
-**Shared gaps.** For {{ sg.metrics.hours_half_or_more_missing }} hours, half the stations or more were silent at the same time, including {{ sg.metrics.hours_all_missing }} hours with no station at all. The longest such run goes from {{ sg.evidence[0].start|utc }} to {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} hours). {% if sg.metrics.hours_all_missing %}During the hours with no station at all, more stations from the same network would not have helped.{% endif %}
+**Shared gaps.** For {{ sg.metrics.hours_half_or_more_missing }} hours, half the stations or more were silent at the same time{% if sg.metrics.hours_all_missing %}, including {{ sg.metrics.hours_all_missing }} hours with no station at all{% endif %}. The longest such run goes from {{ sg.evidence[0].start|utc }} to {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} hours). {% if sg.metrics.hours_all_missing %}During the hours with no station at all, more stations from the same network would not have helped.{% endif +%}
 {% else %}
 **Shared gaps.** At no hour were half the stations silent at the same time.
 {% endif %}
@@ -166,7 +166,7 @@ Temperature spikes are flagged with the same rule as demand (score beyond {{ c['
 
 ## 5. Station representativeness ({{ years }} only)
 
-**Why only {{ years }}.** The following year will be replayed hour by hour as if it were production, with a model frozen at the end of {{ rep.design_last_year }}. No outcome from that year enters this analysis. The gates, on the other hand, check data availability over the whole window, as a production pipeline would.
+**Why only {{ years }}.** The following year will be replayed hour by hour as if it were production, with a model frozen at the end of {{ rep.design_last_year }}. No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
 
 **Method.** For each temperature source, each day's mean demand is explained by heating degree-days (how far the day's mean temperature is below {{ rep.base_c|num }} °C), cooling degree-days (above {{ rep.base_c|num }} °C) and the day of the week, by least squares. R² is the share of the variation in daily demand that this model reproduces. All sources are compared on the same {{ rep.days|num }} days ({{ rep.winter_days }} winter days, December to February).
 

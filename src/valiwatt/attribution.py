@@ -1,4 +1,5 @@
-"""Attribution and status lines every public surface carries. Tests check the README and reports use them verbatim."""
+"""Attribution and status lines every public surface carries. Tests check the README and the rendered reports use them
+verbatim."""
 
 HQ_DATASET_URL = "https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/"
 CC_BY_NC_URL = "https://creativecommons.org/licenses/by-nc/4.0/"
@@ -8,19 +9,24 @@ HQ = {
         f"Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » ({HQ_DATASET_URL}), "
         f"sous licence CC BY-NC 4.0 ({CC_BY_NC_URL}). Hydro-Québec offre ces données à titre informatif et sans "
         "garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou "
-        "corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne les redistribue pas."
+        "corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et "
+        "les rapports n'en citent que quelques valeurs horaires, comme preuves."
     ),
     "en": (
         f"Demand data: Hydro-Québec, \"Historique de la demande d'électricité au Québec\" ({HQ_DATASET_URL}), "
         f"licensed CC BY-NC 4.0 ({CC_BY_NC_URL}). Hydro-Québec offers this data for information only, without "
         "warranty of quality; it is not official data. This project checked it, masked or corrected a few hours "
-        "(each case documented) and aggregated it; it does not redistribute it."
+        "(each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few "
+        "hourly values from it, as evidence."
     ),
 }
 
+# The owner ruled (2026-10-13) that the Open Government Licence – Canada governs the ECCC data (docs/data-licences.md).
 ECCC = {
-    "fr": "Données météorologiques : créé à partir de données d'Environnement et Changement climatique Canada.",
-    "en": "Weather data: based on Environment and Climate Change Canada data.",
+    "fr": ("Données météorologiques : Environnement et Changement climatique Canada, utilisées sous la Licence du "
+           "gouvernement ouvert – Canada (https://ouvert.canada.ca/fr/licence-du-gouvernement-ouvert-canada)."),
+    "en": ("Weather data: Environment and Climate Change Canada, used under the Open Government Licence – Canada "
+           "(https://open.canada.ca/en/open-government-licence-canada)."),
 }
 
 # The reference form ECCC's climate site asks for in its FAQ, completed with the retrieval date of each run.

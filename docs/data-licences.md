@@ -4,8 +4,7 @@ Read on 2026-10-13. Every quotation below is copied verbatim from the page named
 (spacing aside). `uv run pytest -m network tests/test_licence_quotes.py` fetches each page again and fails if any
 quotation no longer appears on it.
 
-This page records what the licences say. It does not decide what they permit: the repository's owner rules on that
-before anything goes public.
+This page records what the licences say. The repository's owner decides what they permit; his rulings are at the end.
 
 ## What this project does with the data
 
@@ -221,13 +220,15 @@ Source: <https://www.canada.ca/en/transparency/terms.html>
 > Unless otherwise specified, you may not reproduce materials on this site, in whole or in part, for the purposes of
 > commercial redistribution without prior written permission from the copyright administrator.
 
-## Open for the owner
+## The owner's rulings (2026-10-13)
 
-- **Which ECCC terms govern the bulk download.** The climate data site links a limited-use agreement (section 1). The
-  open-data catalogue lists the same site under the Open Government Licence (section 2), the MSC publishes a third
-  licence for its data servers (section 3), and every page carries the Government of Canada's site terms (section 4).
-  No page read here says which one governs `bulk_data_e.html`. Until the owner rules, the project follows the
-  narrowest reading: it does not redistribute the data, it attributes it with the agreement's own wording, and each
-  report gives the reference in the form the site's FAQ asks for.
-- **Hydro-Québec's licence and terms.** The owner reviews this project's use against CC BY-NC 4.0 and the portal's
-  terms of use before the repository goes public.
+- **ECCC: the Open Government Licence – Canada.** No page read here says which text governs `bulk_data_e.html`: the
+  climate data site links a limited-use agreement (section 1), the open-data catalogue lists the same site under the
+  Open Government Licence (section 2), the MSC publishes a third licence for its data servers (section 3), and every
+  page carries the Government of Canada's site terms (section 4). The owner adopts the most permissive reading, the
+  Open Government Licence, which the catalogue's "Meteorological Observations" record applies to the site. The README
+  and every report attribute the data under that licence with a link to it, and each report also gives the reference
+  in the form the site's FAQ asks for. The data itself still never enters git.
+- **Hydro-Québec: NonCommercial.** The owner rules that this project's use is NonCommercial under CC BY-NC 4.0: it
+  sells nothing and offers no paid service. The data is attributed as the licence asks (section on CC BY-NC 4.0) and
+  is never redistributed; reports quote a few hourly values as evidence.

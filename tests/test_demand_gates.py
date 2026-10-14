@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from conftest import synth_demand
 from valiwatt.quality.demand import (
@@ -139,10 +140,8 @@ def test_clean_series_flags_no_spike():
 
 
 def test_bounds_are_pinned_at_both_edges():
-    from valiwatt.quality.demand import BOUNDS_MW
-
-    low, high = BOUNDS_MW
-    for v, ok in ((low - 1, False), (low + 1, True), (high - 1, True), (high + 1, False)):
+    # Literal edges: a change to the constant must break this test.
+    for v, ok in ((4_999.0, False), (5_001.0, True), (59_999.0, True), (60_001.0, False)):
         raw = synth_demand(FIRST, LAST)
         raw.loc[100, "mw"] = v
         _, c = run(raw, FIRST, LAST)
@@ -174,6 +173,7 @@ def test_misplaced_ratio_below_two_is_not_moved(monkeypatch):
         raw = synth_demand(first, last, step_at="2022-01-04T00:00Z", step_mw=step)
         return add_record(drop_record(raw, s), t, value(raw, s))
 
+    assert dm.MISPLACED_MIN_RATIO == 2.0
     # Measure the ratio each step size gives, then pick a case between 1 and the rule's 2.
     monkeypatch.setattr(dm, "MISPLACED_MIN_RATIO", 1.0)
     ratios = {step: dm.build_demand(case(step), pd.Timestamp(first), pd.Timestamp(last)).misplaced_events[0]["cost_ratio"]
@@ -196,3 +196,7 @@ def test_spike_scale_ignores_hours_after_the_design_window():
     b = build_demand(other, pd.Timestamp(first), pd.Timestamp(last)).frame
     design = a.index < DESIGN_LAST
     assert np.allclose(a.loc[design, "spike_z"], b.loc[design, "spike_z"], equal_nan=True)
+    qa = {c.name: c for c in demand_checks(build_demand(raw, pd.Timestamp(first), pd.Timestamp(last)))}
+    qb = {c.name: c for c in demand_checks(build_demand(other, pd.Timestamp(first), pd.Timestamp(last)))}
+    key = "design_quantile_abs_z"
+    assert qa["demand_spikes"].metrics[key] == pytest.approx(qb["demand_spikes"].metrics[key])

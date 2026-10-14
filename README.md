@@ -49,15 +49,21 @@ Data is fetched by script and never committed. The licence terms of both sources
 [`docs/data-licences.md`](docs/data-licences.md). Each report also gives the reference to ECCC's site in the form its
 FAQ asks for, with the date the data was retrieved.
 
-> Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute it.
+> Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
-> Weather data: based on Environment and Climate Change Canada data.
+> Weather data: Environment and Climate Change Canada, used under the Open Government Licence – Canada (https://open.canada.ca/en/open-government-licence-canada).
 >
 > Neither Hydro-Québec nor Environment and Climate Change Canada produced, reviewed or endorsed this work.
 >
 > Built with Claude Code under the repository owner's direction.
 
+## Licence
+
+The code is under the MIT licence ([`LICENSE`](LICENSE)). The data is not part of this repository and keeps its own
+licences ([`docs/data-licences.md`](docs/data-licences.md)).
+
 ## Continuous integration
 
-`.github/workflows/checks.yml` runs the offline tests and the public-safety scan on every change. It has not run yet:
-the repository has no remote.
+`.github/workflows/checks.yml` runs the offline tests and the public-safety scan on every change. CI's scan covers paths,
+credentials, forbidden files and every commit message, but not private names: those live in a gitignored list, so only
+the local `valiwatt safety` checks them. The workflow has not run yet: the repository has no remote.

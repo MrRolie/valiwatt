@@ -21,14 +21,14 @@ LABELS = {
     "fr": {
         "daily_mw": "Demande moyenne journalière (MW)",
         "temp_c": "Température moyenne journalière, {centre} (°C)",
-        "r2": "R² de la demande journalière sur les degrés-jours",
+        "r2": "R² de la demande journalière (degrés-jours et jour de la semaine)",
         "resid": "Écart au modèle de 2019 (%)",
         "panel": "panel (moyenne)",
     },
     "en": {
         "daily_mw": "Daily mean demand (MW)",
         "temp_c": "Daily mean temperature, {centre} (°C)",
-        "r2": "R² of daily demand on degree-days",
+        "r2": "R² of daily demand (degree-days and day of week)",
         "resid": "Gap to the 2019 model (%)",
         "panel": "panel (mean)",
     },
