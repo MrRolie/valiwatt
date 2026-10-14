@@ -2,7 +2,7 @@
 
 valiwatt validates and monitors a forecast of Québec's hourly electricity demand, the way a model-risk team would.
 
-`BRIEF.md` is the dated founding record and is never edited. This file is the operational home of its rules. Each
+`BRIEF.md` is the dated founding record and is never edited (one ruled exception, below). This file is the operational home of its rules. Each
 departure from the brief is listed below with its ruling. A disagreement that is not listed means the brief wins, and
 the gap goes to the owner as a question.
 
@@ -32,6 +32,11 @@ the gap goes to the owner as a question.
   `uv run valiwatt safety` scans what git stages and every object in the history; it does not know the private names in `ESTATE.local.md`,
   so grep the staged diff for those by hand.
 - Commits use this repository's configured author identity, a GitHub noreply address. Never change `user.email`.
+- Commit messages end with a `Co-Authored-By:` line only, never an agent session URL (the owner's ruling,
+  2026-10-14).
+- The history was rewritten once, on 2026-10-14 at the owner's ruling and before any public push: agent session URLs
+  were stripped from every commit message and the two `BRIEF.md` lines above removed. Every commit's hash changed;
+  the `rules-frozen` tag was recreated on the rewritten commit, its rule files byte-identical.
 - Push only to the private remote; it turns public only at the owner's go.
 - If `ESTATE.local.md` exists, read it: it holds private context for sessions on the owner's machine. Never commit it,
   quote it or reference its contents in a tracked file.
@@ -52,7 +57,8 @@ the gap goes to the owner as a question.
 
 ## Departures from the brief
 
-None yet.
+- **2026-10-14, the owner's ruling: two lines of `BRIEF.md` were rewritten out of the history** before any public
+  push. Both were private references; nothing else in `BRIEF.md` changed, and it stays never edited from here on.
 
 ## Departures from the frozen monitoring rules
 
