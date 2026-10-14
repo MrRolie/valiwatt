@@ -53,10 +53,28 @@ def cmd_breaks(args) -> int:
     return run_breaks()
 
 
+def cmd_ledger(args) -> int:
+    """Append the store's finished 2024 replays to docs/replay-ledger.json. Never run inside the replay: every run
+    records whether the tree was dirty, and a write in the middle of the chain would mark the later runs dirty."""
+    from valiwatt.paths import rel
+    from valiwatt.report.ledger import LEDGER, LedgerError, sync
+
+    try:
+        entries = sync()
+    except LedgerError as e:
+        print(f"replay ledger: REFUSED: {e}")
+        return 1
+    print(f"replay ledger: {len(entries)} finished 2024 replays in {rel(LEDGER)}")
+    return 0
+
+
 def cmd_report(args) -> int:
     from valiwatt.report.render import render
     from valiwatt.report.validation import render_validation
 
+    code = cmd_ledger(args)  # the ledger first: the report reads the replays it holds
+    if code:
+        return code
     if args.dq_only:
         render(run_id=args.run_id)
     else:  # both reports from one chain: the data-quality report is the chain's own run
@@ -107,11 +125,15 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_replay)
     p = sub.add_parser("breaks", help="run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
-    p = sub.add_parser("report", help="render the data-quality and validation reports into docs/report/")
+    p = sub.add_parser("report", help="update the replay ledger, then render the data-quality and validation "
+                                      "reports into docs/report/")
     p.add_argument("--run-id", help="the data-quality run to render: with --dq-only, default the latest that passed "
                    "(the stamp is not rewritten); otherwise it must be the chain's own, which is the default")
     p.add_argument("--dq-only", action="store_true", help="render the data-quality report only")
     p.set_defaults(func=cmd_report)
+    p = sub.add_parser("ledger", help="append the store's finished 2024 replays to docs/replay-ledger.json "
+                                      "(append-only; `report` does it too)")
+    p.set_defaults(func=cmd_ledger)
     p = sub.add_parser("safety", help="scan staged files and every object in the history for anything private (run before each commit)")
     p.add_argument("--no-private-patterns", action="store_true",
                    help="scan without the gitignored private name list (CI); private names are then not checked")

@@ -290,6 +290,7 @@ MAPE difference (frozen minus refitted), on the same {{ pr.hours|num }} hours: {
 **Post hoc.** This replay ran after a departure from the frozen rules, recorded in `AGENTS.md`. {% for d in departures %}The replay on the rules of commit `{{ d.freeze_commit|short }}` (run `{{ d.id }}`) gave a MAPE of {{ d.summary.mape.mean|pct(2) }}, coverage of {{ d.summary.coverage.mean|pct(1) }} and {% set n = d.summary.recommendations.values()|sum %}{% if n == 0 %}no recommendation{% elif n == 1 %}1 recommendation{% else %}{{ n }} recommendations{% endif %}. {% endfor %}The results below are those of the replay after the departure.
 
 {% endif %}
+{% from 'ledger_recorded.en.md.j2' import recorded_block %}{{ recorded_block(departures) }}{# report/ledger.py #}
 
 The clock advances hour by hour from {{ r.days[0].day|day }} to {{ r.days[-1].day|day }}; every read goes through an accessor that refuses any record later than the clock. The model and its intervals are checked by hash before and after: `{{ r.model.sha256|short }}`, unchanged.
 

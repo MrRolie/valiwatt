@@ -1,0 +1,8 @@
+{# The replays from before a departure that the MLflow store lacks: shown from the replay ledger (report/ledger.py). #}
+{% set REC = {'retrain': 'retrain', 'recalibrate': 'recalibrate the intervals', 'investigate_data': 'investigate the data'} %}
+{% macro recorded_block(departures) %}
+{% for d in departures if d.recorded %}
+**Recorded in the ledger, not re-run here.** Replay `{{ d.id }}` (rules of commit `{{ d.freeze_commit|short }}`) is not in this copy's MLflow store: its MAPE of {{ d.summary.mape.mean|pct(2) }}, its coverage of {{ d.summary.coverage.mean|pct(1) }} and its recommendations ({% for x in d.recommendations %}week of {{ x.week_start }}: {{ REC[x.recommendation] }}{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}) come from its entry in `docs/replay-ledger.json`, written from its run; it was not re-run here.
+
+{% endfor %}
+{%- endmacro %}

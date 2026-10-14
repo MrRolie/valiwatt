@@ -54,7 +54,7 @@ T_DEM, T_WEA, T_PIPE = "tests/test_demand_gates.py", "tests/test_weather_gates.p
 T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "tests/test_replay.py", "tests/test_drift.py"
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
-T_COV, T_SEN2 = "tests/test_report_coverage.py", "tests/test_report_sentences.py"
+T_COV, T_SEN2, T_LED = "tests/test_report_coverage.py", "tests/test_report_sentences.py", "tests/test_replay_ledger.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -335,6 +335,28 @@ BREAKS = [
        "A spring 2020 case with no spring hours makes the report refuse"),
     _b(RENDER, f"{T_SEN2}::test_an_empty_power_table_is_refused",
        "Un tableau de puissance vide fait refuser le rapport", "An empty power table makes the report refuse"),
+    _b(RENDER, f"{T_SAFE}::test_an_agent_session_url_in_a_commit_message_is_caught",
+       "L'adresse d'une session d'agent dans un message de commit, un message d'étiquette ou un fichier indexé est "
+       "repérée", "An agent session's address in a commit message, a tag message or a staged file is caught"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_that_disagrees_with_its_ledger_entry_is_refused",
+       "Une entrée du registre des rejeux réécrite à la main fait refuser la mise à jour du registre",
+       "A replay-ledger entry rewritten by hand makes the ledger update refuse"),
+    _b(RENDER, f"{T_LED}::test_a_ledger_whose_content_fails_the_scan_is_not_written",
+       "Un registre des rejeux portant un nom privé, ou un champ hors de sa forme fixe, n'est pas écrit",
+       "A replay ledger carrying a private name, or a field outside its fixed shape, is not written"),
+    _b(RENDER, f"{T_LED}::test_a_replay_that_disagrees_with_its_ledger_entry_is_refused",
+       "Un rejeu de 2024 qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport",
+       "A 2024 replay that disagrees with its ledger entry breaks the report's run chain"),
+    _b(RENDER, f"{T_LED}::test_a_departed_replay_in_neither_the_store_nor_the_ledger_is_refused",
+       "Un rejeu d'avant une dérogation absent du magasin et du registre, ou consigné comme incomplet, rompt la chaîne "
+       "du rapport",
+       "A replay from before a departure that is in neither the store nor the ledger, or is recorded as incomplete, "
+       "breaks the report's run chain"),
+    _b(RENDER, f"{T_LED}::test_a_departed_replay_absent_from_the_store_renders_from_the_ledger",
+       "Témoin : un rejeu d'avant une dérogation absent du magasin est montré d'après le registre, avec la mention "
+       "« consigné dans le registre, non rejoué ici »",
+       "Control: a replay from before a departure that the store lacks is shown from the ledger, labelled \"recorded "
+       "in the ledger, not re-run here\""),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
 ]

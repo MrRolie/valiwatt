@@ -22,7 +22,8 @@ from valiwatt import attribution
 from valiwatt.forecast.evaluate import _weights, errors
 from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import figures as F
-from valiwatt.report.lineage import Chain, follow
+from valiwatt.report import ledger
+from valiwatt.report.lineage import Chain, RecordedReplay, follow
 from valiwatt.report.render import ReportRefused, assert_public_safe, environment, render
 
 OUT = REPORTS
@@ -290,6 +291,14 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
     }
 
 
+def departure(c, run) -> dict:
+    """A departed replay as the report shows it: from the store, or from its ledger entry when the store lacks it."""
+    if isinstance(run, RecordedReplay):
+        return ledger.as_departure(run.entry)
+    return {"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""), "recorded": False,
+            "summary": _json(c, run, "results/replay.json")["summary"]}
+
+
 def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
     from valiwatt.tracking import client
 
@@ -306,8 +315,7 @@ def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
     return {
         "v": v, "dq": dq, "p": p, "r": r, "b": b, "frozen": frozen,
         **derive(v, dq, p, r, b, frozen, oos),
-        "departures": [{"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""),
-                        "summary": _json(c, run, "results/replay.json")["summary"]} for run in chain.departed],
+        "departures": [departure(c, run) for run in chain.departed],
         "runs": {k: {"id": run.info.run_id, "when": _when(run)} for k, run in chain.runs().items()},
         "code_sha": code_sha, "rules_sha": rules_sha, "freeze": chain.freeze,
         "commit": chain.replay.data.tags.get("git_commit", "none"),

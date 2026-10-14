@@ -9,9 +9,9 @@ import pytest
 
 from valiwatt import tracking
 from valiwatt.monitor import run as monitor_run
-from valiwatt.report import lineage
+from valiwatt.report import ledger, lineage
 
-CODE, RULES, FREEZE = "c" * 64, "r" * 64, {"freeze_tag": "rules-frozen", "freeze_commit": "f" * 40}
+CODE, RULES, FREEZE = "c" * 64, "d" * 64, {"freeze_tag": "rules-frozen", "freeze_commit": "f" * 40}
 
 # The departures section of AGENTS.md with none recorded, and with the tag moved to the replay's freeze commit.
 NONE_RECORDED = ("\n\nThe monitoring rules are frozen by the `rules-frozen` tag before the 2024 replay. A change to "
@@ -54,6 +54,7 @@ def serve(monkeypatch, runs: dict) -> None:
     monkeypatch.setattr(tracking, "latest_run", latest_run)
     monkeypatch.setattr(tracking, "client", lambda: SimpleNamespace(get_run=lambda run_id: runs[run_id]))
     monkeypatch.setattr(monitor_run, "recorded_departures", lambda agents=None: NONE_RECORDED)
+    monkeypatch.setattr(ledger, "read", lambda path=None: [])  # an empty replay ledger
 
 
 def test_a_clean_chain_is_followed(monkeypatch):

@@ -10,9 +10,9 @@
 - the names the history carries besides content: every path ever committed, every ref name, and the author,
   committer and tagger lines.
 
-It fails on local paths (the home-directory shorthands included), credential shapes, and files that must never be
-tracked (data, run outputs, agent run records, the private estate notes). A binary file cannot be read as text, so it
-fails too, with one exception: the report's figures, PNG files that pass the structure checks png_text lists and whose
+It fails on local paths (the home-directory shorthands included), credential shapes, agent session URLs, and files
+that must never be tracked (data, run outputs, agent run records, the private estate notes). A binary file cannot be
+read as text, so it fails too, with one exception: the report's figures, PNG files that pass the structure checks png_text lists and whose
 chunks other than the image data (their metadata) pass the same scan. The image data is checked for its size and its
 rows' filter types, not read as text. A hit in the history names its path and object, or its commit or tag, so the owner can see where it
 lives; a ref that exists only in this clone is still scanned, because a push could carry it.
@@ -42,6 +42,8 @@ CONTENT_PATTERNS = {
     "GitHub token": re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"),
     "API key": re.compile(r"\bsk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[abprs]-[A-Za-z0-9-]{10,}"),
     "private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    # An agent session's address links the public history to a private transcript (owner's ruling, 2026-10-14).
+    "agent session URL": re.compile(r"claude\.ai/code/session_", re.IGNORECASE),
 }
 
 FORBIDDEN_FILES = [

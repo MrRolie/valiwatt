@@ -1,0 +1,8 @@
+{# Les rejeux d'avant une dérogation absents du magasin MLflow : montrés d'après le registre des rejeux (report/ledger.py). #}
+{% set REC = {'retrain': 'réentraîner', 'recalibrate': 'recalibrer les intervalles', 'investigate_data': 'examiner les données'} %}
+{% macro recorded_block(departures) %}
+{% for d in departures if d.recorded %}
+**Consigné dans le registre, non rejoué ici.** Le rejeu `{{ d.id }}` (règles du commit `{{ d.freeze_commit|short }}`) n'est pas dans le magasin MLflow de cette copie : son EAMP de {{ d.summary.mape.mean|pct(2) }}, sa couverture de {{ d.summary.coverage.mean|pct(1) }} et ses recommandations ({% for x in d.recommendations %}semaine du {{ x.week_start }} : {{ REC[x.recommendation] }}{% if not loop.last %} ; {% endif %}{% else %}aucune{% endfor %}) viennent de son entrée dans `docs/replay-ledger.json`, écrite d'après son exécution ; il n'a pas été rejoué ici.
+
+{% endfor %}
+{%- endmacro %}

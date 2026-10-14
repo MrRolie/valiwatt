@@ -8,6 +8,11 @@ Every run must be finished and complete, made from the code that renders the rep
 can label it post hoc and show them beside it. The departures section of `AGENTS.md` is read at render time too: when
 it names a commit, the replay must be a departure, and a departure replay must have its freeze commit named there. A
 store without the earlier replays (a fresh clone) then refuses the report instead of dropping the post hoc label.
+
+The replay ledger (`docs/replay-ledger.json`, report/ledger.py) stands in for a departed replay the store does not
+hold: the report shows it from its entry, labelled as recorded in the ledger and not re-run here. A departed replay in
+neither is refused. A replay that both the store and the ledger hold must agree with its entry, or the chain is
+refused.
 """
 
 from __future__ import annotations
@@ -22,6 +27,12 @@ SHORT_COMMIT = re.compile(r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,11}\b")  # a commit n
 
 class ChainBroken(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RecordedReplay:
+    """A departed replay the store does not hold, known from its ledger entry alone."""
+    entry: dict
 
 
 @dataclass
@@ -79,9 +90,40 @@ def check_recorded(replay, recorded: str) -> None:
                           f"name its freeze commit {commit[:12] or '(none)'}")
 
 
-def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None = None) -> Chain:
-    """`recorded` is the departures section of AGENTS.md; None reads it from the file."""
+def _stored(c, run_id: str):
+    """The run, or None when the store does not hold it."""
+    from mlflow.exceptions import MlflowException
+
+    try:
+        return c.get_run(run_id)
+    except MlflowException as e:
+        if e.error_code == "RESOURCE_DOES_NOT_EXIST":
+            return None
+        raise
+
+
+def check_ledger(c, run, entries: list[dict]) -> None:
+    """A replay the store and the ledger both hold must agree with its entry."""
+    from valiwatt.report import ledger
+
+    e = ledger.lookup(run.info.run_id, entries)
+    if e is None:
+        return
+    try:
+        stored = ledger.entry(run, ledger.results_of(c, run))
+    except ledger.LedgerError as err:
+        raise ChainBroken(str(err)) from err
+    diff = ledger.disagreement(stored, e)
+    if diff:
+        raise ChainBroken(f"replay {run.info.run_id} disagrees with its ledger entry on {diff}")
+
+
+def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None = None,
+           entries: list[dict] | None = None) -> Chain:
+    """`recorded` is the departures section of AGENTS.md; None reads it from the file. `entries` is the replay
+    ledger; None reads it from docs/replay-ledger.json."""
     from valiwatt.breaks import EXPERIMENT as BREAKS_EXP
+    from valiwatt.report import ledger
     from valiwatt.monitor.run import EXPERIMENT as MON_EXP
     from valiwatt.monitor.run import recorded_departures
     from valiwatt.tracking import client, latest_run
@@ -92,15 +134,32 @@ def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None 
     except LookupError as e:
         raise ChainBroken(f"no finished 2024 replay: {e}") from e
     _complete(replay, "replay")
+    if entries is None:
+        try:
+            entries = ledger.read()
+        except ledger.LedgerError as e:
+            raise ChainBroken(f"the replay ledger cannot be read: {e}") from e
+    check_ledger(c, replay, entries)
     departed = []
     if replay.data.tags.get("departure") == "true":
         ids = [x for x in replay.data.tags.get("departure_from", "").split(",") if x]
         if not ids:
             raise ChainBroken(f"replay {replay.info.run_id} is a departure but names no earlier replay")
-        departed = [c.get_run(x) for x in ids]
-        for run in departed:
+        for x in ids:
+            run = _stored(c, x)
+            if run is None:
+                e = ledger.lookup(x, entries)
+                if e is None:
+                    raise ChainBroken(f"departed replay {x} is neither in the store nor in the replay ledger")
+                if e["status"] != "complete":
+                    raise ChainBroken(f"departed replay {x} is recorded in the ledger as {e['status']!r}, "
+                                      "not complete")
+                departed.append(RecordedReplay(e))
+                continue
             _complete(run, "departed replay")
             _link(run, "kind", "replay", "departed replay")
+            check_ledger(c, run, entries)
+            departed.append(run)
     check_recorded(replay, recorded_departures() if recorded is None else recorded)
     val_id = replay.data.tags.get("validation_run_id", "")
     try:

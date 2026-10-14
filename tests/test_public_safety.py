@@ -302,6 +302,26 @@ def test_history_scan_reads_annotated_tag_messages(repo):
     assert scan_history(root) == ["tag v1 message:3: home path"]
 
 
+def test_an_agent_session_url_in_a_commit_message_is_caught(repo):
+    """A commit message ending with an agent session's address is caught in the history, and so is the address in a
+    staged file or a tag message; a message without one passes. No allowlist: no such address may remain."""
+    root, git = repo
+    url = "https://claude" + ".ai/code/" + "session_" + "01AbCdEfGhIjKlMnOpQrStUv"
+    (root / "a.md").write_text("x\n")
+    git("add", "a.md")
+    git("commit", "-q", "-m", "clean subject\n\nbody\n\nCo-Authored-By: someone <x@example.invalid>")
+    assert scan_history(root) == []
+    git("commit", "-q", "--allow-empty", "-m", f"subject\n\nbody\n\nClaude-Session: {url}")
+    git("tag", "-a", "v1", "-m", f"see {url}")
+    (root / "b.md").write_text(f"made in {url}\n")
+    git("add", "b.md")
+    history = scan_history(root)
+    assert any(i.endswith("message:5: agent session URL") and i.startswith("commit ") for i in history), history
+    assert "tag v1 message:1: agent session URL" in history
+    assert scan_index(root) == ["b.md:1: agent session URL"]
+    assert scan_text("m", "claude" + ".ai/code/" + "SESSION_x") and not scan_text("m", "claude" + ".ai/code/")
+
+
 def test_a_private_name_in_a_path_a_ref_or_an_author_line_is_caught(repo):
     """Names go public with the history as much as content does: a private name in a file path, a branch name or a
     commit's author line is caught, and a clean name is not."""

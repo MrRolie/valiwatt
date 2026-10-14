@@ -4,23 +4,43 @@ valiwatt validates and monitors a forecast of Québec's hourly electricity deman
 The forecast is deliberately simple. The project is about the checks around it: how the model is tested before it is
 trusted, how it is watched once it runs, and what it says when it should no longer be trusted.
 
-**Status: v1, rendered on the frozen rules.** The data layer and its gates; a day-ahead forecast (ordinary least
-squares on named features) with walk-forward validation, conformal prediction intervals and two test cases; a frozen
-model registered in MLflow; a monitor that replays a year hour by hour and recommends *investigate the data*,
-*recalibrate* or *retrain*, its rules frozen by the `rules-frozen` tag before 2024 was replayed; and the rules' false
-alarms and blind spots, measured on the 2023 rehearsal. Every gate and monitor has a break that makes it fire.
+**What it found.** The validation report measures the forecast's error on 2020–2023, out of sample, against a naive
+baseline; how often its prediction intervals cover the actual demand, overall and season by season; what the monitor
+recommended when 2024 was replayed hour by hour under rules frozen before 2024 was seen; and how often those rules
+raise a false alarm or miss a real change, measured on a 2023 rehearsal. The numbers are in the « En bref » block at
+the top of each report (« In short » in English), and every one of them comes from a tracked run:
 
-The reports, with the model card and a mapping to SR 11-7 and the NIST AI RMF: validation and monitoring
-([French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md)) and data quality
-([French](docs/report/dq.fr.md); [English](docs/report/dq.en.md)).
+- validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF:
+  [French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md);
+- data quality: [French](docs/report/dq.fr.md); [English](docs/report/dq.en.md).
+
+**Why the accuracy is limited.** The forecast is issued at the end of the day before, and it uses no weather
+forecast: yesterday's temperature, the only one known at issue time, stands in for one. Its error therefore includes
+the weather it could not know. The report also gives the bound with the observed weather of the target hour, which
+stands in for a perfect weather forecast; that bound is optimistic, and it issues no recommendation.
+
+**Status: v1, rendered on the frozen rules.** What is built:
+
+- the data layer and its gates;
+- a day-ahead forecast (ordinary least squares on named features) with walk-forward validation, conformal prediction
+  intervals and two test cases;
+- a frozen model registered in MLflow;
+- a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
+  rules frozen by the `rules-frozen` tag before 2024 was replayed;
+- the rules' false alarms and blind spots, measured on the 2023 rehearsal.
+
+Every gate and monitor has a break that makes it fire.
 
 ## Run it
 
 ```sh
 uv sync
-uv run valiwatt all      # fetch the data, run every check, render the report
-uv run pytest            # the checks' own tests (add -m network for the live-endpoint tests)
+uv run valiwatt all              # fetch the data, run every check, render the report
+uv run pytest -m "not network"   # the offline tests, every injected break included
+uv run pytest -m network         # the live tests only: the public endpoints and the quoted licence and standard texts
 ```
+
+A plain `uv run pytest` runs both sets.
 
 `valiwatt all` downloads the public data into `data/`, then runs the whole chain as tracked MLflow runs (stored in
 `mlruns/`): data quality, validation on 2019–2023, the frozen models, the 2023 rehearsal and the 2024 replay, and the
@@ -29,14 +49,21 @@ runs they come from and the hash of the code that made them; a test fails when t
 Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure with the one command, and the runs, not
 the rendered files, are the source of truth.
 
+The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
+entry per finished 2024 replay: its run ID, freeze commit, rules and code hashes, times, MAPE, coverage and
+recommendations. `valiwatt report` appends the replays it lacks (`valiwatt ledger` does only that); an entry is never
+rewritten, a run that disagrees with its entry is refused, and the new content must pass the public-safety scan
+before it is written. The ledger is not written during the replay itself, because every run records whether the tree
+was clean.
+
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
-`report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.
+`ledger`, `report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.
 `valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
 
 After a departure from the frozen rules (each is listed in `AGENTS.md`), the report shows the 2024 replay as post hoc
-beside the earlier replays it departs from, and those replays live only in `mlruns/`. A fresh clone then cannot render
-the report: the render refuses a 2024 replay that does not carry the recorded departure. Where `mlruns/` holds the
-earlier replays, `valiwatt all --departure` reproduces it.
+beside the earlier replays it departs from. Where `mlruns/` lacks one of those earlier replays (a fresh clone), the
+report shows it from its ledger entry, labelled as recorded in the ledger and not re-run here. The render still refuses
+a 2024 replay that does not carry the recorded departure.
 
 How it is built, and why each choice was made before any result was seen: [`docs/plan.md`](docs/plan.md). The
 standards the report maps to, quoted and checked against their PDFs: [`docs/standards.md`](docs/standards.md).
