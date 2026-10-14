@@ -20,7 +20,10 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
 | Temperature at the target hour (*observed weather*) | **no**: stands in for a weather forecast |
 
 - "Known at the origin" is judged on timestamps, with the values as fetched in 2026: no publication delay and no
-  revisions are modelled, because no real-time vintage of either source is available. Every result says so.
+  revisions are modelled, because no real-time vintage of either source is available. Every result says so. One
+  consequence: design code (validation, the frozen models) reads the data-quality layer's full-window series, whose
+  one misplaced-record repair fills 2022-01-01 05:00 UTC with a record stamped a year later; the replay, which rebuilds
+  from the raw records cut at its clock, cannot see that repair before the record arrives.
 - **Two weather scenarios, two separate fits.** Each scenario is its own model, fitted on its own temperature input,
   with its own out-of-sample errors, intervals and thresholds.
   - *Persistence weather* is the production scenario: the only one a forecaster could run at the origin. The frozen
@@ -56,7 +59,8 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   removes training rows only; test rows still read their lags from those hours.
 - **Error analysis:** mean absolute percentage error (demand never nears zero), mean absolute error, and signed bias;
   overall, by season, by hour of day, by year, and by load decile. Load deciles are taken on the *forecast*, with cut
-  points fixed on the training folds, so the grouping does not condition on the outcome. Every figure by group carries
+  points from the out-of-sample forecasts of all folds (forecasts only, never the outcome), so the grouping does not
+  condition on the outcome. Every figure by group carries
   a week-block bootstrap interval, and any "A beats B" sentence needs one that excludes zero.
 - **Test cases, with criteria fixed in advance.**
   - *The 2020 shift:* the spring 2020 months' error and bias against the same months of the other years. Intervals
@@ -100,9 +104,12 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
 - All thresholds, quantiles and windows are logged as parameters of the validation run. The replay reads them from
   that run.
 - **Freeze before 2024.** The monitoring rules (statistics, windows, quantiles, the decision table of section 5, the
-  Evidently test) may be tuned on the 2023 pseudo-replay. They are then frozen in a named commit before the 2024 replay
-  ever runs, and the report cites that commit. Any later change to them is listed in `AGENTS.md` as a departure,
-  labelled post hoc in the report, and the earlier replay is shown beside it.
+  Evidently test) may be tuned on the 2023 pseudo-replay. They are then frozen in a named commit, the `rules-frozen`
+  tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the
+  package and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a
+  file added later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a
+  tag moved since an earlier 2024 replay unless that move is recorded. Any later change to the rules is listed in
+  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it.
 
 ## 5. Monitoring: 2024 replayed as production
 
@@ -111,22 +118,31 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   any timestamp past the clock. The replay works from the raw fetched records, never from the full-window status
   columns of the data-quality layer: the canonical series, spike scores, lags and drift references are rebuilt from
   the records cut at the clock. Each day is scored, and its data quality judged, one hour after its last hour arrives,
-  since the next record is what shows whether the last hour was a spike or half of a fall-back pair.
+  since the next record is what shows whether the last hour was a spike or half of a fall-back pair. The exception is
+  the replay's last day, when the data end with it (2024 data never enter the pseudo-replay; 2025 is outside the
+  window): it is judged at the end of the data, its last hour's spike stays unscored, and its record says so.
+- **Thresholds.** The replay refuses thresholds computed on any week of the year it replays.
 - **Three monitors:** data quality (day-level criteria, section 4); drift (weekly, section 4); performance (weekly,
-  section 4). The weekly monitors stay quiet until the replay has a full week; they never borrow 2023 errors.
+  section 4). The weekly monitors stay quiet on a partial week (the first and last of a replay); they never borrow
+  2023 errors.
 - **An ordered decision table.** Each week the replay emits at most one recommendation, with all evidence listed:
   1. A data-quality failure that week → *investigate the data*; the performance rules are suppressed for that week.
-  2. MAPE above threshold, or bias outside its band, for two consecutive weeks, and in each of them on most of its
-     days too (at least 4 of 7) → *retrain*.
-  3. Coverage below threshold for two consecutive weeks, on most of their days too, while bias stays inside its band
+  2. The same performance failure two weeks running (MAPE above its threshold both weeks, or bias beyond the same
+     side of its band both weeks), broad in each week → *retrain*.
+  3. Coverage below its threshold two weeks running, broad in each week, while bias stays inside its band both weeks
      → *recalibrate the intervals*.
-  4. Input or forecast drift beyond its alarm level for two consecutive weeks, with performance inside its thresholds →
-     *investigate the data* (the inputs changed; check them before trusting the forecast).
-  Otherwise: no recommendation. Why "most of its days": the forecast reuses demand from one day and one week before,
-  so one bad day of demand also spoils the next day's forecast and the same day's a week later, which can put two
-  bad days into each of two weeks. Needing four of seven, one bad day alone never yields *retrain*. A week with a
-  data-quality failure or fewer than 120 scored hours has no performance statistics and breaks any streak. The
-  two-week rule alone is logged beside the decisions as a sensitivity; it never recommends.
+  4. The same input (temperature, or forecast) drifting beyond its alarm level two weeks running, with performance
+     inside its thresholds both weeks → *investigate the data* (the inputs changed; check them before trusting the
+     forecast).
+  Otherwise: no recommendation. *Broad* means the week stays beyond the threshold when its two most extreme days, in
+  the direction of the failure, are set aside. Why: the forecast reuses demand from one day and one week before, so
+  one bad day of demand also spoils the next day's forecast and the same day's a week later; that never puts more
+  than two spoiled days into one week, and with two days set aside the other five must fail on their own. So one bad
+  day alone never yields *retrain* or *recalibrate*, and neither does one bad week followed by its own echo through
+  the week-old lag (an echo has the opposite sign, so it is not the same failure twice). A week with a data-quality
+  failure or fewer than 120 scored hours has no performance statistics and breaks any streak. The first wording of
+  rule 2 (MAPE or bias out of band two weeks running, in any mix) is logged beside the decisions as a sensitivity; it
+  never recommends.
 - **Evidently.** Each week with a drift alarm is saved as an Evidently report, and the replay refuses to log a week
   where Evidently's value differs from its own.
 - **The monitor never acts.** The frozen model's coefficient hash and the interval half-widths are checked before and
@@ -139,12 +155,17 @@ built:
 
 - *Lookahead:* a feature reading demand after its origin is refused; a training row inside the embargo or after the
   fold start is refused; design code given a 2024 row is refused; thresholds derived from replay data are refused.
-- *Clock:* the replay reading past its clock raises.
+- *Clock:* the replay reading past its clock raises; records corrupted after a cut change nothing judged before it.
 - *Monitors:* injected temperature drift fires the drift monitor (the seasonal reference stays quiet on clean data);
   an injected sensor gap fires data quality, and so do a missing and a duplicated demand record; a shifted demand
   level fires *retrain*; deflated intervals fire *recalibrate*; two rules at once yield one recommendation with both
   pieces of evidence; a one-day shock at the end of a week (the worst place) does not yield *retrain*, while the
-  two-week rule alone would; a drift reference holding replayed days is refused.
+  two-week rule alone would; neither does a low week and its echo; with two days altered in any way, the trimmed
+  statistic never passes the untouched days (a property checked on 2,000 draws); a drift reference holding replayed
+  days, and thresholds built on the replayed year, are refused; partial weeks have no drift statistic.
+- *Freeze:* the 2024 replay is refused with no tag, with a rule file edited or added after it, or under a moved tag;
+  a frozen model or validation run from other data, another year or other rules is refused; so is a model file or
+  registered model whose hash no longer matches.
 - *Never acts:* a replay that writes to the model or the half-widths fails.
 - *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused.
 

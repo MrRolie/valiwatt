@@ -127,8 +127,8 @@ def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_da
             "weeks": int(len(part)),
         }
     starts = sorted({pd.Timestamp(p.split("/")[0]) for p in w.index})
-    drift_t = weekly_drift(temp, temp_days, starts).dropna()
-    drift_f = weekly_drift(forecast, forecast_days, starts).dropna()
+    drift_t = weekly_drift(temp, temp_days, starts, MIN_WEEK_HOURS).dropna()
+    drift_f = weekly_drift(forecast, forecast_days, starts, MIN_WEEK_HOURS).dropna()
     return {
         "performance": perf,
         "drift": {

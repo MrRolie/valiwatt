@@ -55,6 +55,17 @@ def _verify_raw() -> tuple[dict, list[dict]]:
     return hq, stn
 
 
+def eccc_manifests_sha256() -> str:
+    """One digest of every station's fetch manifest (each lists its months' SHA-256), so a later step can tell that
+    the ECCC files are the ones this run checked."""
+    import hashlib
+
+    h = hashlib.sha256()
+    for st in sorted(stations(), key=lambda s: s.climate_id):
+        h.update((eccc.RAW_ECCC / st.climate_id / "manifest.json").read_bytes())
+    return h.hexdigest()
+
+
 def _numeric_metrics(check) -> dict:
     out = {}
     for k, v in check.metrics.items():
@@ -109,6 +120,7 @@ def run_dq() -> int:
     with start_run(EXPERIMENT, "data-quality", tags={"kind": "dq", "valiwatt_version": __version__}) as run:
         mlflow.log_params({
             "hq_sha256": hq_manifest["sha256"], "hq_rows": hq_manifest["rows"],
+            "eccc_manifests_sha256": eccc_manifests_sha256(),
             "hq_retrieved_utc": hq_manifest["retrieved_utc"], "hq_dataset_modified": hq_manifest["dataset_modified"],
             "stations": ",".join(s.climate_id for s in panel_stations), "primary_station": primary.climate_id,
             "design_last_utc": DESIGN_LAST.isoformat(), "min_panel_stations": MIN_PANEL_STATIONS,

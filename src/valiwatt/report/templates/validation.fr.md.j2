@@ -1,0 +1,264 @@
+{% set P = v.performance %}
+{% set C = v.coverage %}
+{% set pct_sign = ' %' if lang == 'fr' else '%' %}
+{% macro sp(x, d=1) %}{{ (100 * x)|signed(d) }}{{ pct_sign }}{% endmacro %}
+{% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }} ; {{ hi|pct(d) }}]{% endmacro %}
+{% macro sci(lo, hi, d=2) %}[{{ sp(lo, d) }} ; {{ sp(hi, d) }}]{% endmacro %}
+{% macro pp(x, d=2) %}{{ (100 * x)|signed(d) }} pt{% endmacro %}
+{% macro ppci(lo, hi, d=2) %}[{{ pp(lo, d) }} ; {{ pp(hi, d) }}]{% endmacro %}
+{% set REC = {'retrain': 'réentraîner', 'recalibrate': 'recalibrer les intervalles', 'investigate_data': 'examiner les données'} %}
+{% set SEASON = {'winter': 'hiver', 'spring': 'printemps', 'summer': 'été', 'fall': 'automne'} %}
+{% set PROBLEM = {'missing_hour': 'heure manquante', 'blank_value': 'valeur vide', 'duplicate': 'doublon', 'demand_out_of_bounds': 'demande hors bornes', 'temperature_out_of_bounds': 'température hors bornes', 'temperature_silent': 'station principale muette'} %}
+{% set NAME = {'persistence': 'météo de la veille (production)', 'observed': 'météo observée (borne optimiste)', 'baseline': 'même heure, une semaine avant', 'panel_persistence': 'météo de la veille, moyenne des six stations'} %}
+{% set th24 = v.thresholds['2024'] %}
+{% set f24 = frozen[2024] %}
+{% set f23 = frozen[2023] %}
+{% set peak = v.cases.peak %}
+{% set sh = v.cases.shift_2020 %}
+# Validation et surveillance d'une prévision de la demande d'électricité au Québec
+
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis la rejouée de 2024 (section 11), code `{{ commit|short }}`{% if dirty %} **avec des modifications non validées**{% endif %}, empreinte du code `{{ code_sha|short }}`, règles de surveillance gelées au commit `{{ freeze.freeze_commit|short }}` (étiquette `{{ freeze.freeze_tag }}`). Chaque valeur mesurée vient de ces exécutions ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+## Fiche du modèle
+
+| | |
+|---|---|
+| **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à la fin du jour J−1 (heure normale de l'Est), avec un intervalle de prévision à 90 %. |
+| **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
+| **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
+| **Données** | Demande horaire de Hydro-Québec, température horaire de la station de {{ dq.sources.eccc|selectattr('primary')|map(attribute='centre')|first }} (ECCC). Conception sur 2019–2023 ; 2024 rejouée comme en production. |
+| **Modèle** | Moindres carrés ordinaires sur des variables nommées : une constante par heure et type de jour, le chauffage et la climatisation (degrés-heures, base {{ v.config.base_c|num(0) }} °C) par bloc horaire, la demande de la veille et de la semaine précédente. Figé sur les données jusqu'au {{ f24.params.train_last_day }} ; version {{ f24.tags.model_version }} du modèle enregistré `valiwatt-demand-persistence` (alias `replay-2024`). |
+| **Intervalle** | Prévision × (1 ± {{ f24.params.q|float|pct(2) }}) : quantile conforme des erreurs relatives hors échantillon des 12 mois précédents. |
+| **Erreur en validation** | EAMP de {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} sur 2020–2023, contre {{ P.baseline.overall.mean|pct(2) }} pour la référence naïve. |
+| **Rejouée 2024** | EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }} ; {{ r.summary.recommendations.values()|sum }} recommandation(s) (section 7). |
+| **Cas tests** | Printemps 2020 : biais de {{ sp(sh.bias_shift_year.mean, 2) }} contre {{ sp(sh.bias_other_years.mean, 2) }} les autres printemps{% if sh.separated %}, écart confirmé{% else %}, écart non confirmé par le critère fixé d'avance{% endif %}. Pointe de froid de {{ peak.named_month }} : {{ peak.covered }} des {{ peak.evaluated }} heures les plus chargées dans l'intervalle. |
+| **Mise en garde météo** | La production utilise la température de la veille, seule connue à l'émission. La météo observée de l'heure visée, qui tient lieu d'une prévision météo parfaite, n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
+| **Limites** | Section 8. |
+| **Auteur** | {{ attribution[-1] }} |
+
+## 1. Les méthodes, en mots simples
+
+- **Validation progressive.** Chaque mois de 2020 à 2023 est prévu par un modèle réajusté sur les heures qui le précèdent seulement, moins les 7 derniers jours (l'embargo). Aucune information du mois testé ne sert à l'ajuster.
+- **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) : en moyenne, de combien la prévision s'écarte de la demande réelle. Le biais signé dit dans quel sens.
+- **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne. « A bat B » n'est écrit que si l'intervalle de la différence exclut zéro.
+- **L'intervalle de prévision (conformité).** Sur les 12 mois précédents, on regarde l'erreur relative de chaque heure ; le quantile qui en couvre 90 % devient la demi-largeur de l'intervalle du mois suivant. Rien n'est supposé sur la forme des erreurs ; on suppose seulement que les erreurs à venir ressemblent aux erreurs passées, et on mesure si c'est le cas.
+- **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec l'empreinte de ses coefficients, puis rejoué heure par heure.
+- **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation : EAMP au-dessus du 95ᵉ centile, biais hors de l'intervalle 2,5ᵉ–97,5ᵉ centile, couverture sous le 5ᵉ centile.
+- **La dérive.** Chaque semaine, la distribution des températures et celle des prévisions sont comparées aux mêmes semaines (± 2) des années précédentes, avec la distance de Wasserstein normée d'Evidently. Le niveau d'alarme est le 95ᵉ centile de cette distance sur les semaines de validation.
+- **La table de décision.** Chaque semaine, au plus une recommandation, avec ses preuves : (1) un échec de qualité des données → examiner les données ; (2) la même défaillance deux semaines de suite (EAMP au-dessus du seuil, ou biais du même côté de sa bande), étendue à toute la semaine → réentraîner ; (3) couverture sous le seuil deux semaines de suite, étendue, biais dans sa bande → recalibrer les intervalles ; (4) la même entrée en dérive deux semaines de suite, performance dans ses seuils → examiner les données. « Étendue » : la semaine reste hors seuil quand on écarte ses deux jours les plus extrêmes. Un seul mauvais jour ne touche jamais plus de deux jours d'une semaine (lui-même et, par les retards, le lendemain ou le même jour la semaine suivante) : il ne peut donc pas, à lui seul, déclencher une recommandation. Le moniteur recommande ; il n'agit jamais.
+
+## 2. Validation sur 2020–2023
+
+{{ v.folds.count }} plis mensuels, de {{ v.folds.first }} à {{ v.folds.last }}, embargo de {{ v.folds.embargo_days }} jours.
+
+| Prévision | EAMP | IC 95 % | Biais signé | Heures |
+|---|---|---|---|---|
+{% for name in ['persistence', 'observed', 'baseline', 'panel_persistence'] %}
+| {{ NAME[name] }} | {{ P[name].overall.mean|pct(2) }} | {{ ci(P[name].overall.ci95_low, P[name].overall.ci95_high) }} | {{ sp(P[name].overall.bias.mean, 2) }} | {{ P[name].overall.hours|num }} |
+{% endfor %}
+
+{% set c1 = v.compare.persistence_vs_baseline %}
+{% set c2 = v.compare.observed_vs_persistence %}
+{% set c3 = v.compare.panel_vs_primary %}
+Les différences d'EAMP sont en points de pourcentage (pt).
+
+- Météo de la veille contre la référence naïve : {{ pp(c1.difference) }} d'EAMP {{ ppci(c1.ci95_low, c1.ci95_high) }}{% if c1.separated %}, écart confirmé{% else %}, écart non confirmé{% endif %}.
+- Météo observée contre météo de la veille : {{ pp(c2.difference) }} {{ ppci(c2.ci95_low, c2.ci95_high) }} ; c'est ce qu'une prévision météo parfaite ajouterait au plus.
+- Moyenne des six stations contre la station principale (analyse de sensibilité, jamais utilisée pour choisir) : {{ pp(c3.difference) }} {{ ppci(c3.ci95_low, c3.ci95_high) }}.
+
+![EAMP mensuelle]({{ fig.validation_monthly_mape }})
+
+**Par saison et par année** (météo de la veille) :
+
+| Groupe | EAMP | IC 95 % | Biais | IC 95 % du biais |
+|---|---|---|---|---|
+{% for row in P.persistence.season %}
+| {{ SEASON[row.key] }} | {{ row.ape|pct(2) }} | {{ ci(row.ape_low, row.ape_high) }} | {{ sp(row.rel_bias, 2) }} | {{ sci(row.rel_bias_low, row.rel_bias_high) }} |
+{% endfor %}
+{% for row in P.persistence.year %}
+| {{ row.key }} | {{ row.ape|pct(2) }} | {{ ci(row.ape_low, row.ape_high) }} | {{ sp(row.rel_bias, 2) }} | {{ sci(row.rel_bias_low, row.rel_bias_high) }} |
+{% endfor %}
+
+**Par décile de charge prévue** (les déciles sont pris sur la prévision, jamais sur la demande réelle) :
+
+| Décile | EAMP | Biais |
+|---|---|---|
+{% for row in P.persistence.decile %}
+| {{ row.key }} | {{ row.ape|pct(2) }} | {{ sp(row.rel_bias, 2) }} |
+{% endfor %}
+
+## 3. Cas tests
+
+**Printemps 2020.** Mois de {{ sh.months|join(', ') }} : biais de {{ sp(sh.bias_shift_year.mean, 2) }} {{ sci(sh.bias_shift_year.ci95_low, sh.bias_shift_year.ci95_high) }} en {{ sh.year }}, contre {{ sp(sh.bias_other_years.mean, 2) }} {{ sci(sh.bias_other_years.ci95_low, sh.bias_other_years.ci95_high) }} les autres années. Le critère fixé d'avance (intervalles disjoints) {% if sh.separated %}confirme{% else %}ne confirme pas{% endif %} l'écart. Les intervalles de prévision ne couvrent pas 2020 : ils demandent 12 mois de calibration.
+
+| Mois | EAMP | Biais |
+|---|---|---|
+{% for row in sh.monthly %}
+| {{ row.key }} | {{ row.ape|pct(2) }} | {{ sp(row.rel_bias, 2) }} |
+{% endfor %}
+
+**Pointe de froid de {{ peak.named_month }}.** Les {{ peak.evaluated }} heures les plus chargées de 2019–2023{% if peak.busiest_in_named_month %} tombent en {{ peak.named_month }}{% endif %}. {{ peak.covered }} sur {{ peak.evaluated }} sont dans l'intervalle à 90 %. C'est un échec conditionnel connu : un modèle linéaire en degrés-heures, nourri de la température de la veille, sous-estime une vague de froid qui s'intensifie.
+
+![Pointe de froid]({{ fig.validation_peak_hours }})
+
+| Heure (UTC) | Demande | Température | Météo de la veille | Intervalle | Météo observée |
+|---|---|---|---|---|---|
+{% for h in peak.hours %}
+| {{ h.utc|utc }} | {{ h.target|num }} MW | {{ h.temp_c|num(1) }} °C | {{ h.pred_persistence|num }} MW | {{ h.lower|num }}–{{ h.upper|num }} | {{ h.pred_observed|num }} MW |
+{% endfor %}
+
+## 4. Intervalles de prévision
+
+Nominal 90 %, à partir de {{ v.conformal.first_fold }}.
+
+| Forme | Couverture | IC 95 % | Demi-largeur moyenne |
+|---|---|---|---|
+{% for name, label in [('relative', 'relative, un quantile (production)'), ('relative_by_season', 'relative, un quantile par saison (sensibilité)'), ('absolute', 'absolue (sensibilité)'), ('observed_relative', 'relative, météo observée')] %}
+| {{ label }} | {{ C[name].overall.mean|pct(1) }} | {{ ci(C[name].overall.ci95_low, C[name].overall.ci95_high, 1) }} | {{ C[name].mean_half_width_pct|num(2) }}{{ pct_sign }} |
+{% endfor %}
+
+La couverture globale est proche du nominal, mais pas la couverture conditionnelle : l'hiver et les déciles de charge élevés sont sous-couverts, l'été est sur-couvert. Un quantile par saison corrige l'essentiel (sensibilité). La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
+
+![Couverture par saison]({{ fig.validation_coverage_by_season }})
+
+| Saison | Un quantile | Un quantile par saison |
+|---|---|---|
+{% for s in ['winter', 'spring', 'summer', 'fall'] %}
+| {{ SEASON[s] }} | {{ (C.relative.season|selectattr('key', 'equalto', s)|first).covered|pct(1) }} | {{ (C.relative_by_season.season|selectattr('key', 'equalto', s)|first).covered|pct(1) }} |
+{% endfor %}
+
+| Décile de charge prévue | Couverture (un quantile) |
+|---|---|
+{% for row in C.relative.decile %}
+| {{ row.key }} | {{ row.covered|pct(1) }} |
+{% endfor %}
+
+## 5. Seuils de surveillance
+
+Tirés des semaines de validation 2021–2023 (la rejouée de 2023 n'utilise que 2021–2022). Semaines de lundi à dimanche, heure normale ; une semaine de moins de {{ th24.min_week_hours }} heures notées n'est pas jugée.
+
+| Saison | EAMP au-dessus de | Biais hors de | Couverture sous | Semaines |
+|---|---|---|---|---|
+{% for s in ['winter', 'spring', 'summer', 'fall'] %}
+{% set t = th24.performance[s] %}
+| {{ SEASON[s] }} | {{ t.mape_high|pct(2) }} | {{ sp(t.bias_low, 2) }} à {{ sp(t.bias_high, 2) }} | {{ t.coverage_low|pct(1) }} | {{ t.weeks }} |
+{% endfor %}
+
+Dérive : alarme au-dessus de {{ th24.drift.temperature_high|num(3) }} pour la température et de {{ th24.drift.forecast_high|num(3) }} pour la prévision.
+
+## 6. Le modèle figé, répété sur 2023
+
+Avant de rejouer 2024, la même procédure est répétée sur les années de conception : modèle figé sur les données jusqu'au {{ f23.params.train_last_day }}, seuils tirés de 2021–2022, 2023 rejouée heure par heure.
+
+{% set pr = p.refitted %}
+| | Modèle figé | Plis réajustés chaque mois |
+|---|---|---|
+| EAMP | {{ pr.mape.frozen.mean|pct(2) }} | {{ pr.mape.refitted.mean|pct(2) }} |
+| Biais | {{ sp(pr.bias.frozen.mean, 2) }} | {{ sp(pr.bias.refitted.mean, 2) }} |
+| Couverture | {{ pr.coverage.frozen.mean|pct(1) }} | {{ pr.coverage.refitted.mean|pct(1) }} |
+| Semaines EAMP hors seuil | {{ pr.flag_weeks.frozen.mape_high }} | {{ pr.flag_weeks.refitted.mape_high }} |
+| Semaines biais au-dessus de sa bande | {{ pr.flag_weeks.frozen.bias_high }} | {{ pr.flag_weeks.refitted.bias_high }} |
+| Semaines biais au-dessous de sa bande | {{ pr.flag_weeks.frozen.bias_low }} | {{ pr.flag_weeks.refitted.bias_low }} |
+| Semaines couverture basse | {{ pr.flag_weeks.frozen.coverage_low }} | {{ pr.flag_weeks.refitted.coverage_low }} |
+| Recommandations | {{ pr.recommendations.frozen.values()|sum }} | {{ pr.recommendations.refitted.values()|sum }} |
+
+Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} heures : {{ pp(pr.frozen_minus_refitted_ape.difference) }} {{ ppci(pr.frozen_minus_refitted_ape.ci95_low, pr.frozen_minus_refitted_ape.ci95_high) }}{% if pr.frozen_minus_refitted_ape.separated %}, écart confirmé{% else %} : aucun écart confirmé ; figer le modèle un an ne coûte pas de précision mesurable sur 2023{% endif %}.
+
+{% set alone = p.summary.retrain_under_two_week_rule_alone %}
+{% set flips = [] %}
+{% for d in alone %}{% if d.weeks[0].stats.rel_bias * d.weeks[1].stats.rel_bias < 0 %}{% set _ = flips.append(1) %}{% endif %}{% endfor %}
+**Pourquoi « la même défaillance, étendue ».** {% if alone %}Avec la première formulation de la règle 2 (EAMP ou biais hors seuil deux semaines de suite, dans n'importe quel ordre), le moniteur aurait recommandé de réentraîner la semaine du {% for d in alone %}{{ d.week_start|day }} (biais {{ sp(d.weeks[0].stats.rel_bias, 2) }} puis {{ sp(d.weeks[1].stats.rel_bias, 2) }}){% if not loop.last %}, puis celle du {% endif %}{% endfor %}.{% if flips|length == alone|length %} Chaque fois, le biais change de signe d'une semaine à l'autre : c'est le profil d'un écart passager que les retards de 24 h et de 168 h reportent sur les jours suivants ; un modèle dégradé garderait plutôt une erreur de même signe.{% endif %}{% else %}Sur 2023, la première formulation de la règle 2 n'aurait rien recommandé de plus.{% endif %} La règle retenue exige la même défaillance deux semaines de suite, étendue à chaque semaine ; un épisode passager ne suffit pas.
+
+![Rejouée 2023]({{ fig.pseudo_replay_2023_weekly }})
+
+## 7. 2024 rejouée comme en production
+
+L'horloge avance d'heure en heure du {{ r.days[0].day|day }} au {{ r.days[-1].day|day }} ; chaque lecture passe par un accès qui refuse toute donnée postérieure à l'horloge. Le modèle et ses intervalles sont vérifiés par empreinte avant et après : `{{ r.model.sha256|short }}`, inchangée.
+
+| | |
+|---|---|
+| EAMP | {{ r.summary.mape.mean|pct(2) }} {{ ci(r.summary.mape.ci95_low, r.summary.mape.ci95_high) }} |
+| Biais | {{ sp(r.summary.bias.mean, 2) }} {{ sci(r.summary.bias.ci95_low, r.summary.bias.ci95_high) }} |
+| Couverture (nominale 90 %) | {{ r.summary.coverage.mean|pct(1) }} {{ ci(r.summary.coverage.ci95_low, r.summary.coverage.ci95_high, 1) }} |
+| Heures prévues / notées | {{ r.summary.hours_issued|num }} / {{ r.summary.hours_scored|num }} |
+| Jours en échec de qualité | {{ r.summary.days_failed }} sur {{ r.summary.days }} |
+| Semaines jugées | {{ r.summary.weeks_evaluated }} sur {{ r.summary.weeks }} |
+
+**Recommandations.**
+{% set recs = r.decisions|selectattr('recommendation')|list %}
+{% if not recs %}
+
+Aucune semaine de 2024 n'a déclenché de recommandation.
+{% else %}
+
+| Semaine du | Recommandation | Règle | Preuves |
+|---|---|---|---|
+{% for d in recs %}
+| {{ d.week_start|day }} | {{ REC[d.recommendation] }} | {{ d.rule }} | {% for f in d.fired %}{% if f.rule == 1 %}jours en échec : {{ f.evidence.failed_days|map('day')|join(', ') }}{% elif f.rule == 4 %}dérive {% for e in f.evidence %}{{ e.week_start|day }} : température {{ e.drift.temperature|num(2) }}, prévision {{ e.drift.forecast|num(2) }}{% if not loop.last %} ; {% endif %}{% endfor %}{% else %}{% for e in f.evidence %}{{ e.week_start|day }} : EAMP {{ e.stats.mape|pct(2) }}, biais {{ sp(e.stats.rel_bias, 2) }}, couverture {{ e.stats.covered|pct(1) }}{% if not loop.last %} ; {% endif %}{% endfor %}{% endif %}{% if not loop.last %} — {% endif %}{% endfor %} |
+{% endfor %}
+{% endif %}
+
+{% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
+Avec la première formulation de la règle 2 : {% if alone24 %}« réentraîner » la semaine du {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, du {% endif %}{% endfor %}.{% else %}aucune recommandation de plus.{% endif %}
+
+![Rejouée 2024]({{ fig.replay_2024_weekly }})
+
+![Dérive 2024]({{ fig.replay_2024_drift }})
+
+{% if r.evidently_checks %}
+Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dans l'exécution, et la valeur d'Evidently est comparée à celle du moniteur : {{ r.evidently_checks|length }} comparaisons, toutes égales.
+{% endif %}
+
+## 8. Limites
+
+- **Couverture conditionnelle.** L'intervalle de production sous-couvre l'hiver et les fortes charges ; les seuils de couverture d'hiver héritent de cette sous-couverture, donc le moniteur ne la signale pas comme une dégradation.
+- **Froids extrêmes.** La pointe de {{ peak.named_month }} n'est pas couverte ; le modèle sous-estime les vagues de froid qui s'intensifient.
+- **Dérive de niveau.** La demande corrigée de la météo monte depuis 2021 ; les variables de retard en portent une partie, le reste apparaît en biais, que le moniteur surveille.
+- **Données en temps réel.** Les valeurs sont celles téléchargées en 2026 ; ni délai de publication ni révision ne sont modélisés.
+- **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'une même session d'agent IA sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. La revue a été faite par des agents à contexte neuf, ce qui n'est pas une validation indépendante au sens de SR 11-7.
+
+## 9. Les bris : chaque contrôle est vu en train de se déclencher
+
+Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attraper. L'exécution `breaks` les lance tous ; le rapport refuse d'être généré si l'un d'eux ne se déclenche pas.
+
+| Contrôle | Bris | Résultat |
+|---|---|---|
+{% for row in b.breaks %}
+| {{ b.groups[row.group][0] }} | {{ row.fr }} | {{ 'déclenché' if row.outcome == 'passed' else 'ÉCHEC' }} |
+{% endfor %}
+
+## 10. Correspondance avec SR 11-7 et le NIST AI RMF
+
+Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en anglais, langue des documents). Le tableau dit ce que les contrôles couvrent, rien de plus.
+
+| Attente | Ce que fait valiwatt | Où c'est vérifié |
+|---|---|---|
+| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Configuration fixée dans le plan avant la validation ; variables nommées, coefficients montrés à côté d'un ajustement sans retards ; sensibilités : six stations, intervalle absolu, quantile par saison, règle de deux semaines seule. | Plan, section 2 ; exécutions de validation et du modèle figé |
+| SR 11-7, qualité et pertinence des données | 23 portes de qualité sur toute la fenêtre, chaque réparation documentée ; représentativité de la station ; en production, un moniteur de qualité quotidien sur les enregistrements bruts. | Rapport de qualité des données ; rejouées |
+| SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures ; empreinte du modèle vérifiée avant et après ; la rejouée de 2024 refuse de tourner si les règles diffèrent de l'étiquette `rules-frozen`. Chaque garde a son bris. | Section 9 |
+| SR 11-7, surveillance continue : étalonnage comparatif | Référence naïve ; météo observée comme borne optimiste ; modèle figé contre plis réajustés sur 2023 (analyse de résultats en parallèle). | Sections 2 et 6 |
+| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; couverture mesurée globalement, par saison, par bloc horaire et par décile ; statistiques hebdomadaires jugées contre des seuils fixés d'avance. | Sections 2, 4, 6, 7 |
+| SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée (examiner, recalibrer, réentraîner), avec preuves ; recommande sans agir. | Sections 5 et 7 |
+| SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
+| NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejouées dans des conditions de production ; bris ; la colonne « non couvert » ci-dessous. | Exécutions ; section 9 |
+| NIST MANAGE 2.2, 2.4 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 7 |
+
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des dérogations ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; données en temps réel.
+
+## 11. Provenance
+
+| Exécution | Identifiant | Date |
+|---|---|---|
+{% for name, label in [('dq', 'qualité des données'), ('validation', 'validation'), ('frozen_2023', 'modèle figé pour 2023'), ('frozen_2024', 'modèle figé pour 2024'), ('pseudo_replay', 'rejouée 2023'), ('replay', 'rejouée 2024'), ('breaks', 'bris')] %}
+| {{ label }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
+{% endfor %}
+
+Empreinte du code : `{{ code_sha }}`. Empreinte des règles : `{{ rules_sha }}`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.

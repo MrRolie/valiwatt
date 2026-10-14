@@ -42,6 +42,7 @@ STATUS_MISSING_RECORD = "missing_record"
 STATUS_MISSING_VALUE = "missing_value"
 STATUS_MASKED_DST = "masked_dst"
 STATUS_REPAIRED = "repaired_misplaced"
+STATUS_OUT_OF_BOUNDS = "out_of_bounds"
 USABLE = (STATUS_OK, STATUS_REPAIRED)
 
 
@@ -51,7 +52,8 @@ class DemandBuild:
     dst_events: list = field(default_factory=list)
     misplaced_events: list = field(default_factory=list)
     unresolved_duplicates: list = field(default_factory=list)
-    outside_window: list = field(default_factory=list)
+    outside_window: list = field(default_factory=list)  # outside the window, or off its hourly grid
+    out_of_bounds: list = field(default_factory=list)  # raw records whose value is outside BOUNDS_MW
 
 
 def same_wall_clock(a: pd.Timestamp, b: pd.Timestamp, tz: str = LOCAL_TZ) -> bool:
@@ -72,21 +74,31 @@ def _pair_path(first: float, second: float, s: pd.Timestamp, t: pd.Timestamp, va
     return abs(first - values.get(s - h, np.nan)) + abs(second - first) + abs(values.get(t + h, np.nan) - second)
 
 
-def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd.Timestamp = DEMAND_LAST) -> DemandBuild:
+def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd.Timestamp = DEMAND_LAST,
+                 scale_last: pd.Timestamp = DESIGN_LAST) -> DemandBuild:
+    """scale_last: the last hour whose spike statistic enters the robust scale (the design window by default)."""
     idx = pd.date_range(first, last, freq="h")
-    counts = raw.groupby("ts_utc").size()
-    outside = [t for t in counts.index if t < first or t > last]
-    dup_slots = [t for t in counts[counts > 1].index if first <= t <= last]
+    on_grid = raw["ts_utc"].isin(idx)
+    counts = raw[on_grid].groupby("ts_utc").size()
+    outside = sorted(raw.loc[~on_grid, "ts_utc"].unique())
+    raw = raw[on_grid]
+    out_of_range = raw["mw"].notna() & ((raw["mw"] < BOUNDS_MW[0]) | (raw["mw"] > BOUNDS_MW[1]))
+    bad_bounds = raw.loc[out_of_range, ["ts_utc", "mw", "source_line"]].to_dict("records")
+    dup_slots = [t for t in counts[counts > 1].index]
     missing = set(idx.difference(counts.index))
 
     values = pd.Series(np.nan, index=idx, dtype=float)
     status = pd.Series(STATUS_OK, index=idx, dtype=object)
     single = raw[~raw["ts_utc"].isin(dup_slots) & raw["ts_utc"].between(first, last)].set_index("ts_utc")["mw"]
     values.loc[single.index] = single.to_numpy()
+    # An out-of-bounds value is set aside before any repair or spike score uses it as a neighbour.
+    oob = values.notna() & ((values < BOUNDS_MW[0]) | (values > BOUNDS_MW[1]))
+    oob_values = values[oob]
+    values[oob] = np.nan
     status.loc[single.index[single.isna().to_numpy()]] = STATUS_MISSING_VALUE
     status.loc[sorted(missing)] = STATUS_MISSING_RECORD
 
-    build = DemandBuild(frame=pd.DataFrame(), outside_window=outside)
+    build = DemandBuild(frame=pd.DataFrame(), outside_window=outside, out_of_bounds=bad_bounds)
     h = pd.Timedelta(hours=1)
     remaining = []
     for t in dup_slots:
@@ -154,12 +166,14 @@ def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd
 
     frame = pd.DataFrame({"mw": values, "status": status})
     frame.index.name = "ts_utc"
+    frame.loc[oob_values.index, "mw"] = oob_values  # kept as evidence, never used
+    frame.loc[oob_values.index, "status"] = STATUS_OUT_OF_BOUNDS
     usable = frame["status"].isin(USABLE)
     series = frame["mw"].where(usable)
     stat = spike_statistic(series)
     # The scale comes from the design window alone: the statistic is recomputed on the cut series, so the last design
     # hour never borrows its 2024 neighbour.
-    _, med, mad = robust_z(spike_statistic(series[series.index <= DESIGN_LAST]).dropna())
+    _, med, mad = robust_z(spike_statistic(series[series.index <= scale_last]).dropna())
     frame["spike_z"] = (stat - med) / mad
     frame["spike_flag"] = frame["spike_z"].abs() > SPIKE_Z
     build.frame = frame
@@ -193,16 +207,16 @@ def demand_checks(build: DemandBuild) -> list[CheckResult]:
             evidence=build.unresolved_duplicates[:20],
         )
     )
+    # Bounds are judged on the raw records, so a value hidden by a masked fall-back pair is still seen.
     observed = f["mw"].dropna()
-    out = observed[(observed < BOUNDS_MW[0]) | (observed > BOUNDS_MW[1])]
     checks.append(
         CheckResult(
             "demand_bounds",
             "gate",
-            passed=out.empty,
-            metrics={"low_mw": BOUNDS_MW[0], "high_mw": BOUNDS_MW[1], "violations": len(out),
+            passed=not build.out_of_bounds,
+            metrics={"low_mw": BOUNDS_MW[0], "high_mw": BOUNDS_MW[1], "violations": len(build.out_of_bounds),
                      "min_mw": observed.min(), "max_mw": observed.max()},
-            evidence=[{"utc": t, "mw": v} for t, v in out.head(20).items()],
+            evidence=[{"utc": r["ts_utc"], "mw": r["mw"]} for r in build.out_of_bounds[:20]],
         )
     )
     coverage = float(usable.mean())

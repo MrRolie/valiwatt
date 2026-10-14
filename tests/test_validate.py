@@ -69,3 +69,24 @@ def test_pseudo_replay_thresholds_read_no_week_of_the_year_they_judge(tables):
     weeks = pd.DataFrame(th["2023"]["weekly_validation"])
     assert pd.to_datetime(weeks["first_day"]).max() < pd.Timestamp("2023-01-01")
     assert th["2023"]["last_year"] == 2022 and th["2024"]["last_year"] == 2023
+
+
+def test_drift_thresholds_for_a_replay_ignore_the_replayed_year():
+    """Changing every temperature and forecast of 2023 moves the 2024 replay's drift alarm levels, never the 2023
+    pseudo-replay's."""
+    days = pd.Series(pd.date_range("2019-01-01", "2023-12-31", freq="D").repeat(24))
+    idx = pd.date_range("2019-01-01T06:00Z", periods=len(days), freq="h")
+    days.index = idx
+    rng = np.random.default_rng(3)
+    doy = days.dt.dayofyear.to_numpy()
+    temp = pd.Series(5 - 15 * np.cos(2 * np.pi * doy / 365.25) + rng.normal(0, 3, len(idx)), index=idx)
+    fc = pd.Series(20_000 + 300 * np.maximum(18 - temp, 0) + rng.normal(0, 200, len(idx)), index=idx)
+    err = pd.DataFrame({"day": days, "ape": rng.uniform(0, 0.08, len(idx)), "rel_bias": rng.normal(0, 0.03, len(idx)),
+                        "year": days.dt.year, "week": days.dt.to_period("W-SUN").astype(str)}, index=idx)
+    covered = pd.Series(rng.uniform(0, 1, len(idx)) < 0.9, index=idx).astype(float)
+    late = (days >= pd.Timestamp("2023-01-01")).to_numpy()
+    base = {y: vd.thresholds(err, covered, temp, days, fc, days, 2021, y) for y in (2022, 2023)}
+    moved = {y: vd.thresholds(err, covered, temp.where(~late, temp + 15), days, fc.where(~late, fc * 1.3), days, 2021, y)
+             for y in (2022, 2023)}
+    assert moved[2022]["drift"] == base[2022]["drift"]
+    assert moved[2023]["drift"]["temperature_high"] != base[2023]["drift"]["temperature_high"]

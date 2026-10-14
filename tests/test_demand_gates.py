@@ -200,3 +200,29 @@ def test_spike_scale_ignores_hours_after_the_design_window():
     qb = {c.name: c for c in demand_checks(build_demand(other, pd.Timestamp(first), pd.Timestamp(last)))}
     key = "design_quantile_abs_z"
     assert qa["demand_spikes"].metrics[key] == pytest.approx(qb["demand_spikes"].metrics[key])
+
+
+def test_a_record_off_the_hourly_grid_fails_the_window_gate_with_its_timestamp():
+    raw = synth_demand(FIRST, LAST)
+    raw.loc[150, "ts_utc"] = raw.loc[150, "ts_utc"] + pd.Timedelta(minutes=30)
+    build, c = run(raw, FIRST, LAST)
+    assert not c["demand_window"].passed
+    assert raw.loc[150, "ts_utc"] in build.outside_window
+
+
+def test_an_out_of_bounds_value_inside_a_fall_back_pair_still_fails_the_bounds_gate():
+    fall_back = pd.Timestamp("2021-11-07T06:00Z")  # 01:00 EST, the second 01:00 of the night
+    raw = drop_record(synth_demand(FIRST, LAST), fall_back - H)
+    raw = add_record(raw, fall_back, 0.0)
+    build, c = run(raw, FIRST, LAST)
+    assert (build.frame.loc[[fall_back - H, fall_back], "status"] == STATUS_MASKED_DST).all()
+    assert not c["demand_bounds"].passed
+
+
+def test_an_out_of_bounds_neighbour_does_not_make_a_spike():
+    raw = synth_demand(FIRST, LAST)
+    raw.loc[500, "mw"] = 9.9e6
+    build, _ = run(raw, FIRST, LAST)
+    t = raw.loc[500, "ts_utc"]
+    assert build.frame.loc[t, "status"] == "out_of_bounds"
+    assert not build.frame.loc[[t - H, t + H], "spike_flag"].any()

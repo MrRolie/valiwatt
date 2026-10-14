@@ -21,7 +21,7 @@ import pandas as pd
 
 from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.evaluate import ALPHA, CALIBRATION_FOLDS, conformal_quantile
-from valiwatt.forecast.guards import require_design_window, require_known_at_origin
+from valiwatt.forecast.guards import require_design_window, require_embargo, require_known_at_origin
 from valiwatt.forecast.model import OLSForecaster, design, usable_rows
 
 EXPERIMENT = "valiwatt-frozen-model"
@@ -94,7 +94,8 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[Fr
     """Fit the frozen model and its half-width. Returns the model and a table of its coefficients beside an
     explanatory fit without the lags (for interpretation only)."""
     fold = wf.folds(f"{replay_year}-01", f"{replay_year}-01")[0]
-    train = f[f["day"] <= fold.train_last_day]
+    train, _ = wf.split(f, fold)
+    require_embargo(train, fold.test_first_day, wf.EMBARGO_DAYS)
     require_design_window(train, f"frozen model for {replay_year}")
     require_known_at_origin(train)
     m = OLSForecaster(SCENARIO).fit(train)
@@ -121,23 +122,34 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[Fr
 
 
 def run_freeze(replay_year: int) -> int:
-    import tempfile
-    from pathlib import Path
-
-    import mlflow
-
-    from valiwatt.forecast.pyfunc import FrozenPyfunc
     from valiwatt.forecast.validate import design_features, load_inputs, load_validation, temperature_sources
     from valiwatt.monitor.rules import rules_sha256
-    from valiwatt.tracking import client, start_run
 
     dq, demand, weather = load_inputs()
     val, oos = load_validation(dq)
     f = design_features(demand, temperature_sources(weather)["primary"])
     frozen, coef = fit_frozen(f, oos, replay_year)
+    example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24)
+    run, version = log_frozen(frozen, coef, example, {"validation_run_id": val.info.run_id, "dq_run_id": dq.info.run_id,
+                                                      "rules_sha256": rules_sha256()})
+    print(f"frozen model for {replay_year}: run {run.info.run_id}, {MODEL_NAME} v{version} "
+          f"(alias replay-{replay_year}), half-width {100 * frozen.q:.2f} %, sha256 {frozen.sha256()[:12]}")
+    return 0
+
+
+def log_frozen(frozen: FrozenModel, coef: pd.DataFrame, example: pd.DataFrame, tags: dict):
+    """Log the frozen model as an MLflow run and a registered model version with the alias replay-<year>."""
+    import tempfile
+    from pathlib import Path
+
+    import mlflow
+
+    from valiwatt.forecast import pyfunc as pyfunc_module
+    from valiwatt.tracking import client, start_run
+
+    replay_year = frozen.replay_year
     with start_run(EXPERIMENT, f"frozen-{replay_year}", tags={
-        "kind": "frozen", "replay_year": str(replay_year), "validation_run_id": val.info.run_id,
-        "dq_run_id": dq.info.run_id, "coefficient_sha256": frozen.sha256(), "rules_sha256": rules_sha256(),
+        "kind": "frozen", "replay_year": str(replay_year), "coefficient_sha256": frozen.sha256(), **tags,
     }) as run:
         mlflow.log_params({"replay_year": replay_year, "train_last_day": frozen.train_last_day,
                            "n_train": frozen.n_train, "q": frozen.q, "alpha": ALPHA,
@@ -149,18 +161,15 @@ def run_freeze(replay_year: int) -> int:
             path.write_text(frozen.to_json(), encoding="utf-8")
             coef.to_csv(Path(tmp) / "coefficients.csv", index=False)
             mlflow.log_artifact(str(Path(tmp) / "coefficients.csv"))
-            example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24)
             info = mlflow.pyfunc.log_model(
-                name="model", python_model=FrozenPyfunc(), artifacts={"frozen": str(path)},
+                name="model", python_model=str(Path(pyfunc_module.__file__)), artifacts={"frozen": str(path)},
                 input_example=example, registered_model_name=MODEL_NAME,
                 pip_requirements=[f"mlflow=={mlflow.__version__}", f"pandas=={pd.__version__}",
                                   f"numpy=={np.__version__}"])
         client().set_registered_model_alias(MODEL_NAME, f"replay-{replay_year}", info.registered_model_version)
         mlflow.set_tag("model_version", str(info.registered_model_version))
         mlflow.set_tag("status", "complete")
-    print(f"frozen model for {replay_year}: run {run.info.run_id}, {MODEL_NAME} v{info.registered_model_version} "
-          f"(alias replay-{replay_year}), half-width {100 * frozen.q:.2f} %, sha256 {frozen.sha256()[:12]}")
-    return 0
+    return run, info.registered_model_version
 
 
 def load_frozen(replay_year: int):

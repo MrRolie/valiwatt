@@ -1,19 +1,22 @@
 """The monitoring rules: what the replay's monitors compute each day and week, and the ordered decision table.
 
 These rules are frozen in a named commit (the `rules-frozen` tag) before the 2024 replay runs; the replay refuses to
-run when any file in RULE_FILES differs from that commit. The thresholds themselves are not set here: they are
-quantiles of validation weeks, computed and logged by the validation run (`valiwatt validate`).
+run when any rule file differs from that commit. The thresholds themselves are not set here: they are quantiles of
+validation weeks, computed and logged by the validation run (`valiwatt validate`).
 
-Why each weekly performance rule also counts days: the forecast reuses demand from one day and one week before, so a
-single bad day of demand also spoils the forecast of the next day and of the same day a week later. Those three days
-never put more than two days into any one week. The performance rules need the week out of band AND most of its days
-out of band too (MIN_BREACH_DAYS = 4 of 7), in each of two consecutive weeks. One bad day alone cannot meet that: it
-would need two more bad days of its own in each of the two weeks.
+A performance rule fires on the SAME failure two weeks running (MAPE high both weeks, or bias beyond the same side
+of its band both weeks, or coverage low both weeks), and each of those weeks must be out of band broadly, not through
+one episode: the week's statistic must stay beyond the threshold when its TRIM_DAYS = 2 most extreme days (in the
+direction of the failure) are set aside. Why two: the forecast reuses demand from one day and one week before, so a
+single bad day of demand also spoils the next day's forecast and the same day's a week later, and that never puts more
+than two spoiled days into one week. With those two days set aside, the five left are untouched by the bad day, so the
+week fails only if its own other days fail. One bad day alone can therefore never yield *retrain* or *recalibrate*.
 """
 
 from __future__ import annotations
 
 import hashlib
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -23,45 +26,57 @@ from valiwatt.paths import REPO_ROOT
 
 # Quantiles of the validation weeks that become the thresholds (per season for performance).
 QUANTILES = {"mape_high": 0.95, "bias_low": 0.025, "bias_high": 0.975, "coverage_low": 0.05, "drift_high": 0.95}
-# A week with fewer scored hours than this has no performance statistics; a day with fewer is not counted as a breach day.
+# A week with fewer scored hours than this has no performance statistics, and fewer current values no drift
+# statistic; a day with fewer scored hours does not enter the trimmed statistic.
 MIN_WEEK_HOURS = 120
 MIN_DAY_HOURS = 18
 CONSECUTIVE_WEEKS = 2
-MIN_BREACH_DAYS = 4
+TRIM_DAYS = 2
+MIN_TRIMMED_DAYS = 3
 # Day-level data quality: the primary station may miss at most this many of the day's hours.
 MAX_SILENT_TEMPERATURE_HOURS = 6
 
 RETRAIN = "retrain"
 RECALIBRATE = "recalibrate"
 INVESTIGATE = "investigate_data"
+# Each performance failure: the weekly statistic, its threshold key, and which side of the threshold fails.
+FAILURES = {"mape_high": ("mape", "mape_high", +1), "bias_high": ("rel_bias", "bias_high", +1),
+            "bias_low": ("rel_bias", "bias_low", -1), "coverage_low": ("covered", "coverage_low", -1)}
 
-# Every file whose content can change what the replay computes or recommends.
-RULE_FILES = (
-    "src/valiwatt/monitor/rules.py",
-    "src/valiwatt/monitor/clock.py",
-    "src/valiwatt/monitor/drift.py",
-    "src/valiwatt/monitor/replay.py",
-    "src/valiwatt/monitor/run.py",
-    "src/valiwatt/forecast/evaluate.py",
-    "src/valiwatt/forecast/features.py",
-    "src/valiwatt/forecast/freeze.py",
-    "src/valiwatt/forecast/guards.py",
-    "src/valiwatt/forecast/model.py",
-    "src/valiwatt/forecast/pyfunc.py",
-    "src/valiwatt/forecast/validate.py",
-    "src/valiwatt/forecast/walkforward.py",
-    "src/valiwatt/quality/checks.py",
-    "src/valiwatt/quality/demand.py",
-    "src/valiwatt/quality/weather.py",
-    "config/stations.toml",
-)
+# The rule files: every file under these roots except the ones listed after, which only render, scan or dispatch.
+# A file added later under a root is a rule file too, so the set at the freeze tag and now must match exactly.
+RULE_ROOTS = ("src/valiwatt", "config")
+NOT_RULES = ("src/valiwatt/report/", "src/valiwatt/breaks.py", "src/valiwatt/cli.py", "src/valiwatt/safety.py",
+             "src/valiwatt/licences.py", "src/valiwatt/attribution.py", "src/valiwatt/quality/figures.py")
 FREEZE_TAG = "rules-frozen"
 
 
-def rules_sha256(read=lambda p: (REPO_ROOT / p).read_bytes()) -> str:
-    """Hash of the rule files: every validation, frozen-model and replay run carries it."""
+def _is_rule(path: str) -> bool:
+    return path.startswith(tuple(f"{r}/" for r in RULE_ROOTS)) and not path.startswith(NOT_RULES) \
+        and "__pycache__" not in path and not path.endswith(".pyc")
+
+
+def rule_files(commit: str | None = None) -> list[str]:
+    """The rule files in the working tree (tracked or not ignored), or in a commit."""
+    if commit:
+        args = ["git", "ls-tree", "-r", "--name-only", commit, "--", *RULE_ROOTS]
+    else:
+        args = ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *RULE_ROOTS]
+    out = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.split("\n")
+    return sorted(p for p in out if p and _is_rule(p) and (commit or (REPO_ROOT / p).is_file()))
+
+
+def rules_sha256(commit: str | None = None) -> str:
+    """Hash of the rule files' names and contents (now, or at a commit): every validation, frozen-model and replay
+    run carries it."""
+    def read(p):
+        if commit:
+            return subprocess.run(["git", "show", f"{commit}:{p}"], cwd=REPO_ROOT, capture_output=True,
+                                  check=True).stdout
+        return (REPO_ROOT / p).read_bytes()
+
     h = hashlib.sha256()
-    for p in RULE_FILES:
+    for p in rule_files(commit):
         h.update(p.encode() + b"\0" + read(p) + b"\0")
     return h.hexdigest()
 
@@ -74,12 +89,8 @@ def season_thresholds(thresholds: dict, season: str) -> dict:
 
 
 def performance_flags(stats: dict, t: dict) -> dict:
-    """Which performance statistics of one period (a week or a day) are out of their season's band."""
-    return {
-        "mape_high": bool(stats["mape"] > t["mape_high"]),
-        "bias_out": bool(stats["rel_bias"] < t["bias_low"] or stats["rel_bias"] > t["bias_high"]),
-        "coverage_low": bool(stats["covered"] < t["coverage_low"]),
-    }
+    """Which failures one period's statistics show against its season's thresholds."""
+    return {k: bool(side * (stats[stat] - t[key]) > 0) for k, (stat, key, side) in FAILURES.items()}
 
 
 def period_stats(scored: pd.DataFrame) -> dict:
@@ -88,12 +99,20 @@ def period_stats(scored: pd.DataFrame) -> dict:
             "covered": float(scored["covered"].mean()), "hours": int(len(scored))}
 
 
+def trimmed(daily: pd.DataFrame, failure: str) -> float:
+    """The mean of the daily statistic with the TRIM_DAYS most extreme days, in the failure's direction, set aside."""
+    stat, _, side = FAILURES[failure]
+    values = np.sort(side * daily[stat].to_numpy())
+    keep = values[: len(values) - TRIM_DAYS]
+    return float(side * keep.mean()) if len(keep) >= MIN_TRIMMED_DAYS else float("nan")
+
+
 def week_record(week_start: pd.Timestamp, scored: pd.DataFrame, days: list[dict], drift: dict,
                 thresholds: dict) -> dict:
     """Everything the decision table reads about one week, with the numbers behind each flag.
 
     scored: the week's scored hours (columns day, ape, rel_bias, covered); days: the week's day-level data-quality
-    records; drift: {"temperature": value, "forecast": value}."""
+    records; drift: {"temperature": value, "forecast": value} (NaN when the week is too short to judge)."""
     season = SEASONS[(week_start + pd.Timedelta(days=3)).month]  # the season of the week's Thursday
     t = season_thresholds(thresholds, season)
     failed_days = [d for d in days if d["failed"]]
@@ -104,51 +123,26 @@ def week_record(week_start: pd.Timestamp, scored: pd.DataFrame, days: list[dict]
     rec["drift_flags"] = {k: bool(np.isfinite(v) and v > rec["drift_thresholds"][k]) for k, v in drift.items()}
     rec["evaluated"] = (not rec["dq_failed"]) and len(scored) >= MIN_WEEK_HOURS
     if not rec["evaluated"]:
-        rec.update(stats=None, flags=None, breach_days=None)
+        rec.update(stats=None, flags=None, trimmed=None, broad=None)
         return rec
     rec["stats"] = period_stats(scored)
     rec["flags"] = performance_flags(rec["stats"], t)
-    breach = {k: 0 for k in rec["flags"]}
-    for _, part in scored.groupby("day"):
-        if len(part) < MIN_DAY_HOURS:
-            continue
-        for k, v in performance_flags(period_stats(part), t).items():
-            breach[k] += int(v)
-    rec["breach_days"] = breach
+    daily = pd.DataFrame([period_stats(part) for _, part in scored.groupby("day") if len(part) >= MIN_DAY_HOURS])
+    rec["trimmed"] = {k: trimmed(daily, k) if len(daily) else float("nan") for k in FAILURES}
+    rec["broad"] = {k: bool(rec["flags"][k] and np.isfinite(rec["trimmed"][k])
+                            and FAILURES[k][2] * (rec["trimmed"][k] - t[FAILURES[k][1]]) > 0) for k in FAILURES}
     return rec
 
 
-def _perf_breach(w: dict | None, min_days: int) -> bool:
-    if not w or not w["evaluated"]:
-        return False
-    f, b = w["flags"], w["breach_days"]
-    return (f["mape_high"] and b["mape_high"] >= min_days) or (f["bias_out"] and b["bias_out"] >= min_days)
+def _evaluated(w: dict | None) -> bool:
+    return bool(w and w["evaluated"])
 
 
-def _coverage_breach(w: dict | None, min_days: int) -> bool:
-    if not w or not w["evaluated"]:
-        return False
-    return w["flags"]["coverage_low"] and w["breach_days"]["coverage_low"] >= min_days
-
-
-def _bias_inside(w: dict | None) -> bool:
-    return bool(w and w["evaluated"] and not w["flags"]["bias_out"])
-
-
-def _performance_inside(w: dict | None) -> bool:
-    return bool(w and w["evaluated"] and not any(w["flags"].values()))
-
-
-def _drift(w: dict | None) -> bool:
-    return bool(w and any(w["drift_flags"].values()))
-
-
-def decide(week: dict, previous: dict | None, min_breach_days: int = MIN_BREACH_DAYS) -> dict:
+def decide(week: dict, previous: dict | None) -> dict:
     """The ordered decision table for one week. `previous` is the record of the calendar week just before, or None.
 
     A week whose data quality failed, or with too few hours, has no performance statistics; it breaks any streak, so
-    the two weeks a rule needs are always adjacent weeks that were both evaluated. `min_breach_days=0` gives the
-    two-week rule alone, reported as a sensitivity and never used to recommend."""
+    the two weeks a rule needs are always adjacent weeks that were both evaluated."""
     if previous is not None and previous["week_start"] != week["week_start"] - pd.Timedelta(days=7):
         previous = None
     fired = []
@@ -156,21 +150,33 @@ def decide(week: dict, previous: dict | None, min_breach_days: int = MIN_BREACH_
         fired.append({"rule": 1, "recommendation": INVESTIGATE, "why": "data_quality",
                       "evidence": {"failed_days": week["dq_failed_days"]}})
     pair = (week, previous)
-    if not week["dq_failed"]:
-        if all(_perf_breach(w, min_breach_days) for w in pair):
-            fired.append({"rule": 2, "recommendation": RETRAIN, "why": "performance",
+    if not week["dq_failed"] and all(_evaluated(w) for w in pair):
+        same = [k for k in ("mape_high", "bias_high", "bias_low") if all(w["broad"][k] for w in pair)]
+        if same:
+            fired.append({"rule": 2, "recommendation": RETRAIN, "why": same,
                           "evidence": [_perf_evidence(w) for w in pair]})
-        if all(_coverage_breach(w, min_breach_days) for w in pair) and all(_bias_inside(w) for w in pair):
-            fired.append({"rule": 3, "recommendation": RECALIBRATE, "why": "coverage",
+        bias_inside = all(not (w["flags"]["bias_high"] or w["flags"]["bias_low"]) for w in pair)
+        if all(w["broad"]["coverage_low"] for w in pair) and bias_inside:
+            fired.append({"rule": 3, "recommendation": RECALIBRATE, "why": ["coverage_low"],
                           "evidence": [_perf_evidence(w) for w in pair]})
-        if all(_drift(w) for w in pair) and all(_performance_inside(w) for w in pair):
-            fired.append({"rule": 4, "recommendation": INVESTIGATE, "why": "drift",
+        inputs = [k for k in ("temperature", "forecast") if all(w["drift_flags"][k] for w in pair)]
+        if inputs and all(not any(w["flags"].values()) for w in pair):
+            fired.append({"rule": 4, "recommendation": INVESTIGATE, "why": inputs,
                           "evidence": [{"week_start": w["week_start"], "drift": w["drift"],
                                         "thresholds": w["drift_thresholds"]} for w in pair]})
     return {"week_start": week["week_start"], "recommendation": fired[0]["recommendation"] if fired else None,
             "rule": fired[0]["rule"] if fired else None, "fired": fired}
 
 
+def two_week_rule_alone(week: dict, previous: dict | None) -> bool:
+    """Sensitivity only, never a recommendation: the plan's first wording of the retrain rule, with weekly flags
+    alone (MAPE high or bias out of band, in any mix, two weeks running), no trimming and no same-failure match."""
+    if previous is None or previous["week_start"] != week["week_start"] - pd.Timedelta(days=7):
+        return False
+    return all(_evaluated(w) and (w["flags"]["mape_high"] or w["flags"]["bias_high"] or w["flags"]["bias_low"])
+               for w in (week, previous))
+
+
 def _perf_evidence(w: dict) -> dict:
     return {"week_start": w["week_start"], "season": w["season"], "stats": w["stats"], "flags": w["flags"],
-            "breach_days": w["breach_days"], "thresholds": w["thresholds"]}
+            "trimmed": w["trimmed"], "broad": w["broad"], "thresholds": w["thresholds"]}

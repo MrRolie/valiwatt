@@ -7,7 +7,9 @@ read from the full-window outputs of the data-quality layer.
 
 - Day D's forecast is issued at its origin, the end of day D-1 (D 05:00 UTC).
 - Day D is scored, and its data quality judged, one hour after its last hour arrives: the next record is what shows
-  whether the last hour was a spike, so nothing is judged before it can be.
+  whether the last hour was a spike, so nothing is judged before it can be. The one exception is the last day, when
+  the data end with it: it is judged at the end of the data, its last hour's spike stays unscored, and its record says
+  so (`judged_at_data_end`).
 - A week (Monday to Sunday, local standard time) is judged right after its Sunday is scored.
 """
 
@@ -24,12 +26,17 @@ from valiwatt.forecast.freeze import FrozenModel
 from valiwatt.forecast.guards import LookaheadError, require_known_at_origin
 from valiwatt.monitor.clock import Clock, RawFeed
 from valiwatt.monitor.drift import normed_wasserstein, seasonal_reference
-from valiwatt.monitor.rules import MAX_SILENT_TEMPERATURE_HOURS, decide, week_record
-from valiwatt.quality.demand import BOUNDS_MW, SPIKE_Z, STATUS_MASKED_DST, USABLE, build_demand
+from valiwatt.monitor.rules import MAX_SILENT_TEMPERATURE_HOURS, MIN_WEEK_HOURS, decide, week_record
+from valiwatt.quality.demand import (
+    BOUNDS_MW,
+    SPIKE_Z,
+    STATUS_MASKED_DST,
+    USABLE,
+    build_demand,
+)
 from valiwatt.quality.weather import BOUNDS_C, station_series
 
 H = pd.Timedelta(hours=1)
-STATUS_OUT_OF_BOUNDS = "out_of_bounds"
 STATUS_NOT_YET = "not_yet_observed"
 LOOKBACK = 200 * H  # the feature window behind an origin: more than the 168-hour lag needs
 
@@ -59,21 +66,23 @@ class ReplayResult:
 
 
 class _State:
-    """What the replay rebuilds from the raw cut at the current clock."""
+    """What the replay rebuilds from the raw cut at the current clock.
 
-    def __init__(self, demand: RawFeed, temperature: RawFeed, clock: Clock):
-        self.demand, self.temperature, self.clock = demand, temperature, clock
+    scale_last: the last hour whose spike statistic enters the robust spike scale (the end of the year before the
+    replayed one), so the scale never moves with the replayed year's own hours."""
 
-    def canonical(self) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-        """Demand frame (out-of-bounds values made unusable), temperature (out-of-bounds values blanked), the raw
-        demand records, and the temperatures before the bounds were applied."""
+    def __init__(self, demand: RawFeed, temperature: RawFeed, clock: Clock, scale_last: pd.Timestamp):
+        self.demand, self.temperature, self.clock, self.scale_last = demand, temperature, clock, scale_last
+
+    def canonical(self) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame]:
+        """Demand frame (out-of-bounds values unusable), temperature (duplicates and out-of-bounds values blanked),
+        and the raw demand and temperature records."""
         raw = self.demand.visible()
-        frame = build_demand(raw, DEMAND_FIRST, self.clock.now).frame
-        outside = frame["mw"].notna() & ((frame["mw"] < BOUNDS_MW[0]) | (frame["mw"] > BOUNDS_MW[1]))
-        frame.loc[outside, "status"] = STATUS_OUT_OF_BOUNDS
-        temp_raw = station_series(self.temperature.visible(), DEMAND_FIRST, self.clock.now)["temp_c"]
+        frame = build_demand(raw, DEMAND_FIRST, self.clock.now, scale_last=self.scale_last).frame
+        raw_t = self.temperature.visible()
+        temp_raw = station_series(raw_t, DEMAND_FIRST, self.clock.now)["temp_c"]
         temp = temp_raw.where((temp_raw >= BOUNDS_C[0]) & (temp_raw <= BOUNDS_C[1]))
-        return frame, temp, raw, temp_raw
+        return frame, temp, raw, raw_t
 
 
 def issue(state: _State, model: FrozenModel, day: pd.Timestamp) -> pd.DataFrame:
@@ -101,13 +110,14 @@ def issue(state: _State, model: FrozenModel, day: pd.Timestamp) -> pd.DataFrame:
     return out
 
 
-def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Score day D's hours and judge its data quality, from what has arrived by the clock."""
+def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame, final: bool = False) -> tuple[pd.DataFrame, dict]:
+    """Score day D's hours and judge its data quality, one hour after its last hour (`final`: at the end of the data,
+    when no later record exists)."""
     o = origin(day)
     hours = pd.date_range(o + H, o + 24 * H, freq="h")
-    if state.clock.now < hours[-1]:
-        raise LookaheadError(f"day {day.date()} scored at {state.clock.now}, before its last hour arrived")
-    frame, temp, raw, temp_raw = state.canonical()
+    if state.clock.now < hours[-1] + (0 * H if final else H):
+        raise LookaheadError(f"day {day.date()} scored at {state.clock.now}, before the hour after its last hour")
+    frame, temp, raw, raw_t = state.canonical()
     f = frame.reindex(hours)
     usable = f["status"].isin(USABLE)
     s = issued.reindex(hours).copy()
@@ -120,21 +130,29 @@ def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame) -> tuple[p
     s["rel_bias"] = ((s["target"] - s["forecast"]) / s["target"]).where(ok)
     s["covered"] = ((s["target"] >= s["lower"]) & (s["target"] <= s["upper"])).astype(float).where(ok)
 
-    counts = raw[raw["ts_utc"].isin(hours)].groupby("ts_utc").size().reindex(hours, fill_value=0)
-    blank = raw[raw["ts_utc"].isin(hours) & raw["mw"].isna()]["ts_utc"]
+    day_raw = raw[(raw["ts_utc"] > o) & (raw["ts_utc"] <= hours[-1])]
+    counts = day_raw[day_raw["ts_utc"].isin(hours)].groupby("ts_utc").size().reindex(hours, fill_value=0)
     expected = f["status"] == STATUS_MASKED_DST
     problems = []
     for t in hours[(counts == 0) & ~expected]:
         problems.append({"kind": "missing_hour", "utc": t})
-    for t in blank:
+    for t in day_raw.loc[day_raw["mw"].isna(), "ts_utc"]:
         problems.append({"kind": "blank_value", "utc": t})
     for t in hours[(counts > 1) & ~expected]:
         problems.append({"kind": "duplicate", "utc": t, "records": int(counts[t])})
-    for t in hours[f["status"] == STATUS_OUT_OF_BOUNDS]:
-        problems.append({"kind": "demand_out_of_bounds", "utc": t, "mw": float(f.loc[t, "mw"])})
-    tr = temp_raw.reindex(hours)
-    for t in hours[tr.notna() & s["temp_observed"].isna()]:
-        problems.append({"kind": "temperature_out_of_bounds", "utc": t, "temp_c": float(tr[t])})
+    for t in day_raw.loc[~day_raw["ts_utc"].isin(hours), "ts_utc"]:
+        problems.append({"kind": "off_grid_record", "utc": t})
+    # Bounds are judged on every raw record, so a value inside a masked fall-back pair is still seen.
+    bad = day_raw["mw"].notna() & ((day_raw["mw"] < BOUNDS_MW[0]) | (day_raw["mw"] > BOUNDS_MW[1]))
+    for _, rec in day_raw[bad].iterrows():
+        problems.append({"kind": "demand_out_of_bounds", "utc": rec["ts_utc"], "mw": float(rec["mw"])})
+    day_t = raw_t[(raw_t["ts_utc"] > o) & (raw_t["ts_utc"] <= hours[-1])]
+    for t, n in day_t.groupby("ts_utc").size().items():
+        if n > 1:
+            problems.append({"kind": "temperature_duplicate", "utc": t, "records": int(n)})
+    bad_t = day_t["temp_c"].notna() & ((day_t["temp_c"] < BOUNDS_C[0]) | (day_t["temp_c"] > BOUNDS_C[1]))
+    for _, rec in day_t[bad_t].iterrows():
+        problems.append({"kind": "temperature_out_of_bounds", "utc": rec["ts_utc"], "temp_c": float(rec["temp_c"])})
     silent = int(s["temp_observed"].isna().sum())
     if silent > MAX_SILENT_TEMPERATURE_HOURS:
         problems.append({"kind": "temperature_silent", "hours": silent, "limit": MAX_SILENT_TEMPERATURE_HOURS})
@@ -145,6 +163,7 @@ def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame) -> tuple[p
         "spike_unscored": [t for t, z in s["spike_z"].items() if not np.isfinite(z) and usable[t]],
         "not_predicted": {t: r for t, r in s["not_predicted_because"].items() if r},
         "scored_hours": int(ok.sum()),
+        "judged_at_data_end": final,
     }
     return s, record
 
@@ -159,7 +178,9 @@ def week_drift(state: _State, week_start: pd.Timestamp, week_hours: pd.DataFrame
     ref_t = seasonal_reference(temp, temp_days, week_start)
     cur_f = week_hours["forecast"].to_numpy()
     ref_f = seasonal_reference(reference_forecasts["forecast"], reference_forecasts["day"], week_start)
-    values = {"temperature": normed_wasserstein(cur_t, ref_t), "forecast": normed_wasserstein(cur_f, ref_f)}
+    # A week with fewer than MIN_WEEK_HOURS current values (the partial first and last weeks) has no drift statistic.
+    values = {"temperature": normed_wasserstein(cur_t, ref_t, MIN_WEEK_HOURS),
+              "forecast": normed_wasserstein(cur_f, ref_f, MIN_WEEK_HOURS)}
     return values, {"temperature": (cur_t, ref_t), "forecast": (cur_f, ref_f)}
 
 
@@ -167,35 +188,48 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
            reference_forecasts: pd.DataFrame, first_day: str, last_day: str, data_end: pd.Timestamp) -> ReplayResult:
     """Replay [first_day, last_day] (local standard days). Raw records after `data_end` are never loaded.
 
+    thresholds: the validation thresholds for this replay; refused unless they come from years before first_day's.
     reference_forecasts: out-of-sample forecasts of earlier years (columns day, forecast), the forecast-drift reference.
     """
     sha_before = model.sha256()
-    clock = Clock(origin(pd.Timestamp(first_day)) - H)
-    state = _State(RawFeed(raw_demand[raw_demand["ts_utc"] <= data_end], clock, "demand"),
-                   RawFeed(raw_temperature[raw_temperature["ts_utc"] <= data_end], clock, "temperature"), clock)
-    if not reference_forecasts["day"].lt(pd.Timestamp(first_day)).all():
+    first = pd.Timestamp(first_day)
+    last_year = thresholds.get("last_year")
+    if last_year is None or int(last_year) >= first.year:
+        raise LookaheadError(f"thresholds from weeks up to {last_year} cannot judge a replay starting {first.date()}")
+    late = [w for w in thresholds.get("weekly_validation", []) if pd.Timestamp(w["first_day"]) >= first]
+    if late:
+        raise LookaheadError(f"thresholds were computed on {len(late)} weeks of the replayed period")
+    if not reference_forecasts["day"].lt(first).all():
         raise LookaheadError("forecast-drift reference holds days of the replayed period")
+    clock = Clock(origin(first) - H)
+    state = _State(RawFeed(raw_demand[raw_demand["ts_utc"] <= data_end], clock, "demand"),
+                   RawFeed(raw_temperature[raw_temperature["ts_utc"] <= data_end], clock, "temperature"), clock,
+                   scale_last=origin(pd.Timestamp(f"{first.year}-01-01")))
     days = pd.date_range(first_day, last_day, freq="D")
     clock_end = min(origin(days[-1] + pd.Timedelta(days=1)) + H, data_end)
     issue_at = {origin(d): d for d in days}
     score_at = {}
     for d in days:
-        score_at.setdefault(min(origin(d + pd.Timedelta(days=1)) + H, clock_end), []).append(d)
+        at = origin(d + pd.Timedelta(days=1)) + H
+        score_at.setdefault(min(at, clock_end), []).append((d, at > clock_end))
 
     issued, scored, day_records, weeks, decisions, samples = {}, [], {}, [], [], {}
     for t in pd.date_range(origin(days[0]), clock_end, freq="h"):
         clock.advance(t)
         if t in issue_at:
             issued[issue_at[t]] = issue(state, model, issue_at[t])
-        for d in score_at.get(t, []):
-            s, rec = score_day(state, d, issued.pop(d))
+        for d, final in score_at.get(t, []):
+            s, rec = score_day(state, d, issued.pop(d), final=final)
             scored.append(s)
             day_records[d] = rec
             if d.dayofweek == 6 or d == days[-1]:
                 week_start = d - pd.Timedelta(days=d.dayofweek)
                 wk = pd.concat([x for x in scored if x["day"].iloc[0] >= week_start])
                 wdays = [day_records[x] for x in sorted(day_records) if x >= week_start]
-                drift, sample = week_drift(state, week_start, wk, reference_forecasts)
+                if len(wdays) == 7:
+                    drift, sample = week_drift(state, week_start, wk, reference_forecasts)
+                else:  # a partial first or last week: the weekly monitors stay quiet
+                    drift, sample = {"temperature": float("nan"), "forecast": float("nan")}, {}
                 rec_w = week_record(week_start, wk.dropna(subset=["ape", "covered"]), wdays, drift, thresholds)
                 decision = decide(rec_w, weeks[-1] if weeks else None)
                 weeks.append(rec_w)

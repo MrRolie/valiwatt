@@ -44,7 +44,13 @@ def cmd_freeze(args) -> int:
 def cmd_replay(args) -> int:
     from valiwatt.monitor.run import run_replay
 
-    return run_replay(args.year)
+    return run_replay(args.year, departure=args.departure)
+
+
+def cmd_breaks(args) -> int:
+    from valiwatt.breaks import run_breaks
+
+    return run_breaks()
 
 
 def cmd_report(args) -> int:
@@ -86,7 +92,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("replay", help="replay a year hour by hour with its frozen model and the monitors "
                                       "(2023: pseudo-replay on design years; 2024: needs the rules-frozen tag)")
     p.add_argument("--year", type=int, required=True, choices=[2023, 2024])
+    p.add_argument("--departure", action="store_true",
+                   help="allow a 2024 replay under a moved freeze tag (record the departure in AGENTS.md first)")
     p.set_defaults(func=cmd_replay)
+    p = sub.add_parser("breaks", help="run every break (each gate and monitor made to fire) as a tracked run")
+    p.set_defaults(func=cmd_breaks)
     p = sub.add_parser("report", help="render the data-quality report from a tracked run")
     p.add_argument("--run-id")
     p.set_defaults(func=cmd_report)
