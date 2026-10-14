@@ -1,0 +1,32 @@
+[project]
+name = "valiwatt"
+version = "0.1.0"
+description = "Validation and monitoring of a forecast of Québec's hourly electricity demand, the way a model-risk team would."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "jinja2>=3.1",
+    "matplotlib>=3.9",
+    "mlflow==3.16.1",
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "requests>=2.32",
+]
+
+[project.scripts]
+valiwatt = "valiwatt.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/valiwatt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: hits a live public endpoint (deselect with -m 'not network')"]

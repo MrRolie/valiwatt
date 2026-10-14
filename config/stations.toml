@@ -1,0 +1,67 @@
+# Weather station panel: one primary ECCC station per major population centre of Québec.
+#
+# Demand is province-wide and winter demand follows heating, so the panel samples where people live. Montréal is the
+# primary station named in the brief. Stations were picked by population centre, taking each centre's main airport or
+# regional station. Their coverage is not asserted here: the data-quality run measures it and gates it (report §4).
+# `reason_fr` is the French wording of `reason`, for the French report; keep the two together.
+# climate_id and station_id come from ECCC's climate-stations inventory (api.weather.gc.ca, collection climate-stations).
+
+[[station]]
+key = "montreal"
+name = "MONTREAL INTL A"
+climate_id = "7025251"
+station_id = 51157
+centre = "Montréal"
+primary = true
+reason = "Primary station named in the brief; the largest population centre."
+reason_fr = "Station principale nommée au dossier de départ ; le plus grand centre de population."
+
+[[station]]
+key = "quebec"
+name = "QUEBEC INTL A"
+climate_id = "7016293"
+station_id = 51457
+centre = "Québec"
+primary = false
+reason = "Québec City airport station."
+reason_fr = "Station de l'aéroport de Québec."
+
+[[station]]
+key = "gatineau"
+name = "OTTAWA GATINEAU A"
+climate_id = "7032685"
+station_id = 53001
+centre = "Gatineau"
+primary = false
+reason = "Gatineau airport station."
+reason_fr = "Station de l'aéroport de Gatineau."
+
+[[station]]
+key = "sherbrooke"
+name = "SHERBROOKE"
+climate_id = "7028123"
+station_id = 48371
+centre = "Sherbrooke"
+primary = false
+reason = "Sherbrooke station, for Estrie."
+reason_fr = "Station de Sherbrooke, pour l'Estrie."
+
+[[station]]
+key = "saguenay"
+name = "BAGOTVILLE A"
+climate_id = "7060400"
+station_id = 5889
+centre = "Saguenay"
+primary = false
+reason = "Bagotville airport station, for Saguenay–Lac-Saint-Jean."
+reason_fr = "Station de l'aéroport de Bagotville, pour le Saguenay–Lac-Saint-Jean."
+
+[[station]]
+key = "trois_rivieres"
+name = "TROIS RIVIERES A"
+climate_id = "7018561"
+station_id = 51698
+centre = "Trois-Rivières"
+primary = false
+reason = "Trois-Rivières airport station, for Mauricie."
+reason_fr = "Station de l'aéroport de Trois-Rivières, pour la Mauricie."

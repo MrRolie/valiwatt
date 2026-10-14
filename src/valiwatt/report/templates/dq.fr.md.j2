@@ -1,0 +1,254 @@
+{% set c = r.checks %}
+{% set rep = r.representativeness %}
+{% set hq = r.sources.hydroquebec %}
+{% set primary = r.sources.eccc|selectattr('primary')|first %}
+{% set centre = {} %}
+{% for s in r.sources.eccc %}{% set _ = centre.update({s.key: s.centre}) %}{% endfor %}
+{% set _ = centre.update({'panel': 'Panel (moyenne des stations)'}) %}
+{% set mtl = rep.by_source|selectattr('source', 'equalto', primary.key)|first %}
+{% set pan = rep.by_source|selectattr('source', 'equalto', 'panel')|first %}
+{% set dyear = rep.r2_difference|rejectattr('winter_only')|first %}
+{% set dwin = rep.r2_difference|selectattr('winter_only')|first %}
+{% set rb = rep.residual_by_month %}
+{% set top = rep.top_hours[0] %}
+{% set years = rep.design_first_year ~ '–' ~ rep.design_last_year %}
+{% set cov = [] %}
+{% for s in r.sources.eccc %}{% set _ = cov.append(c['weather_coverage[' ~ s.key ~ ']'].metrics.share) %}{% endfor %}
+{% set dm = c['demand_missing'].metrics %}
+# Qualité et représentativité des données
+
+_Rapport généré à partir de l'exécution MLflow `{{ run_id }}` ({{ run_date }}), code `{{ commit|short }}`{% if dirty %} **avec des modifications non validées** (empreinte du code exécuté : `{{ code_sha|short }}`){% endif %}. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+## En bref
+
+- **{{ c['demand_window'].metrics.hours|num }} heures** de demande, de {{ c['demand_window'].metrics.first_utc|utc }} à {{ c['demand_window'].metrics.last_utc|utc }} ; **{{ c['demand_coverage'].metrics.usable_share|pct(2) }}** sont utilisables.
+{% if c['demand_dst'].metrics.events %}
+- Au retour à l'heure normale, deux valeurs arrivent sous la même heure UTC et l'heure précédente manque. L'ordre des deux valeurs n'est pas enregistré : ces **{{ dm.masked_dst_hours }} heures** ({{ c['demand_dst'].metrics.events }} nuits) sont masquées, jamais devinées.
+{% endif %}
+{% for e in c['demand_misplaced'].evidence %}
+- **Un enregistrement** porte un horodatage décalé de {{ (e.offset_hours / 24)|num }} jours ; il est replacé, avec sa preuve (section 3.2).
+{% endfor %}
+{% if dm.runs %}
+- **{{ dm.missing_value_hours + dm.missing_record_hours }} heures** sont vides à la source, en {{ dm.runs }} plages (la plus longue : {{ dm.longest_run_hours }} heures). Elles restent vides.
+{% endif %}
+- Les {{ r.sources.eccc|length }} stations météo ont chacune une température pour au moins {{ cov|min|pct(1) }} des heures.
+- Sur {{ years }}, les degrés-jours de {{ primary.centre }} et le jour de la semaine reproduisent **{{ mtl.r2|pct(1) }}** de la variation de la demande journalière ; avec la moyenne des {{ r.sources.eccc|length }} stations, **{{ pan.r2|pct(1) }}**.
+- L'heure la plus chargée de {{ years }} est l'heure finissant à {{ top.hour_ending_lst|lst }} : **{{ top.mw|num(0) }} MW**, par {{ top.temp_c_primary|num(1) }} °C à {{ primary.centre }}.
+
+## 1. Sources
+
+| Source | Licence | Lue le | Lignes | SHA-256 |
+|---|---|---|---|---|
+| Hydro-Québec, `{{ hq.dataset }}` | {{ hq.license }} | {{ hq.retrieved_utc }} | {{ hq.rows|num }} | `{{ hq.sha256|short }}` |
+{% for s in r.sources.eccc %}
+| ECCC, {{ s.name }} ({{ s.climate_id }}) | voir `docs/data-licences.md` | {{ s.first_retrieved_utc[:10] }} | {{ s.months }} mois | manifeste |
+{% endfor %}
+
+Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les télécharge et chaque fichier est vérifié contre son empreinte avant usage. Hydro-Québec indique une date de modification du jeu de données au {{ hq.dataset_modified[:10] }}.
+
+**Les stations.** Une station par grand centre de population ; {{ primary.centre }} est la station principale. Leur couverture est mesurée à la section 4.
+
+| Centre | Station | Identifiant climatologique | Pourquoi celle-ci |
+|---|---|---|---|
+{% for s in r.sources.eccc %}
+| {{ s.centre }} | {{ s.name }} | {{ s.climate_id }} | {{ s|reason }} |
+{% endfor %}
+
+## 2. Conventions de temps
+
+- **Demande.** Chaque valeur est la demande moyenne de l'heure qui **se termine** à l'horodatage, en UTC. La première heure de la série porte l'horodatage {{ c['demand_window'].metrics.first_utc|utc }}, soit l'heure de minuit à 1 h, heure normale de l'Est.
+- **Météo.** La température d'une heure UTC est l'observation faite à cet instant ; elle est demandée en UTC à ECCC. Sans fuseau explicite, le service renvoie des lignes sans valeurs : le téléchargement refuse toute réponse dont l'en-tête n'est pas en UTC.
+- **Jours.** Pour les agrégats journaliers, une heure appartient au jour (heure normale de l'Est, UTC−5) où elle **commence**.
+- **Heure avancée.** Tout est tenu en UTC, où chaque heure existe une seule fois. {% if dm.missing_record_hours == 0 %}Hors des cas des sections 3.1 et 3.2, aucune heure UTC n'est absente de l'export (les valeurs vides sont à la section 3.3) : le passage à l'heure avancée, au printemps, n'y laisse pas de trou.{% else %}Hors des cas des sections 3.1 et 3.2, {{ dm.missing_record_hours }} heures UTC sont absentes de l'export (section 3.3).{% endif %}
+
+## 3. Demande : contrôles et anomalies
+
+![Demande moyenne journalière, {{ years }}](figures/fr/daily_demand.png)
+
+_Demande moyenne journalière, {{ years }} (jours complets seulement). Les heures suivantes ne sont pas tracées : elles sont réservées au rejeu de production._
+
+### Contrôles bloquants
+
+Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique n'est écrite et la commande se termine en erreur. Chacun a un test qui injecte la panne qu'il doit attraper.
+
+| Contrôle | Résultat | Mesure | Seuil |
+|---|---|---|---|
+| Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | 0 |
+| Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | 0 |
+| Valeurs dans des bornes physiques larges | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
+| Part des heures utilisables | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
+
+### 3.1 Retour à l'heure normale : heures masquées
+
+{% if c['demand_dst'].metrics.events == 0 %}
+Aucune nuit de retour à l'heure normale ne laisse d'anomalie dans la fenêtre.
+{% else %}
+La nuit du retour à l'heure normale, l'heure locale 1 h se produit deux fois. Dans les données, les deux valeurs arrivent sous l'horodatage UTC de la seconde, et l'heure UTC précédente manque. Rien n'indique laquelle vient en premier.
+
+Pour juger si la continuité suffirait à les ordonner, on compare la longueur du trajet heure précédente → première → seconde → heure suivante dans les deux ordres. Quand les deux ordres donnent presque le même trajet, deviner serait arbitraire. Les deux heures sont donc masquées chaque fois, de la même façon.
+
+| Nuit (heure locale répétée) | Heure UTC manquante | Valeurs reçues (MW) | Trajet, meilleur ordre (MW) | Trajet, autre ordre (MW) | Écart (MW) |
+|---|---|---|---|---|---|
+{% for e in c['demand_dst'].evidence %}
+| {{ e.local_wall_clock[:16] }} | {{ e.missing_utc|utc }} | {{ e.values_mw[0]|num(2) }} ; {{ e.values_mw[1]|num(2) }} | {{ e.continuity_cost_mw[0]|num }} | {{ e.continuity_cost_mw[1]|num }} | {{ e.continuity_margin_mw|num }} |
+{% endfor %}
+
+L'écart va de {{ c['demand_dst'].metrics.min_margin_mw|num }} à {{ c['demand_dst'].metrics.max_margin_mw|num }} MW. Une règle qui ordonnerait certaines nuits et pas d'autres serait fragile.
+{% endif %}
+
+### 3.2 Enregistrement déplacé : réparation avec preuve
+
+{% for e in c['demand_misplaced'].evidence %}
+L'horodatage {{ e.duplicated_utc|utc }} porte deux valeurs, alors que {{ e.moved_to_utc|utc }} n'en a aucune. La valeur {{ e.moved_mw|num(2) }} MW s'insère naturellement entre les voisines de {{ e.moved_to_utc|utc }}, et {{ e.kept_mw|num(2) }} MW entre celles de {{ e.duplicated_utc|utc }}. Le trajet total vaut {{ e.cost_mw|num }} MW dans cette affectation, contre {{ e.swapped_cost_mw|num }} MW dans l'affectation inverse : un rapport de {{ e.cost_ratio|num(1) }}. La règle exige un rapport d'au moins {{ c['demand_misplaced'].metrics.min_ratio|num(1) }} pour déplacer une valeur ; sinon rien n'est déplacé et le contrôle bloquant échoue. La valeur est donc replacée et l'heure porte l'étiquette « réparée » dans la série canonique.
+{% else %}
+Aucun enregistrement déplacé dans la fenêtre.
+{% endfor %}
+
+### 3.3 Valeurs manquantes
+
+{% if c['demand_missing'].evidence %}
+| Début (UTC) | Fin (UTC) | Heures |
+|---|---|---|
+{% for g in c['demand_missing'].evidence %}
+| {{ g.start|utc }} | {{ g.end|utc }} | {{ g.hours }} |
+{% endfor %}
+
+Ces heures restent vides dans la série canonique ; aucune interpolation.
+{% else %}
+Aucune valeur manquante.
+{% endif %}
+
+### 3.4 Pics signalés
+
+{% set sp = c['demand_spikes'].metrics %}
+Pour chaque heure, on mesure son écart au milieu de ses deux voisines, puis on le divise par l'écart typique de cette mesure sur {{ years }} (écart absolu médian × {{ sp.mad_scale|num(4) }}, une échelle qu'une poignée de valeurs extrêmes ne peut pas gonfler). Au-delà de {{ sp.threshold_z|num }} fois l'écart typique, l'heure est signalée ; sur {{ years }}, {{ sp.design_quantile|pct(1) }} des heures restent sous {{ sp.design_quantile_abs_z|num(1) }}. Une heure signalée **garde sa valeur** : ce contrôle ne distingue pas une erreur de mesure d'un événement réel.
+
+{% if c['demand_spikes'].evidence %}
+| Heure (UTC) | Heure précédente (MW) | Valeur (MW) | Heure suivante (MW) | Score |
+|---|---|---|---|---|
+{% for e in c['demand_spikes'].evidence %}
+| {{ e.utc|utc }} | {{ e.before_mw|num }} | {{ e.mw|num }} | {{ e.after_mw|num }} | {{ e.z|signed(1) }} |
+{% endfor %}
+{% if sp.consecutive_pairs %}
+
+_Un pic très fort fait aussi signaler sa voisine : {{ sp.consecutive_pairs }} paire(s) d'heures consécutives ci-dessus._
+{% endif %}
+{% else %}
+Aucune heure signalée.
+{% endif %}
+
+## 4. Météo : couverture par station
+
+| Station | Index complet | Bornes ({{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.low_c|num }} à {{ c['weather_bounds[' ~ primary.key ~ ']'].metrics.high_c|num }} °C) | Heures avec température (seuil {{ c['weather_coverage[' ~ primary.key ~ ']'].metrics.threshold|pct(0) }}) | Heures manquantes | Plus longue lacune | Pics signalés |
+|---|---|---|---|---|---|---|
+{% for s in r.sources.eccc %}
+{% set g = c['weather_gaps[' ~ s.key ~ ']'].metrics %}
+| {{ s.centre }} | {{ c['weather_index[' ~ s.key ~ ']'].passed|verdict }} | {{ c['weather_bounds[' ~ s.key ~ ']'].passed|verdict }} ({{ c['weather_bounds[' ~ s.key ~ ']'].metrics.min_c|num(1) }} à {{ c['weather_bounds[' ~ s.key ~ ']'].metrics.max_c|num(1) }}) | {{ c['weather_coverage[' ~ s.key ~ ']'].passed|verdict }} ({{ c['weather_coverage[' ~ s.key ~ ']'].metrics.share|pct(2) }}) | {{ g.missing_hours }} | {{ g.longest_run_hours }} h | {{ g.spikes_flagged }} |
+{% endfor %}
+
+**Panel.** La moyenne des stations n'est calculée qu'aux heures où au moins {{ c['weather_panel_coverage'].metrics.min_stations }} stations sur {{ c['weather_panel_coverage'].metrics.stations }} répondent : {{ c['weather_panel_coverage'].metrics.share|pct(2) }} des heures (contrôle bloquant : {{ c['weather_panel_coverage'].passed|verdict }}, seuil {{ c['weather_panel_coverage'].metrics.threshold|pct(0) }}).
+
+{% set sg = c['weather_shared_gaps'] %}
+{% if sg.evidence %}
+**Lacunes partagées.** Pendant {{ sg.metrics.hours_half_or_more_missing }} heures, la moitié des stations ou plus étaient muettes en même temps, dont {{ sg.metrics.hours_all_missing }} heures sans aucune station. La plus longue de ces plages va de {{ sg.evidence[0].start|utc }} à {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} heures). {% if sg.metrics.hours_all_missing %}Pendant les heures sans aucune station, ajouter des stations du même réseau n'aurait rien changé.{% endif %}
+{% else %}
+**Lacunes partagées.** À aucune heure la moitié des stations n'était muette en même temps.
+{% endif %}
+
+Les pics de température sont signalés avec la même règle que la demande (score au-delà de {{ c['weather_gaps[' ~ primary.key ~ ']'].metrics.spike_threshold_z|num }}, échelle estimée sur {{ years }}). Ils ne sont pas retirés : aucun contrôle ici ne sépare une erreur de capteur d'un vrai changement de temps.
+
+## 5. Représentativité des stations ({{ years }} seulement)
+
+**Pourquoi seulement {{ years }}.** L'année suivante sera rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }}. Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité des données sur toute la fenêtre, comme le ferait une chaîne de production.
+
+**Méthode.** Pour chaque source de température, la demande moyenne de chaque jour est expliquée par les degrés-jours de chauffage (de combien la température moyenne du jour est sous {{ rep.base_c|num }} °C), les degrés-jours de climatisation (au-dessus de {{ rep.base_c|num }} °C) et le jour de la semaine, par moindres carrés. Le R² est la part de la variation de la demande journalière que ce modèle reproduit. Toutes les sources sont comparées sur les mêmes {{ rep.days|num }} jours ({{ rep.winter_days }} jours d'hiver, de décembre à février).
+
+![Demande journalière selon la température à {{ primary.centre }}](figures/fr/heating_curve.png)
+
+_La demande journalière selon la température moyenne du jour à {{ primary.centre }}, {{ years }}._
+
+| Source de température | R², toute l'année | Écart quadratique moyen (MW) | R², hiver | Écart quadratique moyen, hiver (MW) | Pente chauffage (MW par °C) |
+|---|---|---|---|---|---|
+{% for s in rep.by_source|sort(attribute='r2', reverse=True) %}
+| {{ centre[s.source] }} | {{ s.r2|num(3) }} | {{ s.rmse_mw|num }} | {{ s.r2_winter|num(3) }} | {{ s.rmse_winter_mw|num }} | {{ s.hdd_slope_mw_per_c|num }} |
+{% endfor %}
+
+![R² par source de température](figures/fr/r2_by_source.png)
+
+**Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne {{ dyear.resamples|num }} fois les semaines complètes (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
+
+| Comparaison | Écart de R² (moyenne − {{ primary.centre }}) | Intervalle à 95 % | Semaines |
+|---|---|---|---|
+| Toute l'année | {{ dyear.difference|signed(3) }} | {{ dyear.ci95_low|signed(3) }} à {{ dyear.ci95_high|signed(3) }} | {{ dyear.blocks }} |
+| Hiver | {{ dwin.difference|signed(3) }} | {{ dwin.ci95_low|signed(3) }} à {{ dwin.ci95_high|signed(3) }} | {{ dwin.blocks }} |
+
+{% for d in [dyear, dwin] %}
+{% set when = 'En hiver' if d.winter_only else "Sur l'année" %}
+{% if not d.separated %}
+{{ when }}, {{ primary.centre }} seule et la moyenne des stations ne se distinguent pas : l'intervalle contient zéro.
+{% elif d.difference > 0 %}
+{{ when }}, la moyenne des stations fait mieux que {{ primary.centre }} seule, et l'intervalle exclut zéro.
+{% else %}
+{{ when }}, {{ primary.centre }} seule fait mieux que la moyenne des stations, et l'intervalle exclut zéro.
+{% endif %}
+{% endfor %}
+La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. Le choix de la source pour le modèle de prévision se fera à la validation, sur les mêmes années.
+
+## 6. Repères à confirmer en validation
+
+**L'heure la plus chargée.** Les {{ rep.top_hours|length }} heures les plus chargées de {{ years }} :
+
+| Heure finissant à | Demande (MW) | Température à {{ primary.centre }} (°C) |
+|---|---|---|
+{% for t in rep.top_hours %}
+| {{ t.hour_ending_lst|lst }} | {{ t.mw|num(2) }} | {{ t.temp_c_primary|num(1) }} |
+{% endfor %}
+
+{% if top.hour_ending_lst[:7] == rep.cold_peak_month %}
+La plus chargée tombe en {{ rep.cold_peak_month }}, le mois de la pointe de froid que le dossier de départ nomme comme cas test : ce cas est confirmé dans les données.
+{% else %}
+La plus chargée ne tombe pas en {{ rep.cold_peak_month }}, le mois que le dossier de départ nomme comme cas test : ce cas n'est pas confirmé comme pointe de la période.
+{% endif %}
+Ce sont des moyennes horaires de données à titre informatif, pas une pointe officielle.
+
+**{{ rb.shift_months[0][:4] }} et la suite.** Le modèle de la section 5 (moyenne des stations) est ajusté sur {{ rb.fit_year }} seulement, puis appliqué à chaque jour de {{ years }}. Pour chaque mois, on calcule l'écart moyen entre la demande et ce que le modèle attend, puis on retire l'écart du même mois de {{ rb.fit_year }}, ce qui annule les défauts saisonniers du modèle.
+
+![Écart mensuel au modèle de {{ rb.fit_year }}](figures/fr/residual_by_month.png)
+
+_Écart mensuel moyen à un modèle météo ajusté sur {{ rb.fit_year }}, en % de la demande attendue (moyenne des stations)._
+
+| Mois | Écart au modèle | Écart au même mois de {{ rb.fit_year }} (points) |
+|---|---|---|
+{% for m in rb.months if m.month in rb.shift_months %}
+| {{ m.month }} | {{ m.mean_residual_pct|signed(1) }} % | {{ m.vs_fit_year_pp|signed(1) }} |
+{% endfor %}
+
+| Année | Écart moyen au même mois de {{ rb.fit_year }} (points) | Mois au-dessus de {{ rb.fit_year }} |
+|---|---|---|
+{% for y in rb.years %}
+| {{ y.year }}{% if y.year|int == rb.fit_year %} (année d'ajustement){% endif %} | {{ y.mean_vs_fit_year_pp|signed(1) }} | {{ y.months_above|int }} sur {{ y.months|int }} |
+{% endfor %}
+
+{% set shift = rb.months|selectattr('month', 'in', rb.shift_months)|list %}
+{% set low = shift|sort(attribute='vs_fit_year_pp')|first %}
+{% set last = rb.years|last %}
+Parmi les mois tabulés, le plus bas est {{ low.month }}, à {{ low.vs_fit_year_pp|signed(1) }} points du même mois de {{ rb.fit_year }} une fois la météo prise en compte. En {{ last.year }}, l'écart moyen au même mois de {{ rb.fit_year }} est de {{ last.mean_vs_fit_year_pp|signed(1) }} points ({{ last.months_above|int }} mois sur {{ last.months|int }} au-dessus).
+
+Un écart persistant dit que la demande a bougé pour des raisons que ce modèle météo ne porte pas. Il ne dit pas lesquelles : activité économique, croissance de la charge, nouveaux usages. Si une dérive de ce genre se poursuit pendant le rejeu, un modèle figé la subira ; c'est ce que la surveillance devra détecter.
+
+## 7. Ce que ce rapport ne montre pas
+
+- Il ne mesure la qualité d'aucune prévision : aucune prévision n'est encore faite.
+- Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'aurait qu'une météo prévue ; ses résultats devront le dire.
+- Les intervalles de la section 5 portent sur l'ajustement des modèles aux années étudiées, pas sur une erreur de prévision.
+- Il ne dit pas pourquoi la demande s'écarte du modèle de {{ rb.fit_year }}.
+- Il ne classe pas les pics signalés en erreurs ou en événements réels.
+- Il ne vérifie pas les données contre les données officielles transmises à la Régie de l'énergie ; la série d'Hydro-Québec est offerte à titre informatif.
+- Il ne teste pas d'autres stations, ni de pondération par la population.
