@@ -356,7 +356,7 @@ BREAKS = [
        "Témoin : un rejeu d'avant une dérogation absent du magasin est montré d'après le registre, avec la mention "
        "« consigné dans le registre, non rejoué ici »",
        "Control: a replay from before a departure that the store lacks is shown from the ledger, labelled \"recorded "
-       "in the ledger, not re-run here\""),
+       "in the ledger, not re-run here\"", control=True),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
 ]
