@@ -1,15 +1,18 @@
-"""Checks that every quotation in docs/data-licences.md still appears, verbatim, on the page it cites."""
+"""Checks that every quotation in docs/data-licences.md and docs/standards.md still appears on the page or PDF it cites."""
 
 from __future__ import annotations
 
 import html
+import io
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from valiwatt.paths import REPO_ROOT
 
 DOC = REPO_ROOT / "docs" / "data-licences.md"
+STANDARDS = REPO_ROOT / "docs" / "standards.md"
 SOURCE = re.compile(r"^Source: <(https?://[^>]+)>\s*$")
 
 
@@ -71,3 +74,18 @@ def squash(text: str) -> str:
 
 def contains(page: str, quote: str) -> bool:
     return squash(quote) in squash(page)
+
+
+def pdf_text(content: bytes) -> str:
+    from pypdf import PdfReader
+
+    return "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(content)).pages)
+
+
+def letters(text: str) -> str:
+    """Letters and digits only, in order: PDF extraction drops spacing, punctuation and line-break hyphens."""
+    return re.sub(r"[^0-9A-Za-z]", "", unicodedata.normalize("NFKC", text))
+
+
+def pdf_contains(text: str, quote: str) -> bool:
+    return letters(quote) in letters(text)
