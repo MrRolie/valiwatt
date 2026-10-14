@@ -21,12 +21,25 @@ def require_design_window(f: pd.DataFrame, what: str) -> None:
         raise LookaheadError(f"{what}: {int(late.sum())} rows after the design window (first {f.index[late][0]})")
 
 
+def origin_violations(f: pd.DataFrame) -> dict[str, pd.Series]:
+    """Each way a row can read past its origin, as a mask of the rows that do.
+
+    There is no term for the 168-hour lag: an hour 168 hours back is earlier than the hour 24 hours back, so the lag
+    can read past the origin only when the 24-hour inputs (the 24-hour lag and the persistence temperature) already
+    do, and a term of its own could never fire alone."""
+    h, origin = pd.Timedelta(hours=1), pd.DatetimeIndex(f["origin"])
+    return {"input_24h_after_origin": pd.Series((f.index - 24 * h) > origin, index=f.index),
+            "target_not_after_origin": pd.Series(f.index <= origin, index=f.index)}
+
+
 def require_known_at_origin(f: pd.DataFrame) -> None:
-    """Every lag and persistence input must come from at or before the row's origin."""
-    h = pd.Timedelta(hours=1)
-    bad = ((f.index - 24 * h) > f["origin"]) | ((f.index - 168 * h) > f["origin"]) | (f.index <= f["origin"])
+    """Every lag and persistence input must come from at or before the row's origin, and the target hour after it."""
+    terms = origin_violations(f)
+    bad = pd.concat(terms.values(), axis=1).any(axis=1)
     if bad.any():
-        raise LookaheadError(f"{int(bad.sum())} rows read an input after their origin (first {f.index[bad][0]})")
+        fired = [k for k, m in terms.items() if m.any()]
+        raise LookaheadError(f"{int(bad.sum())} rows read an input after their origin ({', '.join(fired)}; "
+                             f"first {f.index[bad.to_numpy()][0]})")
 
 
 def require_embargo(train: pd.DataFrame, test_first_day: pd.Timestamp, embargo_days: int) -> None:

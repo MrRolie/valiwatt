@@ -55,6 +55,7 @@ T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
 T_COV, T_SEN2, T_LED = "tests/test_report_coverage.py", "tests/test_report_sentences.py", "tests/test_replay_ledger.py"
+T_ASOF = "tests/test_as_of.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -125,6 +126,10 @@ BREAKS = [
     _b(LOOK, f"{T_GRD}::test_an_origin_moved_earlier_than_the_lag_allows_is_refused",
        "Une origine avancée au-delà de ce que permet le retard de 24 heures est refusée",
        "An origin moved earlier than the 24-hour lag allows is refused"),
+    _b(LOOK, f"{T_ASOF}::test_a_repaired_value_does_not_reach_lags_or_training_before_its_record_arrives",
+       "Une valeur réparée avec un enregistrement arrivé plus tard n'entre ni dans les retards ni dans "
+       "l'entraînement avant son arrivée",
+       "A value repaired from a later record reaches no lag and no training before that record arrives"),
     _b(CLOCK, f"{T_REP}::test_records_after_a_cut_change_nothing_judged_before_it",
        "Des données corrompues après un instant ne changent rien de ce qui a été jugé avant",
        "Records corrupted after a cut change nothing judged before it"),
@@ -232,6 +237,9 @@ BREAKS = [
     _b(FREEZE, f"{T_FRZ}::test_raw_files_other_than_the_checked_ones_are_refused",
        "Des fichiers bruts autres que ceux contrôlés sont refusés",
        "Raw files other than the ones checked are refused"),
+    _b(FREEZE, f"{T_VAL}::test_raw_demand_other_than_the_checked_file_is_refused",
+       "La conception refuse un fichier de demande brut autre que celui contrôlé",
+       "Design code refuses a raw demand file other than the one checked"),
     _b(FREEZE, f"{T_FRZ}::test_a_registered_model_that_changed_during_the_replay_fails_it",
        "Un modèle enregistré qui change pendant le rejeu le fait échouer",
        "A registered model that changed during the replay fails it"),

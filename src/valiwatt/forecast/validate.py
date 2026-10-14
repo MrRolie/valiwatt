@@ -1,13 +1,15 @@
 """`valiwatt validate`: walk-forward validation on 2019-2023, conformal intervals, test cases, monitoring thresholds.
 
 Everything here sees the design window only (the guards refuse anything later). The thresholds the 2024 replay uses are
-computed and logged here, before any 2024 forecast exists.
+computed and logged here, before any 2024 forecast exists. Each fit, forecast and score sees the demand as the replay
+would at that moment (`features.AsOf`), rebuilt from the raw records.
 """
 
 from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -27,7 +29,7 @@ from valiwatt.forecast.evaluate import (
     season_of,
     weekly_stats,
 )
-from valiwatt.forecast.features import BASE_C, build
+from valiwatt.forecast.features import BASE_C, AsOf
 from valiwatt.forecast.guards import DESIGN_LAST_DAY, require_design_window, require_known_at_origin
 from valiwatt.forecast.model import HOUR_BLOCKS
 from valiwatt.monitor.drift import REFERENCE_HALF_WINDOW_WEEKS, weekly_drift
@@ -83,6 +85,15 @@ def load_validation(dq):
     return run, oos
 
 
+def load_raw_demand(dq) -> pd.DataFrame:
+    """The raw Hydro-Québec records, refused unless they are the file data-quality run `dq` checked."""
+    from valiwatt.sources import hydroquebec
+
+    if sha256_file(hydroquebec.CSV_PATH) != dq.data.params.get("hq_sha256"):
+        raise LineageError(f"the Hydro-Québec file differs from the one data-quality run {dq.info.run_id} checked")
+    return hydroquebec.load_raw()
+
+
 def validation_results(run) -> dict:
     import mlflow
 
@@ -96,9 +107,10 @@ def temperature_sources(weather: pd.DataFrame) -> dict[str, pd.Series]:
     return {"primary": weather[f"{primary.key}.temp_c"], "panel": panel}
 
 
-def design_features(demand: pd.DataFrame, temperature: pd.Series) -> pd.DataFrame:
-    """The feature table cut to the design window. The guards run where the table is consumed (run_validation)."""
-    f = build(demand, temperature)
+def design_features(asof: AsOf, temperature: pd.Series) -> pd.DataFrame:
+    """The test rows of the design window, each as the replay issues and scores it. The guards run where the table is
+    consumed (run_validation)."""
+    f = asof.issued(temperature)
     return f[f["day"] <= DESIGN_LAST_DAY]
 
 
@@ -183,14 +195,19 @@ def peak_case(f: pd.DataFrame, out: pd.DataFrame, iv: pd.DataFrame) -> dict:
 
 
 def run_validation(f_primary: pd.DataFrame, f_panel: pd.DataFrame, n_boot: int = N_BOOT,
-                   first_fold: str = FIRST_FOLD, last_fold: str = LAST_FOLD) -> dict:
-    """Pure: the whole validation on given feature tables. Returns results and the frames to log."""
+                   first_fold: str = FIRST_FOLD, last_fold: str = LAST_FOLD,
+                   train_primary: Callable[[pd.Timestamp], pd.DataFrame] | None = None,
+                   train_panel: Callable[[pd.Timestamp], pd.DataFrame] | None = None) -> dict:
+    """Pure: the whole validation on given feature tables. Returns results and the frames to log.
+
+    train_primary, train_panel: the feature tables as seen at a clock, which each fold trains on at its fit clock
+    (`walkforward.run`); without them, training rows come from the test tables."""
     for name, f in (("primary features", f_primary), ("panel features", f_panel)):
         require_design_window(f, name)
         require_known_at_origin(f)
     fl = wf.folds(first_fold, last_fold)
-    out = wf.run(f_primary, fl)
-    out_panel = wf.run(f_panel, fl, scenarios=("persistence",))
+    out = wf.run(f_primary, fl, train_at=train_primary)
+    out_panel = wf.run(f_panel, fl, scenarios=("persistence",), train_at=train_panel)
     err = {
         "persistence": errors(out, "pred_persistence"),
         "observed": errors(out, "pred_observed"),
@@ -258,11 +275,13 @@ def run_validate(n_boot: int = N_BOOT) -> int:
 
     from valiwatt.tracking import start_run
 
-    dq, demand, weather = load_inputs()
+    dq, _, weather = load_inputs()
+    asof = AsOf(load_raw_demand(dq))
     src = temperature_sources(weather)
-    f_primary = design_features(demand, src["primary"])
-    f_panel = design_features(demand, src["panel"])
-    v = run_validation(f_primary, f_panel, n_boot)
+    f_primary = design_features(asof, src["primary"])
+    f_panel = design_features(asof, src["panel"])
+    v = run_validation(f_primary, f_panel, n_boot, train_primary=lambda c: asof.table(c, src["primary"]),
+                       train_panel=lambda c: asof.table(c, src["panel"]))
     res = v["results"]
     with start_run(EXPERIMENT, "validation", tags={"kind": "validation", "dq_run_id": dq.info.run_id,
                                                     "rules_sha256": rules_sha256(),

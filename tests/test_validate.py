@@ -6,6 +6,7 @@ import pytest
 
 from conftest import synth_demand, synth_obs
 from valiwatt.forecast import validate as vd
+from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.features import build
 from valiwatt.forecast.guards import LookaheadError
 from valiwatt.quality.demand import build_demand
@@ -20,7 +21,7 @@ def tables():
     # Demand responds to cold, so the model has something to learn.
     raw["mw"] = raw["mw"] + 300 * np.maximum(18 - obs.reindex(raw["ts_utc"]).to_numpy(), 0)
     demand = build_demand(raw, FIRST, LAST).frame
-    return vd.design_features(demand, obs), vd.design_features(demand, obs + 0.5)
+    return build(demand, obs), build(demand, obs + 0.5)
 
 
 def test_validation_runs_and_logs_thresholds_for_every_season(tables):
@@ -40,6 +41,43 @@ def test_validation_refuses_a_2024_row(tables):
     leaky = pd.concat([fp, fp.iloc[[-1]].assign(day=pd.Timestamp("2024-01-05"))])
     with pytest.raises(LookaheadError):
         vd.run_validation(leaky, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-12")
+
+
+def test_each_fold_trains_on_the_table_seen_at_its_fit_clock(tables):
+    """run_validation hands each fold's fit clock to the as-of table providers, and trains on what they return."""
+    fp, fpanel = tables
+    asked = {"primary": [], "panel": []}
+
+    def at(name, f):
+        def table(clock):
+            asked[name].append(clock)
+            return f[f.index <= clock]
+        return table
+
+    v = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-02",
+                          train_primary=at("primary", fp), train_panel=at("panel", fpanel))
+    clocks = [fold.fit_clock for fold in wf.folds("2022-01", "2023-02")]
+    assert asked["primary"] == clocks and asked["panel"] == clocks
+    static = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-02")
+    pd.testing.assert_frame_equal(v["out"], static["out"])  # no repair in this world: the same rows either way
+
+
+def test_raw_demand_other_than_the_checked_file_is_refused(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from valiwatt.sources import hydroquebec
+    from valiwatt.sources.http import sha256_file
+
+    csv = tmp_path / "hq.csv"
+    csv.write_text(",".join(hydroquebec.HEADER) + "\n2021-01-01T06:00:00Z,20000\n", encoding="utf-8")
+    monkeypatch.setattr(hydroquebec, "CSV_PATH", csv)
+    monkeypatch.setattr(hydroquebec.load_raw, "__defaults__", (csv,))
+    dq = SimpleNamespace(info=SimpleNamespace(run_id="dq"),
+                         data=SimpleNamespace(params={"hq_sha256": sha256_file(csv)}))
+    assert len(vd.load_raw_demand(dq)) == 1
+    csv.write_text(",".join(hydroquebec.HEADER) + "\n2021-01-01T06:00:00Z,20001\n", encoding="utf-8")
+    with pytest.raises(vd.LineageError):
+        vd.load_raw_demand(dq)
 
 
 def test_mondrian_intervals_calibrate_within_each_group():

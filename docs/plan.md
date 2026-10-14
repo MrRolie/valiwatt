@@ -20,10 +20,12 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
 | Temperature at the target hour (*observed weather*) | **no**: stands in for a weather forecast |
 
 - "Known at the origin" is judged on timestamps, with the values as fetched in 2026: no publication delay and no
-  revisions are modelled, because no real-time vintage of either source is available. Every result says so. One
-  consequence: design code (validation, the frozen models) reads the data-quality layer's full-window series, whose
-  one misplaced-record repair fills 2022-01-01 05:00 UTC with a record stamped a year later; the replay, which rebuilds
-  from the raw records cut at its clock, cannot see that repair before the record arrives.
+  revisions are modelled, because no real-time vintage of either source is available. Every result says so. Design
+  code (validation folds, thresholds, the frozen models) sees each decision time as the replay sees its clock: the
+  demand series is rebuilt from the raw records stamped at or before it (a fit at the origin of its first test day,
+  the lags at each day's origin, a target when its day is scored). So the one misplaced-record repair, which fills
+  2022-01-01 05:00 UTC with a record stamped a year later, reaches design code only once that record has arrived, as
+  in the replay.
 - **Two weather scenarios, two separate fits.** Each scenario is its own model, fitted on its own temperature input,
   with its own out-of-sample errors, intervals and thresholds.
   - *Persistence weather* is the production scenario: the only one a forecaster could run at the origin. The frozen

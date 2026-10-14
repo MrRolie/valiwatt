@@ -9,6 +9,7 @@ from valiwatt.forecast.features import build
 from valiwatt.forecast.guards import (
     DESIGN_LAST_DAY,
     LookaheadError,
+    origin_violations,
     require_design_window,
     require_embargo,
     require_known_at_origin,
@@ -33,12 +34,18 @@ def test_a_2024_row_is_refused_by_design_code():
         require_design_window(f, "break")
 
 
+def fired(f):
+    return [k for k, m in origin_violations(f).items() if m.any()]
+
+
 def test_an_input_after_the_origin_is_refused():
     f = frame("2021-02-01T06:00Z", "2021-03-01T05:00Z")
     require_known_at_origin(f)
+    assert fired(f) == []
     broken = f.copy()
     broken.loc[broken.index[100], "origin"] = broken.index[100]  # the target hour itself as the origin
-    with pytest.raises(LookaheadError):
+    assert fired(broken) == ["target_not_after_origin"]  # this term alone
+    with pytest.raises(LookaheadError, match="target_not_after_origin"):
         require_known_at_origin(broken)
 
 
@@ -48,7 +55,8 @@ def test_an_origin_moved_earlier_than_the_lag_allows_is_refused():
     t = broken.index[100]
     # One hour before the 24-hour lag's hour: the lag would read demand not yet observed at that origin.
     broken.loc[t, "origin"] = t - pd.Timedelta(hours=25)
-    with pytest.raises(LookaheadError):
+    assert fired(broken) == ["input_24h_after_origin"]  # this term alone
+    with pytest.raises(LookaheadError, match="input_24h_after_origin"):
         require_known_at_origin(broken)
 
 

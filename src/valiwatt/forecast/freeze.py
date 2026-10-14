@@ -4,7 +4,8 @@ Two freezes use the same code. The one for the 2024 replay is fitted on 2019-202
 pseudo-replay is fitted on 2019-2022. Both keep the 7-day embargo before their first replayed day, so the
 pseudo-replay rehearses exactly what the 2024 replay does. The interval half-width is the conformal quantile of the
 relative out-of-sample scores of the 12 validation folds just before the replayed year: the same rule the validation
-intervals used, applied to one more month.
+intervals used, applied to one more month. The fit sees the demand as the replay would at the origin of the replayed
+year's first day (`training_table`).
 
 The frozen model is logged to MLflow with the SHA-256 of its coefficients and half-width, and registered as a model
 version with the alias `replay-<year>`. The replay loads it through that alias and refuses it if the hash differs.
@@ -90,6 +91,16 @@ def calibration_folds(replay_year: int) -> list[str]:
     return [str(first - k) for k in range(CALIBRATION_FOLDS, 0, -1)]
 
 
+def fit_clock(replay_year: int) -> pd.Timestamp:
+    """When the frozen model is fitted: the origin of the replayed year's first day, as for a validation fold."""
+    return wf.folds(f"{replay_year}-01", f"{replay_year}-01")[0].fit_clock
+
+
+def training_table(asof, temperature: pd.Series, replay_year: int) -> pd.DataFrame:
+    """The feature table the frozen model for `replay_year` is fitted on: the demand as of its fit clock."""
+    return asof.table(fit_clock(replay_year), temperature)
+
+
 def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[FrozenModel, pd.DataFrame]:
     """Fit the frozen model and its half-width. Returns the model and a table of its coefficients beside an
     explanatory fit without the lags (for interpretation only)."""
@@ -122,12 +133,13 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[Fr
 
 
 def run_freeze(replay_year: int) -> int:
-    from valiwatt.forecast.validate import design_features, load_inputs, load_validation, temperature_sources
+    from valiwatt.forecast.features import AsOf
+    from valiwatt.forecast.validate import load_inputs, load_raw_demand, load_validation, temperature_sources
     from valiwatt.monitor.rules import rules_sha256
 
-    dq, demand, weather = load_inputs()
+    dq, _, weather = load_inputs()
     val, oos = load_validation(dq)
-    f = design_features(demand, temperature_sources(weather)["primary"])
+    f = training_table(AsOf(load_raw_demand(dq)), temperature_sources(weather)["primary"], replay_year)
     frozen, coef = fit_frozen(f, oos, replay_year)
     # The hour is declared a float in the model signature: an hour without inputs comes through as NaN.
     example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24).astype({"hour": float})

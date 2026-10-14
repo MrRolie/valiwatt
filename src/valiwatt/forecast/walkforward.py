@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
 
+from valiwatt.forecast.features import day_origin
 from valiwatt.forecast.guards import require_embargo
 from valiwatt.forecast.model import OLSForecaster, baseline
 
@@ -25,6 +27,11 @@ class Fold:
     def test_last_day(self) -> pd.Timestamp:
         return self.test_month.end_time.normalize()
 
+    @property
+    def fit_clock(self) -> pd.Timestamp:
+        """When the fold's model is fitted: the origin of its first test day, the latest moment it must exist."""
+        return day_origin(self.test_first_day)
+
 
 def folds(first_month: str, last_month: str, embargo_days: int = EMBARGO_DAYS) -> list[Fold]:
     out = []
@@ -39,12 +46,19 @@ def split(f: pd.DataFrame, fold: Fold) -> tuple[pd.DataFrame, pd.DataFrame]:
     return train, test
 
 
-def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persistence")) -> pd.DataFrame:
+def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persistence"),
+        train_at: Callable[[pd.Timestamp], pd.DataFrame] | None = None) -> pd.DataFrame:
     """Out-of-sample predictions for every fold: one row per test hour with the target, each scenario's forecast
-    and the baseline."""
+    and the baseline.
+
+    f: the test rows (in design code, each as the replay issues and scores it: `features.AsOf.issued`).
+    train_at: the feature table as seen at a clock (`features.AsOf.table`); each fold trains on it at its
+    `fit_clock`. Without it, training rows come from f."""
     parts = []
     for fold in fold_list:
         train, test = split(f, fold)
+        if train_at is not None:
+            train, _ = split(train_at(fold.fit_clock), fold)
         if train.empty or test.empty:
             raise ValueError(f"fold {fold.test_month} has no training or test rows")
         require_embargo(train, fold.test_first_day, EMBARGO_DAYS)
