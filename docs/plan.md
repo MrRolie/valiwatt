@@ -140,18 +140,36 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   Otherwise: no recommendation. *Broad* means the week stays beyond the threshold when its two most extreme days, in
   the direction of the failure, are set aside. Why: the forecast reuses demand from one day and one week before, so
   one bad day of demand also spoils the next day's forecast and the same day's a week later; that never puts more
-  than two spoiled days into one week, and with two days set aside the other five must fail on their own. So one bad
-  day alone never yields *retrain* or *recalibrate*, and neither does one bad week followed by its own echo through
-  the week-old lag: the echo has the opposite sign, so a bias pair is not the same failure twice, and a MAPE pair
-  whose two weeks have their bias flagged on opposite sides does not count either. Trimming costs power against a
-  slow, sustained shift, hence the three-week arm of rule 2: one bad day touches at most two weeks, and a bad stretch
-  of up to a week is followed by an echo of the opposite sign, so neither puts three weeks on the same side. Each
-  replay also measures the rules' power on its own hours: from the first full week of each season, a sustained gap
-  of ±2 to ±8 % is put between forecast and demand (weeks until *retrain*), or the intervals' half-width is
-  multiplied by 0.9 down to 0.5 (weeks until *recalibrate*). The report states these detection limits. A week with a data-quality
-  failure or fewer than 120 scored hours has no performance statistics and breaks any streak. The first wording of
-  rule 2 (MAPE or bias out of band two weeks running, in any mix) is logged beside the decisions as a sensitivity; it
-  never recommends.
+  than two spoiled days into one week, and with two days set aside the statistic is no further out than the mean of
+  the five untouched days. So one bad day alone never yields *retrain* or *recalibrate*. A bad Monday-to-Sunday week
+  comes back the next week through the week-old lag as an echo of the opposite sign, so a bias pair is not the same
+  failure twice, and a MAPE pair whose two weeks have their bias flagged on opposite sides does not count either.
+  Trimming costs power against a slow, sustained shift, hence the three-week arm of rule 2: a bad stretch of up to a
+  week lies in at most two calendar weeks and puts only its opposite-signed echo into the week after, so it cannot
+  put three weeks on the same side unless a neighbouring week was already out of band on that side. A week with a
+  data-quality failure or fewer than 120 scored hours has no performance statistics and breaks any streak. The first
+  wording of rule 2 (MAPE or bias out of band two weeks running, in any mix) is logged beside the decisions as a
+  sensitivity; it never recommends.
+- **Detection power.** Each replay measures the rules' power on its own hours: from the first full week of each
+  season, a sustained gap of ±2 to ±8 % is put between forecast and demand (weeks until *retrain*), or the
+  intervals' half-width is multiplied by 0.9 down to 0.5 (weeks until *recalibrate*). The report states these
+  detection limits.
+- **What the rules cannot tell apart, measured.** Trimming bounds what two days can do, and no more. A stretch of a
+  few bad days that crosses a Monday puts part of itself into both calendar weeks, so the same failure can stand two
+  weeks running; when the second week also holds days of the stretch, its bias can fall back inside its band and the
+  echo exclusion does not engage. Such a stretch can therefore yield *retrain*. So can an episode of two days that
+  pushes out a week whose other days sat just inside a narrow band. A pre-freeze review found this on the 2023
+  rehearsal, through the real replay. The rules stay as written: an episode of several days that passes the
+  data-quality checks spoils two weeks of forecasts, and two spoiled weeks are what rule 2 is built to report. The
+  pseudo-replay measures the price instead (`monitor/sensitivity.py`), and the report states it:
+  - **false alarms from short episodes:** demand multiplied by 0.7, 0.85, 1.15 or 1.3 for 1, 3, 5 or 7 days, from
+    every start day of 2023, each through the real replay. An alarm is *clean* when no week it rests on was out of
+    band in 2023 as it was;
+  - **level shifts in demand:** demand multiplied by 0.9 to 1.1 from the first full week of each season (weeks until
+    *retrain*). The persistence forecast follows demand through its lags, so a shift in demand leaves a much smaller
+    gap between forecast and demand; the power table measures the gap, not the shift;
+  - **what the echo exclusion costs:** a forecast given a random error per day (standard deviation 6 %, 10 % or
+    15 %), with the rules run with and without the exclusion (runs where it suppresses or delays *retrain*).
 - **Evidently.** Each week with a drift alarm is saved as an Evidently report, and the replay refuses to log a week
   where Evidently's value differs from its own.
 - **The monitor never acts.** The frozen model's coefficient hash and the interval half-widths are checked before and

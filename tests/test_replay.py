@@ -106,8 +106,9 @@ def test_a_one_day_shock_never_yields_retrain(day):
 
 @pytest.mark.parametrize("factor", [0.7, 0.8, 1.3])
 def test_a_bad_week_and_its_lag_echo_do_not_yield_retrain(factor):
-    """One bad week comes back the next week through the 168 h lag with the opposite sign: both weeks are out of band
-    (bias on opposite sides, MAPE high in both), and the two-week rule alone would retrain; the rules do not."""
+    """One bad Monday-to-Sunday week comes back the next week through the 168 h lag with the opposite sign: both weeks
+    are out of band (bias on opposite sides, MAPE high in both), and the two-week rule alone would retrain; the rules
+    do not. A bad stretch that crosses a Monday can: the pseudo-replay measures how often (test_sensitivity.py)."""
     raw, _ = world()
     week = (raw["ts_utc"] > pd.Timestamp("2022-01-10T05:00Z")) & (raw["ts_utc"] <= pd.Timestamp("2022-01-17T05:00Z"))
     r = run(raw=raw.assign(mw=raw["mw"] * np.where(week, factor, 1.0)))
@@ -305,8 +306,11 @@ def test_a_mape_pair_with_bias_on_opposite_sides_is_an_echo_not_retrain():
     a = week("2024-01-01", -0.05, broad=("mape_high",), flags=("mape_high", "bias_low"))
     b = week("2024-01-08", 0.05, broad=("mape_high",), flags=("mape_high", "bias_high"))
     assert decide(b, a)["recommendation"] is None
+    assert decide(b, a, echo_exclusion=False)["recommendation"] == RETRAIN  # the switch only lifts the exclusion
     c = week("2024-01-08", 0.0, broad=("mape_high",), flags=("mape_high",))
-    assert decide(c, a)["recommendation"] == RETRAIN  # variance decay with no bias flip still fires
+    # Variance decay with no bias flip still fires; so does a stretch across a Monday whose second week's bias falls
+    # back inside its band (the echo week also holds days of the stretch): the exclusion needs the flip flagged.
+    assert decide(c, a)["recommendation"] == RETRAIN
 
 
 def test_detection_power_finds_a_large_sustained_change_and_nothing_without_one(clean):

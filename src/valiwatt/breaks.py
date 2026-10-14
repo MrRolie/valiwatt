@@ -46,7 +46,7 @@ GROUPS = {
 
 T_DEM, T_WEA, T_PIPE = "tests/test_demand_gates.py", "tests/test_weather_gates.py", "tests/test_pipeline_refuses.py"
 T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "tests/test_replay.py", "tests/test_drift.py"
-T_SAFE, T_FRZ = "tests/test_public_safety.py", "tests/test_freeze_gates.py"
+T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -144,6 +144,18 @@ BREAKS = [
     _b(MON, f"{T_REP}::test_detection_power_finds_a_large_sustained_change_and_nothing_without_one",
        "La mesure de puissance trouve un écart soutenu de 8 % ou des intervalles réduits à 20 %, et rien sans changement",
        "The power measure finds a sustained 8% gap or intervals cut to 20%, and nothing without a change"),
+    _b(MON, f"{T_SEN}::test_a_level_shift_in_demand_is_measured_and_no_shift_finds_nothing",
+       "La mesure des changements de niveau trouve une hausse de 12 % de la demande, et rien sans changement",
+       "The level-shift measure finds a 12% rise in demand, and nothing without a change"),
+    _b(MON, f"{T_SEN}::test_one_day_episodes_bring_no_alarm_and_every_start_is_counted",
+       "La mesure des épisodes : un jour de choc ne donne aucune fausse alerte, et chaque départ est compté",
+       "The episode measure: a one-day shock brings no false alarm, and every start is counted"),
+    _b(MON, f"{T_SEN}::test_an_alarm_resting_on_a_week_already_out_of_band_is_assisted_and_old_alarms_are_not_counted",
+       "Une fausse alerte appuyée sur une semaine déjà hors bande est dite aidée ; une alerte d'origine n'est pas comptée",
+       "A false alarm resting on a week already out of band is called assisted; an alarm the year already had is not counted"),
+    _b(MON, f"{T_SEN}::test_the_echo_exclusion_only_ever_removes_or_delays_retrain",
+       "L'exclusion de l'écho ne fait jamais qu'enlever ou retarder « réentraîner »",
+       "The echo exclusion only ever removes or delays retrain"),
     _b(MON, f"{T_REP}::test_two_contaminated_days_never_lift_the_trimmed_statistic_past_the_untouched_days",
        "Deux jours altérés ne portent jamais la statistique tronquée au-delà des jours intacts (2 000 tirages)",
        "Two altered days never lift the trimmed statistic past the untouched days (2,000 draws)"),

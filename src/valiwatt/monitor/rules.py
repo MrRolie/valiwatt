@@ -9,16 +9,24 @@ of its band both weeks, or coverage low both weeks), and each of those weeks mus
 one episode: the week's statistic must stay beyond the threshold when its TRIM_DAYS = 2 most extreme days (in the
 direction of the failure) are set aside. Why two: the forecast reuses demand from one day and one week before, so a
 single bad day of demand also spoils the next day's forecast and the same day's a week later, and that never puts more
-than two spoiled days into one week. With those two days set aside, the five left are untouched by the bad day, so the
-week fails only if its own other days fail. One bad day alone can therefore never yield *retrain* or *recalibrate*.
+than two spoiled days into one week. With those two days set aside, the trimmed statistic is no further out than the
+mean of the five untouched days, so one bad day alone can never yield *retrain* or *recalibrate*.
 
-A bad stretch of up to a week comes back a week later through the 168-hour lag as an echo of the OPPOSITE sign. So a
+That bound is all trimming promises. The two days an episode takes up are days the trim would otherwise have spent on
+the week's own most extreme days, so a week whose untouched days sit just inside a narrow band can be pushed out by
+an episode of two days. And a stretch of several bad days that crosses a Monday spoils both calendar weeks: each holds
+part of the stretch, so the same failure can stand two weeks running, and a stretch of a few days can yield
+*retrain*. The pseudo-replay measures how often, on its own year (monitor/sensitivity.py).
+
+A bad Monday-to-Sunday week comes back a week later through the 168-hour lag as an echo of the OPPOSITE sign. So a
 MAPE pair whose two weeks have their bias flagged on opposite sides is an episode and its echo, not the same failure
-twice, and does not count.
+twice, and does not count. The exclusion needs the echo week's bias flagged: when the echo week also holds days of
+the stretch, its bias can fall back inside its band, and the pair counts.
 
 Trimming costs power against a slow, sustained shift. So rule 2 has a second arm: the weekly bias beyond the SAME side
-of its band three weeks running (untrimmed). One bad day touches at most two weeks, and a bad stretch of up to a week
-is followed by an echo of the opposite sign, so neither can put three weeks on the same side.
+of its band three weeks running (untrimmed). One bad day, or a stretch of up to a week, lies in at most two calendar
+weeks; all it puts into the week after is its echo, of the opposite sign. So with every other week inside its band it
+cannot put three weeks on the same side; beside a week already out of band on that side, it can.
 """
 
 from __future__ import annotations
@@ -157,9 +165,10 @@ def _opposite_bias(a: dict, b: dict) -> bool:
     return (a["flags"]["bias_low"] and b["flags"]["bias_high"]) or (a["flags"]["bias_high"] and b["flags"]["bias_low"])
 
 
-def decide(week: dict, previous: dict | None, before: dict | None = None) -> dict:
+def decide(week: dict, previous: dict | None, before: dict | None = None, echo_exclusion: bool = True) -> dict:
     """The ordered decision table for one week. `previous` and `before` are the records of the two calendar weeks just
-    before (None when missing).
+    before (None when missing). `echo_exclusion=False` exists only to measure what the exclusion changes; the replay
+    never passes it.
 
     A week whose data quality failed, or with too few hours, has no performance statistics; it breaks any streak, so
     the weeks a rule needs are always adjacent weeks that were all evaluated."""
@@ -172,7 +181,7 @@ def decide(week: dict, previous: dict | None, before: dict | None = None) -> dic
     pair = (week, previous)
     if not week["dq_failed"] and all(_evaluated(w) for w in pair):
         same = [k for k in ("mape_high", "bias_high", "bias_low") if all(w["broad"][k] for w in pair)]
-        if "mape_high" in same and _opposite_bias(week, previous):
+        if echo_exclusion and "mape_high" in same and _opposite_bias(week, previous):
             same.remove("mape_high")  # an episode and its echo, not the same failure twice
         three = (week, previous, before)
         sustained = [k for k in ("bias_high", "bias_low")

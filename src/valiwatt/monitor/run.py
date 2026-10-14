@@ -1,7 +1,8 @@
 """`valiwatt replay --year Y`: replay a year with its frozen model and log every daily and weekly judgement.
 
 - Y = 2023 is the pseudo-replay: design years only (records after the end of 2023 are cut before the replay's feeds
-  are built), thresholds from validation weeks up to 2022, and a side-by-side with the monthly-refitted 2023 folds.
+  are built), thresholds from validation weeks up to 2022, a side-by-side with the monthly-refitted 2023 folds, and
+  the rules' false alarms and blind spots measured on that year (monitor/sensitivity.py).
 - Y = 2024 is the replay proper. It refuses to run unless the rule files are exactly those of the `rules-frozen` tag,
   the validation and frozen-model runs it reads were made with those same rules, and no earlier 2024 replay ran
   under another freeze commit (a moved tag is a departure, run only with `--departure` once it is recorded).
@@ -22,6 +23,7 @@ from valiwatt.config import DEMAND_LAST, DESIGN_LAST, stations
 from valiwatt.forecast.evaluate import SEASONS, errors, mean_with_ci, paired_difference
 from valiwatt.forecast.freeze import load_frozen
 from valiwatt.forecast.validate import LineageError, load_inputs, load_validation, validation_results
+from valiwatt.monitor import sensitivity
 from valiwatt.monitor.drift import evidently_snapshot, normed_wasserstein, seasonal_reference
 from valiwatt.monitor.replay import MonitorActedError, ReplayResult, replay
 from valiwatt.monitor.rules import (
@@ -328,6 +330,7 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
         intervals = pd.read_parquet(mlflow.artifacts.download_artifacts(
             run_id=val.info.run_id, artifact_path="frames/intervals.parquet"))
         results["refitted"] = compare_refitted(r, oos, intervals, thresholds, reference, year, n_boot)
+        results["sensitivity"] = sensitivity.measure(raw_demand, raw_temp, frozen, thresholds, reference, r, data_end)
 
     with start_run(EXPERIMENT, results["kind"], tags={
         "kind": results["kind"], "year": str(year), "validation_run_id": val.info.run_id,
