@@ -29,7 +29,7 @@ the gap goes to the owner as a question.
 ## This repository goes public with its history
 
 - Before each commit, check it holds nothing private: credentials, paths outside the repo, agent run records or data.
-  `uv run valiwatt safety` scans what git tracks and stages; it does not know the private names in `ESTATE.local.md`,
+  `uv run valiwatt safety` scans what git stages and every object in the history; it does not know the private names in `ESTATE.local.md`,
   so grep the staged diff for those by hand.
 - Commits use this repository's configured author identity, a GitHub noreply address. Never change `user.email`.
 - Push only to the private remote; it turns public only at the owner's go.

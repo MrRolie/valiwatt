@@ -31,7 +31,7 @@ the rendered files, are the source of truth.
 
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
 `report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.
-`valiwatt safety` scans what git tracks for anything that must not be published.
+`valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
 
 How it is built, and why each choice was made before any result was seen: [`docs/plan.md`](docs/plan.md). The
 standards the report maps to, quoted and checked against their PDFs: [`docs/standards.md`](docs/standards.md).
@@ -79,5 +79,5 @@ licences ([`docs/data-licences.md`](docs/data-licences.md)).
 ## Continuous integration
 
 `.github/workflows/checks.yml` runs the offline tests (every injected break included) and the public-safety scan on
-every push. CI's scan covers paths, credentials, forbidden files and every commit message, but not private names: those
-live in a gitignored list, so only the local `valiwatt safety` checks them.
+every push. CI's scan covers paths, credentials, forbidden files, every file in the history and every commit and tag
+message, but not private names: those live in a gitignored list, so only the local `valiwatt safety` checks them.

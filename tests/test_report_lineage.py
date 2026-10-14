@@ -73,3 +73,17 @@ def test_a_broken_link_in_the_run_chain_is_refused(case, monkeypatch):
     serve(monkeypatch, runs)
     with pytest.raises(lineage.ChainBroken, match=words):
         lineage.follow(CODE, RULES, FREEZE)
+
+
+def test_a_departure_replay_brings_the_replays_it_departs_from_and_names_them(monkeypatch):
+    """A replay run after a recorded departure must carry the earlier replays into the chain, so the report can label
+    it post hoc beside them; one that names none is refused."""
+    runs = clean_chain()
+    serve(monkeypatch, runs)
+    assert lineage.follow(CODE, RULES, FREEZE).departed == []
+    runs["earlier"] = fake_run("earlier", kind="replay", freeze_commit="e" * 40)
+    runs["replay"].data.tags |= {"departure": "true", "departure_from": "earlier"}
+    assert [r.info.run_id for r in lineage.follow(CODE, RULES, FREEZE).departed] == ["earlier"]
+    runs["replay"].data.tags["departure_from"] = ""
+    with pytest.raises(lineage.ChainBroken, match="names no earlier replay"):
+        lineage.follow(CODE, RULES, FREEZE)

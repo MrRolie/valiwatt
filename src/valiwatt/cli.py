@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-id", help="the data-quality run to render (default: the latest that passed)")
     p.add_argument("--dq-only", action="store_true", help="render the data-quality report only")
     p.set_defaults(func=cmd_report)
-    p = sub.add_parser("safety", help="scan tracked and staged files for anything private (run before each commit)")
+    p = sub.add_parser("safety", help="scan staged files and every object in the history for anything private (run before each commit)")
     p.add_argument("--no-private-patterns", action="store_true",
                    help="scan without the gitignored private name list (CI); private names are then not checked")
     p.set_defaults(func=cmd_safety)

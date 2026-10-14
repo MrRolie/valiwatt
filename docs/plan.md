@@ -209,6 +209,9 @@ built:
   a frozen model or validation run from other data, another year or other rules is refused; so is a model file or
   registered model whose hash no longer matches.
 - *Never acts:* a replay that writes to the model or the half-widths fails.
+- *In place:* the 2024 replay is seen to call each of its gates (no tag, a moved tag, a model from another
+  validation, a model changed during the run each stop it before or after the right step), the report's run chain
+  is refused at each broken link, and a breaks run with a break that did not fire is marked failed.
 - *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused; a report figure whose
   metadata carries a private path, or with bytes after its end, fails the public-safety scan.
 
