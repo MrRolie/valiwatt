@@ -1,14 +1,40 @@
 {
-  "code_sha256": "c5805d8516d3c0e191a53f5d74d10fa770ccf3c1d26df40978ebff210578d6c9",
+  "code_sha256": "5f95524a2eb3b136272187b450dee824189ce3088bef2787794f090d44371db0",
   "rules_sha256": "addf19afe5cd7959702740426462862989d5f377967077cdaf7099568fcd40dc",
   "freeze_commit": "8ad0fd0123542163007d1c7ebe21c0837d88e9ad",
   "runs": {
-    "dq": "acabb0f7c15446ddbd44f264889b9b83",
-    "validation": "eaa2b2a5d89045288dd9663a2dd34e3e",
-    "frozen_2023": "e102fa42655e404fb27921570f84f56a",
-    "frozen_2024": "7e8bfcae5e494227a5e36c35ec2a2ff2",
-    "pseudo_replay": "55047fb2d73b46d7bbd815ec0f0ae2af",
-    "replay": "9ef349267e31437f9d81481a474d8d90",
-    "breaks": "1c6d4d6a828b480c967ca99816d8411c"
+    "dq": "a3661dac6c664dd69ef8eff17404570d",
+    "validation": "a737548315c34fcfaa50b1cfe808b99c",
+    "frozen_2023": "d6514c920f2240949f39b6d882fdfe20",
+    "frozen_2024": "3238b6889aa44a83a9a438c9285f86b3",
+    "pseudo_replay": "7185b2acf02d4b738bf2abedced2954e",
+    "replay": "8a1dd98ec47d49e19e0d1c5c70c08d4b",
+    "breaks": "16d273f05abc4177891601a108ee71a7"
+  },
+  "files": {
+    "dq.en.md": "9edc5b4dd293cd019605c2bbd21879ade80406d961b0625d6a0152604a293482",
+    "dq.fr.md": "bef0245a29343f5fbe52b57deec2cbe60ebbbfd8d1488d31568b58f4e82ec90e",
+    "figures/en/daily_demand.png": "c354ea6759d2951fbb7b4a946a5f9eeb6e6a42ec1be2bdd43a81651709b0df5f",
+    "figures/en/heating_curve.png": "fc6af2475ad1c817393ac3bdd7dac0752390e1fff7431c0db0d1ee57605bbc33",
+    "figures/en/r2_by_source.png": "8a004e6a3abc91c446b5503bb98f68fb33f3a9a4d7557789de9e75d4a8ffef44",
+    "figures/en/residual_by_month.png": "93fc4886724722b5734da9c0940e98014bc61d03328d3b6a6de2bd8d993e040c",
+    "figures/fr/daily_demand.png": "2e9eebb2da6e0b192faa27917aff61b9ff5869ffb2dcb38167eaf68412e02323",
+    "figures/fr/heating_curve.png": "aa29c1fa523b40ffece2634f729b9c22af542628f07f864d1d3a559f34f05b62",
+    "figures/fr/r2_by_source.png": "c364fc4c21ea1ffede71c0f999ce59fd6050e7d44760109f58e32bebb2df02a6",
+    "figures/fr/residual_by_month.png": "910b8f2f4601b7a99ec134237f741ba578727a641e5140e00a382c6bf7b67423",
+    "figures/validation/pseudo-replay-2023-weekly.en.png": "5de6d6f5d51e08e81f32623499cd3cb4d699ec5f41a4aae1e95235802bf103b6",
+    "figures/validation/pseudo-replay-2023-weekly.fr.png": "6351f2818e4aab21172524ed32eba469ffc5245a1cbdc733042eabfe274d7c4e",
+    "figures/validation/replay-2024-drift.en.png": "5a2bd1c8c4308952d59c2d5e21e05cdf4001330c6c0f34681e351b4d85ea96d3",
+    "figures/validation/replay-2024-drift.fr.png": "dced8f4f54c12f6b25c5348ffd55fe97fed8e2e4ba740f3415bbd0b276105a94",
+    "figures/validation/replay-2024-weekly.en.png": "53b41d00ff49a5730baccf94d76c5d4c52b768c49e7cc14ce865ab5c580a2d44",
+    "figures/validation/replay-2024-weekly.fr.png": "0220c9df954411b18ba45632568ecb95b0a6dfb9b376d73856f545f814a55a79",
+    "figures/validation/validation-coverage-by-season.en.png": "a7312529aeae21c2775e020af4cd8266bd098e7478a7607a3c81558ab4ad5b4d",
+    "figures/validation/validation-coverage-by-season.fr.png": "3d58ebf853a37fc4c1120dbb33cd6e96ed9decfa31f88baa772c2768321decc9",
+    "figures/validation/validation-monthly-mape.en.png": "df174cfc7c4acea3ef4785437378642d293372eedb04bb735d32318e78a6da1e",
+    "figures/validation/validation-monthly-mape.fr.png": "25d2e3951bb334a7329142d25025d4d913e4d5d8f3f957b54f1abcd5408f8fbc",
+    "figures/validation/validation-peak-hours.en.png": "3a8c58dbb6daeb7592e70b1c26bd9c4969a3dcba45b8463cd99a03b57af94b09",
+    "figures/validation/validation-peak-hours.fr.png": "9921d06458497aa39af9e50d2f7e027d36891a6c0fb8b6630dd4b191986ccd18",
+    "validation.en.md": "d39fd811bfb410abf4eadeca205f9ab359c01d4dbe092e8df96a73c4cb25e071",
+    "validation.fr.md": "dcad8c1ccd5050e17783f88dbae9a598c07e9e07aa06150b2b8232138048e9ec"
   }
 }

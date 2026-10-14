@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `acabb0f7c15446ddbd44f264889b9b83` (2026-10-14 10:44 UTC), code `c2bf3b164863`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `a3661dac6c664dd69ef8eff17404570d` (2026-10-14 12:48 UTC), code `10e6bc8ea8ca`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -163,7 +163,7 @@ _Daily demand against the day's mean temperature in Montréal, 2019–2023._
 
 Over the whole year, Montréal alone does better than the mean of the stations, and the interval excludes zero.
 In winter, Montréal alone and the mean of the stations cannot be told apart: the interval contains zero.
-The mean gives every station the same weight, whatever population it stands for; this report does not test a population weighting. The temperature source for the forecast model will be chosen during validation, on the same years.
+The mean gives every station the same weight, whatever population it stands for; this report does not test a population weighting. The forecast model's temperature source is fixed in the plan (section 2): the Montréal station, the station mean being only a sensitivity run there. The plan fixed it after this comparison, made on years that include the validation years.
 
 ## 6. Landmarks to confirm in validation
 

@@ -1,6 +1,6 @@
 # Validating and monitoring a forecast of Québec's electricity demand
 
-_Report generated from a chain of MLflow runs followed back from the 2024 replay (section 11), code `c2bf3b164863`, code hash `c5805d8516d3`, monitoring rules frozen at commit `8ad0fd012354` (tag `rules-frozen`). Every measured value comes from those runs; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Report generated from a chain of MLflow runs followed back from the 2024 replay (section 11), code `10e6bc8ea8ca`, code hash `5f95524a2eb3`, monitoring rules frozen at commit `8ad0fd012354` (tag `rules-frozen`). Every measured value comes from those runs; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -20,11 +20,11 @@ _Report generated from a chain of MLflow runs followed back from the 2024 replay
 | **Intended use** | To show, on a real forecast, validation and monitoring of the kind a model-risk team does. |
 | **Out of scope** | Any operational dispatch, any trading or pricing, any decision. Hydro-Québec publishes this data for information; it is not official data. |
 | **Data** | Hydro-Québec hourly demand; hourly temperature at the Montréal station (ECCC). Designed on 2019–2023; 2024 replayed as production. |
-| **Model** | Ordinary least squares on named features: one constant per hour and day type, heating and cooling (degree-hours, base 18 °C) per time-of-day block, and demand one day and one week earlier. Frozen on data up to 2023-12-24; version 9 of the registered model `valiwatt-demand-persistence` (alias `replay-2024`). |
+| **Model** | Ordinary least squares on named features: one constant per hour and day type, heating and cooling (degree-hours, base 18 °C) per time-of-day block, and demand one day and one week earlier. Frozen on data up to 2023-12-24; version 11 of the registered model `valiwatt-demand-persistence` (alias `replay-2024`). |
 | **Interval** | Forecast × (1 ± 9.26%): the conformal quantile of the relative out-of-sample errors of the previous 12 months. |
 | **Validation error** | MAPE 4.42% [4.14%, 4.68%] over 2020–2023, against 7.81% for the naive baseline. |
 | **2024 replay** | MAPE 4.23%, coverage 89.4%; no recommendation (section 7). |
-| **Test cases** | Spring 2020: bias −1.86% against −0.60% in other springs, a gap not confirmed by the criterion set in advance. Cold peak of 2023-02: 0 of the 5 busiest hours inside the interval. |
+| **Test cases** | March to June 2020: bias −1.86% against −0.60% in the same months of other years, a gap not confirmed by disjoint intervals. Cold peak of 2023-02: 0 of the 5 busiest hours inside the interval. |
 | **Weather caveat** | Production uses the previous day's temperature, the only one known at issue time. The observed weather of the target hour, which stands in for a perfect weather forecast, is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 8. |
 | **Author** | Built with Claude Code under the repository owner's direction. |
@@ -32,7 +32,7 @@ _Report generated from a chain of MLflow runs followed back from the 2024 replay
 ## 1. The methods, in plain words
 
 - **Walk-forward validation.** Each month from 2020 to 2023 is forecast by a model refitted on the hours before it only, minus the last 7 days (the embargo). Nothing from the tested month helps fit it.
-- **The error.** Mean absolute percentage error (MAPE): on average, how far the forecast is from actual demand. The signed bias says in which direction.
+- **The error.** Mean absolute percentage error (MAPE): on average, how far the forecast is from actual demand. The signed bias says in which direction: bias = (demand − forecast) / demand, positive when the forecast is too low.
 - **The uncertainty of a mean.** Neighbouring hours share the weather, so whole weeks are resampled, 1,000 times, to get a 95% interval around each mean. "A beats B" is written only when the interval of the difference excludes zero.
 - **The prediction interval (conformal).** Over the previous 12 months, look at each hour's relative error; the quantile that covers 90% of them becomes the half-width of next month's interval. Nothing is assumed about the shape of the errors; only that future errors resemble past ones, and whether they do is measured.
 - **The frozen model.** In production the model is not refitted: it is fitted once, frozen with the hash of its coefficients, then replayed hour by hour.
@@ -55,7 +55,7 @@ MAPE differences are in percentage points (pt).
 
 - Previous day's weather against the naive baseline: −3.40 pt of MAPE [−3.93 pt, −2.91 pt], a confirmed gap.
 - Observed weather against the previous day's: −1.01 pt [−1.27 pt, −0.73 pt]; this is the most a perfect weather forecast would add.
-- Six-station mean against the primary station (a sensitivity run, never used to choose): +0.04 pt [+0.01 pt, +0.07 pt].
+- Six-station mean against the primary station (a sensitivity run, never used to choose; the plan fixed the Montréal station after the data-quality report had compared the two sources on 2019–2023, years that include the validation years): +0.04 pt [+0.01 pt, +0.07 pt].
 
 ![Monthly MAPE](figures/validation/validation-monthly-mape.en.png)
 
@@ -74,18 +74,47 @@ MAPE differences are in percentage points (pt).
 
 **By decile of forecast load** (deciles are taken on the forecast, never on actual demand):
 
-| Decile | MAPE | Bias |
-|---|---|---|
-| 1 | 2.59% | +1.09% |
-| 2 | 3.29% | 0.00% |
-| 3 | 3.12% | +0.53% |
-| 4 | 3.16% | +0.33% |
-| 5 | 3.55% | −0.23% |
-| 6 | 4.91% | −0.64% |
-| 7 | 5.92% | +0.77% |
-| 8 | 5.90% | +0.60% |
-| 9 | 5.75% | +0.40% |
-| 10 | 5.98% | −0.60% |
+| Decile | MAPE | 95% CI | Bias | 95% CI of the bias |
+|---|---|---|---|---|
+| 1 | 2.59% | [2.40%, 2.81%] | +1.09% | [+0.77%, +1.41%] |
+| 2 | 3.29% | [3.04%, 3.56%] | 0.00% | [−0.35%, +0.37%] |
+| 3 | 3.12% | [2.88%, 3.41%] | +0.53% | [+0.19%, +0.87%] |
+| 4 | 3.16% | [2.91%, 3.44%] | +0.33% | [−0.03%, +0.65%] |
+| 5 | 3.55% | [3.26%, 3.93%] | −0.23% | [−0.58%, +0.15%] |
+| 6 | 4.91% | [4.51%, 5.34%] | −0.64% | [−1.25%, −0.02%] |
+| 7 | 5.92% | [5.53%, 6.35%] | +0.77% | [+0.02%, +1.57%] |
+| 8 | 5.90% | [5.49%, 6.40%] | +0.60% | [−0.16%, +1.41%] |
+| 9 | 5.75% | [5.29%, 6.21%] | +0.40% | [−0.29%, +1.10%] |
+| 10 | 5.98% | [5.37%, 6.55%] | −0.60% | [−1.50%, +0.31%] |
+
+**By hour of the day** (the local hour in which the demand hour starts):
+
+| Hour | MAPE | 95% CI | Bias | 95% CI of the bias |
+|---|---|---|---|---|
+| 0:00 | 4.58% | [4.24%, 4.91%] | +0.29% | [−0.08%, +0.65%] |
+| 1:00 | 4.74% | [4.39%, 5.09%] | +0.24% | [−0.14%, +0.62%] |
+| 2:00 | 4.90% | [4.54%, 5.26%] | +0.19% | [−0.22%, +0.58%] |
+| 3:00 | 5.02% | [4.64%, 5.40%] | +0.13% | [−0.28%, +0.53%] |
+| 4:00 | 5.10% | [4.71%, 5.48%] | +0.04% | [−0.36%, +0.44%] |
+| 5:00 | 5.12% | [4.73%, 5.49%] | −0.09% | [−0.51%, +0.31%] |
+| 6:00 | 5.17% | [4.81%, 5.52%] | −0.04% | [−0.45%, +0.33%] |
+| 7:00 | 4.95% | [4.63%, 5.27%] | +0.03% | [−0.33%, +0.38%] |
+| 8:00 | 4.38% | [4.08%, 4.68%] | +0.21% | [−0.11%, +0.52%] |
+| 9:00 | 4.04% | [3.77%, 4.33%] | +0.33% | [+0.04%, +0.60%] |
+| 10:00 | 3.93% | [3.66%, 4.20%] | +0.25% | [−0.03%, +0.51%] |
+| 11:00 | 4.00% | [3.73%, 4.25%] | +0.30% | [+0.03%, +0.55%] |
+| 12:00 | 4.09% | [3.80%, 4.35%] | +0.36% | [+0.09%, +0.60%] |
+| 13:00 | 4.25% | [3.96%, 4.51%] | +0.36% | [+0.07%, +0.62%] |
+| 14:00 | 4.34% | [4.06%, 4.60%] | +0.33% | [+0.04%, +0.59%] |
+| 15:00 | 4.36% | [4.07%, 4.62%] | +0.27% | [−0.03%, +0.56%] |
+| 16:00 | 4.31% | [4.03%, 4.57%] | +0.33% | [+0.03%, +0.61%] |
+| 17:00 | 4.13% | [3.87%, 4.38%] | +0.25% | [−0.04%, +0.51%] |
+| 18:00 | 3.99% | [3.74%, 4.24%] | +0.28% | [0.00%, +0.54%] |
+| 19:00 | 3.99% | [3.74%, 4.24%] | +0.29% | [+0.01%, +0.56%] |
+| 20:00 | 4.05% | [3.79%, 4.30%] | +0.31% | [+0.01%, +0.58%] |
+| 21:00 | 4.06% | [3.78%, 4.33%] | +0.19% | [−0.12%, +0.47%] |
+| 22:00 | 4.16% | [3.87%, 4.44%] | +0.25% | [−0.06%, +0.55%] |
+| 23:00 | 4.37% | [4.06%, 4.68%] | +0.29% | [−0.04%, +0.61%] |
 
 **Coefficients of the model frozen for 2024.** Each coefficient says what a feature adds *given* demand one day and one week earlier; the fit without the lags, shown beside it for interpretation only, gives the total effect of the weather. The 72 constants (one per hour and day type) are not shown. No least-squares standard error is given: the errors are autocorrelated.
 
@@ -106,7 +135,7 @@ MAPE differences are in percentage points (pt).
 
 ## 3. Test cases
 
-**Spring 2020.** Months 3, 4, 5, 6: bias −1.86% [−3.06%, −0.71%] in 2020, against −0.60% [−1.12%, −0.11%] in the other years. The criterion set in advance (disjoint intervals) does not confirm the gap. Prediction intervals do not cover 2020: they need 12 months of calibration.
+**Spring 2020.** Months 3, 4, 5, 6: bias −1.86% [−3.06%, −0.71%] in 2020, against −0.60% [−1.12%, −0.11%] in the other years. The criterion used, disjoint intervals, does not confirm the gap; it is a stricter test than section 1's rule, which judges the interval of the difference. With observed weather, the same case gives −1.39% [−2.30%, −0.44%] in 2020 against +1.28% [+0.78%, +1.75%]: a gap the same criterion confirms. Prediction intervals do not cover 2020: they need 12 months of calibration.
 
 | Month | MAPE | Bias |
 |---|---|---|
@@ -127,11 +156,11 @@ MAPE differences are in percentage points (pt).
 | 2023-05 | 4.10% | −1.07% |
 | 2023-06 | 2.28% | +0.15% |
 
-**Cold peak of 2023-02.** The 5 busiest hours of 2019–2023 fall in 2023-02. 0 of 5 are inside the 90% interval. This is a known conditional failure: a model linear in degree-hours, fed the previous day's temperature, under-forecasts a deepening cold snap.
+**Cold peak of 2023-02.** The 5 busiest hours of 2019–2023 fall in 2023-02. 0 of 5 are inside the 90% interval. It is not only the temperature lag: even with the target hour's observed temperature, the forecast stays 10.8% to 12.7% below demand. A model linear in degree-hours under-forecasts this peak; only one peak is studied here.
 
 ![Cold peak](figures/validation/validation-peak-hours.en.png)
 
-| Hour (UTC) | Demand | Temperature | Previous day's weather | Interval | Observed weather |
+| Hour ending (UTC) | Demand | Temperature | Previous day's weather | Interval | Observed weather |
 |---|---|---|---|---|---|
 | 2023-02-03 23:00 UTC | 42,473 MW | −26.1 °C | 31,016 MW | 28,051–33,981 | 37,062 MW |
 | 2023-02-04 00:00 UTC | 42,254 MW | −26.2 °C | 30,964 MW | 28,004–33,924 | 37,033 MW |
@@ -150,7 +179,7 @@ Nominal 90%, from 2021-01.
 | absolute (sensitivity) | 90.1% | [87.9%, 92.4%] | 11.93% |
 | relative, observed weather | 90.2% | [88.9%, 91.4%] | 7.60% |
 
-Overall coverage is close to nominal; conditional coverage is not. Winter and the high-load deciles are under-covered, summer is over-covered. One quantile per season fixes most of it (a sensitivity run). The production form stays the one fixed before validation; changing it after seeing the results would make them depend on the choice.
+Overall coverage is close to nominal; conditional coverage is not. Winter and the high-load deciles are under-covered, summer is over-covered. One quantile per season fixes the gap between seasons (a sensitivity run); the decile table shows what it leaves at high loads. The production form stays the one fixed before validation; changing it after seeing the results would make them depend on the choice.
 
 ![Coverage by season](figures/validation/validation-coverage-by-season.en.png)
 
@@ -161,22 +190,30 @@ Overall coverage is close to nominal; conditional coverage is not. Winter and th
 | summer | 99.4% | 90.8% |
 | fall | 94.8% | 91.4% |
 
-| Decile of forecast load | Coverage (one quantile) |
-|---|---|
-| 1 | 98.5% |
-| 2 | 96.7% |
-| 3 | 96.7% |
-| 4 | 97.3% |
-| 5 | 96.0% |
-| 6 | 90.9% |
-| 7 | 82.1% |
-| 8 | 81.4% |
-| 9 | 84.2% |
-| 10 | 82.5% |
+| Hour block | Coverage (one quantile) | 95% CI |
+|---|---|---|
+| night (0–5 h) | 87.5% | [84.8%, 90.2%] |
+| morning (6–9 h) | 89.5% | [87.3%, 91.7%] |
+| day (10–15 h) | 92.0% | [90.2%, 93.8%] |
+| evening (16–20 h) | 92.8% | [91.1%, 94.4%] |
+| late evening (21–23 h) | 91.6% | [89.7%, 93.6%] |
+
+| Decile of forecast load | Coverage (one quantile) | 95% CI | One quantile per season |
+|---|---|---|---|
+| 1 | 98.5% | [97.4%, 99.5%] | 95.1% |
+| 2 | 96.7% | [95.0%, 98.1%] | 92.3% |
+| 3 | 96.7% | [95.1%, 98.0%] | 92.2% |
+| 4 | 97.3% | [95.9%, 98.4%] | 91.6% |
+| 5 | 96.0% | [94.0%, 97.7%] | 90.9% |
+| 6 | 90.9% | [87.7%, 93.8%] | 87.5% |
+| 7 | 82.1% | [77.7%, 85.8%] | 83.9% |
+| 8 | 81.4% | [77.3%, 85.0%] | 85.6% |
+| 9 | 84.2% | [79.8%, 87.7%] | 90.3% |
+| 10 | 82.5% | [78.1%, 87.4%] | 90.6% |
 
 ## 5. Monitoring thresholds
 
-Drawn from the 2021–2023 validation weeks (the 2023 replay uses 2021–2022 only). Weeks run Monday to Sunday, standard time; a week with fewer than 120 scored hours is not judged.
+Drawn from the 2021–2023 validation weeks (the 2023 replay uses 2021–2022 only). Seasons: winter December to February, spring March to May, summer June to August, fall September to November. Weeks run Monday to Sunday, standard time; a week with fewer than 120 scored hours is not judged.
 
 | Season | MAPE above | Bias outside | Coverage below | Weeks |
 |---|---|---|---|---|
@@ -186,6 +223,17 @@ Drawn from the 2021–2023 validation weeks (the 2023 replay uses 2021–2022 on
 | fall | 6.00% | −1.45% to +4.10% | 82.0% | 39 |
 
 Drift: alarm above 1.250 for temperature and 1.034 for the forecast.
+
+**Thresholds of the 2023 replay**, drawn from the 2021–2022 weeks; the measurements of section 6 use them:
+
+| Season | MAPE above | Bias outside | Coverage below | Weeks |
+|---|---|---|---|---|
+| winter | 8.18% | −3.17% to +5.21% | 58.6% | 26 |
+| spring | 8.37% | −3.78% to +2.56% | 62.8% | 26 |
+| summer | 3.95% | −0.49% to +2.74% | 95.5% | 26 |
+| fall | 6.02% | −1.77% to +4.81% | 77.4% | 26 |
+
+Each threshold is an extreme quantile of a season's weeks (the "Weeks" column): with so few weeks, it rests on a few extreme weeks, and it moves when a year is added, as the two tables show. How often a week is flagged in error is therefore uncertain.
 
 ## 6. The frozen model, rehearsed on 2023
 
@@ -204,9 +252,9 @@ Before replaying 2024, the same procedure is rehearsed on the design years: a mo
 
 MAPE difference (frozen minus refitted), on the same 8,739 hours: −0.01 pt [−0.02 pt, 0.00 pt]: no confirmed gap; freezing the model for a year costs no measurable accuracy on 2023.
 
-**Why "the same failure, broad".** Under the first wording of rule 2 (MAPE or bias out of band two weeks running, in any mix), the monitor would have recommended retraining in the week of 2023-02-06 (bias +4.92% then −5.47%), then in the week of 2023-02-27 (bias +5.93% then −3.93%). Each time the bias changes sign from one week to the next: the profile of a passing gap that the 24-hour and 168-hour lags carry into the following days; a degraded model would rather keep an error of the same sign. The rule kept needs the same failure two weeks running, broad in each week: one day is never enough unless the weeks already held failing days; an episode of several days can be, and how often is measured below.
+**Why "the same failure, broad".** Under the first wording of rule 2 (MAPE or bias out of band two weeks running, in any combination), the monitor would have recommended retraining in the week of 2023-02-06 (the week before: MAPE 8.69% above its threshold, bias +4.92%; that week: MAPE 7.95%, bias −5.47% outside its band), then in the week of 2023-02-27 (the week before: MAPE 7.99%, bias +5.93% outside its band; that week: MAPE 5.58%, bias −3.93% outside its band). Each time the bias changes sign from one week to the next: the profile of a passing gap that the 24-hour and 168-hour lags carry into the following days; a degraded model would rather keep an error of the same sign. The rule kept needs the same failure two weeks running, broad in each week: one day is never enough unless the weeks already held failing days; an episode of several days can be, and how often is measured below.
 
-**The rules' power on 2023.** From the first full week of each season, a sustained change is imposed and the weekly rules are run again on the 2023 hours: a gap between demand and forecast (−8% to +8%), counted in weeks until "retrain", or intervals narrowed (half-width × 0.9 to × 0.5), counted in weeks until "recalibrate" (—: nothing within 8 weeks). A measurement, never a recommendation.
+**The rules' power on 2023.** From the first judged week of January, April, July and October, a sustained change is imposed and the weekly rules are run again on the 2023 hours: a gap between demand and forecast (−8% to +8%), counted in weeks until "retrain", or intervals narrowed (half-width × 0.9 to × 0.5), counted in weeks until "recalibrate" (—: nothing within 8 weeks). A measurement, never a recommendation.
 
 | Starts | −8% | −6% | −4% | −2% | +2% | +4% | +6% | +8% | 
 |---|---|---|---|---|---|---|---|---|
@@ -245,7 +293,7 @@ MAPE difference (frozen minus refitted), on the same 8,739 hours: −0.01 pt [�
 
 No one-day shock gave an alarm: one bad day spoils at most two days of a week, which the trim sets aside, so it can only complete failing days the weeks already held. An episode of several days does more: through the day-old lag it spoils one day more than it lasts, and through the week-old lag as many days the following week, so from three days on both weeks can be broad on the same failure with no failing days of their own. When one of the two weeks' bias stays inside its band (a band wide on that side, or a week that also holds days of the episode, as when it crosses a Monday), the echo exclusion does not engage. Weekly statistics cannot tell such an episode from two weeks of model failure; the rules stay as written, and this table gives the price.
 
-**A shift in the level of demand.** Demand is multiplied by a factor from the first full week of each season, for 10 weeks (weeks until "retrain"; —: nothing within 10 weeks). The persistence forecast follows demand through its lags, so a shift in level leaves a gap between forecast and demand much smaller than the shift itself. The power table measures that gap; this one measures the shift in level.
+**A shift in the level of demand.** Demand is multiplied by a factor from the first judged week of January, April, July and October, for 10 weeks (weeks until "retrain"; —: nothing within 10 weeks). The persistence forecast follows demand through its lags, so a shift in level leaves a gap between forecast and demand much smaller than the shift itself. The power table measures that gap; this one measures the shift in level.
 
 | Starts | −10% | −5% | +5% | +10% | 
 |---|---|---|---|---|
@@ -254,7 +302,7 @@ No one-day shock gave an alarm: one bad day spoils at most two days of a week, w
 | 2023-07-03 (summer) | 2 | 4 | — | — | 
 | 2023-10-02 (fall) | 2 | — | — | — | 
 
-**What the echo exclusion costs.** From the first full week of each season, for 8 weeks, the forecast takes a random error drawn each day from a normal law: a degraded model whose weekly bias can change sides. The rules are run with and without the exclusion.
+**What the echo exclusion costs.** From the first judged week of January, April, July and October, for 8 weeks, the forecast takes a random error drawn each day from a normal law: a degraded model whose weekly bias can change sides. The rules are run with and without the exclusion.
 
 | Daily standard deviation | Runs | "Retrain" with the exclusion | without it | Suppressed by the exclusion | Delayed |
 |---|---|---|---|---|---|
@@ -266,6 +314,7 @@ No one-day shock gave an alarm: one bad day spoils at most two days of a week, w
 
 ## 7. 2024 replayed as production
 
+
 The clock advances hour by hour from 2024-01-01 to 2024-12-31; every read goes through an accessor that refuses any record later than the clock. The model and its intervals are checked by hash before and after: `c8e1725aad77`, unchanged.
 
 | | |
@@ -273,9 +322,11 @@ The clock advances hour by hour from 2024-01-01 to 2024-12-31; every read goes t
 | MAPE | 4.23% [3.70%, 4.84%] |
 | Bias | +0.31% [−0.28%, +0.91%] |
 | Coverage (nominal 90%) | 89.4% [85.1%, 92.9%] |
-| Hours forecast / scored | 8,760 / 8,758 |
+| Hours in the year / forecast / scored | 8,784 / 8,760 / 8,758 |
 | Days failing data quality | 0 of 366 |
 | Weeks judged | 52 of 53 |
+
+Hours not forecast, by missing input (an hour can miss more than one): previous week's demand unavailable (2), previous day's demand unavailable (2), previous day's temperature missing (20).
 
 **Recommendations.**
 
@@ -307,13 +358,15 @@ For each week with a drift alarm, the Evidently report is kept in the run, and E
 
 ## 8. Limitations
 
-- **Conditional coverage.** The production interval under-covers winter and high loads; the winter coverage thresholds inherit that under-coverage, so the monitor does not flag it as decay.
-- **Extreme cold.** The 2023-02 peak is not covered; the model under-forecasts deepening cold snaps.
+- **Conditional coverage.** The production interval under-covers winter and high loads; the winter coverage thresholds inherit that under-coverage, so the monitor does not flag it as decay. The other way round, the summer threshold (96.4%) is above the 90% nominal: a summer week covered above nominal can be flagged low. The thresholds measure departure from each season's validation coverage, not from nominal.
+- **Extreme cold.** The 2023-02 peak is not covered (0 of the 5 busiest hours); even with observed weather, the model under-forecasts it. Only one peak is studied; cold snaps are not measured as a class.
 - **Level drift.** Weather-adjusted demand has risen since 2021; the lags carry part of it, the rest shows up as bias, which the monitor watches.
 - **Episodes of several days.** An episode of several days can yield "retrain" with nothing wrong in the model: on 2023, up to 32.6% of starts for 7 days at × 0.70, and at most 2.0% for an episode of ±15% (section 6).
-- **Shift in level.** A sustained 10% rise in demand did not yield "retrain" within 10 weeks at 4 of 4 season starts: persistence absorbs most of it through its lags; a 10% fall did at 3 of 4. A fall leaves a larger relative gap than a rise of the same size, since the bias is measured against the lower demand; where 2023's weekly bias sat within each season's band does the rest. The power tables measure a gap between forecast and demand, not a shift in level.
+- **Shift in level.** A sustained 10% rise in demand did not yield "retrain" within 10 weeks at 4 of 4 starts (January, April, July, October): persistence absorbs most of it through its lags; a 10% fall did at 3 of 4. A fall leaves a larger relative gap than a rise of the same size, since the bias is measured against the lower demand; where 2023's weekly bias sat within each season's band does the rest. The power tables measure a gap between forecast and demand, not a shift in level.
 - **Echo exclusion.** On a degraded model whose bias changes sides, it suppresses "retrain" in 4 of 240 runs and delays it in 20 (section 6); that is the price of avoiding the false alarms of an episode followed by its echo.
-- **Real-time data.** Values are as downloaded in 2026; no publication delay and no revision are modelled.
+- **Power of "recalibrate".** Intervals cut to half their width did not yield "recalibrate" within 8 weeks at 3 of 8 starts (January, April, July and October of 2023 and 2024; sections 6 and 7): rule 3 needs coverage below the season's threshold, broad, two weeks running, with the bias inside its band.
+- **Data quality in 2024.** The replay judges each day on the raw records cut at the clock, but it runs only if the whole window, 2024 included, passed the data-quality report's gates. Out-of-bounds values, off-grid records and duplicated temperatures therefore could not appear in the replay; the daily monitor still judged missing hours, blank values, duplicated demand records and a silent primary station there.
+- **Real-time data.** Values are as downloaded in 2026; no publication delay and no revision are modelled. Design code reads the data-quality report's full-window series, in which one repair fills the missing hour of 2022-01-01 05:00 UTC with a record stamped 2023-01-01 05:00 UTC, which arrives only then: the 2023 rehearsal's model and thresholds, fixed before, already use it; the replays make the same repair only once the record has arrived.
 - **Independence.** The model, the checks and this report come from one AI agent session under one owner's direction, with no independent human review of the code. The reviews were done by fresh-context agents, which is not independent validation in the SR 11-7 sense.
 
 ## 9. Breaks: every check is seen to fire
@@ -345,10 +398,14 @@ Each gate and monitor has a test that injects the fault it exists to catch. The 
 | No lookahead | Thresholds built on the replayed year are refused | fired |
 | No lookahead | A replay's drift thresholds ignore the replayed year | fired |
 | No lookahead | The frozen model refuses training rows inside its embargo | fired |
+| No lookahead | An origin moved earlier than the 24-hour lag allows is refused | fired |
 | Replay clock | Records corrupted after a cut change nothing judged before it | fired |
 | Replay clock | A record that arrives a week late is not used before it arrives | fired |
 | Replay clock | Reading past the clock, or turning it back, is refused | fired |
 | Replay clock | A forecast issued after its origin is refused | fired |
+| Replay clock | A day scored before the hour after its last hour is refused | fired |
+| Replay clock | A forecast built on a row of another origin is refused | fired |
+| Replay clock | A forecast built on a row of another day is refused | fired |
 | Monitors and decision table | Control: clean data yield no recommendation | fired |
 | Monitors and decision table | The seasonal reference stays quiet on clean data and fires on a shift | fired |
 | Monitors and decision table | Temperature drift with performance inside its thresholds: investigate the data | fired |
@@ -373,6 +430,8 @@ Each gate and monitor has a test that injects the fault it exists to catch. The 
 | Monitors and decision table | Two rules at once: one recommendation with both pieces of evidence | fired |
 | Monitors and decision table | A one-day shock (Saturday) does not yield retrain | fired |
 | Monitors and decision table | A one-day shock (Sunday) does not yield retrain | fired |
+| Monitors and decision table | A week with too few scored hours is not judged | fired |
+| Monitors and decision table | A week with too few full days has no trimmed statistic and is never broadly out of band | fired |
 | The monitor never acts | A replay that changes the model or its intervals fails | fired |
 | Frozen rules | Without the freeze tag, the 2024 replay is refused | fired |
 | Frozen rules | A rule file edited after the freeze is refused and named | fired |
@@ -385,9 +444,26 @@ Each gate and monitor has a test that injects the fault it exists to catch. The 
 | Frozen rules | A validation or data-quality run made on other data or other rules is refused | fired |
 | Frozen rules | A frozen model file that no longer matches its hash is refused | fired |
 | Frozen rules | The registered model is refused when its run records another hash | fired |
+| Frozen rules | Without the freeze tag, the 2024 replay stops before reading any input | fired |
+| Frozen rules | Under a moved freeze tag, the 2024 replay stops before reading any input, even with --departure and no recorded departure | fired |
+| Frozen rules | The 2024 replay refuses a frozen model built on another validation run | fired |
+| Frozen rules | The 2024 replay fails when the registered model changes while it runs | fired |
+| Frozen rules | An alias pointing at another year's frozen model is refused | fired |
 | Report rendering | A report whose code changed since its run is refused | fired |
 | Report rendering | The public-safety scan fires on private content | fired |
 | Report rendering | A figure whose metadata carries a private path, or with bytes hidden after its end, is refused | fired |
+| Report rendering | A file removed from the tree later, a forbidden path or a leftover ref is still caught in the history | fired |
+| Report rendering | An annotated tag message carrying a private path is caught | fired |
+| Report rendering | The home-directory shorthands fire; ordinary prose does not | fired |
+| Report rendering | A figure with a chunk outside the allowlist or a bad checksum is refused | fired |
+| Report rendering | Control: an intact run chain is followed to its end | fired |
+| Report rendering | A breaks run marked failed breaks the report's run chain | fired |
+| Report rendering | A run made from other code breaks the report's run chain | fired |
+| Report rendering | A model frozen for another year breaks the report's run chain | fired |
+| Report rendering | A replay made under another freeze commit breaks the report's run chain | fired |
+| Report rendering | A validation naming another data-quality run breaks the report's run chain | fired |
+| Report rendering | A replay after a departure brings the replays it departs from; one that names none is refused | fired |
+| Report rendering | A break that did not fire marks the breaks run failed | fired |
 
 ## 10. Mapping to SR 11-7 and the NIST AI RMF
 
@@ -395,29 +471,29 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Expectation | What valiwatt does | Where it is checked |
 |---|---|---|
-| SR 11-7, conceptual soundness, including sensitivity analysis | Configuration fixed in the plan before validation; named features, coefficients shown beside a fit without the lags; sensitivity runs: six stations, absolute interval, one quantile per season, the first wording of rule 2. | Plan, section 2; validation and frozen-model runs |
+| SR 11-7, conceptual soundness, including sensitivity analysis | Configuration fixed in the plan before validation (the temperature source after the data-quality report's comparison of stations on 2019–2023); named features, coefficients shown beside a fit without the lags; sensitivity runs: six stations, absolute interval, one quantile per season, the first wording of rule 2. | Plan, section 2; validation and frozen-model runs |
 | SR 11-7, data quality and relevance | 23 data-quality gates over the full window, each repair documented; the station's representativeness; in production, a daily data-quality monitor on the raw records. | Data-quality report; replays |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards; a clock that refuses later records; the model's hash checked before and after; the 2024 replay refuses to run if the rules differ from the `rules-frozen` tag. Each guard has its break. | Section 9 |
 | SR 11-7, ongoing monitoring: benchmarking | Naive baseline; observed weather as an optimistic bound; frozen model against refitted folds on 2023 (a parallel outcomes analysis). | Sections 2 and 6 |
 | SR 11-7, outcomes analysis and back-testing, with intervals | Monthly folds with embargo; coverage measured overall, by season, by hour block and by decile; weekly statistics judged against thresholds fixed in advance. | Sections 2, 4, 6, 7 |
-| SR 11-7, thresholds of acceptability, then recalibration or redevelopment | Per-season thresholds from earlier weeks; an ordered decision table (investigate, recalibrate, retrain), with evidence; recommends without acting. | Sections 5 and 7 |
+| SR 11-7, thresholds of acceptability, then recalibration or redevelopment | Per-season thresholds from earlier weeks; an ordered decision table (investigate, retrain, recalibrate), with evidence; recommends without acting. | Sections 5 and 7 |
 | SR 11-7, documentation and validation reports | This report and its model card, rendered from the runs and stamped with their IDs and the code hash. | This report |
 | NIST MAP 2.2, 2.3 | Intended use, out of scope, weather caveat, limitations; validation design and data-quality findings documented. | Model card; plan |
 | NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | MLflow runs (test sets, metrics, parameters, versions); replays under production conditions; breaks; the "not covered" list below. | Runs; section 9 |
-| NIST MANAGE 2.2, 2.4 | Weekly recommendations with evidence; who acts on them, and how, is out of scope. | Section 7 |
+| NIST MANAGE 2.2 | Weekly recommendations with evidence; who acts on them, and how, is out of scope. | Section 7 |
 
-**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; most of NIST GOVERN); periodic review; override analysis; use in decisions and materiality; independent review of a recalibration; NIST MANAGE 4.1 and 1.4 beyond the model card's limitations; real-time data.
+**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; most of NIST GOVERN); periodic review; override analysis; use in decisions and materiality; independent review of a recalibration; NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the model card's limitations; real-time data.
 
 ## 11. Provenance
 
 | Run | ID | Date |
 |---|---|---|
-| data quality | `acabb0f7c15446ddbd44f264889b9b83` | 2026-10-14 10:44 UTC |
-| validation | `eaa2b2a5d89045288dd9663a2dd34e3e` | 2026-10-14 10:45 UTC |
-| model frozen for 2023 | `e102fa42655e404fb27921570f84f56a` | 2026-10-14 10:45 UTC |
-| model frozen for 2024 | `7e8bfcae5e494227a5e36c35ec2a2ff2` | 2026-10-14 11:09 UTC |
-| 2023 replay | `55047fb2d73b46d7bbd815ec0f0ae2af` | 2026-10-14 11:09 UTC |
-| 2024 replay | `9ef349267e31437f9d81481a474d8d90` | 2026-10-14 11:09 UTC |
-| breaks | `1c6d4d6a828b480c967ca99816d8411c` | 2026-10-14 11:13 UTC |
+| data quality | `a3661dac6c664dd69ef8eff17404570d` | 2026-10-14 12:48 UTC |
+| validation | `a737548315c34fcfaa50b1cfe808b99c` | 2026-10-14 12:49 UTC |
+| model frozen for 2023 | `d6514c920f2240949f39b6d882fdfe20` | 2026-10-14 12:49 UTC |
+| model frozen for 2024 | `3238b6889aa44a83a9a438c9285f86b3` | 2026-10-14 13:09 UTC |
+| 2023 replay | `7185b2acf02d4b738bf2abedced2954e` | 2026-10-14 13:09 UTC |
+| 2024 replay | `8a1dd98ec47d49e19e0d1c5c70c08d4b` | 2026-10-14 13:10 UTC |
+| breaks | `16d273f05abc4177891601a108ee71a7` | 2026-10-14 13:13 UTC |
 
-Code hash: `c5805d8516d3c0e191a53f5d74d10fa770ccf3c1d26df40978ebff210578d6c9`. Rules hash: `addf19afe5cd7959702740426462862989d5f377967077cdaf7099568fcd40dc`. `tests/test_report_stamp.py` fails when the repository's code no longer matches this hash.
+Code hash: `5f95524a2eb3b136272187b450dee824189ce3088bef2787794f090d44371db0`. Rules hash: `addf19afe5cd7959702740426462862989d5f377967077cdaf7099568fcd40dc`. `tests/test_report_stamp.py` fails when the repository's code no longer matches this hash.

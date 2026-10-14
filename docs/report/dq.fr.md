@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `acabb0f7c15446ddbd44f264889b9b83` (2026-10-14 10:44 UTC), code `c2bf3b164863`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `a3661dac6c664dd69ef8eff17404570d` (2026-10-14 12:48 UTC), code `10e6bc8ea8ca`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -163,7 +163,7 @@ _La demande journalière selon la température moyenne du jour à Montréal, 201
 
 Sur l'année, Montréal seule fait mieux que la moyenne des stations, et l'intervalle exclut zéro.
 En hiver, Montréal seule et la moyenne des stations ne se distinguent pas : l'intervalle contient zéro.
-La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. Le choix de la source pour le modèle de prévision se fera à la validation, sur les mêmes années.
+La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. La source de température du modèle de prévision est fixée dans le plan (section 2) : la station de Montréal, la moyenne des stations n'y étant qu'une analyse de sensibilité. Le plan l'a fixée après cette comparaison, faite sur des années qui couvrent celles de la validation.
 
 ## 6. Repères à confirmer en validation
 
