@@ -46,7 +46,7 @@ _Report generated from a chain of MLflow runs followed back from the 2024 replay
 | **Model** | Ordinary least squares on named features: one constant per hour and day type, heating and cooling (degree-hours, base {{ v.config.base_c|num(0) }} °C) per time-of-day block, and demand one day and one week earlier. Frozen on data up to {{ f24.params.train_last_day }}; version {{ f24.tags.model_version }} of the registered model `valiwatt-demand-persistence` (alias `replay-2024`). |
 | **Interval** | Forecast × (1 ± {{ f24.params.q|float|pct(2) }}): the conformal quantile of the relative out-of-sample errors of the previous 12 months. |
 | **Validation error** | MAPE {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} over 2020–2023, against {{ P.baseline.overall.mean|pct(2) }} for the naive baseline. |
-| **2024 replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ r.summary.recommendations.values()|sum }} recommendation(s) (section 7). |
+| **2024 replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {% set n = r.summary.recommendations.values()|sum %}{% if n == 0 %}no recommendation{% elif n == 1 %}1 recommendation{% else %}{{ n }} recommendations{% endif %} (section 7). |
 | **Test cases** | Spring 2020: bias {{ sp(sh.bias_shift_year.mean, 2) }} against {{ sp(sh.bias_other_years.mean, 2) }} in other springs{% if sh.separated %}, a confirmed gap{% else %}, a gap not confirmed by the criterion set in advance{% endif %}. Cold peak of {{ peak.named_month }}: {{ peak.covered }} of the {{ peak.evaluated }} busiest hours inside the interval. |
 | **Weather caveat** | Production uses the previous day's temperature, the only one known at issue time. The observed weather of the target hour, which stands in for a perfect weather forecast, is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 8. |
@@ -252,7 +252,7 @@ No week of 2024 triggered a recommendation.
 {% endif %}
 
 {% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
-Under the first wording of rule 2: {% if alone24 %}"retrain" in the week of {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, of {% endif %}{% endfor %}.{% else %}no further recommendation.{% endif %}
+Under the first wording of rule 2: {% if alone24 %}"retrain" in the week of {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, of {% endif %}{% endfor %}{% else %}no further recommendation{% endif %}.
 
 **The rules' power on 2024**, measured the same way (weeks until "retrain", then until "recalibrate"; —: nothing within 8 weeks):
 

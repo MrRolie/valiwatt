@@ -138,7 +138,7 @@ For each hour, we measure its distance from the midpoint of its two neighbours, 
 {% endfor %}
 {% if sp.consecutive_pairs %}
 
-_A very strong spike also gets its neighbour flagged: {{ sp.consecutive_pairs }} pair(s) of consecutive hours above._
+_A very strong spike also gets its neighbour flagged: {{ sp.consecutive_pairs }} {{ 'pair' if sp.consecutive_pairs == 1 else 'pairs' }} of consecutive hours above._
 {% endif %}
 {% else %}
 No hour flagged.

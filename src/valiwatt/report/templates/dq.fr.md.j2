@@ -138,7 +138,7 @@ Pour chaque heure, on mesure son écart au milieu de ses deux voisines, puis on 
 {% endfor %}
 {% if sp.consecutive_pairs %}
 
-_Un pic très fort fait aussi signaler sa voisine : {{ sp.consecutive_pairs }} paire(s) d'heures consécutives ci-dessus._
+_Un pic très fort fait aussi signaler sa voisine : {{ sp.consecutive_pairs }} {{ 'paire' if sp.consecutive_pairs <= 1 else 'paires' }} d'heures consécutives ci-dessus._
 {% endif %}
 {% else %}
 Aucune heure signalée.

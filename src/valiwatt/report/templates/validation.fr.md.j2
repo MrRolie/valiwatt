@@ -47,7 +47,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis la
 | **Modèle** | Moindres carrés ordinaires sur des variables nommées : une constante par heure et type de jour, le chauffage et la climatisation (degrés-heures, base {{ v.config.base_c|num(0) }} °C) par bloc horaire, la demande de la veille et de la semaine précédente. Figé sur les données jusqu'au {{ f24.params.train_last_day }} ; version {{ f24.tags.model_version }} du modèle enregistré `valiwatt-demand-persistence` (alias `replay-2024`). |
 | **Intervalle** | Prévision × (1 ± {{ f24.params.q|float|pct(2) }}) : quantile conforme des erreurs relatives hors échantillon des 12 mois précédents. |
 | **Erreur en validation** | EAMP de {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} sur 2020–2023, contre {{ P.baseline.overall.mean|pct(2) }} pour la référence naïve. |
-| **Rejouée 2024** | EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }} ; {{ r.summary.recommendations.values()|sum }} recommandation(s) (section 7). |
+| **Rejouée 2024** | EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }} ; {% set n = r.summary.recommendations.values()|sum %}{% if n == 0 %}aucune recommandation{% elif n == 1 %}1 recommandation{% else %}{{ n }} recommandations{% endif %} (section 7). |
 | **Cas tests** | Printemps 2020 : biais de {{ sp(sh.bias_shift_year.mean, 2) }} contre {{ sp(sh.bias_other_years.mean, 2) }} les autres printemps{% if sh.separated %}, écart confirmé{% else %}, écart non confirmé par le critère fixé d'avance{% endif %}. Pointe de froid de {{ peak.named_month }} : {{ peak.covered }} des {{ peak.evaluated }} heures les plus chargées dans l'intervalle. |
 | **Mise en garde météo** | La production utilise la température de la veille, seule connue à l'émission. La météo observée de l'heure visée, qui tient lieu d'une prévision météo parfaite, n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
 | **Limites** | Section 8. |
@@ -253,7 +253,7 @@ Aucune semaine de 2024 n'a déclenché de recommandation.
 {% endif %}
 
 {% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
-Avec la première formulation de la règle 2 : {% if alone24 %}« réentraîner » la semaine du {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, du {% endif %}{% endfor %}.{% else %}aucune recommandation de plus.{% endif %}
+Avec la première formulation de la règle 2 : {% if alone24 %}« réentraîner » la semaine du {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, du {% endif %}{% endfor %}{% else %}aucune recommandation de plus{% endif %}.
 
 **Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner », puis avant « recalibrer » ; — : rien en 8 semaines) :
 
