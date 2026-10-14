@@ -215,6 +215,7 @@ def test_history_scan_reads_deleted_files_and_leftover_refs(repo):
     assert any(i.startswith("notes.md") and i.endswith(":1: home path") for i in issues)
     assert any(i.startswith("blob.bin") and i.endswith(": binary file in the history") for i in issues)
     assert any(i.startswith("c.md") and i.endswith(":1: GitHub token") for i in issues)
+    assert not any(i.startswith("a.md") for i in issues)  # control: the clean path to the same blob passes
 
 
 def test_history_scan_reads_annotated_tag_messages(repo):
@@ -225,6 +226,28 @@ def test_history_scan_reads_annotated_tag_messages(repo):
     git("tag", "-a", "v1", "-m", "frozen\n\nmade at /ho" + "me/someone/x")
     git("tag", "light")
     assert scan_history(root) == ["tag v1 message:3: home path"]
+
+
+def test_a_private_name_in_a_path_a_ref_or_an_author_line_is_caught(repo):
+    """Names go public with the history as much as content does: a private name in a file path, a branch name or a
+    commit's author line is caught, and a clean name is not."""
+    import re
+
+    root, git = repo
+    private = {"private name": re.compile("acme" + "corp", re.IGNORECASE)}
+    (root / "docs").mkdir()
+    (root / "docs" / ("acme" + "corp-notes.md")).write_text("x\n")
+    (root / "clean.md").write_text("x\n")
+    git("add", "-A")
+    git("-c", "user.name=" + "Acme" + "corp Person", "commit", "-q", "-m", "init")
+    git("branch", "acme" + "corp-port")
+    staged, history = scan_index(root, private), scan_history(root, private)
+    assert staged == ["path docs/acme" + "corp-notes.md:1: private name"]
+    assert "path docs/acme" + "corp-notes.md (in the history):1: private name" in history
+    assert any(i.startswith("ref names") for i in history)
+    assert any(" identities" in i for i in history)
+    assert not any("clean.md" in i for i in staged + history)
+    assert scan_history(root) == []  # without the private pattern, nothing here is unsafe
 
 
 def test_full_scan_includes_the_history(repo):

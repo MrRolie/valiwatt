@@ -67,6 +67,9 @@ def follow(code_sha: str, rules_sha: str, freeze: dict) -> Chain:
         if not ids:
             raise ChainBroken(f"replay {replay.info.run_id} is a departure but names no earlier replay")
         departed = [c.get_run(x) for x in ids]
+        for run in departed:
+            _complete(run, "departed replay")
+            _link(run, "kind", "replay", "departed replay")
     val_id = replay.data.tags.get("validation_run_id", "")
     try:
         pseudo = latest_run(MON_EXP, "tags.kind = 'pseudo_replay' and attributes.status = 'FINISHED' "

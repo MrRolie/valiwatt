@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -106,6 +107,8 @@ def render_validation(dq_run_id: str | None = None) -> list[Path]:
         raise ReportRefused(f"data-quality run {dq_run_id} is not the one the chain read ({chain.dq.info.run_id})")
     written = render(run_id=chain.dq.info.run_id)
     ctx = context(chain, code_sha, rules_sha)
+    if (OUT / "figures" / "validation").exists():  # no figure from an earlier render survives into the stamp
+        shutil.rmtree(OUT / "figures" / "validation")
     retrieved = min(s["first_retrieved_utc"] for s in ctx["dq"]["sources"]["eccc"])[:10]
     for lang in LANGS:
         figs = figures(ctx, lang)

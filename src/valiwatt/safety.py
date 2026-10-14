@@ -6,7 +6,9 @@
 - every file reachable from any ref (branches, remote branches, tags, the stash, and anything a rewrite leaves behind,
   such as refs/original/), under every path it was ever committed at, so a file committed once and later deleted or
   untracked is still read;
-- every commit message, and every annotated tag's message.
+- every commit message, and every annotated tag's message;
+- the names the history carries besides content: every path ever committed, every ref name, and the author,
+  committer and tagger lines.
 
 It fails on local paths (the home-directory shorthands included), credential shapes, and files that must never be
 tracked (data, run outputs, agent run records, the private estate notes). A binary file cannot be read as text, so it
@@ -17,7 +19,8 @@ lives; a ref that exists only in this clone is still scanned, because a push cou
 
 Private names (people, other repositories, anything ESTATE.local.md says never to publish) cannot be listed in a
 tracked file without publishing them. Put one regular expression per line in the gitignored `.private-patterns`; when
-that file exists, the scan applies it to staged content, to every file in the history and to every message too.
+that file exists, the scan applies it to staged content, to every file in the history, to every message and to every
+name above too.
 """
 
 from __future__ import annotations
@@ -131,6 +134,7 @@ def scan_index(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
     names = tracked_files(root)
     issues = scan_names(names)
     for n in names:
+        issues += scan_text(f"path {n}", n, extra)
         blob = _git(root, "show", f":{n}")
         if blob.returncode != 0:
             issues.append(f"{n}: in the index but unreadable")
@@ -195,6 +199,11 @@ def _headers_and_message(body: bytes) -> tuple[list[bytes], str]:
     return head.split(b"\n"), message.decode("utf-8", "replace")
 
 
+def _identities(headers: list[bytes]) -> str:
+    """The author, committer and tagger lines of a commit or tag header: names and addresses go public too."""
+    return "\n".join(h.decode("utf-8", "replace") for h in headers if h.startswith((b"author ", b"committer ", b"tagger ")))
+
+
 def scan_history(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
     """What the history carries when it goes public: every object reachable from any ref, so every file under every
     path it was committed at (deleted or not), every commit message and every annotated tag's message."""
@@ -216,12 +225,14 @@ def scan_history(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]
             headers, message = _headers_and_message(body)
             roots.add(headers[0].removeprefix(b"tree ").decode())
             issues += scan_text(f"commit {sha[:12]} message", message, extra)
+            issues += scan_text(f"commit {sha[:12]} identities", _identities(headers), extra)
         elif kind == "tag":
             headers, message = _headers_and_message(body)
             fields = dict(h.decode("utf-8", "replace").partition(" ")[::2] for h in headers if b" " in h)
             if fields.get("type") == "tree":
                 roots.add(fields["object"])
             issues += scan_text(f"tag {fields.get('tag', sha[:12])} message", message, extra)
+            issues += scan_text(f"tag {fields.get('tag', sha[:12])} identities", _identities(headers), extra)
     paths, memo = {}, {}
     for tree in sorted(roots):
         for path, blob in _tree_files(objects, tree, memo):
@@ -229,6 +240,11 @@ def scan_history(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]
 
     names = sorted(set().union(*paths.values()))
     issues += [f"{n} (in the history): must never be tracked" for n in names if scan_names([n])]
+    issues += [i for n in names for i in scan_text(f"path {n} (in the history)", n, extra)]
+    refs = _git(root, "for-each-ref", "--format=%(refname)")
+    if refs.returncode != 0:
+        raise ScanError(f"git for-each-ref failed: {refs.stderr.decode().strip()}")
+    issues += scan_text("ref names", refs.stdout.decode("utf-8", "replace"), extra)
     for sha, (kind, body) in objects.items():
         if kind != "blob":
             continue

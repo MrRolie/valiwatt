@@ -114,8 +114,9 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   tag moved since an earlier 2024 replay (deleted runs included) unless `AGENTS.md` records that move by commit and
   the run is asked for with `--departure`; such a run names the replays it departs from. Every run, the data-quality
   run included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed in
-  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. So is a
-  change to the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash.
+  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. A change to
+  the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash, takes the same path by hand: it
+  is recorded in `AGENTS.md` and the tag is moved to its commit.
 
 ## 5. Monitoring: 2024 replayed as production
 

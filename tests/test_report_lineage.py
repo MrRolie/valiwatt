@@ -81,9 +81,13 @@ def test_a_departure_replay_brings_the_replays_it_departs_from_and_names_them(mo
     runs = clean_chain()
     serve(monkeypatch, runs)
     assert lineage.follow(CODE, RULES, FREEZE).departed == []
-    runs["earlier"] = fake_run("earlier", kind="replay", freeze_commit="e" * 40)
+    runs["earlier"] = fake_run("earlier", kind="replay", status="complete", freeze_commit="e" * 40)
     runs["replay"].data.tags |= {"departure": "true", "departure_from": "earlier"}
     assert [r.info.run_id for r in lineage.follow(CODE, RULES, FREEZE).departed] == ["earlier"]
+    runs["earlier"].data.tags["status"] = "failed"  # an earlier replay that never completed cannot stand beside it
+    with pytest.raises(lineage.ChainBroken, match="departed replay"):
+        lineage.follow(CODE, RULES, FREEZE)
+    runs["earlier"].data.tags["status"] = "complete"
     runs["replay"].data.tags["departure_from"] = ""
     with pytest.raises(lineage.ChainBroken, match="names no earlier replay"):
         lineage.follow(CODE, RULES, FREEZE)

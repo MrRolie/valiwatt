@@ -60,6 +60,7 @@ The monitoring rules are frozen by the `rules-frozen` tag before the 2024 replay
 change to a rule file after that tag is listed here with its date, its reason and the commit, the report labels it
 post hoc and shows the earlier replay beside it, and the 2024 replay runs again only with `--departure`. A change to
 `pyproject.toml` or `uv.lock` after the tag counts as a departure too: the dependencies can change the replay's
-numbers, and the freeze gate does not hash them, so this rule is kept by hand.
+numbers, and the freeze gate does not hash them, so this rule is kept by hand: record the change here and move the
+tag to the commit that makes it, so the 2024 replay runs again with `--departure` and the report labels it post hoc.
 
 None yet.

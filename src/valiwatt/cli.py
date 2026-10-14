@@ -108,7 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("breaks", help="run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
     p = sub.add_parser("report", help="render the data-quality and validation reports into docs/report/")
-    p.add_argument("--run-id", help="the data-quality run to render (default: the latest that passed)")
+    p.add_argument("--run-id", help="the data-quality run to render: with --dq-only, default the latest that passed "
+                   "(the stamp is not rewritten); otherwise it must be the chain's own, which is the default")
     p.add_argument("--dq-only", action="store_true", help="render the data-quality report only")
     p.set_defaults(func=cmd_report)
     p = sub.add_parser("safety", help="scan staged files and every object in the history for anything private (run before each commit)")
