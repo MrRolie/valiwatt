@@ -48,8 +48,8 @@ def split(f: pd.DataFrame, fold: Fold) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persistence"),
         train_at: Callable[[pd.Timestamp], pd.DataFrame] | None = None) -> pd.DataFrame:
-    """Out-of-sample predictions for every fold: one row per test hour with the target, each scenario's forecast
-    and the baseline.
+    """Out-of-sample predictions for every fold: one row per test hour with the target, when it was scored, each
+    scenario's forecast and the baseline.
 
     f: the test rows (in design code, each as the replay issues and scores it: `features.AsOf.issued`).
     train_at: the feature table as seen at a clock (`features.AsOf.table`); each fold trains on it at its
@@ -63,8 +63,8 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
             raise ValueError(f"fold {fold.test_month} has no training or test rows")
         require_embargo(train, fold.test_first_day, EMBARGO_DAYS)
         out = pd.DataFrame({"target": test["target"], "fold": str(fold.test_month), "day": test["day"],
-                            "hour": test["hour"], "day_type": test["day_type"], "baseline": baseline(test)},
-                           index=test.index)
+                            "scored_at": test["scored_at"], "hour": test["hour"], "day_type": test["day_type"],
+                            "baseline": baseline(test)}, index=test.index)
         for s in scenarios:
             m = OLSForecaster(s).fit(train)
             out[f"pred_{s}"] = m.predict(test)

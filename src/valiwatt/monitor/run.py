@@ -71,7 +71,8 @@ def check_freeze() -> dict:
 
 
 def load_raw(dq):
-    """The raw records, refused unless they are the files the data-quality run `dq` checked."""
+    """The raw records, refused unless they are the files the data-quality run `dq` checked. The one loader of raw
+    records: the replays, validation and the frozen-model fits all read through it."""
     from valiwatt.quality.run import _verify_raw, eccc_manifests_sha256
     from valiwatt.sources import eccc, hydroquebec
 

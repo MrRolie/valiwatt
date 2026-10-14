@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from valiwatt.forecast.evaluate import (
+    calibration_rows,
     conformal_quantile,
     errors,
     mean_with_ci,
@@ -12,6 +13,8 @@ from valiwatt.forecast.evaluate import (
     relative_conformal,
     weekly_stats,
 )
+from valiwatt.forecast.features import scored_at
+from valiwatt.forecast.guards import LookaheadError
 
 
 def oos(months=24, seed=0, scale=0.03):
@@ -21,7 +24,9 @@ def oos(months=24, seed=0, scale=0.03):
     pred = 20_000 + 3_000 * np.sin(np.arange(len(idx)) * 2 * np.pi / 24)
     target = pred * (1 + rng.normal(0, scale, len(idx)))
     fold = pd.Series(day).dt.to_period("M").astype(str).to_numpy()
-    return pd.DataFrame({"target": target, "pred": pred, "day": day, "hour": idx.hour, "fold": fold}, index=idx)
+    out = pd.DataFrame({"target": target, "pred": pred, "day": day, "hour": idx.hour, "fold": fold}, index=idx)
+    out["scored_at"] = scored_at(out["day"], idx.max())
+    return out
 
 
 def test_conformal_quantile_is_the_finite_sample_order_statistic():
@@ -46,6 +51,20 @@ def test_calibration_uses_only_earlier_folds():
     after = relative_conformal(future, "pred")
     first_q = lambda iv: iv.groupby("fold")["q"].first()
     pd.testing.assert_series_equal(first_q(base), first_q(after))
+
+
+def test_rows_without_the_time_they_were_scored_calibrate_no_half_width():
+    """A half-width may calibrate only on rows scored by its fit clock; rows that do not say when they were scored
+    cannot be checked, so they are refused."""
+    out = oos()
+    clock = out["scored_at"].iloc[len(out) // 2]
+    assert len(calibration_rows(out, clock)) < len(out)  # the control: rows that say it are kept or left out
+    assert len(relative_conformal(out, "pred")) > 0
+    blind = out.drop(columns="scored_at")
+    with pytest.raises(LookaheadError):
+        calibration_rows(blind, clock)
+    with pytest.raises(LookaheadError):
+        relative_conformal(blind, "pred")
 
 
 def test_inflated_errors_drop_coverage():

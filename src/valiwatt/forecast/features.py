@@ -8,6 +8,8 @@ forecast (the "observed" scenario) and is labelled as such wherever it is used.
 Design code (validation folds, thresholds, frozen models) sees each decision time as the replay sees its clock
 (`AsOf`): the demand series is rebuilt from the raw records stamped at or before that time, never read from the
 data-quality layer's full-window series, in which a repair can fill an hour with a record that arrives much later.
+Each row carries when its day is scored (`scored_at`), so an interval half-width fixed at a fit clock calibrates only
+on the days already scored then (evaluate.calibration_rows).
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import DEMAND_FIRST, DESIGN_LAST, LOCAL_TZ, LST_OFFSET
-from valiwatt.forecast.guards import LookaheadError, require_before_clock
+from valiwatt.forecast.guards import LookaheadError
 from valiwatt.quality.demand import USABLE, build_demand
 
 BASE_C = 18.0
@@ -45,6 +47,12 @@ def score_clock(day, last: pd.Timestamp) -> pd.Timestamp:
     return min(day_origin(pd.Timestamp(day) + pd.Timedelta(days=1)) + H, pd.Timestamp(last))
 
 
+def scored_at(days: pd.Series, last: pd.Timestamp) -> pd.Series:
+    """`score_clock` of each row's day, the data ending at `last`."""
+    clocks = {d: score_clock(d, last) for d in pd.unique(days)}
+    return days.map(clocks)
+
+
 def quebec_holidays(years) -> set:
     return set(holidays.Canada(subdiv="QC", years=list(years)).keys())
 
@@ -59,7 +67,8 @@ def day_type(dates: pd.DatetimeIndex, hol: set) -> np.ndarray:
 def build(demand: pd.DataFrame, temperature: pd.Series) -> pd.DataFrame:
     """Feature table indexed by target hour (UTC, hour-ending).
 
-    demand: canonical frame (mw, status) on the hourly grid; temperature: the chosen source on the same grid."""
+    demand: canonical frame (mw, status) on the hourly grid; temperature: the chosen source on the same grid.
+    scored_at: when the row's day is scored, the data ending with the table (`score_clock`)."""
     idx = demand.index
     mw = demand["mw"].where(demand["status"].isin(USABLE))
     temp = temperature.reindex(idx)
@@ -70,6 +79,7 @@ def build(demand: pd.DataFrame, temperature: pd.Series) -> pd.DataFrame:
     f["target"] = mw
     f["origin"] = origin_of(idx)
     f["day"] = lst_day
+    f["scored_at"] = scored_at(f["day"], idx.max())
     f["hour"] = start_local.hour  # the local wall-clock hour the demand hour starts in
     f["day_type"] = day_type(pd.DatetimeIndex(start_local.tz_localize(None).normalize()), hol)
     f["lag24"] = mw.reindex(idx - 24 * H).to_numpy()
@@ -112,8 +122,9 @@ class AsOf:
         clock = pd.Timestamp(clock)
         if clock > self.last:
             raise LookaheadError(f"demand asked as of {clock}, after the last record loaded ({self.last})")
+        # The records stamped at or before the clock, as the replay's feed gives them (build_demand would drop the
+        # later ones from its grid anyway, so no guard here could fire).
         cut = self._raw.iloc[: int(self._raw["ts_utc"].searchsorted(clock, side="right"))]
-        require_before_clock(pd.DatetimeIndex(cut["ts_utc"]), clock, "demand")
         if clock < self.first:
             empty = pd.DatetimeIndex([], tz="UTC", name="ts_utc")
             return pd.DataFrame({"mw": pd.Series(dtype=float, index=empty),

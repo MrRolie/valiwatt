@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from valiwatt.config import stations
+from valiwatt.config import DESIGN_LAST, LST_OFFSET, stations
 from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.evaluate import (
     ALPHA,
@@ -33,6 +33,7 @@ from valiwatt.forecast.features import BASE_C, AsOf
 from valiwatt.forecast.guards import DESIGN_LAST_DAY, require_design_window, require_known_at_origin
 from valiwatt.forecast.model import HOUR_BLOCKS
 from valiwatt.monitor.drift import REFERENCE_HALF_WINDOW_WEEKS, weekly_drift
+from valiwatt.monitor.replay import day_verdicts as replay_day_verdicts
 from valiwatt.monitor.rules import MIN_WEEK_HOURS, QUANTILES, WEEK_DAYS, not_judged_because, rules_sha256
 from valiwatt.paths import INTERIM
 from valiwatt.quality.checks import jsonable
@@ -85,15 +86,6 @@ def load_validation(dq):
     return run, oos
 
 
-def load_raw_demand(dq) -> pd.DataFrame:
-    """The raw Hydro-Québec records, refused unless they are the file data-quality run `dq` checked."""
-    from valiwatt.sources import hydroquebec
-
-    if sha256_file(hydroquebec.CSV_PATH) != dq.data.params.get("hq_sha256"):
-        raise LineageError(f"the Hydro-Québec file differs from the one data-quality run {dq.info.run_id} checked")
-    return hydroquebec.load_raw()
-
-
 def validation_results(run) -> dict:
     import mlflow
 
@@ -114,6 +106,21 @@ def design_features(asof: AsOf, temperature: pd.Series) -> pd.DataFrame:
     return f[f["day"] <= DESIGN_LAST_DAY]
 
 
+def validation_inputs(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, weather: pd.DataFrame,
+                      last: pd.Timestamp = DESIGN_LAST) -> dict:
+    """What `valiwatt validate` runs `run_validation` on, from the raw records (monitor/run.py load_raw) and the weather
+    table: for each temperature source, the test rows as the replay issues and scores them and the training table as
+    of a clock, and the replay's day-level verdict on each design day. last: the last record loaded."""
+    asof = AsOf(raw_demand, last=last)
+    src = temperature_sources(weather)
+    f_primary = design_features(asof, src["primary"])
+    last_day = (pd.Timestamp(last) - pd.Timedelta(hours=1) + LST_OFFSET).tz_convert(None).normalize()
+    return {"f_primary": f_primary, "f_panel": design_features(asof, src["panel"]),
+            "train_primary": lambda clock: asof.table(clock, src["primary"]),
+            "train_panel": lambda clock: asof.table(clock, src["panel"]),
+            "day_verdicts": replay_day_verdicts(raw_demand, raw_temperature, f_primary["day"].min(), last_day)}
+
+
 def _quantiles(values: pd.Series) -> dict:
     return {k: float(values.quantile(q)) for k, q in QUANTILES.items() if not values.empty}
 
@@ -130,7 +137,10 @@ def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_da
     week, with its days inside first_year..last_year, its days that fail the replay's day-level data quality
     (`day_verdicts`: local standard day -> its problems, from monitor/replay.py day_verdicts) and its scored hours. A
     week that is set aside is listed with why under "excluded_weeks". A day of a week without a verdict is refused:
-    without it the week's population cannot be checked."""
+    without it the week's population cannot be checked.
+
+    Unlike an interval's half-width, fixed at its model's fit clock (evaluate.calibration_rows), the thresholds for
+    replaying Y are first read when the replay judges its first week, after every day of last_year is scored."""
     e = err_p[(err_p["year"] >= first_year) & (err_p["year"] <= last_year)]
     w = weekly_stats(e, covered)
     first_day, last_day = pd.Timestamp(f"{first_year}-01-01"), pd.Timestamp(f"{last_year}-12-31")
@@ -302,18 +312,11 @@ def run_validate(n_boot: int = N_BOOT) -> int:
 
     from valiwatt.tracking import start_run
 
-    from valiwatt.monitor.replay import day_verdicts
     from valiwatt.monitor.run import load_raw  # monitor/run.py imports this module
 
     dq, _, weather = load_inputs()
     raw_demand, raw_temp = load_raw(dq)
-    asof = AsOf(raw_demand)
-    src = temperature_sources(weather)
-    f_primary = design_features(asof, src["primary"])
-    f_panel = design_features(asof, src["panel"])
-    verdicts = day_verdicts(raw_demand, raw_temp, f_primary["day"].min(), DESIGN_LAST_DAY)
-    v = run_validation(f_primary, f_panel, n_boot, train_primary=lambda c: asof.table(c, src["primary"]),
-                       train_panel=lambda c: asof.table(c, src["panel"]), day_verdicts=verdicts)
+    v = run_validation(n_boot=n_boot, **validation_inputs(raw_demand, raw_temp, weather))
     res = v["results"]
     with start_run(EXPERIMENT, "validation", tags={"kind": "validation", "dq_run_id": dq.info.run_id,
                                                     "rules_sha256": rules_sha256(),

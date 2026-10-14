@@ -3,9 +3,9 @@
 Two freezes use the same code. The one for the 2024 replay is fitted on 2019-2023; the one for the 2023
 pseudo-replay is fitted on 2019-2022. Both keep the 7-day embargo before their first replayed day, so the
 pseudo-replay rehearses exactly what the 2024 replay does. The interval half-width is the conformal quantile of the
-relative out-of-sample scores of the 12 validation folds just before the replayed year: the same rule the validation
-intervals used, applied to one more month. The fit sees the demand as the replay would at the origin of the replayed
-year's first day (`training_table`).
+relative out-of-sample scores of the 12 validation folds just before the replayed year, those scored by the fit clock:
+the same rule the validation intervals used, applied to one more month. The fit sees the demand as the replay would at
+its fit clock, the origin of the replayed year's first day (`frozen_table`).
 
 The frozen model is logged to MLflow with the SHA-256 of its coefficients and half-width, and registered as a model
 version with the alias `replay-<year>`. The replay loads it through that alias and refuses it if the hash differs.
@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from valiwatt.config import DESIGN_LAST
 from valiwatt.forecast import walkforward as wf
-from valiwatt.forecast.evaluate import ALPHA, CALIBRATION_FOLDS, conformal_quantile
+from valiwatt.forecast.evaluate import ALPHA, CALIBRATION_FOLDS, calibration_rows, conformal_quantile
 from valiwatt.forecast.guards import require_design_window, require_embargo, require_known_at_origin
 from valiwatt.forecast.model import OLSForecaster, design, usable_rows
 
@@ -101,6 +102,17 @@ def training_table(asof, temperature: pd.Series, replay_year: int) -> pd.DataFra
     return asof.table(fit_clock(replay_year), temperature)
 
 
+def frozen_table(raw_demand: pd.DataFrame, weather: pd.DataFrame, replay_year: int,
+                 last: pd.Timestamp = DESIGN_LAST) -> pd.DataFrame:
+    """What `valiwatt freeze` fits on, from the raw demand records and the weather table: the primary station's
+    table as of the fit clock. last: the last record loaded."""
+    from valiwatt.forecast.features import AsOf
+    # validate loads the data-quality and tracking modules, which the replay that imports this one never needs.
+    from valiwatt.forecast.validate import temperature_sources
+
+    return training_table(AsOf(raw_demand, last=last), temperature_sources(weather)["primary"], replay_year)
+
+
 def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[FrozenModel, pd.DataFrame]:
     """Fit the frozen model and its half-width. Returns the model and a table of its coefficients beside an
     explanatory fit without the lags (for interpretation only)."""
@@ -115,7 +127,7 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[Fr
     missing = sorted(set(folds) - set(oos["fold"]))
     if missing:
         raise FrozenModelError(f"validation has no out-of-sample scores for folds {missing}")
-    cal = oos[oos["fold"].isin(folds)]
+    cal = calibration_rows(oos[oos["fold"].isin(folds)], fit_clock(replay_year))
     scores = ((cal["target"] - cal[f"pred_{SCENARIO}"]).abs() / cal[f"pred_{SCENARIO}"]).to_numpy()
     q = conformal_quantile(scores, ALPHA)
     if not np.isfinite(q):
@@ -133,13 +145,14 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int) -> tuple[Fr
 
 
 def run_freeze(replay_year: int) -> int:
-    from valiwatt.forecast.features import AsOf
-    from valiwatt.forecast.validate import load_inputs, load_raw_demand, load_validation, temperature_sources
+    from valiwatt.forecast.validate import load_inputs, load_validation
     from valiwatt.monitor.rules import rules_sha256
+    from valiwatt.monitor.run import load_raw  # the replay's loader; monitor/run.py imports this module
 
     dq, _, weather = load_inputs()
     val, oos = load_validation(dq)
-    f = training_table(AsOf(load_raw_demand(dq)), temperature_sources(weather)["primary"], replay_year)
+    raw_demand, _ = load_raw(dq)
+    f = frozen_table(raw_demand, weather, replay_year)
     frozen, coef = fit_frozen(f, oos, replay_year)
     # The hour is declared a float in the model signature: an hour without inputs comes through as NaN.
     example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24).astype({"hour": float})

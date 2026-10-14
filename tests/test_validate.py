@@ -63,7 +63,7 @@ def test_validation_refuses_a_2024_row(tables, verdicts):
         vd.run_validation(leaky, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-12", day_verdicts=verdicts)
 
 
-def test_each_fold_trains_on_the_table_seen_at_its_fit_clock(tables):
+def test_each_fold_trains_on_the_table_seen_at_its_fit_clock(tables, verdicts):
     """run_validation hands each fold's fit clock to the as-of table providers, and trains on what they return."""
     fp, fpanel = tables
     asked = {"primary": [], "panel": []}
@@ -75,33 +75,103 @@ def test_each_fold_trains_on_the_table_seen_at_its_fit_clock(tables):
         return table
 
     v = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-02",
-                          train_primary=at("primary", fp), train_panel=at("panel", fpanel))
+                          train_primary=at("primary", fp), train_panel=at("panel", fpanel), day_verdicts=verdicts)
     clocks = [fold.fit_clock for fold in wf.folds("2022-01", "2023-02")]
     assert asked["primary"] == clocks and asked["panel"] == clocks
-    static = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-02")
+    static = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2022-01", last_fold="2023-02",
+                               day_verdicts=verdicts)
     pd.testing.assert_frame_equal(v["out"], static["out"])  # no repair in this world: the same rows either way
 
 
-def test_raw_demand_other_than_the_checked_file_is_refused(tmp_path, monkeypatch):
+class Reached(Exception):
+    pass
+
+
+def reached(name):
+    def f(*a, **k):
+        raise Reached(name)
+    return f
+
+
+def fake_dq(**params):
     from types import SimpleNamespace
 
-    from valiwatt.sources import hydroquebec
-    from valiwatt.sources.http import sha256_file
+    return SimpleNamespace(info=SimpleNamespace(run_id="dq"), data=SimpleNamespace(tags={}, params=params))
 
-    csv = tmp_path / "hq.csv"
-    csv.write_text(",".join(hydroquebec.HEADER) + "\n2021-01-01T06:00:00Z,20000\n", encoding="utf-8")
-    monkeypatch.setattr(hydroquebec, "CSV_PATH", csv)
-    monkeypatch.setattr(hydroquebec.load_raw, "__defaults__", (csv,))
-    dq = SimpleNamespace(info=SimpleNamespace(run_id="dq"),
-                         data=SimpleNamespace(params={"hq_sha256": sha256_file(csv)}))
-    assert len(vd.load_raw_demand(dq)) == 1
-    csv.write_text(",".join(hydroquebec.HEADER) + "\n2021-01-01T06:00:00Z,20001\n", encoding="utf-8")
-    with pytest.raises(vd.LineageError):
-        vd.load_raw_demand(dq)
+
+def test_raw_demand_other_than_the_checked_file_is_refused(monkeypatch):
+    """Validation and the frozen-model fit read the raw records through the replay's loader (monitor/run.py
+    load_raw), which refuses a Hydro-Québec file other than the one the data-quality run checked."""
+    from valiwatt.forecast import freeze as fz
+    from valiwatt.quality import run as qrun
+    from valiwatt.sources import hydroquebec
+
+    manifests = [{"climate_id": "1", "months": {"2023-01": {"sha256": "m" * 64}}}]
+    monkeypatch.setattr(qrun, "_verify_raw", lambda: ({"sha256": "h" * 64}, manifests))
+    monkeypatch.setattr(hydroquebec, "load_raw", reached("hydroquebec.load_raw"))
+    monkeypatch.setattr(vd, "load_validation", lambda dq: (None, None))
+    params = {"hq_sha256": "h" * 64, "eccc_manifests_sha256": qrun.eccc_manifests_sha256(manifests)}
+    entries = {"validate": lambda: vd.run_validate(n_boot=1), "freeze": lambda: fz.run_freeze(2023)}
+    # The control: the checked file is read. Another file is refused before it is read.
+    for hq, refused in (("h" * 64, Reached), ("x" * 64, vd.LineageError)):
+        dq = fake_dq(**(params | {"hq_sha256": hq}))
+        monkeypatch.setattr(vd, "load_inputs", lambda dq=dq: (dq, None, None))
+        for name, entry in entries.items():
+            with pytest.raises(refused, match="Hydro-Québec|hydroquebec"):
+                entry()
+
+
+def test_validate_and_freeze_run_on_the_as_of_tables(monkeypatch):
+    """`valiwatt validate` runs run_validation on exactly what validation_inputs builds from the checked raw records,
+    as-of training tables included; `valiwatt freeze` fits on frozen_table's."""
+    from valiwatt.forecast import freeze as fz
+    from valiwatt.monitor import run as mrun
+
+    weather, raw, raw_t, oos = object(), object(), object(), object()
+    monkeypatch.setattr(vd, "load_inputs", lambda: (fake_dq(), None, weather))
+    monkeypatch.setattr(vd, "load_validation", lambda dq: (None, oos))
+    monkeypatch.setattr(mrun, "load_raw", lambda dq: (raw, raw_t))
+    built = {"f_primary": object(), "f_panel": object(), "train_primary": object(), "train_panel": object(),
+             "day_verdicts": object()}
+    calls = {}
+
+    def inputs(*a, **k):
+        calls["inputs"] = a, k
+        return dict(built)
+
+    def validation(*a, **k):
+        calls["validation"] = a, k
+        raise Reached("run_validation")
+
+    monkeypatch.setattr(vd, "validation_inputs", inputs)
+    monkeypatch.setattr(vd, "run_validation", validation)
+    with pytest.raises(Reached):
+        vd.run_validate(n_boot=7)
+    assert calls["inputs"] == ((raw, raw_t, weather), {})
+    a, k = calls["validation"]
+    assert a == () and k == built | {"n_boot": 7}
+
+    table = object()
+
+    def frozen_table(*a, **k):
+        calls["frozen_table"] = a, k
+        return table
+
+    def fit(*a, **k):
+        calls["fit"] = a, k
+        raise Reached("fit_frozen")
+
+    monkeypatch.setattr(fz, "frozen_table", frozen_table)
+    monkeypatch.setattr(fz, "fit_frozen", fit)
+    with pytest.raises(Reached):
+        fz.run_freeze(2023)
+    assert calls["frozen_table"] == ((raw, weather, 2023), {})
+    assert calls["fit"] == ((table, oos, 2023), {})
 
 
 def test_mondrian_intervals_calibrate_within_each_group():
     from valiwatt.forecast.evaluate import relative_conformal, season_of
+    from valiwatt.forecast.features import scored_at
 
     idx = pd.date_range("2021-01-01T06:00Z", periods=24 * 720, freq="h")
     day = (idx - pd.Timedelta(hours=6)).tz_convert(None).normalize()
@@ -111,6 +181,7 @@ def test_mondrian_intervals_calibrate_within_each_group():
     target = pred * (1 + rng.normal(0, np.where(winter, 0.08, 0.02)))
     out = pd.DataFrame({"target": target, "pred": pred, "day": day,
                         "fold": pd.Series(day).dt.to_period("M").astype(str).to_numpy()}, index=idx)
+    out["scored_at"] = scored_at(out["day"], idx.max())
     pooled = relative_conformal(out, "pred")
     by_season = relative_conformal(out, "pred", groups=season_of(out["day"]))
     w = out.loc[pooled.index, "day"].dt.month.isin([12, 1, 2])

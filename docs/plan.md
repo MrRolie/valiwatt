@@ -25,7 +25,9 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   demand series is rebuilt from the raw records stamped at or before it (a fit at the origin of its first test day,
   the lags at each day's origin, a target when its day is scored). So the one misplaced-record repair, which fills
   2022-01-01 05:00 UTC with a record stamped a year later, reaches design code only once that record has arrived, as
-  in the replay.
+  in the replay. An interval's half-width, fixed when its model is fitted, is calibrated only on the days already
+  scored at that time (a day is scored an hour after its last hour, or at the end of the design data): the day before
+  a validation month's first test day stays out.
 - **Two weather scenarios, two separate fits.** Each scenario is its own model, fitted on its own temperature input,
   with its own out-of-sample errors, intervals and thresholds.
   - *Persistence weather* is the production scenario: the only one a forecaster could run at the origin. The frozen

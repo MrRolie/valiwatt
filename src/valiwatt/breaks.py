@@ -55,7 +55,7 @@ T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
 T_COV, T_SEN2, T_LED = "tests/test_report_coverage.py", "tests/test_report_sentences.py", "tests/test_replay_ledger.py"
-T_ASOF = "tests/test_as_of.py"
+T_ASOF, T_EVAL = "tests/test_as_of.py", "tests/test_evaluate.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -133,6 +133,14 @@ BREAKS = [
        "Une valeur réparée avec un enregistrement arrivé plus tard n'entre ni dans les retards ni dans "
        "l'entraînement avant son arrivée",
        "A value repaired from a later record reaches no lag and no training before that record arrives"),
+    _b(LOOK, f"{T_ASOF}::test_a_half_width_fixed_at_a_fit_clock_calibrates_only_on_the_days_scored_by_then",
+       "Une demi-largeur fixée à l'ajustement d'un modèle n'est calibrée que sur les jours déjà notés à ce moment, "
+       "pas sur une valeur réparée une heure plus tard",
+       "A half-width fixed when its model is fitted is calibrated only on the days already scored then, not on a "
+       "value repaired an hour later"),
+    _b(LOOK, f"{T_EVAL}::test_rows_without_the_time_they_were_scored_calibrate_no_half_width",
+       "Des erreurs hors échantillon qui ne disent pas quand elles ont été notées ne calibrent aucune demi-largeur",
+       "Out-of-sample rows that do not say when they were scored calibrate no half-width"),
     _b(CLOCK, f"{T_REP}::test_records_after_a_cut_change_nothing_judged_before_it",
        "Des données corrompues après un instant ne changent rien de ce qui a été jugé avant",
        "Records corrupted after a cut change nothing judged before it"),

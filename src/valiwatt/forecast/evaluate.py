@@ -2,6 +2,9 @@
 
 Hours next to each other share weather and demand, so uncertainty is estimated by resampling whole weeks (local
 standard time, Monday to Sunday), never single hours.
+
+An interval's half-width is fixed when its model is fitted, so it calibrates only on the out-of-sample rows already
+scored at that fit clock (`calibration_rows`).
 """
 
 from __future__ import annotations
@@ -10,6 +13,9 @@ import math
 
 import numpy as np
 import pandas as pd
+
+from valiwatt.forecast.guards import LookaheadError
+from valiwatt.forecast.walkforward import folds as month_folds
 
 ALPHA = 0.10  # nominal 90 % intervals
 CALIBRATION_FOLDS = 12
@@ -85,14 +91,33 @@ def conformal_quantile(scores: np.ndarray, alpha: float = ALPHA) -> float:
     return float("inf") if k > n else float(s[k - 1])
 
 
+def calibration_rows(window: pd.DataFrame, fit_clock: pd.Timestamp) -> pd.DataFrame:
+    """The out-of-sample rows a half-width fixed at `fit_clock` may calibrate on: those scored at or before it.
+
+    A row's day is scored one hour after its last hour (`features.score_clock`, the `scored_at` column), so the day
+    just before a fit's first test day is scored an hour after the fit clock (its origin), and none of its scores
+    exists yet when the replay fixes the half-width there: the whole day stays out, not only an hour whose value
+    changes in that hour. (Re-reading its targets at the fit clock would score a day the replay has not scored.) A
+    day scored at the end of the data, at the fit clock itself, stays in."""
+    _require_scored(window)
+    return window[window["scored_at"] <= fit_clock]
+
+
+def _require_scored(rows: pd.DataFrame) -> None:
+    if "scored_at" not in rows:
+        raise LookaheadError("out-of-sample rows without the time they were scored cannot calibrate a half-width")
+
+
 def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
                        calibration_folds: int = CALIBRATION_FOLDS, absolute: bool = False,
                        groups: pd.Series | None = None) -> pd.DataFrame:
-    """Interval for each fold from the out-of-sample scores of the previous `calibration_folds` folds only.
+    """Interval for each fold from the out-of-sample scores of the previous `calibration_folds` folds only, those
+    scored by the fold's fit clock (`calibration_rows`).
 
     Relative score |y - f| / f (half-width q * f) by default; absolute score |y - f| (half-width q) as sensitivity.
     With `groups` (e.g. the season of each hour), the quantile is taken within the row's own group (Mondrian)."""
-    d = out[["target", pred_col, "fold"]].copy()
+    _require_scored(out)
+    d = out[["target", pred_col, "fold", "scored_at"]].copy()
     d["group"] = "all" if groups is None else groups.reindex(d.index)
     if absolute:
         d["score"] = (d["target"] - d[pred_col]).abs()
@@ -103,7 +128,8 @@ def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
     for i, fold in enumerate(folds):
         if i < calibration_folds:
             continue
-        window = d[d["fold"].isin(folds[i - calibration_folds:i])]
+        window = calibration_rows(d[d["fold"].isin(folds[i - calibration_folds:i])],
+                                  month_folds(fold, fold)[0].fit_clock)
         for g, part in d[d["fold"] == fold].groupby("group"):
             calib = window.loc[window["group"] == g, "score"].to_numpy()
             q = conformal_quantile(calib, alpha)
