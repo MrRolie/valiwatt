@@ -33,3 +33,10 @@ def require_embargo(train: pd.DataFrame, test_first_day: pd.Timestamp, embargo_d
     limit = test_first_day - pd.Timedelta(days=embargo_days + 1)
     if not train.empty and train["day"].max() > limit:
         raise LookaheadError(f"training reaches {train['day'].max().date()}, past the embargo limit {limit.date()}")
+
+
+def require_before_clock(index: pd.DatetimeIndex, clock: pd.Timestamp, what: str) -> None:
+    """Production reads (the replay) may only see records stamped at or before the clock."""
+    late = index > clock
+    if late.any():
+        raise LookaheadError(f"{what}: {int(late.sum())} records after the clock {clock} (first {index[late][0]})")

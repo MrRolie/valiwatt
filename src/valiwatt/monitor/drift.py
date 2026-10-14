@@ -43,13 +43,18 @@ def weekly_drift(values: pd.Series, days: pd.Series, weeks: list[pd.Timestamp]) 
     return pd.Series(out, dtype=float)
 
 
-def evidently_value_drift(current: np.ndarray, reference: np.ndarray, threshold: float) -> float:
-    """The same statistic through Evidently itself (used by the tests and by the replay's saved reports)."""
+def evidently_snapshot(current: np.ndarray, reference: np.ndarray, threshold: float, column: str = "x"):
+    """The same statistic through Evidently itself: its value, and the snapshot the replay saves as an HTML report."""
     from evidently import DataDefinition, Dataset, Report
     from evidently.metrics import ValueDrift
 
-    dd = DataDefinition(numerical_columns=["x"])
-    rep = Report([ValueDrift(column="x", method="wasserstein", threshold=threshold)])
-    snap = rep.run(Dataset.from_pandas(pd.DataFrame({"x": current}), data_definition=dd),
-                   Dataset.from_pandas(pd.DataFrame({"x": reference}), data_definition=dd))
-    return float(snap.dict()["metrics"][0]["value"])
+    cur, ref = current[np.isfinite(current)], reference[np.isfinite(reference)]
+    dd = DataDefinition(numerical_columns=[column])
+    rep = Report([ValueDrift(column=column, method="wasserstein", threshold=threshold)])
+    snap = rep.run(Dataset.from_pandas(pd.DataFrame({column: cur}), data_definition=dd),
+                   Dataset.from_pandas(pd.DataFrame({column: ref}), data_definition=dd))
+    return float(snap.dict()["metrics"][0]["value"]), snap
+
+
+def evidently_value_drift(current: np.ndarray, reference: np.ndarray, threshold: float) -> float:
+    return evidently_snapshot(current, reference, threshold)[0]

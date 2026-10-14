@@ -28,7 +28,8 @@ def test_validation_runs_and_logs_thresholds_for_every_season(tables):
     v = vd.run_validation(fp, fpanel, n_boot=50, first_fold="2022-01", last_fold="2023-12")
     r = v["results"]
     assert r["folds"]["count"] == 24 and r["conformal"]["first_fold"] == "2023-01"
-    assert set(r["thresholds"]["performance"]) == {"winter", "spring", "summer", "fall"}
+    assert set(r["thresholds"]) == {"2024"}  # intervals start in 2023 here, so only the 2024 replay has thresholds
+    assert set(r["thresholds"]["2024"]["performance"]) == {"winter", "spring", "summer", "fall"}
     assert r["compare"]["persistence_vs_baseline"]["difference"] < 0
     assert 0.8 < r["coverage"]["relative"]["overall"]["mean"] < 0.97
     assert r["cases"]["shift_2020"]["evaluable"] is False  # no 2020 in these folds: recorded, never a silent blank
@@ -57,3 +58,14 @@ def test_mondrian_intervals_calibrate_within_each_group():
     w = out.loc[pooled.index, "day"].dt.month.isin([12, 1, 2])
     assert pooled.loc[w.to_numpy(), "covered"].mean() < 0.8  # one pooled quantile under-covers the noisy season
     assert 0.85 < by_season.loc[w.to_numpy(), "covered"].mean() < 0.95
+
+
+def test_pseudo_replay_thresholds_read_no_week_of_the_year_they_judge(tables):
+    """Thresholds for replaying year Y come from validation weeks before Y only."""
+    fp, fpanel = tables
+    v = vd.run_validation(fp, fpanel, n_boot=10, first_fold="2021-06", last_fold="2023-12")
+    th = v["results"]["thresholds"]
+    assert set(th) == {"2023", "2024"}
+    weeks = pd.DataFrame(th["2023"]["weekly_validation"])
+    assert pd.to_datetime(weeks["first_day"]).max() < pd.Timestamp("2023-01-01")
+    assert th["2023"]["last_year"] == 2022 and th["2024"]["last_year"] == 2023

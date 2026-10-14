@@ -35,6 +35,18 @@ def cmd_validate(args) -> int:
     return run_validate()
 
 
+def cmd_freeze(args) -> int:
+    from valiwatt.forecast.freeze import run_freeze
+
+    return run_freeze(args.year)
+
+
+def cmd_replay(args) -> int:
+    from valiwatt.monitor.run import run_replay
+
+    return run_replay(args.year)
+
+
 def cmd_report(args) -> int:
     from valiwatt.report.render import render
 
@@ -68,6 +80,13 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_dq)
     p = sub.add_parser("validate", help="walk-forward validation, conformal intervals and monitoring thresholds (2019-2023)")
     p.set_defaults(func=cmd_validate)
+    p = sub.add_parser("freeze", help="fit, calibrate and register the frozen model for a replay year")
+    p.add_argument("--year", type=int, required=True, choices=[2023, 2024])
+    p.set_defaults(func=cmd_freeze)
+    p = sub.add_parser("replay", help="replay a year hour by hour with its frozen model and the monitors "
+                                      "(2023: pseudo-replay on design years; 2024: needs the rules-frozen tag)")
+    p.add_argument("--year", type=int, required=True, choices=[2023, 2024])
+    p.set_defaults(func=cmd_replay)
     p = sub.add_parser("report", help="render the data-quality report from a tracked run")
     p.add_argument("--run-id")
     p.set_defaults(func=cmd_report)

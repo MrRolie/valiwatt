@@ -31,6 +31,7 @@ from valiwatt.forecast.features import BASE_C, build
 from valiwatt.forecast.guards import DESIGN_LAST_DAY, require_design_window, require_known_at_origin
 from valiwatt.forecast.model import HOUR_BLOCKS
 from valiwatt.monitor.drift import REFERENCE_HALF_WINDOW_WEEKS, weekly_drift
+from valiwatt.monitor.rules import MIN_WEEK_HOURS, QUANTILES, rules_sha256
 from valiwatt.paths import INTERIM
 from valiwatt.quality.checks import jsonable
 from valiwatt.quality.run import EXPERIMENT as DQ_EXPERIMENT
@@ -39,9 +40,6 @@ from valiwatt.sources.http import FetchRefused, sha256_file
 
 EXPERIMENT = "valiwatt-validation"
 FIRST_FOLD, LAST_FOLD = "2020-01", "2023-12"
-# Weeks with fewer usable hours than this are left out of the weekly statistics.
-MIN_WEEK_HOURS = 120
-QUANTILES = {"mape_high": 0.95, "bias_low": 0.025, "bias_high": 0.975, "coverage_low": 0.05, "drift_high": 0.95}
 SHIFT_MONTHS = (3, 4, 5, 6)
 SHIFT_YEAR = 2020
 PEAK_HOURS = 5
@@ -65,6 +63,30 @@ def load_inputs():
     return dq, pd.read_parquet(paths["demand"]), pd.read_parquet(paths["weather"])
 
 
+def load_validation(dq):
+    """The latest complete validation run built on this data-quality run and these rules, and its out-of-sample
+    frame. Refused when either changed since: thresholds and calibration scores would no longer match."""
+    import mlflow
+
+    from valiwatt.tracking import client, latest_run
+
+    run = latest_run(EXPERIMENT, "tags.kind = 'validation' and tags.status = 'complete'")
+    if run.data.tags.get("dq_run_id") != dq.info.run_id:
+        raise LineageError(f"validation run {run.info.run_id} was built on another data-quality run; "
+                           "run `valiwatt validate` again")
+    if run.data.tags.get("rules_sha256") != rules_sha256():
+        raise LineageError(f"the rule files changed since validation run {run.info.run_id}; run `valiwatt validate` again")
+    client()
+    oos = pd.read_parquet(mlflow.artifacts.download_artifacts(run_id=run.info.run_id, artifact_path="frames/oos.parquet"))
+    return run, oos
+
+
+def validation_results(run) -> dict:
+    import mlflow
+
+    return json.loads(mlflow.artifacts.load_text(f"runs:/{run.info.run_id}/results/validation.json"))
+
+
 def temperature_sources(weather: pd.DataFrame) -> dict[str, pd.Series]:
     primary = next(s for s in stations() if s.primary)
     temps = weather[[c for c in weather.columns if c.endswith(".temp_c")]]
@@ -83,10 +105,18 @@ def _quantiles(values: pd.Series) -> dict:
 
 
 def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_days: pd.Series,
-               forecast: pd.Series, forecast_days: pd.Series, first_year: int) -> dict:
-    """Per-season weekly thresholds and drift alarm levels, from validation weeks in `first_year` and after."""
-    w = weekly_stats(err_p[err_p["year"] >= first_year], covered)
+               forecast: pd.Series, forecast_days: pd.Series, first_year: int, last_year: int) -> dict:
+    """Per-season weekly thresholds and drift alarm levels, from the validation weeks of first_year..last_year.
+
+    Weeks are labelled by the year of their first day; a week straddling New Year belongs to the earlier year and its
+    days in the next year stay out (the cut is on days, so no hour after last_year is read)."""
+    e = err_p[(err_p["year"] >= first_year) & (err_p["year"] <= last_year)]
+    w = weekly_stats(e, covered)
     w = w[w["hours"] >= MIN_WEEK_HOURS]
+    last_day = pd.Timestamp(f"{last_year}-12-31")
+    temp, temp_days = temp[pd.to_datetime(temp_days) <= last_day], temp_days[pd.to_datetime(temp_days) <= last_day]
+    keep = pd.to_datetime(forecast_days) <= last_day
+    forecast, forecast_days = forecast[keep], forecast_days[keep]
     perf = {}
     for season, part in w.groupby("season"):
         perf[season] = {
@@ -110,6 +140,7 @@ def thresholds(err_p: pd.DataFrame, covered: pd.Series, temp: pd.Series, temp_da
         "quantiles": QUANTILES,
         "min_week_hours": MIN_WEEK_HOURS,
         "first_year": first_year,
+        "last_year": last_year,
         "weekly_validation": w.reset_index(names="week").to_dict("records"),
     }
 
@@ -198,8 +229,11 @@ def run_validation(f_primary: pd.DataFrame, f_panel: pd.DataFrame, n_boot: int =
         "panel_vs_primary": paired_difference(err["panel_persistence"], err["persistence"], n_boot=n_boot),
     }
     first_interval_year = int(pd.Period(iv["fold"].min()).year)
-    th = thresholds(err["persistence"], iv["covered"], f_primary["temp_observed"], f_primary["day"],
-                    out["pred_persistence"], out["day"], first_interval_year)
+    last_year = int(pd.Period(last_fold).year)
+    # One set of thresholds per replay: the 2024 replay reads weeks up to 2023; the 2023 pseudo-replay up to 2022.
+    th = {str(y + 1): thresholds(err["persistence"], iv["covered"], f_primary["temp_observed"], f_primary["day"],
+                                 out["pred_persistence"], out["day"], first_interval_year, y)
+          for y in range(first_interval_year, last_year + 1)}
     results = {
         "folds": {"first": first_fold, "last": last_fold, "count": len(fl), "embargo_days": wf.EMBARGO_DAYS,
                   "train_rows_last_fold": int(out["n_train_persistence"].iloc[-1])},
@@ -229,16 +263,17 @@ def run_validate(n_boot: int = N_BOOT) -> int:
     v = run_validation(f_primary, f_panel, n_boot)
     res = v["results"]
     with start_run(EXPERIMENT, "validation", tags={"kind": "validation", "dq_run_id": dq.info.run_id,
+                                                    "rules_sha256": rules_sha256(),
                                                     "demand_sha256": dq.data.params["demand_parquet_sha256"],
                                                     "weather_sha256": dq.data.params["weather_parquet_sha256"]}) as run:
         mlflow.log_params({"first_fold": FIRST_FOLD, "last_fold": LAST_FOLD, "embargo_days": wf.EMBARGO_DAYS,
                            "alpha": ALPHA, "calibration_folds": CALIBRATION_FOLDS, "base_c": BASE_C,
                            "n_boot": n_boot, "min_week_hours": MIN_WEEK_HOURS,
                            **{f"q_{k}": q for k, q in QUANTILES.items()}})
-        th = res["thresholds"]
-        for season, t in th["performance"].items():
-            mlflow.log_params({f"th_{season}_{k}": round(val, 6) for k, val in t.items()})
-        mlflow.log_params({f"th_drift_{k}": v2 for k, v2 in th["drift"].items()})
+        for replay_year, th in res["thresholds"].items():
+            for season, t in th["performance"].items():
+                mlflow.log_params({f"th{replay_year}_{season}_{k}": round(val, 6) for k, val in t.items()})
+            mlflow.log_params({f"th{replay_year}_drift_{k}": v2 for k, v2 in th["drift"].items()})
         for name, p in res["performance"].items():
             mlflow.log_metrics({f"mape.{name}": p["overall"]["mean"], f"bias.{name}": p["overall"]["bias"]["mean"]})
         mlflow.log_metric("coverage.relative", res["coverage"]["relative"]["overall"]["mean"])
