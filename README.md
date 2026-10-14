@@ -8,7 +8,7 @@ trusted, how it is watched once it runs, and what it says when it should no long
 baseline; how often its prediction intervals cover the actual demand, overall and season by season; what the monitor
 recommended when 2024 was replayed hour by hour under rules frozen before 2024 was seen; and how often those rules
 raise a false alarm or miss a real change, measured on a 2023 rehearsal. The numbers are in the « En bref » block at
-the top of each report (« In short » in English), and every one of them comes from a tracked run:
+the top of each report ("In brief" in English), and every one of them comes from a tracked run:
 
 - validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF:
   [French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md);
@@ -51,10 +51,10 @@ the rendered files, are the source of truth.
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
 entry per finished 2024 replay: its run ID, freeze commit, rules and code hashes, times, MAPE, coverage and
-recommendations. `valiwatt report` appends the replays it lacks (`valiwatt ledger` does only that); an entry is never
-rewritten, a run that disagrees with its entry is refused, and the new content must pass the public-safety scan
-before it is written. The ledger is not written during the replay itself, because every run records whether the tree
-was clean.
+recommendations. `valiwatt report` appends the replays it lacks before it renders (`valiwatt ledger` does only that);
+an entry is never rewritten, a run that disagrees with its entry is refused, and the new content must pass the
+public-safety scan before it is written. The ledger is not written during the replay itself, because every run records
+whether the tree was clean. Its hash is in the report's stamp, so a test fails when it changes after the render.
 
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
 `ledger`, `report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.

@@ -14,10 +14,13 @@ tag, MAPE, coverage, recommendations, and whether it ran as a departure and from
   written (no local path, no private name). Either failing refuses the write.
 - `lookup` serves the report: a departed replay absent from the store is shown from its entry, labelled as recorded
   in the ledger and not re-run here.
+- `digest` is the file's sha256, written into the report's stamp after the sync, so a hand edit to the ledger after a
+  render fails `tests/test_report_stamp.py`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -153,6 +156,16 @@ def read(path: Path = LEDGER) -> list[dict]:
 
 def dumps(entries: list[dict]) -> str:
     return json.dumps({"replays": entries}, indent=2, ensure_ascii=False) + "\n"
+
+
+ABSENT = "absent"
+
+
+def digest(path: Path | None = None) -> str:
+    """The sha256 of the ledger file's bytes, which the report's stamp records; the word `absent` when there is no
+    file, so a ledger removed after the render differs from the stamp too."""
+    path = LEDGER if path is None else path
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ABSENT
 
 
 def from_store(c=None) -> list[dict]:

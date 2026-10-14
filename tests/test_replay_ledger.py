@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import jinja2
+import pandas as pd
 import pytest
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST
@@ -15,7 +17,7 @@ from valiwatt import tracking
 from valiwatt.monitor import run as monitor_run
 from valiwatt.report import ledger, lineage
 from valiwatt.report import validation as RV
-from valiwatt.report.render import environment
+from valiwatt.report.render import environment, filters
 
 COMMIT_A, COMMIT_B = "a" * 40, "b" * 40
 
@@ -117,6 +119,17 @@ def test_a_ledger_whose_content_fails_the_scan_is_not_written(store, tmp_path):
             ledger.check([{**entry, field: value}])
     with pytest.raises(ledger.LedgerError, match="exactly"):
         ledger.check([{**entry, "note": "/ho" + "me/someone"}])
+    for name in ("/ho" + "me/someone/x", "do_nothing"):  # a recommendation outside the decision table: free text
+        with pytest.raises(ledger.LedgerError, match="recommendations"):
+            ledger.check([{**entry, "recommendations": [{"week_start": "2024-03-04", "recommendation": name}]}])
+    with pytest.raises(ledger.LedgerError, match="departure_from"):  # a departure that departs from nothing
+        ledger.check([{**entry, "departure": True, "departure_from": []}])
+    with pytest.raises(ledger.LedgerError, match="departure_from"):  # earlier replays named, yet not a departure
+        ledger.check([{**entry, "departure": False, "departure_from": ["1" * 32]}])
+    later = {**entry, "run_id": "f" * 32, "started_utc": "2099-01-01T00:00:00.000Z"}
+    ledger.check([entry, later])
+    with pytest.raises(ledger.LedgerError, match="not sorted by start time"):
+        ledger.check([later, entry])
 
 
 def test_the_committed_ledger_is_well_formed_and_public_safe():
@@ -139,7 +152,11 @@ def results_store(monkeypatch, tmp_path, runs: dict, files: dict) -> None:
     def download_artifacts(run_id, path, dst):
         out = Path(dst) / path
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(files[run_id]))
+        if out.suffix in (".parquet", ".csv"):  # a run's frames (the validation's out-of-sample hours, coefficients)
+            frame = pd.DataFrame({"feature": pd.Series([], dtype=str)})
+            frame.to_parquet(out) if out.suffix == ".parquet" else frame.to_csv(out, index=False)
+        else:
+            out.write_text(json.dumps(files[run_id]))
         return str(out)
 
     client = SimpleNamespace(get_run=get_run, download_artifacts=download_artifacts)
@@ -167,26 +184,94 @@ def earlier_entry(**kw) -> dict:
     return {**ledger.entry(run, results(recs=[("2024-03-04", "retrain")], freeze_commit="e" * 40)), **kw}
 
 
+class Unread(jinja2.ChainableUndefined):
+    """A value the test's runs leave out. It renders as nothing and survives arithmetic, comparison and iteration, so
+    the whole validation template renders around the departures, which are real."""
+    __slots__ = ()
+
+    def _same(self, *args, **kwargs):
+        return self
+
+    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = __truediv__ = __rtruediv__ = _same
+    __floordiv__ = __rfloordiv__ = __mod__ = __rmod__ = __pow__ = __rpow__ = __neg__ = __pos__ = __abs__ = _same
+    __call__ = __round__ = _same
+    __hash__ = object.__hash__
+
+    def __lt__(self, other):
+        return False
+
+    __le__ = __gt__ = __ge__ = __lt__
+
+    def __eq__(self, other):
+        return other is self
+
+    def __ne__(self, other):
+        return other is not self
+
+    def __format__(self, spec):
+        return ""
+
+    def __int__(self):
+        return 0
+
+    __index__ = __int__
+
+    def __float__(self):
+        return 0.0
+
+
+def render_report(ctx: dict, lang: str) -> str:
+    """validation.{lang}.md.j2 rendered from a context as `render_validation` renders it, in the report's own
+    environment and filters, every value the context lacks left blank."""
+    env = environment(lang)
+    env.undefined = Unread
+
+    def blank_on_unread(f):
+        def g(*args, **kwargs):
+            unread = any(isinstance(x, jinja2.Undefined) for x in (*args, *kwargs.values()))
+            return Unread() if unread else f(*args, **kwargs)
+        return g
+
+    env.filters.update({name: blank_on_unread(f) for name, f in filters(lang).items()})
+    return env.get_template(f"validation.{lang}.md.j2").render(**ctx, fig={}, lang=lang)
+
+
+def renderable(runs: dict) -> dict:
+    """The fake runs with what `validation.context` reads besides their tags: start times and parameters."""
+    for run in runs.values():
+        timed(run)
+        run.data.params = {}
+    return runs
+
+
+LABEL = {"fr": "**Consigné dans le registre, non rejoué ici.**", "en": "**Recorded in the ledger, not re-run here.**"}
+
+
 def test_a_departed_replay_absent_from_the_store_renders_from_the_ledger(monkeypatch, tmp_path):
-    """A fresh clone: the store holds the departure replay but not the replay it departs from. The report shows that
-    one from its ledger entry, with its MAPE, coverage and recommendations, labelled as recorded and not re-run."""
-    results_store(monkeypatch, tmp_path, departure_chain(), {})
+    """A fresh clone: the store holds the departure replay but not the replay it departs from. The validation report,
+    through `context` and its template, shows that one from its ledger entry, with its MAPE, coverage and
+    recommendations, labelled as recorded and not re-run; a departed replay from the store gets no label."""
+    runs = renderable(departure_chain())
+    results_store(monkeypatch, tmp_path, runs, {run_id: {} for run_id in runs})
+    monkeypatch.setattr(RV, "derive", lambda *payloads: {})  # the sentences computed from the payloads: not read here
     chain = lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED, entries=[earlier_entry()])
     assert [type(d) for d in chain.departed] == [lineage.RecordedReplay]
-    shown = [RV.departure(None, d) for d in chain.departed]
-    assert shown[0]["recorded"] and shown[0]["summary"] == {
+    ctx = RV.context(chain, CODE, RULES)
+    shown = ctx["departures"]
+    assert len(shown) == 1 and shown[0]["recorded"] is True and shown[0]["id"] == EARLIER
+    assert shown[0]["summary"] == {
         "mape": {"mean": 0.0423}, "coverage": {"mean": 0.894}, "recommendations": {"retrain": 1}}
-    words = {"fr": ("Consigné dans le registre, non rejoué ici.", "4,23", "89,4",
-                    "semaine du 2024-03-04 : réentraîner"),
-             "en": ("Recorded in the ledger, not re-run here.", "4.23%", "89.4%", "week of 2024-03-04: retrain")}
+    words = {"fr": ("Le rejeu `" + EARLIER + "` (règles du commit `eeeeeeeeeeee`)", "son EAMP de 4,23\u00a0%",
+                    "sa couverture de 89,4\u00a0%", "ses recommandations (semaine du 2024-03-04 : réentraîner)"),
+             "en": ("Replay `" + EARLIER + "` (rules of commit `eeeeeeeeeeee`)", "its MAPE of 4.23%",
+                    "its coverage of 89.4%", "its recommendations (week of 2024-03-04: retrain)")}
     for lang, expected in words.items():
-        env = environment(lang)
-        env.get_template(f"validation.{lang}.md.j2")  # the report template compiles with the block in it
-        block = env.get_template(f"ledger_recorded.{lang}.md.j2").module.recorded_block
-        text = str(block(shown))
-        assert all(w in text for w in expected), (lang, text)
-        assert EARLIER in text and "eeeeeeeeeeee" in text
-        assert str(block([{**shown[0], "recorded": False}])) == ""  # a replay from the store gets no label
+        text = render_report(ctx, lang)
+        assert text.count(LABEL[lang]) == 1, (lang, text)
+        paragraph = text[text.index(LABEL[lang]):].split("\n\n")[0]
+        assert all(w in paragraph for w in expected), (lang, paragraph)
+        stored = render_report({**ctx, "departures": [{**shown[0], "recorded": False}]}, lang)
+        assert LABEL[lang] not in stored and EARLIER in stored  # a replay from the store: shown, with no label
 
 
 def test_a_departed_replay_in_neither_the_store_nor_the_ledger_is_refused(monkeypatch, tmp_path):
@@ -209,6 +294,20 @@ def test_a_replay_that_disagrees_with_its_ledger_entry_is_refused(monkeypatch, t
     assert lineage.follow(CODE, RULES, FREEZE, recorded="None yet.", entries=[good]).replay is runs["replay"]
     with pytest.raises(lineage.ChainBroken, match=r"disagrees with its ledger entry on \['coverage'\]"):
         lineage.follow(CODE, RULES, FREEZE, recorded="None yet.", entries=[{**good, "coverage": 0.95}])
+
+
+def test_a_departed_replay_that_disagrees_with_its_ledger_entry_is_refused(monkeypatch, tmp_path):
+    """The store and the ledger both hold the replay the 2024 replay departs from: its entry must be what the store
+    says, field for field, or the chain is refused."""
+    runs = departure_chain()
+    runs[EARLIER] = timed(fake_run(EARLIER, kind="replay", year="2024", status="complete", freeze_commit="e" * 40,
+                                   rules_sha256=RULES, code_sha256=CODE))
+    files = {EARLIER: results(recs=[("2024-03-04", "retrain")], freeze_commit="e" * 40)}
+    results_store(monkeypatch, tmp_path, runs, files)
+    good = earlier_entry()
+    assert lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED, entries=[good]).departed == [runs[EARLIER]]
+    with pytest.raises(lineage.ChainBroken, match=r"replay 1{32} disagrees with its ledger entry on \['mape'\]"):
+        lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED, entries=[{**good, "mape": 0.01}])
 
 
 def test_ledger_and_report_commands_sync_before_rendering(monkeypatch):

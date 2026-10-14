@@ -58,9 +58,10 @@ the gap goes to the owner as a question.
   ID, freeze tag and commit, rules and code hashes, start and end times, status, MAPE, coverage, recommendations, and
   the replays it departs from. It is append-only: an entry is never rewritten, and a run in the store that disagrees
   with its entry is refused. It is path-checked: every field has a fixed shape, and the content must pass the
-  public-safety scan before it is written. `valiwatt report` (and `valiwatt ledger`) syncs it from the store, never
-  the replay itself, and it is committed with each report. A replay from before a departure that the store lacks is
-  shown from its entry, labelled as recorded in the ledger and not re-run.
+  public-safety scan before it is written. It is written only by `valiwatt ledger` and by `valiwatt report` (before
+  it renders), never mid-chain, and committed in the same commit as the report render, whose stamp holds its hash. A
+  replay from before a departure that the store lacks is shown from its entry, labelled as recorded in the ledger and
+  not re-run.
 
 ## Departures from the brief
 

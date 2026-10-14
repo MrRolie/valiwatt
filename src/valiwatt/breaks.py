@@ -370,6 +370,12 @@ BREAKS = [
        "« consigné dans le registre, non rejoué ici »",
        "Control: a replay from before a departure that the store lacks is shown from the ledger, labelled \"recorded "
        "in the ledger, not re-run here\"", control=True),
+    _b(RENDER, f"{T_LED}::test_a_departed_replay_that_disagrees_with_its_ledger_entry_is_refused",
+       "Un rejeu d'avant une dérogation qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport",
+       "A replay from before a departure that disagrees with its ledger entry breaks the report's run chain"),
+    _b(RENDER, "tests/test_report_stamp.py::test_a_ledger_changed_after_the_render_fails_the_stamp",
+       "Un registre des rejeux modifié ou supprimé après le rendu fait échouer le test de l'estampille du rapport",
+       "A replay ledger edited or removed after the render fails the report's stamp test"),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
 ]

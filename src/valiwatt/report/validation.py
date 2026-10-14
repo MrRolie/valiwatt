@@ -1,9 +1,10 @@
 """Render the validation report (French first, English derived) into docs/report/, from the chain of tracked runs.
 
 The report is committed (owner's ruling). It carries a stamp (docs/report/stamp.json): the run IDs it was rendered
-from, the code hash, the rules hash and the hash of every rendered file. `tests/test_report_stamp.py` fails when the
-committed code no longer matches the stamp, or a rendered file no longer matches its hash, so a report can never sit
-beside code that did not produce it, nor be edited by hand. The data-quality report is rendered from the chain's own
+from, the code hash, the rules hash, the hash of every rendered file and the hash of the replay ledger.
+`tests/test_report_stamp.py` fails when the committed code no longer matches the stamp, or a rendered file or the
+ledger no longer matches its hash, so a report can never sit beside code that did not produce it, nor be edited by
+hand. The data-quality report is rendered from the chain's own
 data-quality run.
 """
 
@@ -391,6 +392,13 @@ def file_hashes() -> dict:
             for p in sorted(OUT.rglob("*")) if p.is_file() and p != STAMP}
 
 
+def make_stamp(code_sha: str, rules_sha: str, freeze_commit: str, runs: dict) -> dict:
+    """What the committed report is checked against: the code and rules hashes, the runs, the hash of every rendered
+    file, and the replay ledger's hash (`valiwatt report` syncs the ledger before it renders)."""
+    return {"code_sha256": code_sha, "rules_sha256": rules_sha, "freeze_commit": freeze_commit, "runs": runs,
+            "files": file_hashes(), "ledger_sha256": ledger.digest()}
+
+
 def render_validation(dq_run_id: str | None = None) -> list[Path]:
     from valiwatt.monitor.rules import rules_sha256
     from valiwatt.monitor.run import check_freeze
@@ -413,8 +421,7 @@ def render_validation(dq_run_id: str | None = None) -> list[Path]:
         out = OUT / f"validation.{lang}.md"
         out.write_text(text, encoding="utf-8")
         written.append(out)
-    stamp = {"code_sha256": code_sha, "rules_sha256": rules_sha, "freeze_commit": chain.freeze["freeze_commit"],
-             "runs": {k: x["id"] for k, x in ctx["runs"].items()}, "files": file_hashes()}
+    stamp = make_stamp(code_sha, rules_sha, chain.freeze["freeze_commit"], {k: x["id"] for k, x in ctx["runs"].items()})
     STAMP.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print("rendered " + ", ".join(p.relative_to(REPO_ROOT).as_posix() for p in written)
           + f" from replay run {chain.replay.info.run_id}")
