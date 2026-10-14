@@ -104,14 +104,14 @@ def test_the_figure_receives_each_season_with_its_interval(monkeypatch):
     seen = {}
     for name in ("monthly_mape", "peak_hours", "replay_weekly", "replay_drift"):
         monkeypatch.setattr(F, name, lambda *a, **k: None)
-    monkeypatch.setattr(F, "coverage_by_season", lambda rows, lang, path: seen.update(rows))
+    monkeypatch.setattr(F, "coverage_by_season", lambda rows, lang, path, nominal: seen.update(rows, nominal=nominal))
     seasons = RV.season_coverage(coverage(pooled={k: (0.85, 0.82, 0.88) for k in KEYS},
                                           by_season={k: (0.90, 0.87, 0.93) for k in KEYS}), 0.9)
     ctx = {"v": {"cases": {"peak": {"hours": []}}}, "p": {"weeks": [], "decisions": []},
-           "r": {"weeks": [], "decisions": []}, "monthly": None, "seasons": seasons}
+           "r": {"weeks": [], "decisions": []}, "monthly": None, "seasons": seasons, "nominal": 0.9}
     RV.figures(ctx, "en")
     assert seen == {"pooled": {k: (0.85, 0.82, 0.88) for k in KEYS},
-                    "by_season": {k: (0.90, 0.87, 0.93) for k in KEYS}}
+                    "by_season": {k: (0.90, 0.87, 0.93) for k in KEYS}, "nominal": 0.9}
 
 
 def test_the_figure_draws_each_interval_as_an_error_bar_with_the_label_above_it(monkeypatch, tmp_path):
@@ -121,7 +121,7 @@ def test_the_figure_draws_each_interval_as_an_error_bar_with_the_label_above_it(
     monkeypatch.setattr(F, "_save", lambda fig, path: figs.append(fig))
     rows = {"pooled": {k: (0.80 + 0.02 * i, 0.77 + 0.02 * i, 0.84 + 0.02 * i) for i, k in enumerate(KEYS)},
             "by_season": {k: (0.90, 0.86 + 0.01 * i, 0.99) for i, k in enumerate(KEYS)}}
-    F.coverage_by_season(rows, "fr", tmp_path / "x.png")
+    F.coverage_by_season(rows, "fr", tmp_path / "x.png", 0.9)
     ax = figs[0].axes[0]
     spans = sorted((round(min(y for _, y in s), 6), round(max(y for _, y in s), 6))
                    for c in ax.collections if isinstance(c, LineCollection) for s in c.get_segments())
@@ -154,3 +154,16 @@ def test_the_validation_report_prints_both_intervals_and_the_sentence(lang):
     assert "ci(row.by_season.low, row.by_season.high, 1)" in source
     assert "ci(ps.covered_low, ps.covered_high, 1)" in source
     assert "fixes the gap" not in source and "corrige l'écart" not in source
+
+
+@pytest.mark.parametrize("nominal, fr, en", [(0.9, "nominale 90 %", "nominal 90%"), (0.8, "nominale 80 %", "nominal 80%")])
+def test_the_figure_draws_the_nominal_line_where_the_runs_put_it(monkeypatch, tmp_path, nominal, fr, en):
+    figs = []
+    monkeypatch.setattr(F, "_save", lambda fig, path: figs.append(fig))
+    rows = {form: {k: (0.85, 0.80, 0.90) for k in KEYS} for form in ("pooled", "by_season")}
+    for lang, label in (("fr", fr), ("en", en)):
+        F.coverage_by_season(rows, lang, tmp_path / "x.png", nominal)
+        ax = figs[-1].axes[0]
+        dashed = [line for line in ax.get_lines() if line.get_linestyle() == "--"]
+        assert [line.get_ydata()[0] for line in dashed] == [pytest.approx(100 * nominal)]
+        assert dashed[0].get_label() == label

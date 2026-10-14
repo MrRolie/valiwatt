@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from conftest import synth_obs
+from valiwatt.breaks import SYNTHETIC_WORLD
 from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.evaluate import errors, weekly_stats
 from valiwatt.forecast.features import build
@@ -67,7 +68,8 @@ def frozen_reference_thresholds():
               "bias_high": float(w["rel_bias"].quantile(QUANTILES["bias_high"])),
               "coverage_low": float(w["covered"].quantile(QUANTILES["coverage_low"])), "weeks": int(len(w))}
     thresholds = {"performance": {s: dict(season) for s in ("winter", "spring", "summer", "fall")},
-                  "drift": {"temperature_high": 1.0, "forecast_high": 1.0}, "last_year": REPLAY_YEAR - 1,
+                  "drift": {"temperature_high": SYNTHETIC_WORLD["drift_alarm"],
+                            "forecast_high": SYNTHETIC_WORLD["drift_alarm"]}, "last_year": REPLAY_YEAR - 1,
                   "weekly_validation": [{"first_day": str(d)} for d in w["first_day"]]}
     return frozen, ref, thresholds
 

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from replay_world import FIRST, LAST, frozen_and_reference, respond, thresholds, world
+from valiwatt.breaks import SYNTHETIC_WORLD
 from valiwatt.forecast.features import build
 from valiwatt.forecast.guards import LookaheadError
 from valiwatt.monitor import replay as rp
@@ -186,7 +187,8 @@ def test_two_contaminated_days_never_lift_the_trimmed_statistic_past_the_untouch
 
 def test_a_level_shift_yields_retrain():
     raw, _ = world()
-    shifted = raw.assign(mw=raw["mw"] * np.where(raw["ts_utc"] >= pd.Timestamp("2022-01-10T05:00Z"), 1.12, 1.0))
+    rise = 1 + SYNTHETIC_WORLD["level_shift"]
+    shifted = raw.assign(mw=raw["mw"] * np.where(raw["ts_utc"] >= pd.Timestamp("2022-01-10T05:00Z"), rise, 1.0))
     recs = recommendations(run(raw=shifted))
     assert (("2022-01-17", RETRAIN) in recs) or (("2022-01-24", RETRAIN) in recs)
 

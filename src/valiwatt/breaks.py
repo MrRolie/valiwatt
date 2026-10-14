@@ -26,10 +26,16 @@ class Break:
     test: str  # pytest node id, relative to the repository
     fr: str
     en: str
+    control: bool = False  # a clean control: nothing is injected, and it passes by staying quiet
 
 
-def _b(group, test, fr, en):
-    return Break(group, test, fr, en)
+def _b(group, test, fr, en, control=False):
+    return Break(group, test, fr, en, control)
+
+
+# The synthetic world the monitor's breaks run in (tests/replay_world.py): its drift alarm level, set by hand rather
+# than by the quantile rule, and the rise in demand the level-shift break injects. The report prints both.
+SYNTHETIC_WORLD = {"drift_alarm": 1.0, "level_shift": 0.12}
 
 
 DQ, LOOK, CLOCK, MON, ACT, FREEZE, RENDER = ("data_quality", "lookahead", "clock", "monitors", "never_acts",
@@ -48,7 +54,7 @@ T_DEM, T_WEA, T_PIPE = "tests/test_demand_gates.py", "tests/test_weather_gates.p
 T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "tests/test_replay.py", "tests/test_drift.py"
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
-T_COV = "tests/test_report_coverage.py"
+T_COV, T_SEN2 = "tests/test_report_coverage.py", "tests/test_report_sentences.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -129,7 +135,8 @@ BREAKS = [
     _b(CLOCK, f"{T_REP}::test_a_forecast_built_on_rows_of_another_origin_or_day_is_refused[day]",
        "Une prévision bâtie sur une ligne d'un autre jour est refusée", "A forecast built on a row of another day is refused"),
     _b(MON, f"{T_REP}::test_clean_world_yields_no_recommendation",
-       "Témoin : des données propres ne donnent aucune recommandation", "Control: clean data yield no recommendation"),
+       "Témoin : des données propres ne donnent aucune recommandation", "Control: clean data yield no recommendation",
+       control=True),
     _b(MON, f"{T_DRF}::test_seasonal_reference_stays_quiet_on_clean_data_and_fires_on_a_shift",
        "La référence saisonnière reste calme sur des données propres et réagit à un décalage",
        "The seasonal reference stays quiet on clean data and fires on a shift"),
@@ -279,7 +286,8 @@ BREAKS = [
        "Un chemin privé caché dans un bloc de taille fixe d'une figure est repéré",
        "A private path hidden in a fixed-length chunk of a figure is caught"),
     _b(RENDER, f"{T_LIN}::test_a_clean_chain_is_followed",
-       "Témoin : une chaîne d'exécutions intacte est suivie jusqu'au bout", "Control: an intact run chain is followed to its end"),
+       "Témoin : une chaîne d'exécutions intacte est suivie jusqu'au bout",
+       "Control: an intact run chain is followed to its end", control=True),
     _b(RENDER, f"{T_LIN}::test_a_broken_link_in_the_run_chain_is_refused[breaks_failed]",
        "Une exécution des bris marquée en échec rompt la chaîne du rapport", "A breaks run marked failed breaks the report's run chain"),
     _b(RENDER, f"{T_LIN}::test_a_broken_link_in_the_run_chain_is_refused[other_code]",
@@ -302,7 +310,8 @@ BREAKS = [
        "does a departure replay whose freeze commit `AGENTS.md` does not name"),
     _b(RENDER, f"{T_LIN}::test_with_no_departure_recorded_a_clean_chain_passes",
        "Témoin : sans dérogation consignée, une chaîne intacte passe ; avec une dérogation, le rejeu qui la porte passe",
-       "Control: with no departure recorded, an intact chain passes; with one, the replay that carries it passes"),
+       "Control: with no departure recorded, an intact chain passes; with one, the replay that carries it passes",
+       control=True),
     _b(RENDER, f"{T_LIN}::test_a_departure_named_by_a_short_hash_is_refused",
        "Une dérogation consignée par un hachage de moins de 12 caractères rompt la chaîne du rapport",
        "A departure recorded by a hash shorter than 12 characters breaks the report's run chain"),
@@ -312,6 +321,20 @@ BREAKS = [
     _b(RENDER, f"{T_COV}::test_a_season_missing_from_the_run_is_refused",
        "Une saison absente de la couverture du run de validation fait refuser le rapport",
        "A season missing from the validation run's coverage makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_near_miss_week_missing_from_the_replay_is_refused",
+       "Une semaine de la première formulation de la règle 2 absente des semaines jugées du rejeu fait refuser le rapport",
+       "A week of rule 2's first wording missing from the replay's judged weeks makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_failure_broad_in_both_weeks_without_a_retrain_is_refused",
+       "Une défaillance étendue aux deux semaines sans « réentraîner » dans le rejeu fait refuser le rapport",
+       "A failure broad in both weeks with no retrain in the replay makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_the_breaks_run_must_say_which_breaks_are_controls",
+       "Une exécution des bris qui ne marque pas ses témoins fait refuser le rapport",
+       "A breaks run that does not mark its controls makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_validation_frame_without_its_spring_is_refused",
+       "Un cas du printemps 2020 sans heures de printemps fait refuser le rapport",
+       "A spring 2020 case with no spring hours makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_an_empty_power_table_is_refused",
+       "Un tableau de puissance vide fait refuser le rapport", "An empty power table makes the report refuse"),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
 ]
@@ -336,8 +359,8 @@ def run_tests(breaks: list[Break] = BREAKS) -> list[dict]:
         subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={xml}",
                         *[b.test for b in breaks]], cwd=REPO_ROOT, check=False)
         got = _outcomes(xml) if xml.exists() else {}
-    return [{"group": b.group, "test": b.test, "fr": b.fr, "en": b.en, "outcome": got.get(b.test, "not_run")}
-            for b in breaks]
+    return [{"group": b.group, "test": b.test, "fr": b.fr, "en": b.en, "control": b.control,
+             "outcome": got.get(b.test, "not_run")} for b in breaks]
 
 
 def run_breaks() -> int:

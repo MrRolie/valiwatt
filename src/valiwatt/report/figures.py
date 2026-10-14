@@ -20,9 +20,9 @@ LABELS = {
     "fr": {
         "mape": "EAMP mensuelle (%)", "persistence": "météo de la veille (production)",
         "observed": "météo observée (borne optimiste)", "baseline": "même heure, une semaine avant",
-        "coverage": "Couverture (%)", "nominal": "nominale 90 %", "pooled": "quantile unique",
+        "coverage": "Couverture (%)", "nominal": "nominale {} %", "pooled": "quantile unique",
         "by_season": "quantile par saison", "ci": "IC 95 %", "demand": "Demande (MW)", "actual": "réelle",
-        "interval": "intervalle 90 %", "week_mape": "EAMP hebdomadaire (%)", "week_bias": "Biais hebdomadaire (%)",
+        "interval": "intervalle à {} %", "week_mape": "EAMP hebdomadaire (%)", "week_bias": "Biais hebdomadaire (%)",
         "week_cov": "Couverture hebdomadaire (%)", "threshold": "seuil de la saison",
         "drift_t": "Dérive, température", "drift_f": "Dérive, prévision", "alarm": "niveau d'alarme",
         "seasons": {"winter": "hiver", "spring": "printemps", "summer": "été", "fall": "automne"},
@@ -30,9 +30,9 @@ LABELS = {
     "en": {
         "mape": "Monthly MAPE (%)", "persistence": "previous day's weather (production)",
         "observed": "observed weather (optimistic bound)", "baseline": "same hour one week earlier",
-        "coverage": "Coverage (%)", "nominal": "nominal 90%", "pooled": "one quantile",
+        "coverage": "Coverage (%)", "nominal": "nominal {}%", "pooled": "one quantile",
         "by_season": "one quantile per season", "ci": "95% CI", "demand": "Demand (MW)", "actual": "actual",
-        "interval": "90% interval", "week_mape": "Weekly MAPE (%)", "week_bias": "Weekly bias (%)",
+        "interval": "{}% interval", "week_mape": "Weekly MAPE (%)", "week_bias": "Weekly bias (%)",
         "week_cov": "Weekly coverage (%)", "threshold": "season's threshold",
         "drift_t": "Drift, temperature", "drift_f": "Drift, forecast", "alarm": "alarm level",
         "seasons": {"winter": "winter", "spring": "spring", "summer": "summer", "fall": "fall"},
@@ -61,10 +61,14 @@ def monthly_mape(monthly: pd.DataFrame, lang: str, path: Path):
     _save(fig, path)
 
 
-def coverage_by_season(rows: dict, lang: str, path: Path):
+def _nominal(nominal: float, lang: str) -> str:
+    return _num(lang, 0)(100 * nominal, None)
+
+
+def coverage_by_season(rows: dict, lang: str, path: Path, nominal: float):
     """rows: {"pooled": {season: (coverage, ci_low, ci_high)}, "by_season": {...}}; the 95 % interval is drawn as a
-    thin error bar, the point label sits above it."""
-    L = LABELS[lang]
+    thin error bar, the point label sits above it; the dashed line is the intervals' nominal coverage."""
+    L = dict(LABELS[lang], nominal=LABELS[lang]["nominal"].format(_nominal(nominal, lang)))
     fig, ax = plt.subplots(figsize=(6, 3.2))
     x = np.arange(len(SEASON_ORDER))
     w = 0.36
@@ -78,7 +82,7 @@ def coverage_by_season(rows: dict, lang: str, path: Path):
         for xi, v, hi in zip(xs, vals, highs):
             ax.text(xi, hi + 0.6, _num(lang, 1)(v, None), ha="center", fontsize=7, color=INK)
         top = max(top, highs.max())
-    ax.axhline(90, color=INK_2, linewidth=0.9, linestyle="--", label=L["nominal"])
+    ax.axhline(100 * nominal, color=INK_2, linewidth=0.9, linestyle="--", label=L["nominal"])
     ax.set_xticks(x, [L["seasons"][s] for s in SEASON_ORDER])
     ax.set_ylim(60, max(102, top + 3))
     ax.set_ylabel(L["coverage"], fontsize=9)
@@ -91,9 +95,9 @@ def coverage_by_season(rows: dict, lang: str, path: Path):
     _save(fig, path)
 
 
-def peak_hours(hours: list[dict], lang: str, path: Path):
+def peak_hours(hours: list[dict], lang: str, path: Path, nominal: float):
     """The busiest design hours: actual, both forecasts and the interval."""
-    L = LABELS[lang]
+    L = dict(LABELS[lang], interval=LABELS[lang]["interval"].format(_nominal(nominal, lang)))
     fig, ax = plt.subplots(figsize=(7, 3.4))
     y = np.arange(len(hours))
     labels = [pd.Timestamp(h["utc"]).strftime("%Y-%m-%d %H:%M UTC") for h in hours]

@@ -76,7 +76,10 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   so intervals start in January 2021 and 2020 has none. The absolute-error form is a sensitivity run. Coverage is
   measured overall, by season, by hour group and by forecast load decile, each with a bootstrap interval. Conformal
   coverage assumes calibration errors resemble future errors; under drift it may not hold, and the measured coverage,
-  not the nominal one, is the result.
+  not the nominal one, is the result. Named for what it is: the interval has the shape of a split-conformal one, but
+  not its finite-sample guarantee, which needs exchangeable scores. Here the scores are autocorrelated hourly errors,
+  each month's from its own refitted fold model, and the frozen model (section 4) applies a quantile of errors it did
+  not make.
 - **Is a frozen model like a refitted one?** Fold models are refitted monthly; the production model is frozen for a
   year. A *pseudo-replay* answers it on design years only: freeze at the end of 2022 (embargo kept), replay 2023 with
   intervals and thresholds from folds up to 2022, and compare its errors, coverage and alarm days with the refitted
@@ -89,7 +92,7 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   same step. It is logged to MLflow with the hash of its coefficients and half-width, registered as a model version
   with the alias `replay-2024`, and never refitted during the replay. Its half-width is the conformal quantile of the
   out-of-sample relative scores of the 12 folds just before the replayed year (2023 for the replay, 2022 for the
-  pseudo-replay): the validation rule applied to one more month.
+  pseudo-replay): the validation rule applied to one more month, conformal in shape only (section 3).
 - **Performance thresholds (persistence weather), from validation, per season.** The monitor reads *weekly* statistics
   (Monday to Sunday, local standard time): weekly MAPE, weekly signed relative bias, weekly interval coverage. For
   each meteorological season, the thresholds are quantiles of the same weekly statistics over the 2021–2023 validation
