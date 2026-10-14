@@ -64,6 +64,6 @@ licences ([`docs/data-licences.md`](docs/data-licences.md)).
 
 ## Continuous integration
 
-`.github/workflows/checks.yml` runs the offline tests and the public-safety scan on every change. CI's scan covers paths,
-credentials, forbidden files and every commit message, but not private names: those live in a gitignored list, so only
-the local `valiwatt safety` checks them. The workflow has not run yet: the repository has no remote.
+`.github/workflows/checks.yml` runs the offline tests (every injected break included) and the public-safety scan on
+every push. CI's scan covers paths, credentials, forbidden files and every commit message, but not private names: those
+live in a gitignored list, so only the local `valiwatt safety` checks them.
