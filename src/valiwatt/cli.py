@@ -29,6 +29,12 @@ def cmd_dq(args) -> int:
     return run_dq()
 
 
+def cmd_validate(args) -> int:
+    from valiwatt.forecast.validate import run_validate
+
+    return run_validate()
+
+
 def cmd_report(args) -> int:
     from valiwatt.report.render import render
 
@@ -60,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_fetch)
     p = sub.add_parser("dq", help="data-quality and representativeness checks, tracked as an MLflow run")
     p.set_defaults(func=cmd_dq)
+    p = sub.add_parser("validate", help="walk-forward validation, conformal intervals and monitoring thresholds (2019-2023)")
+    p.set_defaults(func=cmd_validate)
     p = sub.add_parser("report", help="render the data-quality report from a tracked run")
     p.add_argument("--run-id")
     p.set_defaults(func=cmd_report)

@@ -1941,6 +1941,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "requests" },
+    { name = "scipy" },
 ]
 
 [package.dev-dependencies]
@@ -1959,6 +1960,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "requests", specifier = ">=2.32" },
+    { name = "scipy", specifier = "==1.18.1" },
 ]
 
 [package.metadata.requires-dev]

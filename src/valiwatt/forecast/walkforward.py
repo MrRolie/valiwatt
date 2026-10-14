@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from valiwatt.forecast.guards import require_embargo
 from valiwatt.forecast.model import OLSForecaster, baseline
 
 EMBARGO_DAYS = 7
@@ -46,8 +47,7 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
         train, test = split(f, fold)
         if train.empty or test.empty:
             raise ValueError(f"fold {fold.test_month} has no training or test rows")
-        if train["day"].max() > fold.train_last_day:
-            raise AssertionError(f"fold {fold.test_month}: training reaches into the embargo")
+        require_embargo(train, fold.test_first_day, EMBARGO_DAYS)
         out = pd.DataFrame({"target": test["target"], "fold": str(fold.test_month), "day": test["day"],
                             "hour": test["hour"], "day_type": test["day_type"], "baseline": baseline(test)},
                            index=test.index)
