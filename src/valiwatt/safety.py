@@ -2,7 +2,9 @@
 
 `valiwatt safety` reads exactly what a commit would carry: the STAGED content of every path in git's index (not the
 working copy), plus every commit message in the history. It fails on local paths, credential shapes, and files that
-must never be tracked (data, run outputs, agent run records, the private estate notes).
+must never be tracked (data, run outputs, agent run records, the private estate notes). A binary file cannot be read
+as text, so it fails too, with one exception: the report's figures, PNG files that must be well formed, end at their
+last chunk, and carry only text (their metadata) that passes the same scan.
 
 Private names (people, other repositories, anything ESTATE.local.md says never to publish) cannot be listed in a
 tracked file without publishing them. Put one regular expression per line in the gitignored `.private-patterns`; when
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import zlib
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -32,6 +35,8 @@ FORBIDDEN_FILES = [
 ]
 
 PRIVATE_PATTERNS_FILE = ".private-patterns"
+FIGURES = "docs/report/figures/*.png"
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 class ScanError(RuntimeError):
@@ -71,6 +76,38 @@ def scan_names(names: list[str]) -> list[str]:
     return [f"{n}: must never be tracked" for n in names if any(fnmatch(n, pat) for pat in FORBIDDEN_FILES)]
 
 
+def png_text(data: bytes) -> str | None:
+    """The text a PNG carries (its tEXt, zTXt and iTXt chunks), or None unless the bytes are one well-formed PNG with
+    nothing after its IEND chunk."""
+    if not data.startswith(PNG_SIGNATURE):
+        return None
+    texts, i = [], len(PNG_SIGNATURE)
+    try:
+        while i + 8 <= len(data):
+            length, kind = int.from_bytes(data[i:i + 4], "big"), data[i + 4:i + 8]
+            body = data[i + 8:i + 8 + length]
+            if len(body) != length or len(data) < i + 12 + length:
+                return None
+            if kind == b"tEXt":
+                texts.append(body.replace(b"\0", b" ").decode("latin-1"))
+            elif kind == b"zTXt":
+                key, _, rest = body.partition(b"\0")
+                texts.append(key.decode("latin-1") + " " + zlib.decompress(rest[1:]).decode("latin-1"))
+            elif kind == b"iTXt":
+                key, _, rest = body.partition(b"\0")
+                compressed, rest = rest[0], rest[2:]
+                lang, _, rest = rest.partition(b"\0")
+                translated, _, text = rest.partition(b"\0")
+                text = zlib.decompress(text) if compressed else text
+                texts.append(" ".join(x.decode("utf-8") for x in (key, lang, translated, text)))
+            i += 12 + length
+            if kind == b"IEND":
+                return "\n".join(texts) if i == len(data) else None
+    except (zlib.error, UnicodeDecodeError, IndexError):
+        return None
+    return None
+
+
 def scan_index(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
     names = tracked_files(root)
     issues = scan_names(names)
@@ -84,8 +121,10 @@ def scan_index(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:
         try:
             text = blob.stdout.decode("utf-8")
         except UnicodeDecodeError:
-            issues.append(f"{n}: binary file tracked")
-            continue
+            text = png_text(blob.stdout) if fnmatch(n, FIGURES) else None
+            if text is None:
+                issues.append(f"{n}: binary file tracked")
+                continue
         issues += scan_text(n, text, extra)
     return issues
 

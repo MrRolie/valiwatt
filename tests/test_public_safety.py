@@ -1,13 +1,24 @@
 """The repository goes public with its history: the scan must pass now, and must fire on what it guards against."""
 
 import subprocess
+import zlib
 
 import pytest
 
 from valiwatt import attribution
 from valiwatt.paths import REPO_ROOT
 from valiwatt.report.render import ReportRefused, assert_public_safe, fmt_num
-from valiwatt.safety import ScanError, main, private_patterns, scan, scan_history, scan_index, scan_names, scan_text
+from valiwatt.safety import (
+    PNG_SIGNATURE,
+    ScanError,
+    main,
+    private_patterns,
+    scan,
+    scan_history,
+    scan_index,
+    scan_names,
+    scan_text,
+)
 
 
 def test_staged_tree_is_public_safe():
@@ -117,6 +128,36 @@ def test_scan_flags_forbidden_binary_and_missing_staged_files(repo):
     (root / "a.md").unlink()
     issues = "\n".join(scan_index(root))
     assert "must never be tracked" in issues and "binary file tracked" in issues and "staged but missing" in issues
+
+
+def png(*chunks, tail=b""):
+    def chunk(kind, body):
+        return len(body).to_bytes(4, "big") + kind + body + zlib.crc32(kind + body).to_bytes(4, "big")
+    return PNG_SIGNATURE + chunk(b"IHDR", bytes(13)) + b"".join(chunk(k, b) for k, b in chunks) + chunk(b"IEND", b"") + tail
+
+
+def test_a_report_figure_passes_only_when_well_formed_with_clean_metadata(repo):
+    """The report's PNG figures are the one binary the repository carries: a figure whose metadata holds a private
+    path (plain or compressed), one with bytes after its end, and a PNG anywhere else are all refused."""
+    root, git = repo
+    path = ("/ho" + "me/someone/notes").encode()
+    figures = root / "docs" / "report" / "figures" / "en"
+    figures.mkdir(parents=True)
+    cases = {"clean": png((b"tEXt", b"Software\0Matplotlib")), "plain": png((b"tEXt", b"Comment\0" + path)),
+             "compressed": png((b"zTXt", b"Comment\0\0" + zlib.compress(path))),
+             "international": png((b"iTXt", b"Comment\0\x01\0\0\0" + zlib.compress(path))),
+             "tail": png(tail=b"hidden")}
+    for name, data in cases.items():
+        (figures / f"{name}.png").write_bytes(data)
+    (root / "elsewhere.png").write_bytes(cases["clean"])
+    git("add", "-f", "docs/report/figures", "elsewhere.png")
+    issues = scan_index(root)
+    flagged = lambda name: [i for i in issues if i.startswith(name)]  # noqa: E731
+    assert flagged("docs/report/figures/en/clean.png") == []
+    for name in ("plain", "compressed", "international"):
+        assert flagged(f"docs/report/figures/en/{name}.png") == [f"docs/report/figures/en/{name}.png:1: home path"]
+    assert flagged("docs/report/figures/en/tail.png") == ["docs/report/figures/en/tail.png: binary file tracked"]
+    assert flagged("elsewhere.png") == ["elsewhere.png: binary file tracked"]
 
 
 def test_full_scan_includes_the_history(repo):

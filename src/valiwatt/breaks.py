@@ -218,6 +218,9 @@ BREAKS = [
        "A report whose code changed since its run is refused"),
     _b(RENDER, f"{T_SAFE}::test_scan_fires_on_private_content",
        "L'analyse de sécurité publique réagit à un contenu privé", "The public-safety scan fires on private content"),
+    _b(RENDER, f"{T_SAFE}::test_a_report_figure_passes_only_when_well_formed_with_clean_metadata",
+       "Une figure dont les métadonnées portent un chemin privé, ou suivie d'octets cachés, est refusée",
+       "A figure whose metadata carries a private path, or with bytes hidden after its end, is refused"),
 ]
 
 
