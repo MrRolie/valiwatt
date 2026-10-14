@@ -19,12 +19,21 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import DEMAND_LAST, DESIGN_LAST, stations
-from valiwatt.forecast.evaluate import errors, mean_with_ci, paired_difference
+from valiwatt.forecast.evaluate import SEASONS, errors, mean_with_ci, paired_difference
 from valiwatt.forecast.freeze import load_frozen
 from valiwatt.forecast.validate import LineageError, load_inputs, load_validation, validation_results
 from valiwatt.monitor.drift import evidently_snapshot, normed_wasserstein, seasonal_reference
 from valiwatt.monitor.replay import MonitorActedError, ReplayResult, replay
-from valiwatt.monitor.rules import FREEZE_TAG, decide, rule_files, rules_sha256, two_week_rule_alone, week_record
+from valiwatt.monitor.rules import (
+    FREEZE_TAG,
+    MIN_WEEK_HOURS,
+    RETRAIN,
+    decide,
+    rule_files,
+    rules_sha256,
+    two_week_rule_alone,
+    week_record,
+)
 from valiwatt.paths import REPO_ROOT
 from valiwatt.quality.checks import jsonable
 
@@ -79,13 +88,33 @@ def check_lineage(year: int, val, frozen_run, freeze: dict) -> None:
         raise LineageError(f"frozen model run {frozen_run.info.run_id} was frozen for another year")
 
 
-def check_tag_not_moved(freeze: dict, earlier_commits: set[str], departure: bool) -> None:
-    """A 2024 replay already ran under another freeze commit: the tag moved, which is a departure."""
-    moved = sorted(c for c in earlier_commits if c and c != freeze["freeze_commit"])
-    if moved and not departure:
-        raise FreezeError(f"earlier 2024 replays ran under freeze commits {[c[:12] for c in moved]}, not "
+DEPARTURES_HEADING = "## Departures from the frozen monitoring rules"
+
+
+def recorded_departures(agents: str | None = None) -> str:
+    text = agents if agents is not None else (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    if DEPARTURES_HEADING not in text:
+        return ""
+    section = text.split(DEPARTURES_HEADING, 1)[1]
+    return section.split("\n## ", 1)[0]
+
+
+def check_tag_not_moved(freeze: dict, earlier: dict[str, list[str]], departure: bool,
+                        recorded: str | None = None) -> list[str]:
+    """A 2024 replay already ran under another freeze commit: the tag moved, which is a departure. It runs only with
+    `departure` AND the new freeze commit named in AGENTS.md's departures section. Returns the earlier run IDs."""
+    moved = {c: ids for c, ids in earlier.items() if c != freeze["freeze_commit"]}
+    if not moved:
+        return []
+    if not departure:
+        raise FreezeError(f"earlier 2024 replays ran under freeze commits {[c[:12] or '(none)' for c in moved]}, not "
                           f"{freeze['freeze_commit'][:12]}: moving the tag is a departure; record it in AGENTS.md and "
                           "rerun with --departure")
+    section = recorded_departures() if recorded is None else recorded
+    if freeze["freeze_commit"][:12] not in section:
+        raise FreezeError(f"--departure given, but AGENTS.md's departures section does not name commit "
+                          f"{freeze['freeze_commit'][:12]}")
+    return sorted(i for ids in moved.values() for i in ids)
 
 
 def summarize(r: ReplayResult, n_boot: int = N_BOOT) -> dict:
@@ -114,6 +143,53 @@ def retrain_under_two_week_rule_alone(weeks: list[dict]) -> list[dict]:
             out.append({"week_start": w["week_start"],
                         "weeks": [{"week_start": x["week_start"], "stats": x["stats"], "flags": x["flags"],
                                    "trimmed": x["trimmed"]} for x in (prev, w)]})
+    return out
+
+
+POWER_BIASES = (-0.08, -0.06, -0.04, -0.02, 0.02, 0.04, 0.06, 0.08)
+POWER_HORIZON_WEEKS = 8
+
+
+def weekly_decisions(hourly: pd.DataFrame, r: ReplayResult, thresholds: dict) -> tuple[list[dict], list[dict]]:
+    """Week records and decisions recomputed from an hourly frame, with the replay's own days and drift values."""
+    weeks, decisions = [], []
+    for w0 in r.weeks:
+        ws = w0["week_start"]
+        part = hourly[(hourly["day"] >= ws) & (hourly["day"] < ws + pd.Timedelta(days=7))]
+        days = [d for d in r.days if ws <= d["day"] < ws + pd.Timedelta(days=7)]
+        w = week_record(ws, part.dropna(subset=["ape", "covered"]), days, w0["drift"], thresholds)
+        decisions.append(decide(w, weeks[-1] if weeks else None, weeks[-2] if len(weeks) > 1 else None))
+        weeks.append(w)
+    return weeks, decisions
+
+
+def detection_power(r: ReplayResult, thresholds: dict, biases=POWER_BIASES,
+                    horizon: int = POWER_HORIZON_WEEKS) -> list[dict]:
+    """How fast rule 2 catches a sustained shift: from the first full week of each season, demand runs a fraction b
+    above the forecast (forecast and interval divided by 1 + b), and the weekly rules are run again on the replay's
+    hours. Reported: the weeks until *retrain*, or None within `horizon` weeks. Never acted on; it measures the
+    rules' power on this year's errors."""
+    starts = []
+    for month in (1, 4, 7, 10):
+        cands = [w["week_start"] for w in r.weeks if w["evaluated"] and w["week_start"].month == month]
+        if cands:
+            starts.append(min(cands))
+    out = []
+    for start in starts:
+        for b in biases:
+            h = r.hourly.copy()
+            late = (h["day"] >= start).to_numpy()
+            for col in ("forecast", "lower", "upper"):
+                h.loc[late, col] = h.loc[late, col] / (1 + b)
+            ok = h["target"].notna() & h["forecast"].notna()
+            h["ape"] = ((h["target"] - h["forecast"]).abs() / h["target"]).where(ok)
+            h["rel_bias"] = ((h["target"] - h["forecast"]) / h["target"]).where(ok)
+            h["covered"] = ((h["target"] >= h["lower"]) & (h["target"] <= h["upper"])).astype(float).where(ok)
+            _, decisions = weekly_decisions(h, r, thresholds)
+            hit = [d["week_start"] for d in decisions if d["recommendation"] == RETRAIN
+                   and start <= d["week_start"] < start + pd.Timedelta(weeks=horizon)]
+            out.append({"start": start, "season": SEASONS[(start + pd.Timedelta(days=3)).month], "bias": b,
+                        "weeks_to_retrain": int((hit[0] - start).days // 7 + 1) if hit else None})
     return out
 
 
@@ -147,12 +223,16 @@ def compare_refitted(r: ReplayResult, oos: pd.DataFrame, intervals: pd.DataFrame
         in_week = (refit["day"] >= ws) & (refit["day"] < ws + pd.Timedelta(days=7))
         part = refit[in_week].dropna(subset=["ape", "covered"])
         fc = ref_year.loc[ref_year["day"].ge(ws) & ref_year["day"].lt(ws + pd.Timedelta(days=7)), "pred_persistence"]
-        drift = {"temperature": by_week[ws]["drift"]["temperature"],
-                 "forecast": normed_wasserstein(fc.to_numpy(), seasonal_reference(reference["forecast"],
-                                                                                  reference["day"], ws))}
         wd = [days[d] for d in sorted(days) if ws <= d < ws + pd.Timedelta(days=7)]
+        if len(wd) == 7:
+            drift = {"temperature": by_week[ws]["drift"]["temperature"],
+                     "forecast": normed_wasserstein(fc.to_numpy(), seasonal_reference(reference["forecast"],
+                                                                                      reference["day"], ws),
+                                                    MIN_WEEK_HOURS)}
+        else:  # a partial week: quiet, as in the replay
+            drift = {"temperature": float("nan"), "forecast": float("nan")}
         w = week_record(ws, part, wd, drift, thresholds)
-        decisions.append(decide(w, weeks[-1] if weeks else None))
+        decisions.append(decide(w, weeks[-1] if weeks else None, weeks[-2] if len(weeks) > 1 else None))
         weeks.append(w)
     recs = lambda ds: {k: [d["recommendation"] for d in ds].count(k)  # noqa: E731
                        for k in sorted({d["recommendation"] for d in ds if d["recommendation"]})}
@@ -170,15 +250,27 @@ def compare_refitted(r: ReplayResult, oos: pd.DataFrame, intervals: pd.DataFrame
     }
 
 
-def earlier_freeze_commits(year: int) -> set[str]:
-    from valiwatt.tracking import client
+def earlier_freeze_commits(year: int, client=None) -> dict[str, list[str]]:
+    """The freeze commit of every earlier replay of `year`, deleted runs included, with their run IDs."""
+    from mlflow.entities import ViewType
 
-    c = client()
+    from valiwatt import tracking
+
+    c = client or tracking.client()
     exp = c.get_experiment_by_name(EXPERIMENT)
     if exp is None:
-        return set()
-    runs = c.search_runs([exp.experiment_id], f"tags.kind = 'replay' and tags.year = '{year}'", max_results=1000)
-    return {r.data.tags.get("freeze_commit", "") for r in runs}
+        return {}
+    out: dict[str, list[str]] = {}
+    for r in c.search_runs([exp.experiment_id], f"tags.kind = 'replay' and tags.year = '{year}'",
+                           run_view_type=ViewType.ALL, max_results=10_000):
+        out.setdefault(r.data.tags.get("freeze_commit", ""), []).append(r.info.run_id)
+    return out
+
+
+def check_unchanged(registered_sha: str, replayed_sha: str, run_sha: str) -> None:
+    """After the replay, the registered model must still be the one the replay used and its run recorded."""
+    if not (registered_sha == replayed_sha == run_sha):
+        raise MonitorActedError("the registered frozen model changed during the replay")
 
 
 def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
@@ -188,9 +280,10 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
 
     if year not in (PSEUDO_YEAR, REPLAY_YEAR):
         raise ValueError(f"replay years are {PSEUDO_YEAR} (pseudo-replay) and {REPLAY_YEAR}")
+    departure_from: list[str] = []
     if year == REPLAY_YEAR:
         freeze = check_freeze()
-        check_tag_not_moved(freeze, earlier_freeze_commits(year), departure)
+        departure_from = check_tag_not_moved(freeze, earlier_freeze_commits(year), departure)
     else:
         freeze = {"freeze_tag": "", "freeze_commit": "", "rules_sha256": rules_sha256()}
     dq, _, _ = load_inputs()
@@ -205,13 +298,13 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     r = replay(raw_demand, raw_temp, frozen, thresholds, reference, f"{year}-01-01", f"{year}-12-31", data_end)
 
     again, _ = load_frozen(year)
-    if again.sha256() != r.model_sha256 or again.sha256() != frozen_run.data.tags["coefficient_sha256"]:
-        raise MonitorActedError("the registered frozen model changed during the replay")
+    check_unchanged(again.sha256(), r.model_sha256, frozen_run.data.tags["coefficient_sha256"])
 
     results = {"year": year, "kind": "pseudo_replay" if year == PSEUDO_YEAR else "replay",
                "data_end": data_end, "clock_end": r.clock_end, "summary": summarize(r, n_boot),
                "days": r.days, "weeks": r.weeks, "decisions": r.decisions, "thresholds": thresholds,
-               "model": {"sha256": r.model_sha256, "q": frozen.q, "train_last_day": frozen.train_last_day}, **freeze}
+               "model": {"sha256": r.model_sha256, "q": frozen.q, "train_last_day": frozen.train_last_day},
+               "power": detection_power(r, thresholds), "departure_from": departure_from, **freeze}
     if year == PSEUDO_YEAR:
         client()
         intervals = pd.read_parquet(mlflow.artifacts.download_artifacts(
@@ -222,7 +315,8 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
         "kind": results["kind"], "year": str(year), "validation_run_id": val.info.run_id,
         "frozen_run_id": frozen_run.info.run_id, "dq_run_id": dq.info.run_id,
         "coefficient_sha256": r.model_sha256, "rules_sha256": freeze["rules_sha256"],
-        "freeze_commit": freeze["freeze_commit"], "departure": str(departure).lower(),
+        "freeze_commit": freeze["freeze_commit"], "departure": str(bool(departure_from)).lower(),
+        "departure_from": ",".join(departure_from),
     }) as run:
         s = results["summary"]
         mlflow.log_metrics({"mape": s["mape"]["mean"], "bias": s["bias"]["mean"], "coverage": s["coverage"]["mean"],

@@ -226,3 +226,19 @@ def test_an_out_of_bounds_neighbour_does_not_make_a_spike():
     t = raw.loc[500, "ts_utc"]
     assert build.frame.loc[t, "status"] == "out_of_bounds"
     assert not build.frame.loc[[t - H, t + H], "spike_flag"].any()
+
+
+def test_an_out_of_bounds_value_is_set_aside_before_a_repair_reads_it():
+    """A misplaced record is judged by how it fits its neighbours; an out-of-bounds neighbour must not enter that fit:
+    with it set aside the fit cannot be computed, so nothing is moved and no cost is built on the garbage value."""
+    first, last = "2021-12-28T00:00Z", "2022-01-10T00:00Z"
+    raw = synth_demand(first, last, step_at="2022-01-04T00:00Z", step_mw=3_000)
+    s, t = pd.Timestamp("2022-01-01T05:00Z"), pd.Timestamp("2022-01-06T05:00Z")
+    raw = add_record(drop_record(raw, s), t, value(raw, s))
+    clean_build, _ = run(raw, first, last)
+    assert clean_build.misplaced_events[0]["moved_to_utc"] == s  # the clean case repairs
+    raw.loc[raw["ts_utc"] == s - H, "mw"] = 9.9e6
+    build, c = run(raw, first, last)
+    assert not build.misplaced_events and not c["demand_bounds"].passed
+    best = build.unresolved_duplicates[0]["best_candidate"]
+    assert best is None or best["cost_mw"] < 1e5

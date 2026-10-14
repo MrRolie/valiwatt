@@ -10,6 +10,16 @@
 {% set SEASON = {'winter': 'hiver', 'spring': 'printemps', 'summer': 'été', 'fall': 'automne'} %}
 {% set PROBLEM = {'missing_hour': 'heure manquante', 'blank_value': 'valeur vide', 'duplicate': 'doublon', 'demand_out_of_bounds': 'demande hors bornes', 'temperature_out_of_bounds': 'température hors bornes', 'temperature_silent': 'station principale muette'} %}
 {% set NAME = {'persistence': 'météo de la veille (production)', 'observed': 'météo observée (borne optimiste)', 'baseline': 'même heure, une semaine avant', 'panel_persistence': 'météo de la veille, moyenne des six stations'} %}
+{% macro power_table(rows) %}
+| Début de l'écart | {% for b in rows|map(attribute='bias')|unique %}{{ sp(b, 0) }} | {% endfor %}
+
+|---|{% for b in rows|map(attribute='bias')|unique %}---|{% endfor %}
+
+{% for start in rows|map(attribute='start')|unique %}
+| {{ start|day }} ({{ SEASON[(rows|selectattr('start', 'equalto', start)|first).season] }}) | {% for row in rows if row.start == start %}{{ row.weeks_to_retrain if row.weeks_to_retrain is not none else '—' }} | {% endfor %}
+
+{% endfor %}
+{% endmacro %}
 {% set th24 = v.thresholds['2024'] %}
 {% set f24 = frozen[2024] %}
 {% set f23 = frozen[2023] %}
@@ -52,7 +62,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis la
 - **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec l'empreinte de ses coefficients, puis rejoué heure par heure.
 - **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation : EAMP au-dessus du 95ᵉ centile, biais hors de l'intervalle 2,5ᵉ–97,5ᵉ centile, couverture sous le 5ᵉ centile.
 - **La dérive.** Chaque semaine, la distribution des températures et celle des prévisions sont comparées aux mêmes semaines (± 2) des années précédentes, avec la distance de Wasserstein normée d'Evidently. Le niveau d'alarme est le 95ᵉ centile de cette distance sur les semaines de validation.
-- **La table de décision.** Chaque semaine, au plus une recommandation, avec ses preuves : (1) un échec de qualité des données → examiner les données ; (2) la même défaillance deux semaines de suite (EAMP au-dessus du seuil, ou biais du même côté de sa bande), étendue à toute la semaine → réentraîner ; (3) couverture sous le seuil deux semaines de suite, étendue, biais dans sa bande → recalibrer les intervalles ; (4) la même entrée en dérive deux semaines de suite, performance dans ses seuils → examiner les données. « Étendue » : la semaine reste hors seuil quand on écarte ses deux jours les plus extrêmes. Un seul mauvais jour ne touche jamais plus de deux jours d'une semaine (lui-même et, par les retards, le lendemain ou le même jour la semaine suivante) : il ne peut donc pas, à lui seul, déclencher une recommandation. Le moniteur recommande ; il n'agit jamais.
+- **La table de décision.** Chaque semaine, au plus une recommandation, avec ses preuves : (1) un échec de qualité des données → examiner les données ; (2) la même défaillance deux semaines de suite (EAMP au-dessus du seuil, ou biais du même côté de sa bande), étendue à toute la semaine, ou le biais du même côté de sa bande trois semaines de suite → réentraîner ; (3) couverture sous le seuil deux semaines de suite, étendue, biais dans sa bande → recalibrer les intervalles ; (4) la même entrée en dérive deux semaines de suite, performance dans ses seuils → examiner les données. « Étendue » : la semaine reste hors seuil quand on écarte ses deux jours les plus extrêmes. Un seul mauvais jour ne touche jamais plus de deux jours d'une semaine (lui-même et, par les retards, le lendemain ou le même jour la semaine suivante) : il ne peut donc pas, à lui seul, déclencher une recommandation. Une mauvaise semaine revient la semaine suivante, par le retard d'une semaine, avec le signe opposé : ce n'est pas la même défaillance deux fois, et elle ne déclenche rien non plus. Le moniteur recommande ; il n'agit jamais.
 
 ## 2. Validation sur 2020–2023
 
@@ -92,6 +102,16 @@ Les différences d'EAMP sont en points de pourcentage (pt).
 |---|---|---|
 {% for row in P.persistence.decile %}
 | {{ row.key }} | {{ row.ape|pct(2) }} | {{ sp(row.rel_bias, 2) }} |
+{% endfor %}
+
+**Coefficients du modèle figé pour 2024.** Chaque coefficient dit ce qu'une variable ajoute *compte tenu* de la demande de la veille et de la semaine précédente ; l'ajustement sans retards, montré à côté pour l'interprétation seulement, donne l'effet total de la météo. Les 72 constantes (une par heure et type de jour) ne sont pas montrées. Aucune erreur type des moindres carrés n'est donnée : les erreurs sont autocorrélées.
+
+| Variable | Modèle figé | Sans retards |
+|---|---|---|
+{% set BLOCK = {'night': 'nuit (0–5 h)', 'morning': 'matin (6–9 h)', 'day': 'jour (10–15 h)', 'evening': 'soir (16–20 h)', 'late': 'fin de soirée (21–23 h)'} %}
+{% for row in f24.coefficients if not row.feature.startswith('cell:') %}
+{% set parts = row.feature.split(':') %}
+| {% if parts[0] == 'heating' %}chauffage, {{ BLOCK[parts[1]] }} (MW par degré-heure){% elif parts[0] == 'cooling' %}climatisation, {{ BLOCK[parts[1]] }} (MW par degré-heure){% elif row.feature == 'lag24' %}demande de la veille (part){% else %}demande de la semaine précédente (part){% endif %} {% set d = 3 if row.feature.startswith('lag') else 1 %} | {{ row.frozen|num(d) }} | {% if row.no_lag is not none and row.no_lag == row.no_lag %}{{ row.no_lag|num(d) }}{% else %}—{% endif %} |
 {% endfor %}
 
 ## 3. Cas tests
@@ -176,6 +196,9 @@ Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} h
 {% for d in alone %}{% if d.weeks[0].stats.rel_bias * d.weeks[1].stats.rel_bias < 0 %}{% set _ = flips.append(1) %}{% endif %}{% endfor %}
 **Pourquoi « la même défaillance, étendue ».** {% if alone %}Avec la première formulation de la règle 2 (EAMP ou biais hors seuil deux semaines de suite, dans n'importe quel ordre), le moniteur aurait recommandé de réentraîner la semaine du {% for d in alone %}{{ d.week_start|day }} (biais {{ sp(d.weeks[0].stats.rel_bias, 2) }} puis {{ sp(d.weeks[1].stats.rel_bias, 2) }}){% if not loop.last %}, puis celle du {% endif %}{% endfor %}.{% if flips|length == alone|length %} Chaque fois, le biais change de signe d'une semaine à l'autre : c'est le profil d'un écart passager que les retards de 24 h et de 168 h reportent sur les jours suivants ; un modèle dégradé garderait plutôt une erreur de même signe.{% endif %}{% else %}Sur 2023, la première formulation de la règle 2 n'aurait rien recommandé de plus.{% endif %} La règle retenue exige la même défaillance deux semaines de suite, étendue à chaque semaine ; un épisode passager ne suffit pas.
 
+**Puissance des règles sur 2023.** À partir de la première semaine complète de chaque saison, on impose un écart soutenu entre la demande et la prévision (de −8 % à +8 %) et on rejoue les règles hebdomadaires sur les heures de 2023 : nombre de semaines avant « réentraîner » (— : rien en 8 semaines). Une mesure, jamais une recommandation.
+
+{{ power_table(p.power) }}
 ![Rejouée 2023]({{ fig.pseudo_replay_2023_weekly }})
 
 ## 7. 2024 rejouée comme en production
@@ -208,6 +231,9 @@ Aucune semaine de 2024 n'a déclenché de recommandation.
 {% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
 Avec la première formulation de la règle 2 : {% if alone24 %}« réentraîner » la semaine du {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, du {% endif %}{% endfor %}.{% else %}aucune recommandation de plus.{% endif %}
 
+**Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner » ; — : rien en 8 semaines) :
+
+{{ power_table(r.power) }}
 ![Rejouée 2024]({{ fig.replay_2024_weekly }})
 
 ![Dérive 2024]({{ fig.replay_2024_drift }})
@@ -240,7 +266,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Attente | Ce que fait valiwatt | Où c'est vérifié |
 |---|---|---|
-| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Configuration fixée dans le plan avant la validation ; variables nommées, coefficients montrés à côté d'un ajustement sans retards ; sensibilités : six stations, intervalle absolu, quantile par saison, règle de deux semaines seule. | Plan, section 2 ; exécutions de validation et du modèle figé |
+| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Configuration fixée dans le plan avant la validation ; variables nommées, coefficients montrés à côté d'un ajustement sans retards ; sensibilités : six stations, intervalle absolu, quantile par saison, première formulation de la règle 2. | Plan, section 2 ; exécutions de validation et du modèle figé |
 | SR 11-7, qualité et pertinence des données | 23 portes de qualité sur toute la fenêtre, chaque réparation documentée ; représentativité de la station ; en production, un moniteur de qualité quotidien sur les enregistrements bruts. | Rapport de qualité des données ; rejouées |
 | SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures ; empreinte du modèle vérifiée avant et après ; la rejouée de 2024 refuse de tourner si les règles diffèrent de l'étiquette `rules-frozen`. Chaque garde a son bris. | Section 9 |
 | SR 11-7, surveillance continue : étalonnage comparatif | Référence naïve ; météo observée comme borne optimiste ; modèle figé contre plis réajustés sur 2023 (analyse de résultats en parallèle). | Sections 2 et 6 |

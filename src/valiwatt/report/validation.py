@@ -14,12 +14,12 @@ from pathlib import Path
 import pandas as pd
 
 from valiwatt import attribution
-from valiwatt.paths import REPO_ROOT
+from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import figures as F
 from valiwatt.report.lineage import Chain, follow
 from valiwatt.report.render import assert_public_safe, environment
 
-OUT = REPO_ROOT / "docs" / "report"
+OUT = REPORTS
 STAMP = OUT / "stamp.json"
 LANGS = ("fr", "en")
 
@@ -78,9 +78,9 @@ def figures(ctx: dict, lang: str) -> dict:
         "replay-2024-drift": lambda path: F.replay_drift(r["weeks"], lang, path),
     }
     for name, job in jobs.items():
-        path = OUT / "figures" / f"{name}.{lang}.png"
+        path = OUT / "figures" / "validation" / f"{name}.{lang}.png"
         job(path)
-        out[name.replace("-", "_")] = f"figures/{path.name}"
+        out[name.replace("-", "_")] = f"figures/validation/{path.name}"
     return out
 
 

@@ -196,7 +196,9 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
     last_year = thresholds.get("last_year")
     if last_year is None or int(last_year) >= first.year:
         raise LookaheadError(f"thresholds from weeks up to {last_year} cannot judge a replay starting {first.date()}")
-    late = [w for w in thresholds.get("weekly_validation", []) if pd.Timestamp(w["first_day"]) >= first]
+    if "weekly_validation" not in thresholds:
+        raise LookaheadError("thresholds carry no list of the weeks they came from: their period cannot be checked")
+    late = [w for w in thresholds["weekly_validation"] if pd.Timestamp(w["first_day"]) >= first]
     if late:
         raise LookaheadError(f"thresholds were computed on {len(late)} weeks of the replayed period")
     if not reference_forecasts["day"].lt(first).all():
@@ -231,7 +233,7 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
                 else:  # a partial first or last week: the weekly monitors stay quiet
                     drift, sample = {"temperature": float("nan"), "forecast": float("nan")}, {}
                 rec_w = week_record(week_start, wk.dropna(subset=["ape", "covered"]), wdays, drift, thresholds)
-                decision = decide(rec_w, weeks[-1] if weeks else None)
+                decision = decide(rec_w, weeks[-1] if weeks else None, weeks[-2] if len(weeks) > 1 else None)
                 weeks.append(rec_w)
                 decisions.append(decision)
                 if any(rec_w["drift_flags"].values()):

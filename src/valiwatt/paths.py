@@ -12,7 +12,7 @@ RAW_HQ = RAW / "hydroquebec"
 RAW_ECCC = RAW / "eccc"
 INTERIM = DATA / "interim"
 MLRUNS = REPO_ROOT / "mlruns"
-REPORTS = REPO_ROOT / "reports"
+REPORTS = REPO_ROOT / "docs" / "report"  # rendered reports, committed (owner's ruling)
 
 
 def rel(path: Path) -> str:

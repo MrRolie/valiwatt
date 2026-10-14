@@ -70,6 +70,8 @@ def load_validation(dq):
 
     from valiwatt.tracking import client, latest_run
 
+    if dq.data.tags.get("rules_sha256") != rules_sha256():
+        raise LineageError(f"data-quality run {dq.info.run_id} was made under other rules; run `valiwatt dq` again")
     run = latest_run(EXPERIMENT, "tags.kind = 'validation' and tags.status = 'complete'")
     if run.data.tags.get("dq_run_id") != dq.info.run_id:
         raise LineageError(f"validation run {run.info.run_id} was built on another data-quality run; "

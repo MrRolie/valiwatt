@@ -98,9 +98,10 @@ def render(run_id: str | None = None) -> list[Path]:
         results = json.loads(Path(c.download_artifacts(run.info.run_id, "results/dq_results.json", tmp)).read_text())
         figs = Path(c.download_artifacts(run.info.run_id, "figures", tmp))
         REPORTS.mkdir(parents=True, exist_ok=True)
-        if (REPORTS / "figures").exists():
-            shutil.rmtree(REPORTS / "figures")
-        shutil.copytree(figs, REPORTS / "figures")
+        for lang in LANGS:  # only this report's figure folders: the validation report keeps its own
+            if (REPORTS / "figures" / lang).exists():
+                shutil.rmtree(REPORTS / "figures" / lang)
+            shutil.copytree(figs / lang, REPORTS / "figures" / lang)
 
     context = {
         "r": results,
@@ -120,5 +121,5 @@ def render(run_id: str | None = None) -> list[Path]:
         out.write_text(text, encoding="utf-8")
         c.log_artifact(run.info.run_id, str(out), "report")
         written.append(out)
-    print("rendered " + ", ".join(f"reports/{p.name}" for p in written) + f" from run {run.info.run_id}")
+    print("rendered " + ", ".join(f"docs/report/{p.name}" for p in written) + f" from run {run.info.run_id}")
     return written

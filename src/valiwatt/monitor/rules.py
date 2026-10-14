@@ -11,6 +11,14 @@ direction of the failure) are set aside. Why two: the forecast reuses demand fro
 single bad day of demand also spoils the next day's forecast and the same day's a week later, and that never puts more
 than two spoiled days into one week. With those two days set aside, the five left are untouched by the bad day, so the
 week fails only if its own other days fail. One bad day alone can therefore never yield *retrain* or *recalibrate*.
+
+A bad stretch of up to a week comes back a week later through the 168-hour lag as an echo of the OPPOSITE sign. So a
+MAPE pair whose two weeks have their bias flagged on opposite sides is an episode and its echo, not the same failure
+twice, and does not count.
+
+Trimming costs power against a slow, sustained shift. So rule 2 has a second arm: the weekly bias beyond the SAME side
+of its band three weeks running (untrimmed). One bad day touches at most two weeks, and a bad stretch of up to a week
+is followed by an echo of the opposite sign, so neither can put three weeks on the same side.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ QUANTILES = {"mape_high": 0.95, "bias_low": 0.025, "bias_high": 0.975, "coverage
 MIN_WEEK_HOURS = 120
 MIN_DAY_HOURS = 18
 CONSECUTIVE_WEEKS = 2
+SUSTAINED_WEEKS = 3  # the sustained-bias arm of rule 2
 TRIM_DAYS = 2
 MIN_TRIMMED_DAYS = 3
 # Day-level data quality: the primary station may miss at most this many of the day's hours.
@@ -138,13 +147,24 @@ def _evaluated(w: dict | None) -> bool:
     return bool(w and w["evaluated"])
 
 
-def decide(week: dict, previous: dict | None) -> dict:
-    """The ordered decision table for one week. `previous` is the record of the calendar week just before, or None.
+def _adjacent(later: dict | None, earlier: dict | None) -> dict | None:
+    if later is None or earlier is None:
+        return None
+    return earlier if earlier["week_start"] == later["week_start"] - pd.Timedelta(days=7) else None
+
+
+def _opposite_bias(a: dict, b: dict) -> bool:
+    return (a["flags"]["bias_low"] and b["flags"]["bias_high"]) or (a["flags"]["bias_high"] and b["flags"]["bias_low"])
+
+
+def decide(week: dict, previous: dict | None, before: dict | None = None) -> dict:
+    """The ordered decision table for one week. `previous` and `before` are the records of the two calendar weeks just
+    before (None when missing).
 
     A week whose data quality failed, or with too few hours, has no performance statistics; it breaks any streak, so
-    the two weeks a rule needs are always adjacent weeks that were both evaluated."""
-    if previous is not None and previous["week_start"] != week["week_start"] - pd.Timedelta(days=7):
-        previous = None
+    the weeks a rule needs are always adjacent weeks that were all evaluated."""
+    previous = _adjacent(week, previous)
+    before = _adjacent(previous, before)
     fired = []
     if week["dq_failed"]:
         fired.append({"rule": 1, "recommendation": INVESTIGATE, "why": "data_quality",
@@ -152,9 +172,15 @@ def decide(week: dict, previous: dict | None) -> dict:
     pair = (week, previous)
     if not week["dq_failed"] and all(_evaluated(w) for w in pair):
         same = [k for k in ("mape_high", "bias_high", "bias_low") if all(w["broad"][k] for w in pair)]
-        if same:
-            fired.append({"rule": 2, "recommendation": RETRAIN, "why": same,
-                          "evidence": [_perf_evidence(w) for w in pair]})
+        if "mape_high" in same and _opposite_bias(week, previous):
+            same.remove("mape_high")  # an episode and its echo, not the same failure twice
+        three = (week, previous, before)
+        sustained = [k for k in ("bias_high", "bias_low")
+                     if all(_evaluated(w) for w in three) and all(w["flags"][k] for w in three)]
+        if same or sustained:
+            weeks = three if sustained else pair
+            fired.append({"rule": 2, "recommendation": RETRAIN, "why": same + [f"{k}_sustained" for k in sustained],
+                          "evidence": [_perf_evidence(w) for w in weeks]})
         bias_inside = all(not (w["flags"]["bias_high"] or w["flags"]["bias_low"]) for w in pair)
         if all(w["broad"]["coverage_low"] for w in pair) and bias_inside:
             fired.append({"rule": 3, "recommendation": RECALIBRATE, "why": ["coverage_low"],

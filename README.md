@@ -4,8 +4,11 @@ valiwatt validates and monitors a forecast of Québec's hourly electricity deman
 The forecast is deliberately simple. The project is about the checks around it: how the model is tested before it is
 trusted, how it is watched once it runs, and what it says when it should no longer be trusted.
 
-**Status: work in progress.** The data layer is in place: fetch scripts for both sources, data-quality gates, and the
-data-quality and representativeness report. The forecast, its validation and its monitoring come next.
+**Status: v1 in progress.** In place: the data layer and its gates; a day-ahead forecast (ordinary least squares on
+named features) with walk-forward validation, conformal prediction intervals and two test cases; a frozen model
+registered in MLflow; and a monitor that replays a year hour by hour and recommends *investigate the data*,
+*recalibrate* or *retrain*. Every gate and monitor has a break that makes it fire. The validation report, with its
+model card and a mapping to SR 11-7 and the NIST AI RMF, lands in [`docs/report/`](docs/report/).
 
 ## Run it
 
@@ -15,26 +18,33 @@ uv run valiwatt all      # fetch the data, run every check, render the report
 uv run pytest            # the checks' own tests (add -m network for the live-endpoint tests)
 ```
 
-`valiwatt all` downloads the public data into `data/`, runs the data-quality checks as one MLflow run (stored in
-`mlruns/`), and renders `reports/dq.fr.md` (French, the reference) and `reports/dq.en.md` from that run. None of these
-directories is in git: anyone can regenerate every figure with the one command, and a stored figure is never the
-source of truth.
+`valiwatt all` downloads the public data into `data/`, then runs the whole chain as tracked MLflow runs (stored in
+`mlruns/`): data quality, validation on 2019–2023, the frozen models, the 2023 rehearsal and the 2024 replay, and the
+breaks. It renders the reports into `docs/report/` (French, the reference, and English), stamped with the IDs of the
+runs they come from and the hash of the code that made them; a test fails when the code no longer matches the stamp.
+Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure with the one command, and the runs, not
+the rendered files, are the source of truth.
 
-Steps can also run one at a time: `valiwatt fetch`, `valiwatt dq`, `valiwatt report`. `valiwatt safety` scans what git
-tracks for anything that must not be published.
+Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
+`report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.
+`valiwatt safety` scans what git tracks for anything that must not be published.
+
+How it is built, and why each choice was made before any result was seen: [`docs/plan.md`](docs/plan.md). The
+standards the report maps to, quoted and checked against their PDFs: [`docs/standards.md`](docs/standards.md).
 
 ## The rails
 
 The rules every part of the project follows. The forecast-side ones bind from the moment the forecast lands.
 
 - **No lookahead.** Design choices use 2019 to 2023 only; 2024 is held back to be replayed as production, and the code
-  refuses design analysis that reaches into it. Forecast splits will be walk-forward with an embargo. A feature
-  unavailable at forecast time is never used, and any result that leans on observed weather in place of a weather
-  forecast says so.
-- **A check that cannot fail is not a check.** Every gate has a test that injects the fault it must catch: a duplicated
-  hour, a misplaced record, an impossible value, a sensor outage, a network-wide gap, the weather service's empty
-  response when no time zone is given.
-- **Numbers come from runs.** The report is rendered from a tracked MLflow run; no number in it is typed by hand.
+  refuses design analysis that reaches into it. Validation is walk-forward with an embargo. A feature unavailable at
+  forecast time is never used, and any result that leans on observed weather in place of a weather forecast says so.
+  The replay reads raw records through a clock that refuses anything later.
+- **A check that cannot fail is not a check.** Every gate and monitor has a test that injects the fault it must catch:
+  a duplicated hour, a misplaced record, an impossible value, a sensor outage, a reading past the clock, a shifted
+  demand level, intervals made too narrow, a moved freeze tag. `valiwatt breaks` runs them all as a tracked run, and
+  the report refuses to render if one did not fire.
+- **Numbers come from runs.** The reports are rendered from tracked MLflow runs; no number in them is typed by hand.
 - **Claims stay within the checks.** Each report ends with what it does not show.
 - **The monitor recommends; it never acts.** When a threshold trips, it writes a recommendation with its evidence;
   nothing retrains on its own.

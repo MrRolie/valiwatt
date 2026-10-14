@@ -66,10 +66,53 @@ def test_a_rule_file_added_after_the_tag_is_refused(repo):
 
 def test_a_moved_tag_is_refused_unless_recorded_as_a_departure():
     freeze = {"freeze_commit": "b" * 40}
-    mrun.check_tag_not_moved(freeze, {"b" * 40, ""}, departure=False)
+    assert mrun.check_tag_not_moved(freeze, {"b" * 40: ["r1"]}, departure=False) == []
     with pytest.raises(mrun.FreezeError):
-        mrun.check_tag_not_moved(freeze, {"a" * 40}, departure=False)
-    mrun.check_tag_not_moved(freeze, {"a" * 40}, departure=True)
+        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=False)
+    with pytest.raises(mrun.FreezeError):  # a bare flag is not a record
+        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True, recorded="None yet.")
+    agents = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'b' * 12}: reason.\n\n## Other\n"
+    assert mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True,
+                                    recorded=mrun.recorded_departures(agents)) == ["r0"]
+
+
+def test_earlier_replays_are_found_even_when_deleted(tmp_path, monkeypatch):
+    import mlflow
+    from mlflow.entities import ViewType
+
+    from valiwatt import tracking
+
+    monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    c = tracking.client()
+    exp = tracking.experiment_id(mrun.EXPERIMENT)
+    with mlflow.start_run(experiment_id=exp) as r:
+        mlflow.set_tags({"kind": "replay", "year": "2024", "freeze_commit": "a" * 40})
+    c.delete_run(r.info.run_id)
+    assert not c.search_runs([exp], "tags.kind = 'replay'")  # hidden from the default view
+    assert mrun.earlier_freeze_commits(2024, c) == {"a" * 40: [r.info.run_id]}
+    assert c.search_runs([exp], "tags.kind = 'replay'", run_view_type=ViewType.ALL)
+    with pytest.raises(mrun.FreezeError):
+        mrun.check_tag_not_moved({"freeze_commit": "b" * 40}, mrun.earlier_freeze_commits(2024, c), departure=False)
+
+
+def test_raw_files_other_than_the_checked_ones_are_refused(monkeypatch):
+    from valiwatt.quality import run as qrun
+
+    monkeypatch.setattr(qrun, "_verify_raw", lambda: ({"sha256": "h" * 64}, []))
+    monkeypatch.setattr(qrun, "eccc_manifests_sha256", lambda: "e" * 64)
+    good = SimpleNamespace(info=SimpleNamespace(run_id="dq"), data=SimpleNamespace(
+        tags={}, params={"hq_sha256": "h" * 64, "eccc_manifests_sha256": "e" * 64}))
+    for bad in ({"hq_sha256": "x" * 64}, {"eccc_manifests_sha256": "x" * 64}):
+        dq = SimpleNamespace(info=good.info, data=SimpleNamespace(tags={}, params=good.data.params | bad))
+        with pytest.raises(LineageError):
+            mrun.load_raw(dq)
+
+
+def test_a_registered_model_that_changed_during_the_replay_fails_it():
+    mrun.check_unchanged("a", "a", "a")
+    for shas in (("b", "a", "a"), ("a", "b", "a"), ("a", "a", "b")):
+        with pytest.raises(mrun.MonitorActedError):
+            mrun.check_unchanged(*shas)
 
 
 def fake_run(run_id, **tags):
@@ -89,7 +132,9 @@ def test_validation_from_another_data_quality_run_or_rule_set_is_refused(monkeyp
     from valiwatt import tracking
     from valiwatt.forecast import validate as vd
 
-    dq = fake_run("dq")
+    with pytest.raises(LineageError):  # a data-quality run made under other rules
+        vd.load_validation(fake_run("dq", rules_sha256="old"))
+    dq = fake_run("dq", rules_sha256=rules.rules_sha256())
     monkeypatch.setattr(tracking, "latest_run", lambda *a, **k: fake_run("v", dq_run_id="other",
                                                                          rules_sha256=rules.rules_sha256()))
     with pytest.raises(LineageError):

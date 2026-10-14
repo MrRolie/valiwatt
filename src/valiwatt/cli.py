@@ -55,8 +55,11 @@ def cmd_breaks(args) -> int:
 
 def cmd_report(args) -> int:
     from valiwatt.report.render import render
+    from valiwatt.report.validation import render_validation
 
     render(run_id=args.run_id)
+    if not args.dq_only:
+        render_validation()
     return 0
 
 
@@ -67,8 +70,14 @@ def cmd_safety(args) -> int:
 
 
 def cmd_all(args) -> int:
-    args.only, args.run_id = None, None
-    for step in (cmd_fetch, cmd_dq, cmd_report):
+    """The whole chain, in order: every figure in docs/report/ is regenerated from fresh runs."""
+    from valiwatt.forecast.freeze import run_freeze
+    from valiwatt.monitor.run import run_replay
+
+    args.only, args.run_id, args.dq_only, args.departure = None, None, False, False
+    steps = (cmd_fetch, cmd_dq, cmd_validate, lambda a: run_freeze(2023), lambda a: run_replay(2023),
+             lambda a: run_freeze(2024), lambda a: run_replay(2024), cmd_breaks, cmd_report)
+    for step in steps:
         code = step(args)
         if code:
             return code
@@ -97,14 +106,15 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_replay)
     p = sub.add_parser("breaks", help="run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
-    p = sub.add_parser("report", help="render the data-quality report from a tracked run")
-    p.add_argument("--run-id")
+    p = sub.add_parser("report", help="render the data-quality and validation reports into docs/report/")
+    p.add_argument("--run-id", help="the data-quality run to render (default: the latest that passed)")
+    p.add_argument("--dq-only", action="store_true", help="render the data-quality report only")
     p.set_defaults(func=cmd_report)
     p = sub.add_parser("safety", help="scan tracked and staged files for anything private (run before each commit)")
     p.add_argument("--no-private-patterns", action="store_true",
                    help="scan without the gitignored private name list (CI); private names are then not checked")
     p.set_defaults(func=cmd_safety)
-    p = sub.add_parser("all", help="fetch, check and render: regenerates every figure")
+    p = sub.add_parser("all", help="fetch, check, validate, freeze, replay, break and render: every figure")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_all)
     args = parser.parse_args(argv)

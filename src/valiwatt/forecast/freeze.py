@@ -129,7 +129,8 @@ def run_freeze(replay_year: int) -> int:
     val, oos = load_validation(dq)
     f = design_features(demand, temperature_sources(weather)["primary"])
     frozen, coef = fit_frozen(f, oos, replay_year)
-    example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24)
+    # The hour is declared a float in the model signature: an hour without inputs comes through as NaN.
+    example = f[f["day"] <= pd.Timestamp(frozen.train_last_day)][INPUT_COLUMNS].dropna().tail(24).astype({"hour": float})
     run, version = log_frozen(frozen, coef, example, {"validation_run_id": val.info.run_id, "dq_run_id": dq.info.run_id,
                                                       "rules_sha256": rules_sha256()})
     print(f"frozen model for {replay_year}: run {run.info.run_id}, {MODEL_NAME} v{version} "

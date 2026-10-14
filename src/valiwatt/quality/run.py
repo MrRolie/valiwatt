@@ -117,7 +117,10 @@ def run_dq() -> int:
         "gates_passed": not failed,
     }
 
-    with start_run(EXPERIMENT, "data-quality", tags={"kind": "dq", "valiwatt_version": __version__}) as run:
+    from valiwatt.monitor.rules import rules_sha256
+
+    with start_run(EXPERIMENT, "data-quality", tags={"kind": "dq", "valiwatt_version": __version__,
+                                                     "rules_sha256": rules_sha256()}) as run:
         mlflow.log_params({
             "hq_sha256": hq_manifest["sha256"], "hq_rows": hq_manifest["rows"],
             "eccc_manifests_sha256": eccc_manifests_sha256(),

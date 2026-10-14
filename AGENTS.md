@@ -53,3 +53,11 @@ the gap goes to the owner as a question.
 ## Departures from the brief
 
 None yet.
+
+## Departures from the frozen monitoring rules
+
+The monitoring rules are frozen by the `rules-frozen` tag before the 2024 replay (`docs/plan.md`, section 4). Any
+change to a rule file after that tag is listed here with its date, its reason and the commit, the report labels it
+post hoc and shows the earlier replay beside it, and the 2024 replay runs again only with `--departure`.
+
+None yet.

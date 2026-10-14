@@ -78,11 +78,14 @@ def test_a_drift_reference_holding_replayed_days_is_refused():
 
 
 def test_thresholds_built_on_the_replayed_year_are_refused():
-    th = dict(thresholds(), last_year=2022)
     with pytest.raises(LookaheadError):
-        run(th=th, end="2022-01-09")
+        run(th=dict(thresholds(), last_year=2022), end="2022-01-09")
+    for key in ("last_year", "weekly_validation"):
+        with pytest.raises(LookaheadError):
+            run(th={k: v for k, v in thresholds().items() if k != key}, end="2022-01-09")
+    late = dict(thresholds(), weekly_validation=thresholds()["weekly_validation"] + [{"first_day": "2022-01-03"}])
     with pytest.raises(LookaheadError):
-        run(th={k: v for k, v in thresholds().items() if k != "last_year"}, end="2022-01-09")
+        run(th=late, end="2022-01-09")
 
 
 @pytest.mark.parametrize("day", ["2022-01-15", "2022-01-16"])
@@ -101,14 +104,20 @@ def test_a_one_day_shock_never_yields_retrain(day):
     assert RECALIBRATE not in [rec for _, rec in recommendations(r)]
 
 
-def test_a_depressed_week_and_its_lag_echo_do_not_yield_retrain():
-    """One low week (bias out low) is echoed the next week through the 168 h lag (bias out high): opposite failures,
-    not the same failure twice."""
+@pytest.mark.parametrize("factor", [0.7, 0.8, 1.3])
+def test_a_bad_week_and_its_lag_echo_do_not_yield_retrain(factor):
+    """One bad week comes back the next week through the 168 h lag with the opposite sign: both weeks are out of band
+    (bias on opposite sides, MAPE high in both), and the two-week rule alone would retrain; the rules do not."""
     raw, _ = world()
     week = (raw["ts_utc"] > pd.Timestamp("2022-01-10T05:00Z")) & (raw["ts_utc"] <= pd.Timestamp("2022-01-17T05:00Z"))
-    r = run(raw=raw.assign(mw=raw["mw"] * np.where(week, 0.95, 1.0)))
+    r = run(raw=raw.assign(mw=raw["mw"] * np.where(week, factor, 1.0)))
     wk = {w["week_start"].date().isoformat(): w for w in r.weeks}
-    assert wk["2022-01-10"]["flags"]["bias_low"]  # the break bites
+    a, b = wk["2022-01-10"], wk["2022-01-17"]
+    low, high = ("bias_low", "bias_high") if factor < 1 else ("bias_high", "bias_low")
+    assert a["flags"][low] and b["flags"][high]  # the break bites: the echo is flagged, on the other side
+    if factor > 1:  # in this world the upward shock also keeps MAPE broadly high in both weeks: the MAPE path
+        assert a["broad"]["mape_high"] and b["broad"]["mape_high"]
+    assert two_week_rule_alone(b, a)
     assert RETRAIN not in [rec for _, rec in recommendations(r)]
 
 
@@ -251,3 +260,59 @@ def test_records_after_a_cut_change_nothing_judged_before_it(clean):
     judged = [d for d in clean.days if d["day"] < pd.Timestamp("2022-01-23")]
     assert [d for d in r.days if d["day"] < pd.Timestamp("2022-01-23")] == judged
     assert r.weeks[:2] == clean.weeks[:2] and r.decisions[:2] == clean.decisions[:2]
+
+
+def test_a_record_that_arrives_late_is_not_used_before_it_arrives(clean):
+    """The clock break on the replay's real read path: an hour whose record only arrives a week later is missing when
+    its day is judged, even though the data-quality layer would later move that record into it."""
+    raw, _ = world()
+    hour, late_ts = pd.Timestamp("2022-01-20T10:00Z"), pd.Timestamp("2022-01-27T22:00Z")
+    moved = pd.concat([raw[raw["ts_utc"] != hour], raw[raw["ts_utc"] == hour].assign(ts_utc=late_ts)])
+    r = run(raw=moved)
+    assert np.isnan(r.hourly.loc[hour, "target"]) and r.hourly.loc[hour, "status"] == "missing_record"
+    day = next(d for d in r.days if d["day"] == pd.Timestamp("2022-01-20"))
+    assert {"kind": "missing_hour", "utc": hour} in day["problems"]
+
+
+def week(start, bias=0.0, broad=(), flags=(), evaluated=True):
+    t = {"mape_high": 0.05, "bias_low": -0.03, "bias_high": 0.03, "coverage_low": 0.7}
+    keys = ("mape_high", "bias_high", "bias_low", "coverage_low")
+    return {"week_start": pd.Timestamp(start), "season": "winter", "thresholds": t, "hours": 168, "dq_failed": False,
+            "dq_failed_days": [], "drift": {"temperature": 0.1, "forecast": 0.1},
+            "drift_thresholds": {"temperature": 1.0, "forecast": 1.0},
+            "drift_flags": {"temperature": False, "forecast": False}, "evaluated": evaluated,
+            "stats": {"mape": 0.04, "rel_bias": bias, "covered": 0.9, "hours": 168},
+            "flags": {k: k in flags for k in keys}, "trimmed": {k: 0.0 for k in keys},
+            "broad": {k: k in broad for k in keys}}
+
+
+def test_a_bias_beyond_the_same_side_three_weeks_running_yields_retrain():
+    from valiwatt.monitor.rules import decide
+
+    w1, w2, w3 = (week(d, 0.04, flags=("bias_high",)) for d in ("2024-01-01", "2024-01-08", "2024-01-15"))
+    d = decide(w3, w2, w1)
+    assert d["recommendation"] == RETRAIN and d["fired"][0]["why"] == ["bias_high_sustained"]
+    assert decide(w2, w1)["recommendation"] is None  # two weeks are not enough without breadth
+    flip = week("2024-01-08", -0.04, flags=("bias_low",))
+    assert decide(w3, flip, w1)["recommendation"] is None  # an echo in between breaks it
+    gap = week("2024-01-08", 0.04, flags=("bias_high",), evaluated=False)
+    assert decide(w3, gap, w1)["recommendation"] is None  # an unjudged week breaks it
+
+
+def test_a_mape_pair_with_bias_on_opposite_sides_is_an_echo_not_retrain():
+    from valiwatt.monitor.rules import decide
+
+    a = week("2024-01-01", -0.05, broad=("mape_high",), flags=("mape_high", "bias_low"))
+    b = week("2024-01-08", 0.05, broad=("mape_high",), flags=("mape_high", "bias_high"))
+    assert decide(b, a)["recommendation"] is None
+    c = week("2024-01-08", 0.0, broad=("mape_high",), flags=("mape_high",))
+    assert decide(c, a)["recommendation"] == RETRAIN  # variance decay with no bias flip still fires
+
+
+def test_detection_power_finds_a_large_sustained_shift_and_nothing_without_one(clean):
+    from valiwatt.monitor.run import detection_power
+
+    th = thresholds()
+    out = detection_power(clean, th, biases=(0.0, 0.08), horizon=4)
+    by_bias = {row["bias"]: row["weeks_to_retrain"] for row in out}
+    assert by_bias[0.0] is None and by_bias[0.08] is not None and by_bias[0.08] <= 3

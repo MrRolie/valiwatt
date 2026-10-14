@@ -108,7 +108,9 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the
   package and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a
   file added later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a
-  tag moved since an earlier 2024 replay unless that move is recorded. Any later change to the rules is listed in
+  tag moved since an earlier 2024 replay (deleted runs included) unless `AGENTS.md` records that move by commit and
+  the run is asked for with `--departure`; such a run names the replays it departs from. Every run, the data-quality
+  run included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed in
   `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it.
 
 ## 5. Monitoring: 2024 replayed as production
@@ -128,7 +130,8 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
 - **An ordered decision table.** Each week the replay emits at most one recommendation, with all evidence listed:
   1. A data-quality failure that week → *investigate the data*; the performance rules are suppressed for that week.
   2. The same performance failure two weeks running (MAPE above its threshold both weeks, or bias beyond the same
-     side of its band both weeks), broad in each week → *retrain*.
+     side of its band both weeks), broad in each week; or the bias beyond the same side of its band three weeks
+     running → *retrain*.
   3. Coverage below its threshold two weeks running, broad in each week, while bias stays inside its band both weeks
      → *recalibrate the intervals*.
   4. The same input (temperature, or forecast) drifting beyond its alarm level two weeks running, with performance
@@ -139,7 +142,12 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   one bad day of demand also spoils the next day's forecast and the same day's a week later; that never puts more
   than two spoiled days into one week, and with two days set aside the other five must fail on their own. So one bad
   day alone never yields *retrain* or *recalibrate*, and neither does one bad week followed by its own echo through
-  the week-old lag (an echo has the opposite sign, so it is not the same failure twice). A week with a data-quality
+  the week-old lag: the echo has the opposite sign, so a bias pair is not the same failure twice, and a MAPE pair
+  whose two weeks have their bias flagged on opposite sides does not count either. Trimming costs power against a
+  slow, sustained shift, hence the three-week arm of rule 2: one bad day touches at most two weeks, and a bad stretch
+  of up to a week is followed by an echo of the opposite sign, so neither puts three weeks on the same side. Each
+  replay also measures the rules' power: from the first full week of each season, a sustained gap of ±2 to ±8 % is
+  put between forecast and demand, and the weeks until *retrain* are logged. A week with a data-quality
   failure or fewer than 120 scored hours has no performance statistics and breaks any streak. The first wording of
   rule 2 (MAPE or bias out of band two weeks running, in any mix) is logged beside the decisions as a sensitivity; it
   never recommends.
@@ -155,14 +163,16 @@ built:
 
 - *Lookahead:* a feature reading demand after its origin is refused; a training row inside the embargo or after the
   fold start is refused; design code given a 2024 row is refused; thresholds derived from replay data are refused.
-- *Clock:* the replay reading past its clock raises; records corrupted after a cut change nothing judged before it.
+- *Clock:* the replay reading past its clock raises; records corrupted after a cut change nothing judged before it;
+  a record that arrives a week late is not used before it arrives.
 - *Monitors:* injected temperature drift fires the drift monitor (the seasonal reference stays quiet on clean data);
   an injected sensor gap fires data quality, and so do a missing and a duplicated demand record; a shifted demand
   level fires *retrain*; deflated intervals fire *recalibrate*; two rules at once yield one recommendation with both
   pieces of evidence; a one-day shock at the end of a week (the worst place) does not yield *retrain*, while the
   two-week rule alone would; neither does a low week and its echo; with two days altered in any way, the trimmed
   statistic never passes the untouched days (a property checked on 2,000 draws); a drift reference holding replayed
-  days, and thresholds built on the replayed year, are refused; partial weeks have no drift statistic.
+  days, and thresholds built on the replayed year, are refused; partial weeks have no drift statistic; bias beyond
+  the same side three weeks running fires *retrain*, unless an echo or an unjudged week breaks the run.
 - *Freeze:* the 2024 replay is refused with no tag, with a rule file edited or added after it, or under a moved tag;
   a frozen model or validation run from other data, another year or other rules is refused; so is a model file or
   registered model whose hash no longer matches.
