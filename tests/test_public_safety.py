@@ -12,6 +12,7 @@ from valiwatt.safety import (
     PNG_SIGNATURE,
     ScanError,
     main,
+    png_text,
     private_patterns,
     scan,
     scan_history,
@@ -26,7 +27,8 @@ def test_staged_tree_is_public_safe():
 
 
 def test_commit_history_is_public_safe():
-    # Fails while any commit message names something private; the fix is a history rewrite the owner approves.
+    # Fails while any file, commit message or tag message in the history holds something private; the fix is a
+    # history rewrite the owner approves.
     assert scan_history(REPO_ROOT, private_patterns(REPO_ROOT)) == []
 
 
@@ -158,6 +160,71 @@ def test_a_report_figure_passes_only_when_well_formed_with_clean_metadata(repo):
         assert flagged(f"docs/report/figures/en/{name}.png") == [f"docs/report/figures/en/{name}.png:1: home path"]
     assert flagged("docs/report/figures/en/tail.png") == ["docs/report/figures/en/tail.png: binary file tracked"]
     assert flagged("elsewhere.png") == ["elsewhere.png: binary file tracked"]
+
+
+def test_a_figure_with_an_unknown_chunk_or_a_bad_checksum_is_refused(repo):
+    """Only the standard chunk types are read or allowed: an eXIf block or a private chunk would carry bytes the scan
+    never reads, and a chunk whose checksum is wrong is not well formed."""
+    root, git = repo
+    figures = root / "docs" / "report" / "figures"
+    figures.mkdir(parents=True)
+    clean = png((b"tEXt", b"Software\0Matplotlib"))
+    bad_crc = bytearray(clean)
+    bad_crc[-13] ^= 0xFF  # the last byte of the tEXt chunk's checksum, just before IEND's 12 bytes
+    cases = {"standard": png((b"sRGB", b"\0"), (b"pHYs", bytes(9))), "exif": png((b"eXIf", b"MM\0*")),
+             "private": png((b"prVt", b"x")), "crc": bytes(bad_crc)}
+    for name, data in cases.items():
+        (figures / f"{name}.png").write_bytes(data)
+    assert png_text(clean) == "Software Matplotlib" and png_text(bytes(bad_crc)) is None
+    git("add", "-f", "docs/report/figures")
+    issues = scan_index(root)
+    assert issues == [f"docs/report/figures/{n}.png: binary file tracked" for n in ("crc", "exif", "private")]
+
+
+def test_scan_fires_on_home_shorthands_but_not_on_prose():
+    for text in ("~" + "/notes", "cd ~" + "/.config", "$HO" + "ME/project", "${HO" + "ME}/project"):
+        assert scan_text("f.md", f"line\n{text}\n") == ["f.md:2: home path"], text
+    for text in ("about ~3 GW", "~ /", "~" + "/ alone", "$HO" + "ME is set", "${HO" + "ME}", "a/b~c"):
+        assert scan_text("f.md", text) == [], text
+
+
+def test_history_scan_reads_deleted_files_and_leftover_refs(repo):
+    """A file deleted or untracked later, a forbidden path, a binary file and a commit only a leftover ref reaches all
+    stay in the history; the staged tree no longer shows any of them."""
+    root, git = repo
+    (root / "data").mkdir()
+    (root / "notes.md").write_text("see /ho" + "me/someone/notes\n")
+    (root / "data" / "raw.csv").write_text("x\n")
+    (root / "a.md").write_text("x\n")  # the same blob as data/raw.csv, under a path that may be tracked
+    (root / "blob.bin").write_bytes(b"\xff\xfe\x00binary")
+    git("add", "-f", "notes.md", "data/raw.csv", "a.md", "blob.bin")
+    git("commit", "-q", "-m", "first")
+    git("rm", "-q", "--cached", "notes.md", "data/raw.csv", "blob.bin")
+    git("commit", "-q", "-m", "second")
+    (root / "c.md").write_text("token gh" + "p_" + "c" * 36 + "\n")
+    git("add", "c.md")
+    git("commit", "-q", "-m", "third")
+    git("update-ref", "refs/original/refs/heads/leftover", "HEAD")
+    git("reset", "-q", "--hard", "HEAD~1")
+    assert scan_index(root) == []
+    issues = scan_history(root)
+    expected = ["notes.md (blob ", "data/raw.csv (in the history): must never be tracked", "blob.bin (blob ",
+                "c.md (blob "]
+    for start in expected:
+        assert any(i.startswith(start) for i in issues), start
+    assert any(i.startswith("notes.md") and i.endswith(":1: home path") for i in issues)
+    assert any(i.startswith("blob.bin") and i.endswith(": binary file in the history") for i in issues)
+    assert any(i.startswith("c.md") and i.endswith(":1: GitHub token") for i in issues)
+
+
+def test_history_scan_reads_annotated_tag_messages(repo):
+    root, git = repo
+    (root / "a.md").write_text("x\n")
+    git("add", "a.md")
+    git("commit", "-q", "-m", "init")
+    git("tag", "-a", "v1", "-m", "frozen\n\nmade at /ho" + "me/someone/x")
+    git("tag", "light")
+    assert scan_history(root) == ["tag v1 message:3: home path"]
 
 
 def test_full_scan_includes_the_history(repo):
