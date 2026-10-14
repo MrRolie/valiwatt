@@ -36,7 +36,10 @@ the gap goes to the owner as a question.
   2026-10-14).
 - The history was rewritten once, on 2026-10-14 at the owner's ruling and before any public push: agent session URLs
   were stripped from every commit message and the two `BRIEF.md` lines above removed. Every commit's hash changed;
-  the `rules-frozen` tag was recreated on the rewritten commit, its rule files byte-identical.
+  the `rules-frozen` tag was recreated on the rewritten commit, its rule files byte-identical. The 2024 replay then
+  ran again under the recreated tag, in a fresh run store, and gave the same MAPE, coverage and recommendations as
+  before; that rerun is the ledger's first entry. The replays from before the rewrite ran under a commit that no
+  longer exists and are not in the ledger.
 - Push only to the private remote; it turns public only at the owner's go.
 - If `ESTATE.local.md` exists, read it: it holds private context for sessions on the owner's machine. Never commit it,
   quote it or reference its contents in a tracked file.

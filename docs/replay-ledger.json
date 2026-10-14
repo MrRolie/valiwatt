@@ -1,3 +1,20 @@
 {
-  "replays": []
+  "replays": [
+    {
+      "run_id": "91f7e3faecee4a899381edd47b4ffc3f",
+      "year": 2024,
+      "freeze_tag": "rules-frozen",
+      "freeze_commit": "7ad8b71088fdbc93da7d7717cb6f0f4b211ae88d",
+      "rules_sha256": "addf19afe5cd7959702740426462862989d5f377967077cdaf7099568fcd40dc",
+      "code_sha256": "48d7de9c43e7e539cb5cffda044abd43351837fc1dfad1c4cbfda120d8885201",
+      "started_utc": "2026-10-14T22:48:56.547Z",
+      "ended_utc": "2026-10-14T22:48:58.424Z",
+      "status": "complete",
+      "mape": 0.04230586682355211,
+      "coverage": 0.8942680977392099,
+      "recommendations": [],
+      "departure": false,
+      "departure_from": []
+    }
+  ]
 }
