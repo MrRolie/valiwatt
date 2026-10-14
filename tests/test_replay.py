@@ -69,6 +69,50 @@ def test_a_forecast_issued_after_its_origin_is_refused():
         rp.issue(state, frozen, pd.Timestamp("2022-01-05"))
 
 
+def state_at(t):
+    raw, obs = world()
+    clock = Clock(t)
+    return rp._State(RawFeed(raw, clock, "demand"), RawFeed(obs, clock, "temperature"), clock,
+                     scale_last=pd.Timestamp("2022-01-01T05:00Z")), clock
+
+
+def test_a_day_scored_before_the_hour_after_its_last_hour_is_refused():
+    """The next record is what shows whether the day's last hour was a spike: scoring at the last hour itself is
+    too early."""
+    frozen, _ = frozen_and_reference()
+    day = pd.Timestamp("2022-01-05")
+    state, clock = state_at(rp.origin(day))
+    issued = rp.issue(state, frozen, day)
+    last = rp.origin(day) + 24 * rp.H
+    clock.advance(last)
+    with pytest.raises(LookaheadError, match="before the hour after its last hour"):
+        rp.score_day(state, day, issued)
+    clock.advance(last + rp.H)
+    _, rec = rp.score_day(state, day, issued)
+    assert rec["scored_hours"] == 24 and not rec["judged_at_data_end"]
+
+
+@pytest.mark.parametrize("column", ["origin", "day"])
+def test_a_forecast_built_on_rows_of_another_origin_or_day_is_refused(column, monkeypatch):
+    """A feature row whose origin moved an hour earlier still reads its lags at or before it, so only the issue
+    check sees it; a row labelled with another day likewise."""
+    frozen, _ = frozen_and_reference()
+    day = pd.Timestamp("2022-01-05")
+    state, _ = state_at(rp.origin(day))
+    real = rp.build
+
+    def shifted(dem, temp):
+        f = real(dem, temp)
+        t = rp.origin(day) + 12 * rp.H
+        f.loc[t, column] = f.loc[t, column] - (rp.H if column == "origin" else pd.Timedelta(days=1))
+        return f
+
+    rp.issue(state, frozen, day)
+    monkeypatch.setattr(rp, "build", shifted)
+    with pytest.raises(LookaheadError, match="another origin or day"):
+        rp.issue(state, frozen, day)
+
+
 def test_a_drift_reference_holding_replayed_days_is_refused():
     raw, obs = world()
     frozen, ref = frozen_and_reference()
@@ -323,3 +367,43 @@ def test_detection_power_finds_a_large_sustained_change_and_nothing_without_one(
     assert by_bias[0.0] is None and by_bias[0.08] is not None and by_bias[0.08] <= 3
     by_k = {row["half_width"]: row["weeks"] for row in out["half_width"]}
     assert by_k[1.0] is None and by_k[0.2] is not None and by_k[0.2] <= 3
+
+
+def judged_week(hours_per_day, ape=0.10):
+    """week_record on a Monday-to-Sunday week with the given scored hours each day, every hour with the same error."""
+    from valiwatt.monitor.rules import week_record
+
+    ws = pd.Timestamp("2024-01-01")
+    t = {"mape_high": 0.05, "bias_low": -0.03, "bias_high": 0.03, "coverage_low": 0.7}
+    th = {"performance": {s: t for s in ("winter", "spring", "summer", "fall")},
+          "drift": {"temperature_high": 1.0, "forecast_high": 1.0}}
+    scored = pd.DataFrame([{"day": ws + pd.Timedelta(days=i), "ape": ape, "rel_bias": 0.0, "covered": 1.0}
+                           for i, n in enumerate(hours_per_day) for _ in range(n)])
+    days = [{"day": ws + pd.Timedelta(days=i), "failed": False} for i in range(7)]
+    return week_record(ws, scored, days, {"temperature": 0.1, "forecast": 0.1}, th)
+
+
+def test_a_week_with_too_few_scored_hours_is_not_judged():
+    from valiwatt.monitor.rules import MIN_WEEK_HOURS
+
+    enough = [24] * (MIN_WEEK_HOURS // 24) + [MIN_WEEK_HOURS % 24]
+    enough += [0] * (7 - len(enough))
+    assert judged_week(enough)["evaluated"]
+    short = list(enough)
+    short[max(i for i, n in enumerate(short) if n)] -= 1  # one hour fewer
+    w = judged_week(short)
+    assert w["hours"] == MIN_WEEK_HOURS - 1
+    assert not w["evaluated"] and w["stats"] is None and w["flags"] is None
+
+
+def test_a_week_with_too_few_full_days_has_no_trimmed_statistic_and_is_never_broad():
+    """Days with fewer than MIN_DAY_HOURS scored hours stay out of the trimmed statistic; with fewer than
+    TRIM_DAYS + MIN_TRIMMED_DAYS days left it is NaN, so a flagged week cannot count as out of band broadly."""
+    from valiwatt.monitor.rules import MIN_DAY_HOURS, MIN_TRIMMED_DAYS
+
+    full = TRIM_DAYS + MIN_TRIMMED_DAYS
+    ok = judged_week([24] * (full - 1) + [MIN_DAY_HOURS] * (8 - full))
+    assert ok["flags"]["mape_high"] and ok["broad"]["mape_high"]  # the control: enough full days, broadly high
+    w = judged_week([24] * (full - 1) + [MIN_DAY_HOURS - 1] * (8 - full))
+    assert w["evaluated"] and w["flags"]["mape_high"]
+    assert all(np.isnan(v) for v in w["trimmed"].values()) and not any(w["broad"].values())

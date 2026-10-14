@@ -42,6 +42,16 @@ def test_an_input_after_the_origin_is_refused():
         require_known_at_origin(broken)
 
 
+def test_an_origin_moved_earlier_than_the_lag_allows_is_refused():
+    f = frame("2021-02-01T06:00Z", "2021-03-01T05:00Z")
+    broken = f.copy()
+    t = broken.index[100]
+    # One hour before the 24-hour lag's hour: the lag would read demand not yet observed at that origin.
+    broken.loc[t, "origin"] = t - pd.Timedelta(hours=25)
+    with pytest.raises(LookaheadError):
+        require_known_at_origin(broken)
+
+
 def test_a_training_row_inside_the_embargo_is_refused():
     f = frame("2021-01-01T06:00Z", "2021-04-01T05:00Z")
     fold = wf.folds("2021-03", "2021-03")[0]

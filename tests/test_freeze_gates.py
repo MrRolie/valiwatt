@@ -1,5 +1,6 @@
 """The freeze and lineage gates refuse what they exist to refuse: a missing or moved tag, a changed or added rule
-file, a frozen model from another validation run, year or rule set, and a model file that no longer matches itself."""
+file, a frozen model from another validation run, year or rule set, and a model file that no longer matches itself.
+The replay itself stops at each gate it calls, before the step the gate protects."""
 
 import subprocess
 from types import SimpleNamespace
@@ -71,7 +72,11 @@ def test_a_moved_tag_is_refused_unless_recorded_as_a_departure():
         mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=False)
     with pytest.raises(mrun.FreezeError):  # a bare flag is not a record
         mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True, recorded="None yet.")
-    agents = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'b' * 12}: reason.\n\n## Other\n"
+    other = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'c' * 12}: reason.\n\n## Other\n"
+    with pytest.raises(mrun.FreezeError):  # a departure recorded for another commit is not a record of this one
+        mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True,
+                                 recorded=mrun.recorded_departures(other))
+    agents =f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n- 2026-10-17, commit {'b' * 12}: reason.\n\n## Other\n"
     assert mrun.check_tag_not_moved(freeze, {"a" * 40: ["r0"]}, departure=True,
                                     recorded=mrun.recorded_departures(agents)) == ["r0"]
 
@@ -155,7 +160,8 @@ def test_a_frozen_model_file_that_no_longer_matches_its_hash_is_refused():
     assert fz.FrozenModel.from_json(frozen.to_json()).sha256() == frozen.sha256()
 
 
-def test_the_registered_model_is_refused_when_its_run_records_another_hash(tmp_path, monkeypatch):
+def log_world_frozen(tmp_path, monkeypatch):
+    """The synthetic world's frozen model, logged and registered in a throwaway MLflow store."""
     from valiwatt import tracking
 
     monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
@@ -163,12 +169,101 @@ def test_the_registered_model_is_refused_when_its_run_records_another_hash(tmp_p
     raw, obs = world()
     f = build(build_demand(raw, FIRST, LAST).frame, obs.set_index("ts_utc")["temp_c"])
     example = f[fz.INPUT_COLUMNS].dropna().head(24)
-    run, _ = fz.log_frozen(frozen, pd.DataFrame({"feature": ["x"], "frozen": [0.0]}), example, {})
+    run, version = fz.log_frozen(frozen, pd.DataFrame({"feature": ["x"], "frozen": [0.0]}), example, {})
+    return frozen, run, version
+
+
+def test_the_registered_model_is_refused_when_its_run_records_another_hash(tmp_path, monkeypatch):
+    from valiwatt import tracking
+
+    frozen, run, _ = log_world_frozen(tmp_path, monkeypatch)
     loaded, _ = fz.load_frozen(frozen.replay_year)
     assert loaded.sha256() == frozen.sha256()
     tracking.client().set_tag(run.info.run_id, "coefficient_sha256", "0" * 64)
     with pytest.raises(fz.FrozenModelError):
         fz.load_frozen(frozen.replay_year)
+
+
+def test_an_alias_pointing_at_another_years_model_is_refused(tmp_path, monkeypatch):
+    from valiwatt import tracking
+
+    frozen, _, version = log_world_frozen(tmp_path, monkeypatch)
+    other = frozen.replay_year - 1
+    tracking.client().set_registered_model_alias(fz.MODEL_NAME, f"replay-{other}", version)
+    with pytest.raises(fz.FrozenModelError, match=f"frozen for {frozen.replay_year}"):
+        fz.load_frozen(other)
+
+
+class Reached(Exception):
+    """A step of the replay past the gate under test: reaching it means the gate let the replay through."""
+
+
+def reached(step):
+    def fake(*args, **kwargs):
+        raise Reached(step)
+    return fake
+
+
+@pytest.fixture
+def replay_inputs(repo, monkeypatch):
+    """run_replay's inputs, faked to pass every gate; each test spoils one. Nothing reads data or MLflow: the replay
+    stops at its summary, the first step after the last gate."""
+    oos = pd.DataFrame({"day": [pd.Timestamp("2023-06-01")], "pred_persistence": [1.0]})
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {})
+    monkeypatch.setattr(mrun, "load_inputs", lambda: (fake_run("dq"), None, None))
+    monkeypatch.setattr(mrun, "load_validation", lambda dq: (fake_run("val"), oos))
+    monkeypatch.setattr(mrun, "validation_results", lambda val: {"thresholds": {"2024": {}}})
+    monkeypatch.setattr(mrun, "load_raw", lambda dq: (None, None))
+    monkeypatch.setattr(mrun, "replay", lambda *a: SimpleNamespace(model_sha256="a", clock_end=None))
+    monkeypatch.setattr(mrun, "summarize", reached("summarize"))
+
+    def frozen(sha="a", **tags):
+        run = fake_run("f", **({"validation_run_id": "val", "rules_sha256": rules.rules_sha256(),
+                                "replay_year": "2024", "coefficient_sha256": "a"} | tags))
+        return SimpleNamespace(sha256=lambda: sha), run
+
+    def serve(*models):  # load_frozen returns these in turn: before the replay, then after it
+        queue = list(models)
+        monkeypatch.setattr(mrun, "load_frozen", lambda year: queue.pop(0))
+
+    serve(frozen(), frozen())
+    return frozen, serve
+
+
+def test_the_replay_without_a_freeze_tag_stops_before_reading_any_input(replay_inputs, monkeypatch):
+    monkeypatch.setattr(mrun, "load_inputs", reached("load_inputs"))
+    with pytest.raises(mrun.FreezeError, match="no `rules-frozen` tag"):
+        mrun.run_replay(2024)
+
+
+def test_the_replay_under_a_moved_tag_stops_before_reading_any_input(repo, replay_inputs, monkeypatch):
+    git(repo, "tag", rules.FREEZE_TAG)
+    monkeypatch.setattr(mrun, "load_inputs", reached("load_inputs"))
+    monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {"c" * 40: ["r0"]})
+    with pytest.raises(mrun.FreezeError, match="moving the tag is a departure"):
+        mrun.run_replay(2024)
+    (repo / "AGENTS.md").write_text(f"{mrun.DEPARTURES_HEADING}\n\nNone yet.\n")
+    with pytest.raises(mrun.FreezeError, match="does not name commit"):  # the flag alone is not a record
+        mrun.run_replay(2024, departure=True)
+
+
+def test_the_replay_refuses_a_frozen_model_from_another_validation_run(repo, replay_inputs, monkeypatch):
+    git(repo, "tag", rules.FREEZE_TAG)
+    frozen, serve = replay_inputs
+    monkeypatch.setattr(mrun, "load_raw", reached("load_raw"))
+    serve(frozen(validation_run_id="other"))
+    with pytest.raises(LineageError, match="another validation run"):
+        mrun.run_replay(2024)
+
+
+def test_the_replay_fails_when_the_registered_model_changes_during_it(repo, replay_inputs):
+    git(repo, "tag", rules.FREEZE_TAG)
+    frozen, serve = replay_inputs
+    with pytest.raises(Reached, match="summarize"):  # the control: an unchanged model reaches the summary
+        mrun.run_replay(2024)
+    serve(frozen(), frozen(sha="b"))
+    with pytest.raises(mrun.MonitorActedError):
+        mrun.run_replay(2024)
 
 
 def test_the_frozen_model_refuses_training_rows_inside_its_embargo(monkeypatch):

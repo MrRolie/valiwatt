@@ -22,3 +22,17 @@ def test_junit_outcomes_read_failures_and_parameters(tmp_path):
 def test_every_break_names_a_known_group_and_both_languages():
     assert len({b.test for b in BREAKS}) == len(BREAKS)
     assert all(b.group in GROUPS and b.fr and b.en for b in BREAKS)
+
+
+def test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed(tmp_path, monkeypatch):
+    from functools import partial
+
+    from valiwatt import breaks, tracking
+
+    monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    missing = Break("lookahead", "tests/test_guards.py::test_no_such_break", "x", "x")
+    monkeypatch.setattr(breaks, "run_tests", partial(run_tests, [missing]))
+    assert breaks.run_breaks() == 1
+    run = tracking.latest_run(breaks.EXPERIMENT)
+    assert run.data.tags["status"] == "failed"
+    assert run.data.metrics["fired"] == 0 and run.data.metrics["not_fired"] == 1
