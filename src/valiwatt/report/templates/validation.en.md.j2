@@ -9,13 +9,13 @@
 {% set REC = {'retrain': 'retrain', 'recalibrate': 'recalibrate the intervals', 'investigate_data': 'investigate the data'} %}
 {% set SEASON = {'winter': 'winter', 'spring': 'spring', 'summer': 'summer', 'fall': 'fall'} %}
 {% set NAME = {'persistence': "previous day's weather (production)", 'observed': 'observed weather (optimistic bound)', 'baseline': 'same hour one week earlier', 'panel_persistence': "previous day's weather, six-station mean"} %}
-{% macro power_table(rows) %}
-| Gap starts | {% for b in rows|map(attribute='bias')|unique %}{{ sp(b, 0) }} | {% endfor %}
+{% macro power_table(rows, key) %}
+| Starts | {% for x in rows|map(attribute=key)|unique %}{% if key == 'bias' %}{{ sp(x, 0) }}{% else %}× {{ x|num(1) }}{% endif %} | {% endfor %}
 
-|---|{% for b in rows|map(attribute='bias')|unique %}---|{% endfor %}
+|---|{% for x in rows|map(attribute=key)|unique %}---|{% endfor %}
 
 {% for start in rows|map(attribute='start')|unique %}
-| {{ start|day }} ({{ SEASON[(rows|selectattr('start', 'equalto', start)|first).season] }}) | {% for row in rows if row.start == start %}{{ row.weeks_to_retrain if row.weeks_to_retrain is not none else '—' }} | {% endfor %}
+| {{ start|day }} ({{ SEASON[(rows|selectattr('start', 'equalto', start)|first).season] }}) | {% for row in rows if row.start == start %}{{ row.weeks if row.weeks is not none else '—' }} | {% endfor %}
 
 {% endfor %}
 {% endmacro %}
@@ -195,9 +195,10 @@ MAPE difference (frozen minus refitted), on the same {{ pr.hours|num }} hours: {
 {% for d in alone %}{% if d.weeks[0].stats.rel_bias * d.weeks[1].stats.rel_bias < 0 %}{% set _ = flips.append(1) %}{% endif %}{% endfor %}
 **Why "the same failure, broad".** {% if alone %}Under the first wording of rule 2 (MAPE or bias out of band two weeks running, in any mix), the monitor would have recommended retraining in the week of {% for d in alone %}{{ d.week_start|day }} (bias {{ sp(d.weeks[0].stats.rel_bias, 2) }} then {{ sp(d.weeks[1].stats.rel_bias, 2) }}){% if not loop.last %}, then in the week of {% endif %}{% endfor %}.{% if flips|length == alone|length %} Each time the bias changes sign from one week to the next: the profile of a passing gap that the 24-hour and 168-hour lags carry into the following days; a degraded model would rather keep an error of the same sign.{% endif %}{% else %}On 2023, the first wording of rule 2 would have recommended nothing more.{% endif %} The rule kept needs the same failure two weeks running, broad in each week; a passing episode is not enough.
 
-**The rules' power on 2023.** From the first full week of each season, a sustained gap is put between demand and forecast (−8% to +8%) and the weekly rules are run again on the 2023 hours: weeks until "retrain" (—: nothing within 8 weeks). A measurement, never a recommendation.
+**The rules' power on 2023.** From the first full week of each season, a sustained change is imposed and the weekly rules are run again on the 2023 hours: a gap between demand and forecast (−8% to +8%), counted in weeks until "retrain", or intervals narrowed (half-width × 0.9 to × 0.5), counted in weeks until "recalibrate" (—: nothing within 8 weeks). A measurement, never a recommendation.
 
-{{ power_table(p.power) }}
+{{ power_table(p.power.bias, 'bias') }}
+{{ power_table(p.power.half_width, 'half_width') }}
 ![2023 replay]({{ fig.pseudo_replay_2023_weekly }})
 
 ## 7. 2024 replayed as production
@@ -230,9 +231,10 @@ No week of 2024 triggered a recommendation.
 {% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
 Under the first wording of rule 2: {% if alone24 %}"retrain" in the week of {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, of {% endif %}{% endfor %}.{% else %}no further recommendation.{% endif %}
 
-**The rules' power on 2024**, measured the same way (weeks until "retrain"; —: nothing within 8 weeks):
+**The rules' power on 2024**, measured the same way (weeks until "retrain", then until "recalibrate"; —: nothing within 8 weeks):
 
-{{ power_table(r.power) }}
+{{ power_table(r.power.bias, 'bias') }}
+{{ power_table(r.power.half_width, 'half_width') }}
 ![2024 replay]({{ fig.replay_2024_weekly }})
 
 ![2024 drift]({{ fig.replay_2024_drift }})

@@ -309,10 +309,12 @@ def test_a_mape_pair_with_bias_on_opposite_sides_is_an_echo_not_retrain():
     assert decide(c, a)["recommendation"] == RETRAIN  # variance decay with no bias flip still fires
 
 
-def test_detection_power_finds_a_large_sustained_shift_and_nothing_without_one(clean):
+def test_detection_power_finds_a_large_sustained_change_and_nothing_without_one(clean):
     from valiwatt.monitor.run import detection_power
 
     th = thresholds()
-    out = detection_power(clean, th, biases=(0.0, 0.08), horizon=4)
-    by_bias = {row["bias"]: row["weeks_to_retrain"] for row in out}
+    out = detection_power(clean, th, biases=(0.0, 0.08), half_widths=(1.0, 0.2), horizon=4)
+    by_bias = {row["bias"]: row["weeks"] for row in out["bias"]}
     assert by_bias[0.0] is None and by_bias[0.08] is not None and by_bias[0.08] <= 3
+    by_k = {row["half_width"]: row["weeks"] for row in out["half_width"]}
+    assert by_k[1.0] is None and by_k[0.2] is not None and by_k[0.2] <= 3

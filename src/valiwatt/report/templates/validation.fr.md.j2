@@ -10,13 +10,13 @@
 {% set SEASON = {'winter': 'hiver', 'spring': 'printemps', 'summer': 'été', 'fall': 'automne'} %}
 {% set PROBLEM = {'missing_hour': 'heure manquante', 'blank_value': 'valeur vide', 'duplicate': 'doublon', 'demand_out_of_bounds': 'demande hors bornes', 'temperature_out_of_bounds': 'température hors bornes', 'temperature_silent': 'station principale muette'} %}
 {% set NAME = {'persistence': 'météo de la veille (production)', 'observed': 'météo observée (borne optimiste)', 'baseline': 'même heure, une semaine avant', 'panel_persistence': 'météo de la veille, moyenne des six stations'} %}
-{% macro power_table(rows) %}
-| Début de l'écart | {% for b in rows|map(attribute='bias')|unique %}{{ sp(b, 0) }} | {% endfor %}
+{% macro power_table(rows, key) %}
+| Début | {% for x in rows|map(attribute=key)|unique %}{% if key == 'bias' %}{{ sp(x, 0) }}{% else %}× {{ x|num(1) }}{% endif %} | {% endfor %}
 
-|---|{% for b in rows|map(attribute='bias')|unique %}---|{% endfor %}
+|---|{% for x in rows|map(attribute=key)|unique %}---|{% endfor %}
 
 {% for start in rows|map(attribute='start')|unique %}
-| {{ start|day }} ({{ SEASON[(rows|selectattr('start', 'equalto', start)|first).season] }}) | {% for row in rows if row.start == start %}{{ row.weeks_to_retrain if row.weeks_to_retrain is not none else '—' }} | {% endfor %}
+| {{ start|day }} ({{ SEASON[(rows|selectattr('start', 'equalto', start)|first).season] }}) | {% for row in rows if row.start == start %}{{ row.weeks if row.weeks is not none else '—' }} | {% endfor %}
 
 {% endfor %}
 {% endmacro %}
@@ -196,9 +196,10 @@ Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} h
 {% for d in alone %}{% if d.weeks[0].stats.rel_bias * d.weeks[1].stats.rel_bias < 0 %}{% set _ = flips.append(1) %}{% endif %}{% endfor %}
 **Pourquoi « la même défaillance, étendue ».** {% if alone %}Avec la première formulation de la règle 2 (EAMP ou biais hors seuil deux semaines de suite, dans n'importe quel ordre), le moniteur aurait recommandé de réentraîner la semaine du {% for d in alone %}{{ d.week_start|day }} (biais {{ sp(d.weeks[0].stats.rel_bias, 2) }} puis {{ sp(d.weeks[1].stats.rel_bias, 2) }}){% if not loop.last %}, puis celle du {% endif %}{% endfor %}.{% if flips|length == alone|length %} Chaque fois, le biais change de signe d'une semaine à l'autre : c'est le profil d'un écart passager que les retards de 24 h et de 168 h reportent sur les jours suivants ; un modèle dégradé garderait plutôt une erreur de même signe.{% endif %}{% else %}Sur 2023, la première formulation de la règle 2 n'aurait rien recommandé de plus.{% endif %} La règle retenue exige la même défaillance deux semaines de suite, étendue à chaque semaine ; un épisode passager ne suffit pas.
 
-**Puissance des règles sur 2023.** À partir de la première semaine complète de chaque saison, on impose un écart soutenu entre la demande et la prévision (de −8 % à +8 %) et on rejoue les règles hebdomadaires sur les heures de 2023 : nombre de semaines avant « réentraîner » (— : rien en 8 semaines). Une mesure, jamais une recommandation.
+**Puissance des règles sur 2023.** À partir de la première semaine complète de chaque saison, on impose un changement soutenu et on rejoue les règles hebdomadaires sur les heures de 2023 : un écart entre la demande et la prévision (de −8 % à +8 %), compté en semaines avant « réentraîner », ou des intervalles rétrécis (demi-largeur × 0,9 à × 0,5), comptés en semaines avant « recalibrer » (— : rien en 8 semaines). Une mesure, jamais une recommandation.
 
-{{ power_table(p.power) }}
+{{ power_table(p.power.bias, 'bias') }}
+{{ power_table(p.power.half_width, 'half_width') }}
 ![Rejouée 2023]({{ fig.pseudo_replay_2023_weekly }})
 
 ## 7. 2024 rejouée comme en production
@@ -231,9 +232,10 @@ Aucune semaine de 2024 n'a déclenché de recommandation.
 {% set alone24 = r.summary.retrain_under_two_week_rule_alone %}
 Avec la première formulation de la règle 2 : {% if alone24 %}« réentraîner » la semaine du {% for d in alone24 %}{{ d.week_start|day }}{% if not loop.last %}, du {% endif %}{% endfor %}.{% else %}aucune recommandation de plus.{% endif %}
 
-**Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner » ; — : rien en 8 semaines) :
+**Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner », puis avant « recalibrer » ; — : rien en 8 semaines) :
 
-{{ power_table(r.power) }}
+{{ power_table(r.power.bias, 'bias') }}
+{{ power_table(r.power.half_width, 'half_width') }}
 ![Rejouée 2024]({{ fig.replay_2024_weekly }})
 
 ![Dérive 2024]({{ fig.replay_2024_drift }})

@@ -27,6 +27,7 @@ from valiwatt.monitor.replay import MonitorActedError, ReplayResult, replay
 from valiwatt.monitor.rules import (
     FREEZE_TAG,
     MIN_WEEK_HOURS,
+    RECALIBRATE,
     RETRAIN,
     decide,
     rule_files,
@@ -147,6 +148,7 @@ def retrain_under_two_week_rule_alone(weeks: list[dict]) -> list[dict]:
 
 
 POWER_BIASES = (-0.08, -0.06, -0.04, -0.02, 0.02, 0.04, 0.06, 0.08)
+POWER_HALF_WIDTHS = (0.9, 0.8, 0.7, 0.6, 0.5)
 POWER_HORIZON_WEEKS = 8
 
 
@@ -163,33 +165,49 @@ def weekly_decisions(hourly: pd.DataFrame, r: ReplayResult, thresholds: dict) ->
     return weeks, decisions
 
 
-def detection_power(r: ReplayResult, thresholds: dict, biases=POWER_BIASES,
-                    horizon: int = POWER_HORIZON_WEEKS) -> list[dict]:
-    """How fast rule 2 catches a sustained shift: from the first full week of each season, demand runs a fraction b
-    above the forecast (forecast and interval divided by 1 + b), and the weekly rules are run again on the replay's
-    hours. Reported: the weeks until *retrain*, or None within `horizon` weeks. Never acted on; it measures the
-    rules' power on this year's errors."""
+def _season_starts(r: ReplayResult) -> list[pd.Timestamp]:
     starts = []
     for month in (1, 4, 7, 10):
         cands = [w["week_start"] for w in r.weeks if w["evaluated"] and w["week_start"].month == month]
         if cands:
             starts.append(min(cands))
-    out = []
-    for start in starts:
-        for b in biases:
-            h = r.hourly.copy()
-            late = (h["day"] >= start).to_numpy()
-            for col in ("forecast", "lower", "upper"):
-                h.loc[late, col] = h.loc[late, col] / (1 + b)
-            ok = h["target"].notna() & h["forecast"].notna()
-            h["ape"] = ((h["target"] - h["forecast"]).abs() / h["target"]).where(ok)
-            h["rel_bias"] = ((h["target"] - h["forecast"]) / h["target"]).where(ok)
-            h["covered"] = ((h["target"] >= h["lower"]) & (h["target"] <= h["upper"])).astype(float).where(ok)
-            _, decisions = weekly_decisions(h, r, thresholds)
-            hit = [d["week_start"] for d in decisions if d["recommendation"] == RETRAIN
-                   and start <= d["week_start"] < start + pd.Timedelta(weeks=horizon)]
-            out.append({"start": start, "season": SEASONS[(start + pd.Timedelta(days=3)).month], "bias": b,
-                        "weeks_to_retrain": int((hit[0] - start).days // 7 + 1) if hit else None})
+    return starts
+
+
+def _rescore(h: pd.DataFrame) -> pd.DataFrame:
+    ok = h["target"].notna() & h["forecast"].notna()
+    h["ape"] = ((h["target"] - h["forecast"]).abs() / h["target"]).where(ok)
+    h["rel_bias"] = ((h["target"] - h["forecast"]) / h["target"]).where(ok)
+    h["covered"] = ((h["target"] >= h["lower"]) & (h["target"] <= h["upper"])).astype(float).where(ok)
+    return h
+
+
+def detection_power(r: ReplayResult, thresholds: dict, biases=POWER_BIASES, half_widths=POWER_HALF_WIDTHS,
+                    horizon: int = POWER_HORIZON_WEEKS) -> dict:
+    """How fast the rules catch a sustained change, measured on this year's own hours and never acted on.
+
+    From the first full week of each season, either demand runs a fraction b above the forecast (forecast and
+    interval divided by 1 + b; weeks until *retrain*), or the interval's half-width is multiplied by k (weeks until
+    *recalibrate*). The weekly rules are run again on the changed hours; None means nothing within `horizon` weeks."""
+    out = {"bias": [], "half_width": []}
+    for start in _season_starts(r):
+        season = SEASONS[(start + pd.Timedelta(days=3)).month]
+        late = (r.hourly["day"] >= start).to_numpy()
+        for kind, values, target in (("bias", biases, RETRAIN), ("half_width", half_widths, RECALIBRATE)):
+            for x in values:
+                h = r.hourly.copy()
+                if kind == "bias":
+                    for col in ("forecast", "lower", "upper"):
+                        h.loc[late, col] = h.loc[late, col] / (1 + x)
+                else:
+                    half = (h["upper"] - h["lower"]) / 2
+                    h.loc[late, "lower"] = h.loc[late, "forecast"] - x * half[late]
+                    h.loc[late, "upper"] = h.loc[late, "forecast"] + x * half[late]
+                _, decisions = weekly_decisions(_rescore(h), r, thresholds)
+                hit = [d["week_start"] for d in decisions if d["recommendation"] == target
+                       and start <= d["week_start"] < start + pd.Timedelta(weeks=horizon)]
+                out[kind].append({"start": start, "season": season, kind: x,
+                                  "weeks": int((hit[0] - start).days // 7 + 1) if hit else None})
     return out
 
 
