@@ -32,7 +32,7 @@ the gap goes to the owner as a question.
   `uv run valiwatt safety` scans what git tracks and stages; it does not know the private names in `ESTATE.local.md`,
   so grep the staged diff for those by hand.
 - Commits use this repository's configured author identity, a GitHub noreply address. Never change `user.email`.
-- No remote until the owner rules on the public home.
+- Push only to the private remote; it turns public only at the owner's go.
 - If `ESTATE.local.md` exists, read it: it holds private context for sessions on the owner's machine. Never commit it,
   quote it or reference its contents in a tracked file.
 
@@ -58,6 +58,8 @@ None yet.
 
 The monitoring rules are frozen by the `rules-frozen` tag before the 2024 replay (`docs/plan.md`, section 4). Any
 change to a rule file after that tag is listed here with its date, its reason and the commit, the report labels it
-post hoc and shows the earlier replay beside it, and the 2024 replay runs again only with `--departure`.
+post hoc and shows the earlier replay beside it, and the 2024 replay runs again only with `--departure`. A change to
+`pyproject.toml` or `uv.lock` after the tag counts as a departure too: the dependencies can change the replay's
+numbers, and the freeze gate does not hash them, so this rule is kept by hand.
 
 None yet.

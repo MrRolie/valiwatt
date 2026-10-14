@@ -4,12 +4,13 @@ replay 2024 -> frozen model 2024 -> validation -> data quality
 pseudo-replay 2023 -> frozen model 2023 -> the same validation
 breaks run
 Every run must be finished and complete, made from the code that renders the report, under the rules of the
-`rules-frozen` tag.
+`rules-frozen` tag. A replay run after a recorded departure brings the earlier replays it departs from, so the report
+can label it post hoc and show them beside it.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ChainBroken(RuntimeError):
@@ -25,6 +26,7 @@ class Chain:
     dq: object
     breaks: object
     freeze: dict
+    departed: list = field(default_factory=list)
 
     def runs(self) -> dict:
         return {"dq": self.dq, "validation": self.validation, "frozen_2023": self.frozen[2023],
@@ -59,6 +61,12 @@ def follow(code_sha: str, rules_sha: str, freeze: dict) -> Chain:
     except LookupError as e:
         raise ChainBroken(f"no finished 2024 replay: {e}") from e
     _complete(replay, "replay")
+    departed = []
+    if replay.data.tags.get("departure") == "true":
+        ids = [x for x in replay.data.tags.get("departure_from", "").split(",") if x]
+        if not ids:
+            raise ChainBroken(f"replay {replay.info.run_id} is a departure but names no earlier replay")
+        departed = [c.get_run(x) for x in ids]
     val_id = replay.data.tags.get("validation_run_id", "")
     try:
         pseudo = latest_run(MON_EXP, "tags.kind = 'pseudo_replay' and attributes.status = 'FINISHED' "
@@ -80,7 +88,7 @@ def follow(code_sha: str, rules_sha: str, freeze: dict) -> Chain:
         _link(f, "validation_run_id", val_id, f"frozen-model {year}")
         _link(run, "coefficient_sha256", f.data.tags.get("coefficient_sha256", ""), f"replay {year}")
         frozen[year] = f
-    chain = Chain(replay, pseudo, frozen, validation, dq, breaks, freeze)
+    chain = Chain(replay, pseudo, frozen, validation, dq, breaks, freeze, departed)
     for name, run in chain.runs().items():
         if name != "dq":
             _link(run, "rules_sha256", rules_sha, name)

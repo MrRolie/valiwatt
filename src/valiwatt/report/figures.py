@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import MaxNLocator
 
 from valiwatt.quality.figures import AXIS, GRID, INK, INK_2, SERIES_1, SERIES_2, _num, _save, _style, plt
 
@@ -143,6 +144,7 @@ def replay_drift(weeks: list[dict], lang: str, path: Path):
         ax.plot(x, [w["drift"][key] for w in weeks], color=SERIES_1, linewidth=1.4, marker="o", markersize=3)
         ax.axhline(weeks[0]["drift_thresholds"][key], color=INK_2, linewidth=0.9, linestyle="--", label=L["alarm"])
         ax.set_ylabel(label, fontsize=9)
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=6, steps=[1, 2, 5, 10]))  # ticks a one-decimal label can name
         ax.yaxis.set_major_formatter(_num(lang, 1))
         ax.set_ylim(bottom=0)
         _style(ax)

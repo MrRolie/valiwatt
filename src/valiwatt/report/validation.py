@@ -1,12 +1,15 @@
 """Render the validation report (French first, English derived) into docs/report/, from the chain of tracked runs.
 
 The report is committed (owner's ruling). It carries a stamp (docs/report/stamp.json): the run IDs it was rendered
-from, the code hash and the rules hash. `tests/test_report_stamp.py` fails when the committed code no longer matches
-the stamp, so a report can never sit beside code that did not produce it.
+from, the code hash, the rules hash and the hash of every rendered file. `tests/test_report_stamp.py` fails when the
+committed code no longer matches the stamp, or a rendered file no longer matches its hash, so a report can never sit
+beside code that did not produce it, nor be edited by hand. The data-quality report is rendered from the chain's own
+data-quality run.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -17,7 +20,7 @@ from valiwatt import attribution
 from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import figures as F
 from valiwatt.report.lineage import Chain, follow
-from valiwatt.report.render import assert_public_safe, environment
+from valiwatt.report.render import ReportRefused, assert_public_safe, environment, render
 
 OUT = REPORTS
 STAMP = OUT / "stamp.json"
@@ -57,6 +60,8 @@ def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
         "v": v, "dq": dq, "p": _json(c, chain.pseudo, "results/replay.json"),
         "r": _json(c, chain.replay, "results/replay.json"), "b": _json(c, chain.breaks, "results/breaks.json"),
         "frozen": frozen, "monthly": monthly,
+        "departures": [{"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""),
+                        "summary": _json(c, run, "results/replay.json")["summary"]} for run in chain.departed],
         "runs": {k: {"id": run.info.run_id, "when": _when(run)} for k, run in chain.runs().items()},
         "code_sha": code_sha, "rules_sha": rules_sha, "freeze": chain.freeze,
         "commit": chain.replay.data.tags.get("git_commit", "none"),
@@ -84,16 +89,24 @@ def figures(ctx: dict, lang: str) -> dict:
     return out
 
 
-def render_validation() -> list[Path]:
+def file_hashes() -> dict:
+    """The sha256 of every rendered file under docs/report/, the stamp itself excepted."""
+    return {p.relative_to(OUT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(OUT.rglob("*")) if p.is_file() and p != STAMP}
+
+
+def render_validation(dq_run_id: str | None = None) -> list[Path]:
     from valiwatt.monitor.rules import rules_sha256
     from valiwatt.monitor.run import check_freeze
     from valiwatt.tracking import code_sha256
 
     code_sha, rules_sha = code_sha256(), rules_sha256()
     chain = follow(code_sha, rules_sha, check_freeze())
+    if dq_run_id and dq_run_id != chain.dq.info.run_id:
+        raise ReportRefused(f"data-quality run {dq_run_id} is not the one the chain read ({chain.dq.info.run_id})")
+    written = render(run_id=chain.dq.info.run_id)
     ctx = context(chain, code_sha, rules_sha)
     retrieved = min(s["first_retrieved_utc"] for s in ctx["dq"]["sources"]["eccc"])[:10]
-    written = []
     for lang in LANGS:
         figs = figures(ctx, lang)
         text = environment(lang).get_template(f"validation.{lang}.md.j2").render(
@@ -103,7 +116,7 @@ def render_validation() -> list[Path]:
         out.write_text(text, encoding="utf-8")
         written.append(out)
     stamp = {"code_sha256": code_sha, "rules_sha256": rules_sha, "freeze_commit": chain.freeze["freeze_commit"],
-             "runs": {k: x["id"] for k, x in ctx["runs"].items()}}
+             "runs": {k: x["id"] for k, x in ctx["runs"].items()}, "files": file_hashes()}
     STAMP.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print("rendered " + ", ".join(p.relative_to(REPO_ROOT).as_posix() for p in written)
           + f" from replay run {chain.replay.info.run_id}")

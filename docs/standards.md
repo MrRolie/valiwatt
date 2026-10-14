@@ -16,8 +16,8 @@ cover and nothing more.
 
 | Expectation | What valiwatt does | Where it is checked |
 |---|---|---|
-| SR 11-7, conceptual soundness, including sensitivity analysis | The configuration (temperature source, base temperature, hour blocks, interval score) is fixed in `docs/plan.md` before validation. The model is ordinary least squares on named features; its coefficients are shown beside an explanatory fit without the lags. Sensitivity runs: the six-station mean against Montréal, the absolute against the relative interval score, per-season intervals, the two-week rule without the most-days condition. | Plan §2; validation run; frozen-model run (`coefficients.csv`) |
-| SR 11-7, data quality and relevance | 23 data-quality gates over the full window, every repair logged with its evidence; the station's representativeness tested against a six-station mean; in production, a day-level data-quality monitor working from raw records. | `valiwatt dq` run and report; replay day records |
+| SR 11-7, conceptual soundness, including sensitivity analysis | The configuration (temperature source, base temperature, hour blocks, interval score) is fixed in `docs/plan.md` before validation; the temperature source was fixed after the data-quality report had compared the stations on 2019–2023 (plan §2). The model is ordinary least squares on named features; its coefficients are shown beside an explanatory fit without the lags. Sensitivity runs: the six-station mean against Montréal, the absolute against the relative interval score, per-season intervals, the first wording of rule 2 (MAPE or bias out of band two weeks running, in any combination). | Plan §2; validation run; frozen-model run (`coefficients.csv`) |
+| SR 11-7, data quality and relevance | The data-quality gates over the full window (counted in the report), every repair logged with its evidence; the station's representativeness tested against a six-station mean; in production, a day-level data-quality monitor working from raw records. | `valiwatt dq` run and report; replay day records |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards on every fit and score; the replay reads raw records through a clock that refuses later ones; the frozen model's hash is checked before and after each replay; the 2024 replay refuses to run unless the rule files match the `rules-frozen` tag. Each guard has a break that makes it fire. | `forecast/guards.py`, `monitor/clock.py`, `monitor/run.py`; tests and breaks run |
 | SR 11-7, ongoing monitoring: benchmarking | A seasonal-naive baseline (the same hour a week earlier); the observed-weather fit as an optimistic bound; the frozen model against the monthly-refitted folds over 2023 (a parallel outcomes analysis). | Validation run; pseudo-replay run |
 | SR 11-7, outcomes analysis and back-testing, with intervals | Walk-forward monthly folds with a 7-day embargo; conformal 90 % intervals with coverage measured overall, by season, by hour group and by forecast load decile; weekly error, bias and coverage judged against thresholds fixed from earlier weeks. | Validation run; replay runs |
@@ -25,7 +25,7 @@ cover and nothing more.
 | SR 11-7, documentation and validation reports | A bilingual validation report with a model card, rendered from the tracked runs and stamped with their run IDs and the code hash. | `docs/report/` |
 | NIST MAP 2.2, 2.3 | The model card's intended use, out-of-scope uses, weather-scenario caveat and limitations; the documented validation design and data-quality findings. | Model card; plan; data-quality report |
 | NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | MLflow runs record test sets, metrics, parameters and tool versions; the pseudo-replay and the 2024 replay test the model as it would run in production; the break suite shows each gate firing; the column below lists what is not measured. | MLflow runs; breaks run; this page |
-| NIST MANAGE 2.2, 2.4 | Weekly recommendations with evidence. Who acts on them, and how, is out of scope. | Replay runs |
+| NIST MANAGE 2.2 | Weekly recommendations with evidence. Who acts on them, and how, is out of scope. | Replay runs |
 
 **Not covered.** valiwatt does none of the following:
 
@@ -37,6 +37,8 @@ cover and nothing more.
 - **Override analysis** (SR 11-7, V): the forecast feeds no decision, so there are no overrides.
 - **Use in decisions:** no decision uses the forecast, so its materiality is not assessed.
 - **Independent review of recalibration** (SR 11-7, V.3): the monitor recommends recalibration; nobody reviews it.
+- **NIST MANAGE 2.4** (mechanisms and assigned responsibilities to supersede, disengage or deactivate the system):
+  the monitor recommends; who acts on a recommendation, and how, is out of scope.
 - **NIST MANAGE 4.1** (appeal and override, decommissioning, incident response) and **MANAGE 1.4** (residual risks
   to downstream users), beyond the model card's limitations.
 - **Real-time data:** values are as fetched in 2026; publication delays and revisions are not modelled.

@@ -57,9 +57,10 @@ def cmd_report(args) -> int:
     from valiwatt.report.render import render
     from valiwatt.report.validation import render_validation
 
-    render(run_id=args.run_id)
-    if not args.dq_only:
-        render_validation()
+    if args.dq_only:
+        render(run_id=args.run_id)
+    else:  # both reports from one chain: the data-quality report is the chain's own run
+        render_validation(dq_run_id=args.run_id)
     return 0
 
 

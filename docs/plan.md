@@ -41,8 +41,11 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   cooling degree-hours (base 18 °C) for each of five fixed time-of-day blocks (night 0–5 h, morning 6–9 h, day
   10–15 h, evening 16–20 h, late 21–23 h), and the lag-24 and lag-168 demand.
 - **The configuration is fixed now, not chosen on the test folds.** The temperature source is Montréal's station, the
-  primary station the brief names. The six-station mean and any other variant are reported as sensitivity runs and are
-  never used to choose. Choosing on the same folds that produce the scores would make them in-sample for that choice.
+  brief's example station and the primary station of `config/stations.toml` from the first commit. It was fixed here
+  after the data-quality report had compared it with the six-station mean on 2019–2023, years that include the
+  validation years, where Montréal fitted better; the reports say so. The six-station mean and any other variant are
+  reported as sensitivity runs and are never used to choose, and the six-station run bounds what the choice is worth.
+  Choosing on the same folds that produce the scores would make them in-sample for that choice.
 - **What the coefficients mean.** They are partial effects: each says what a feature adds *given* the lagged demand.
   The report shows them next to an explanatory fit without the lags, used for interpretation only. No OLS standard
   error or p-value is reported (the errors are autocorrelated); comparisons use the week-block bootstrap.
@@ -111,7 +114,8 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   tag moved since an earlier 2024 replay (deleted runs included) unless `AGENTS.md` records that move by commit and
   the run is asked for with `--departure`; such a run names the replays it departs from. Every run, the data-quality
   run included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed in
-  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it.
+  `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. So is a
+  change to the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash.
 
 ## 5. Monitoring: 2024 replayed as production
 
