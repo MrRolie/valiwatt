@@ -63,4 +63,11 @@ post hoc and shows the earlier replay beside it, and the 2024 replay runs again 
 numbers, and the freeze gate does not hash them, so this rule is kept by hand: record the change here and move the
 tag to the commit that makes it, so the 2024 replay runs again with `--departure` and the report labels it post hoc.
 
+Write each commit here by at least its first 12 characters. The report reads this section when it renders: if the
+section names a commit, the 2024 replay must be a departure, and a departure replay's freeze commit must be named
+here; otherwise the report refuses to render. A departure replay needs the earlier 2024 replays in `mlruns/`, which is
+not in git. After a departure, a fresh clone cannot render the report: its 2024 replay finds no earlier replay, runs
+as a plain one, and the render refuses it. Where `mlruns/` holds the earlier replays, `valiwatt all --departure` is
+the command that reproduces the report. The earlier replays' results are not stored anywhere else yet.
+
 None yet.

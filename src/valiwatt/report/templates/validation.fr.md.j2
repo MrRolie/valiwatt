@@ -1,5 +1,6 @@
 {% set P = v.performance %}
 {% set C = v.coverage %}
+{% from 'season_coverage.fr.md.j2' import season_sentence %}
 {% set pct_sign = ' %' if lang == 'fr' else '%' %}
 {% macro sp(x, d=1) %}{{ (100 * x)|signed(d) }}{{ pct_sign }}{% endmacro %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }} ; {{ hi|pct(d) }}]{% endmacro %}
@@ -153,14 +154,14 @@ Nominal 90 %, à partir de {{ v.conformal.first_fold }}.
 | {{ label }} | {{ C[name].overall.mean|pct(1) }} | {{ ci(C[name].overall.ci95_low, C[name].overall.ci95_high, 1) }} | {{ C[name].mean_half_width_pct|num(2) }}{{ pct_sign }} |
 {% endfor %}
 
-La couverture globale est proche du nominal, mais pas la couverture conditionnelle : l'hiver et les déciles de charge élevés sont sous-couverts, l'été est sur-couvert. Un quantile par saison corrige l'écart entre saisons (sensibilité) ; le tableau des déciles montre ce qu'il laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
+La couverture globale est proche du nominal, mais pas la couverture conditionnelle : l'hiver et les déciles de charge élevés sont sous-couverts, l'été est sur-couvert. Un quantile par saison est une analyse de sensibilité. {{ season_sentence(seasons, 1 - v.conformal.alpha) }} Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
 
 ![Couverture par saison]({{ fig.validation_coverage_by_season }})
 
-| Saison | Un quantile | Un quantile par saison |
-|---|---|---|
-{% for s in ['winter', 'spring', 'summer', 'fall'] %}
-| {{ SEASON[s] }} | {{ (C.relative.season|selectattr('key', 'equalto', s)|first).covered|pct(1) }} | {{ (C.relative_by_season.season|selectattr('key', 'equalto', s)|first).covered|pct(1) }} |
+| Saison | Un quantile | IC 95 % | Un quantile par saison | IC 95 % |
+|---|---|---|---|---|
+{% for row in seasons %}
+| {{ SEASON[row.key] }} | {{ row.pooled.covered|pct(1) }} | {{ ci(row.pooled.low, row.pooled.high, 1) }} | {{ row.by_season.covered|pct(1) }} | {{ ci(row.by_season.low, row.by_season.high, 1) }} |
 {% endfor %}
 
 | Bloc horaire | Couverture (un quantile) | IC 95 % |
@@ -170,10 +171,11 @@ La couverture globale est proche du nominal, mais pas la couverture conditionnel
 | {{ BLOCK[b] }} | {{ row.covered|pct(1) }} | {{ ci(row.covered_low, row.covered_high, 1) }} |
 {% endfor %}
 
-| Décile de charge prévue | Couverture (un quantile) | IC 95 % | Un quantile par saison |
-|---|---|---|---|
+| Décile de charge prévue | Couverture (un quantile) | IC 95 % | Un quantile par saison | IC 95 % |
+|---|---|---|---|---|
 {% for row in C.relative.decile %}
-| {{ row.key }} | {{ row.covered|pct(1) }} | {{ ci(row.covered_low, row.covered_high, 1) }} | {{ (C.relative_by_season.decile|selectattr('key', 'equalto', row.key)|first).covered|pct(1) }} |
+{% set ps = C.relative_by_season.decile|selectattr('key', 'equalto', row.key)|first %}
+| {{ row.key }} | {{ row.covered|pct(1) }} | {{ ci(row.covered_low, row.covered_high, 1) }} | {{ ps.covered|pct(1) }} | {{ ci(ps.covered_low, ps.covered_high, 1) }} |
 {% endfor %}
 
 ## 5. Seuils de surveillance

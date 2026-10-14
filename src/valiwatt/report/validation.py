@@ -43,6 +43,28 @@ def _when(run) -> str:
     return pd.Timestamp(run.info.start_time, unit="ms", tz="UTC").strftime("%Y-%m-%d %H:%M UTC")
 
 
+def season_coverage(coverage: dict, nominal: float) -> list[dict]:
+    """Coverage by season for the production interval (one quantile) and the per-season sensitivity, each with its
+    week-block 95 % interval. For each season: whether the per-season interval contains the nominal, and whether the
+    two forms' intervals are disjoint. No interval on the difference between the forms is computed, so disjoint
+    intervals are all the comparison shows. Both judgements use the bounds as the tables print them (one decimal of a
+    percentage), so a sentence never contradicts the numbers beside it."""
+    rows = []
+    for season in F.SEASON_ORDER:
+        row = {"key": season}
+        for form, name in (("pooled", "relative"), ("by_season", "relative_by_season")):
+            found = [x for x in coverage[name]["season"] if x["key"] == season]
+            if len(found) != 1:
+                raise ReportRefused(f"the validation run has {len(found)} {name} coverage rows for {season}")
+            x = found[0]
+            row[form] = {"covered": x["covered"], "low": x["covered_low"], "high": x["covered_high"]}
+        one, per = ({k: round(v, 3) for k, v in row[f].items()} for f in ("pooled", "by_season"))
+        row["contains_nominal"] = bool(per["low"] <= round(nominal, 3) <= per["high"])
+        row["disjoint"] = bool(one["high"] < per["low"] or per["high"] < one["low"])
+        rows.append(row)
+    return rows
+
+
 def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
     from valiwatt.tracking import client
 
@@ -61,6 +83,7 @@ def context(chain: Chain, code_sha: str, rules_sha: str) -> dict:
         "v": v, "dq": dq, "p": _json(c, chain.pseudo, "results/replay.json"),
         "r": _json(c, chain.replay, "results/replay.json"), "b": _json(c, chain.breaks, "results/breaks.json"),
         "frozen": frozen, "monthly": monthly,
+        "seasons": season_coverage(v["coverage"], 1 - v["conformal"]["alpha"]),
         "departures": [{"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""),
                         "summary": _json(c, run, "results/replay.json")["summary"]} for run in chain.departed],
         "runs": {k: {"id": run.info.run_id, "when": _when(run)} for k, run in chain.runs().items()},
@@ -76,8 +99,8 @@ def figures(ctx: dict, lang: str) -> dict:
     jobs = {
         "validation-monthly-mape": lambda path: F.monthly_mape(ctx["monthly"], lang, path),
         "validation-coverage-by-season": lambda path: F.coverage_by_season(
-            {"pooled": {x["key"]: x["covered"] for x in v["coverage"]["relative"]["season"]},
-             "by_season": {x["key"]: x["covered"] for x in v["coverage"]["relative_by_season"]["season"]}}, lang, path),
+            {form: {x["key"]: (x[form]["covered"], x[form]["low"], x[form]["high"]) for x in ctx["seasons"]}
+             for form in ("pooled", "by_season")}, lang, path),
         "validation-peak-hours": lambda path: F.peak_hours(v["cases"]["peak"]["hours"], lang, path),
         "pseudo-replay-2023-weekly": lambda path: F.replay_weekly(p["weeks"], p["decisions"], lang, path),
         "replay-2024-weekly": lambda path: F.replay_weekly(r["weeks"], r["decisions"], lang, path),

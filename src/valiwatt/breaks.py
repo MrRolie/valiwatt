@@ -48,6 +48,7 @@ T_DEM, T_WEA, T_PIPE = "tests/test_demand_gates.py", "tests/test_weather_gates.p
 T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "tests/test_replay.py", "tests/test_drift.py"
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
+T_COV = "tests/test_report_coverage.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -267,6 +268,16 @@ BREAKS = [
     _b(RENDER, f"{T_SAFE}::test_a_figure_with_an_unknown_chunk_or_a_bad_checksum_is_refused",
        "Une figure portant un bloc hors liste ou une somme de contrôle fausse est refusée",
        "A figure with a chunk outside the allowlist or a bad checksum is refused"),
+    _b(RENDER, f"{T_SAFE}::test_a_figure_whose_structure_breaks_the_png_rules_is_refused",
+       "Une figure dont la structure enfreint les règles du PNG est refusée : octets dans le bloc de fin, bloc de taille "
+       "fixe trop long, en-tête absent, bloc en double, données d'image absentes, coupées ou qui ne se décompressent pas "
+       "exactement à la taille que l'en-tête annonce",
+       "A figure whose structure breaks the PNG rules is refused: bytes in the end chunk, an oversized fixed-length "
+       "chunk, a missing header, a chunk twice, image data missing, split, or not inflating to exactly the size the "
+       "header states"),
+    _b(RENDER, f"{T_SAFE}::test_a_fixed_length_chunk_is_read_by_the_scan",
+       "Un chemin privé caché dans un bloc de taille fixe d'une figure est repéré",
+       "A private path hidden in a fixed-length chunk of a figure is caught"),
     _b(RENDER, f"{T_LIN}::test_a_clean_chain_is_followed",
        "Témoin : une chaîne d'exécutions intacte est suivie jusqu'au bout", "Control: an intact run chain is followed to its end"),
     _b(RENDER, f"{T_LIN}::test_a_broken_link_in_the_run_chain_is_refused[breaks_failed]",
@@ -284,6 +295,23 @@ BREAKS = [
     _b(RENDER, f"{T_LIN}::test_a_departure_replay_brings_the_replays_it_departs_from_and_names_them",
        "Un rejeu fait après une dérogation apporte les rejeux qu'il remplace ; s'il n'en nomme aucun, il est refusé",
        "A replay after a departure brings the replays it departs from; one that names none is refused"),
+    _b(RENDER, f"{T_LIN}::test_a_recorded_departure_the_replay_does_not_carry_is_refused",
+       "Une dérogation consignée dans `AGENTS.md` que le rejeu de 2024 ne porte pas rompt la chaîne du rapport, de "
+       "même qu'un rejeu après une dérogation dont `AGENTS.md` ne nomme pas le commit de gel",
+       "A departure recorded in `AGENTS.md` that the 2024 replay does not carry breaks the report's run chain, and so "
+       "does a departure replay whose freeze commit `AGENTS.md` does not name"),
+    _b(RENDER, f"{T_LIN}::test_with_no_departure_recorded_a_clean_chain_passes",
+       "Témoin : sans dérogation consignée, une chaîne intacte passe ; avec une dérogation, le rejeu qui la porte passe",
+       "Control: with no departure recorded, an intact chain passes; with one, the replay that carries it passes"),
+    _b(RENDER, f"{T_LIN}::test_a_departure_named_by_a_short_hash_is_refused",
+       "Une dérogation consignée par un hachage de moins de 12 caractères rompt la chaîne du rapport",
+       "A departure recorded by a hash shorter than 12 characters breaks the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_a_departures_section_that_cannot_be_found_is_refused",
+       "Une section des dérogations introuvable dans `AGENTS.md` rompt la chaîne du rapport",
+       "A departures section that cannot be found in `AGENTS.md` breaks the report's run chain"),
+    _b(RENDER, f"{T_COV}::test_a_season_missing_from_the_run_is_refused",
+       "Une saison absente de la couverture du run de validation fait refuser le rapport",
+       "A season missing from the validation run's coverage makes the report refuse"),
     _b(RENDER, f"{T_BRK}::test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed",
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
 ]

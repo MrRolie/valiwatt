@@ -1,5 +1,6 @@
 """The repository goes public with its history: the scan must pass now, and must fire on what it guards against."""
 
+import struct
 import subprocess
 import zlib
 
@@ -132,10 +133,22 @@ def test_scan_flags_forbidden_binary_and_missing_staged_files(repo):
     assert "must never be tracked" in issues and "binary file tracked" in issues and "staged but missing" in issues
 
 
-def png(*chunks, tail=b""):
-    def chunk(kind, body):
-        return len(body).to_bytes(4, "big") + kind + body + zlib.crc32(kind + body).to_bytes(4, "big")
-    return PNG_SIGNATURE + chunk(b"IHDR", bytes(13)) + b"".join(chunk(k, b) for k, b in chunks) + chunk(b"IEND", b"") + tail
+def chunk(kind, body):
+    return len(body).to_bytes(4, "big") + kind + body + zlib.crc32(kind + body).to_bytes(4, "big")
+
+
+def ihdr(width=1, height=1, depth=8, colour=0, interlace=0):
+    return struct.pack(">IIBBBBB", width, height, depth, colour, 0, 0, interlace)
+
+
+IDAT = zlib.compress(b"\0\0")  # the one row of a 1x1 8-bit grey image: filter type 0, then one pixel
+
+
+def png(*chunks, tail=b"", header=ihdr(), idat=IDAT, iend=b""):
+    """IHDR, the given chunks, IDAT, then IEND; header=None or idat=None leaves that chunk out."""
+    return (PNG_SIGNATURE + (chunk(b"IHDR", header) if header is not None else b"")
+            + b"".join(chunk(k, b) for k, b in chunks) + (chunk(b"IDAT", idat) if idat is not None else b"")
+            + chunk(b"IEND", iend) + tail)
 
 
 def test_a_report_figure_passes_only_when_well_formed_with_clean_metadata(repo):
@@ -170,15 +183,76 @@ def test_a_figure_with_an_unknown_chunk_or_a_bad_checksum_is_refused(repo):
     figures.mkdir(parents=True)
     clean = png((b"tEXt", b"Software\0Matplotlib"))
     bad_crc = bytearray(clean)
-    bad_crc[-13] ^= 0xFF  # the last byte of the tEXt chunk's checksum, just before IEND's 12 bytes
+    text_end = clean.index(b"tEXt") + 4 + len(b"Software\0Matplotlib") + 4
+    bad_crc[text_end - 1] ^= 0xFF  # the last byte of the tEXt chunk's checksum
     cases = {"standard": png((b"sRGB", b"\0"), (b"pHYs", bytes(9))), "exif": png((b"eXIf", b"MM\0*")),
              "private": png((b"prVt", b"x")), "crc": bytes(bad_crc)}
     for name, data in cases.items():
         (figures / f"{name}.png").write_bytes(data)
-    assert png_text(clean) == "Software Matplotlib" and png_text(bytes(bad_crc)) is None
+    assert png_text(clean).split("\n")[0] == "Software Matplotlib" and png_text(bytes(bad_crc)) is None
     git("add", "-f", "docs/report/figures")
     issues = scan_index(root)
     assert issues == [f"docs/report/figures/{n}.png: binary file tracked" for n in ("crc", "exif", "private")]
+
+
+def test_a_figure_whose_structure_breaks_the_png_rules_is_refused(repo):
+    """The scan reads every byte of a figure as text except its image data, so the structure must leave nothing to hide:
+    a payload in IEND, in a fixed-length chunk or in IHDR, a missing or second IHDR, missing or split image data, and
+    image data that is not one zlib stream inflating to exactly the size IHDR implies are all refused. The controls, a
+    grey image with text after its image data and a palette image, pass."""
+    root, git = repo
+    path = ("/ho" + "me/someone/notes").encode()
+    cases = {
+        "iend_payload": png(iend=path),
+        "phys_oversized": png((b"pHYs", bytes(9) + path)),
+        "ihdr_oversized": png(header=ihdr() + path),
+        "no_ihdr": png((b"tEXt", b"Software\0Matplotlib"), header=None),
+        "only_iend": png(header=None, idat=None, iend=path),
+        "two_ihdr": png((b"IHDR", ihdr())),
+        "two_phys": png((b"pHYs", bytes(9)), (b"pHYs", bytes(9))),
+        "no_idat": png(idat=None),
+        "idat_split": png((b"IDAT", IDAT[:4]), (b"tEXt", b"a\0b"), idat=IDAT[4:]),
+        "phys_after_idat": PNG_SIGNATURE + chunk(b"IHDR", ihdr()) + chunk(b"IDAT", IDAT) + chunk(b"pHYs", bytes(9))
+        + chunk(b"IEND", b""),
+        "idat_raw_text": png(idat=path),
+        "idat_compressed_text": png(idat=zlib.compress(path)),
+        "idat_short": png(idat=zlib.compress(b"\0")),
+        "idat_trailing": png(idat=IDAT + path),
+        "idat_bad_filter": png(idat=zlib.compress(b"\x05\0")),
+        "zero_width": png(header=ihdr(width=0), idat=zlib.compress(b"\0")),  # the one filter byte a 0-wide row has
+        "interlaced": png(header=ihdr(interlace=1)),
+        "bad_depth": png(header=ihdr(depth=3)),
+        "palette_without_plte": png(header=ihdr(colour=3)),
+        "ztxt_trailing": png((b"zTXt", b"Comment\0\0" + zlib.compress(b"clean") + path)),
+        "ztxt_too_large": png((b"zTXt", b"Comment\0\0" + zlib.compress(b"a" * (2 << 20)))),
+        "itxt_trailing": png((b"iTXt", b"C\0\x01\0\0\0" + zlib.compress(b"x") + path)),
+        "itxt_bad_method": png((b"iTXt", b"C\0\x01\x01\0\0" + zlib.compress(b"x"))),
+        "trns_before_plte": png((b"tRNS", b"\xff"), (b"PLTE", bytes(3)), header=ihdr(colour=3)),
+        "srgb_after_plte": png((b"PLTE", bytes(3)), (b"sRGB", b"\0"), header=ihdr(colour=3)),
+        "palette_too_large": png((b"PLTE", bytes(9)), header=ihdr(depth=1, colour=3)),
+    }
+    controls = {
+        "text_after_idat": PNG_SIGNATURE + chunk(b"IHDR", ihdr()) + chunk(b"IDAT", IDAT)
+        + chunk(b"tEXt", b"Software\0Matplotlib") + chunk(b"IEND", b""),
+        "palette": png((b"PLTE", bytes(3)), (b"tRNS", b"\xff"), header=ihdr(colour=3)),
+    }
+    for name, data in cases.items():
+        assert png_text(data) is None, name
+    for name, data in controls.items():
+        assert png_text(data) is not None, name
+    figures = root / "docs" / "report" / "figures"
+    figures.mkdir(parents=True)
+    for name, data in {**cases, **controls}.items():
+        (figures / f"{name}.png").write_bytes(data)
+    git("add", "-f", "docs/report/figures")
+    assert scan_index(root) == [f"docs/report/figures/{n}.png: binary file tracked" for n in sorted(cases)]
+
+
+def test_a_fixed_length_chunk_is_read_by_the_scan(repo):
+    """The bytes of a chunk other than IDAT and the text chunks are read too: a home path squeezed into the 32 bytes of
+    a cHRM chunk is caught."""
+    path = ("/ho" + "me/someone/n").encode().ljust(32, b"x")
+    assert scan_text("f.png", png_text(png((b"cHRM", path)))) == ["f.png:2: home path"]
 
 
 def test_scan_fires_on_home_shorthands_but_not_on_prose():

@@ -75,9 +75,9 @@ def cmd_all(args) -> int:
     from valiwatt.forecast.freeze import run_freeze
     from valiwatt.monitor.run import run_replay
 
-    args.only, args.run_id, args.dq_only, args.departure = None, None, False, False
+    args.only, args.run_id, args.dq_only = None, None, False
     steps = (cmd_fetch, cmd_dq, cmd_validate, lambda a: run_freeze(2023), lambda a: run_replay(2023),
-             lambda a: run_freeze(2024), lambda a: run_replay(2024), cmd_breaks, cmd_report)
+             lambda a: run_freeze(2024), lambda a: run_replay(2024, departure=a.departure), cmd_breaks, cmd_report)
     for step in steps:
         code = step(args)
         if code:
@@ -118,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_safety)
     p = sub.add_parser("all", help="fetch, check, validate, freeze, replay, break and render: every figure")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--departure", action="store_true",
+                   help="run the 2024 replay with --departure (after a departure recorded in AGENTS.md; the earlier "
+                        "replays must be in mlruns/)")
     p.set_defaults(func=cmd_all)
     args = parser.parse_args(argv)
     return args.func(args)

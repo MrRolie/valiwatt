@@ -12,9 +12,9 @@
 
 It fails on local paths (the home-directory shorthands included), credential shapes, and files that must never be
 tracked (data, run outputs, agent run records, the private estate notes). A binary file cannot be read as text, so it
-fails too, with one exception: the report's figures, PNG files that must be well formed (only the chunk types in
-PNG_CHUNKS, each with a correct checksum), end at their last chunk, and carry only text (their metadata) that passes
-the same scan. A hit in the history names its path and object, or its commit or tag, so the owner can see where it
+fails too, with one exception: the report's figures, PNG files that pass the structure checks png_text lists and whose
+chunks other than the image data (their metadata) pass the same scan. The image data is checked for its size and its
+rows' filter types, not read as text. A hit in the history names its path and object, or its commit or tag, so the owner can see where it
 lives; a ref that exists only in this clone is still scanned, because a push could carry it.
 
 Private names (people, other repositories, anything ESTATE.local.md says never to publish) cannot be listed in a
@@ -52,11 +52,19 @@ FORBIDDEN_FILES = [
 PRIVATE_PATTERNS_FILE = ".private-patterns"
 FIGURES = "docs/report/figures/*.png"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-# The chunks a figure may carry: the standard ones whose content has a fixed meaning, and the three text chunks the scan
-# reads. The committed figures use IHDR, pHYs, tEXt, IDAT and IEND. Anything else (eXIf, iCCP, a private chunk) is
+# The chunks a figure may carry: the critical ones, the three text chunks, and the standard ones made of a few fixed
+# fields. The committed figures use IHDR, tEXt, pHYs, IDAT and IEND. Anything else (eXIf, iCCP, a private chunk) is
 # refused, since its content would pass unread.
 PNG_CHUNKS = {b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND", b"tEXt", b"zTXt", b"iTXt", b"pHYs", b"sRGB", b"gAMA", b"cHRM",
               b"sBIT", b"bKGD", b"tIME"}
+PNG_TEXT = {b"tEXt", b"zTXt", b"iTXt"}
+PNG_TEXT_LIMIT = 1 << 20  # bytes a compressed text chunk may inflate to; more is refused, not read
+# Chunks that may come after the image data; every other chunk must come before it.
+PNG_AFTER_IDAT = PNG_TEXT | {b"tIME", b"IEND"}
+PNG_REPEATABLE = PNG_TEXT | {b"IDAT"}
+# Colour type: (channels, allowed bit depths).
+PNG_COLOUR = {0: (1, {1, 2, 4, 8, 16}), 2: (3, {8, 16}), 3: (1, {1, 2, 4, 8}), 4: (2, {8, 16}), 6: (4, {8, 16})}
+PNG_FIXED_LENGTH = {b"IHDR": 13, b"IEND": 0, b"pHYs": 9, b"sRGB": 1, b"gAMA": 4, b"cHRM": 32, b"tIME": 7}
 
 
 class ScanError(RuntimeError):
@@ -96,12 +104,53 @@ def scan_names(names: list[str]) -> list[str]:
     return [f"{n}: must never be tracked" for n in names if any(fnmatch(n, pat) for pat in FORBIDDEN_FILES)]
 
 
+def _inflate(data: bytes, limit: int | None = None) -> bytes | None:
+    """One complete zlib stream with nothing after it, or None. With a limit, more output than the limit is None too."""
+    d = zlib.decompressobj()
+    out = d.decompress(data, limit + 1) if limit is not None else d.decompress(data)
+    if not d.eof or d.unused_data or d.unconsumed_tail or (limit is not None and len(out) > limit):
+        return None
+    return out
+
+
+def _chunk_length_fits(kind: bytes, length: int, colour: int, palette: int | None) -> bool:
+    """Whether a chunk's length is the one its type fixes, given the image's colour type and palette size."""
+    channels = PNG_COLOUR[colour][0]
+    if kind in PNG_FIXED_LENGTH:
+        return length == PNG_FIXED_LENGTH[kind]
+    if kind == b"PLTE":
+        return colour in (2, 3, 6) and length % 3 == 0 and 3 <= length <= 768
+    if kind == b"sBIT":
+        return length == (3 if colour == 3 else channels)
+    if kind == b"bKGD":
+        return length == {0: 2, 4: 2, 2: 6, 6: 6, 3: 1}[colour]
+    if kind == b"tRNS":
+        if colour == 3:
+            return palette is not None and 1 <= length <= palette
+        return length == {0: 2, 2: 6}.get(colour, -1)
+    return True  # IDAT and the text chunks have no fixed length
+
+
 def png_text(data: bytes) -> str | None:
-    """The text a PNG carries (its tEXt, zTXt and iTXt chunks), or None unless the bytes are one well-formed PNG with
-    nothing after its IEND chunk, no chunk outside PNG_CHUNKS and a correct checksum on every chunk."""
+    """What a PNG carries besides its pixels, as text for the scan, or None unless every check below holds.
+
+    The checks: the PNG signature; every chunk complete, of a type in PNG_CHUNKS, with a correct checksum; IHDR first
+    and only once, with a width and height above zero, a valid pair of colour type and bit depth, compression and
+    filter methods 0, and no interlacing; no chunk type twice except IDAT and the text chunks; every chunk other than
+    IDAT, tEXt, zTXt, iTXt, tIME and IEND before the image data; PLTE present for a palette image, absent where the
+    colour type forbids it, after sRGB, gAMA, cHRM and sBIT and before tRNS and bKGD; the IDAT chunks one after the
+    other, at least one; IEND last, empty, with nothing after it; the lengths PNG fixes for IHDR, pHYs, sRGB, gAMA,
+    cHRM, tIME, sBIT and bKGD, and the bounds it sets on PLTE and tRNS; the joined IDAT data one complete zlib stream with nothing after it, which
+    inflates to exactly the size IHDR implies, each row starting with a valid filter type; each compressed zTXt or iTXt
+    text one complete zlib stream with nothing after it.
+
+    The text returned is the tEXt, zTXt and iTXt chunks, then the raw content of every other chunk except IDAT, so the
+    scan reads the content of every chunk but the image data. The pixel values are not read as text."""
     if not data.startswith(PNG_SIGNATURE):
         return None
-    texts, i = [], len(PNG_SIGNATURE)
+    texts, raw, seen, idat, i = [], [], set(), [], len(PNG_SIGNATURE)
+    colour = width = height = depth = palette = None
+    idat_ended = False
     try:
         while i + 8 <= len(data):
             length, kind = int.from_bytes(data[i:i + 4], "big"), data[i + 4:i + 8]
@@ -110,24 +159,72 @@ def png_text(data: bytes) -> str | None:
                 return None
             if zlib.crc32(kind + body) != int.from_bytes(data[i + 8 + length:i + 12 + length], "big"):
                 return None
-            if kind == b"tEXt":
+            if (kind == b"IHDR") != (i == len(PNG_SIGNATURE)):
+                return None  # IHDR first, and nowhere else
+            if kind in seen and kind not in PNG_REPEATABLE:
+                return None
+            if kind == b"IDAT" and idat_ended:
+                return None  # the IDAT chunks must follow one another
+            if idat and kind != b"IDAT":
+                idat_ended = True
+            if idat and kind not in PNG_AFTER_IDAT and kind != b"IDAT":
+                return None
+            seen.add(kind)
+            if kind == b"IHDR":
+                if length != 13:
+                    return None
+                width, height = int.from_bytes(body[0:4], "big"), int.from_bytes(body[4:8], "big")
+                depth, colour, method, filtering, interlace = body[8:13]
+                if not (0 < width < 2**31 and 0 < height < 2**31) or colour not in PNG_COLOUR \
+                        or depth not in PNG_COLOUR[colour][1] or (method, filtering, interlace) != (0, 0, 0):
+                    return None
+            elif not _chunk_length_fits(kind, length, colour, palette):
+                return None
+            if kind == b"PLTE":
+                palette = length // 3
+                if (colour == 3 and palette > 2**depth) or seen & {b"tRNS", b"bKGD"}:
+                    return None
+            if kind in (b"sRGB", b"gAMA", b"cHRM", b"sBIT") and palette is not None:
+                return None  # these come before PLTE
+            if kind == b"IDAT":
+                if colour == 3 and palette is None:
+                    return None
+                idat.append(body)
+            elif kind == b"tEXt":
                 texts.append(body.replace(b"\0", b" ").decode("latin-1"))
             elif kind == b"zTXt":
                 key, _, rest = body.partition(b"\0")
-                texts.append(key.decode("latin-1") + " " + zlib.decompress(rest[1:]).decode("latin-1"))
+                text = _inflate(rest[1:], PNG_TEXT_LIMIT) if rest[:1] == b"\0" else None
+                if text is None:
+                    return None
+                texts.append(key.decode("latin-1") + " " + text.decode("latin-1"))
             elif kind == b"iTXt":
                 key, _, rest = body.partition(b"\0")
-                compressed, rest = rest[0], rest[2:]
+                compressed, method, rest = rest[0], rest[1], rest[2:]
                 lang, _, rest = rest.partition(b"\0")
                 translated, _, text = rest.partition(b"\0")
-                text = zlib.decompress(text) if compressed else text
+                if compressed not in (0, 1) or method != 0:
+                    return None
+                text = _inflate(text, PNG_TEXT_LIMIT) if compressed else text
+                if text is None:
+                    return None
                 texts.append(" ".join(x.decode("utf-8") for x in (key, lang, translated, text)))
+            else:
+                raw.append(body.decode("latin-1"))
             i += 12 + length
             if kind == b"IEND":
-                return "\n".join(texts) if i == len(data) else None
-    except (zlib.error, UnicodeDecodeError, IndexError):
+                break
+        else:
+            return None  # no IEND
+        if i != len(data) or not idat:
+            return None
+        row = 1 + (width * PNG_COLOUR[colour][0] * depth + 7) // 8
+        pixels = _inflate(b"".join(idat), height * row)
+    except (zlib.error, UnicodeDecodeError, IndexError, ValueError, OverflowError, MemoryError):
         return None
-    return None
+    if pixels is None or len(pixels) != height * row or any(f > 4 for f in pixels[::row]):
+        return None
+    return "\n".join(texts + raw)
 
 
 def scan_index(root: Path = REPO_ROOT, extra: dict | None = None) -> list[str]:

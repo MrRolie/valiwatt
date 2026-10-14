@@ -213,8 +213,10 @@ built:
 - *In place:* the 2024 replay is seen to call each of its gates (no tag, a moved tag, a model from another
   validation, a model changed during the run each stop it before or after the right step), the report's run chain
   is refused at each broken link, and a breaks run with a break that did not fire is marked failed.
-- *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused; a report figure whose
-  metadata carries a private path, or with bytes after its end, fails the public-safety scan.
+- *Render:* a report whose runs do not chain, or whose code changed since its runs, is refused; so is one whose 2024
+  replay does not match the departures recorded in `AGENTS.md`, and one whose validation run is missing a season's
+  coverage; a report figure whose metadata carries a private path, or with bytes after its end, fails the
+  public-safety scan.
 
 CI has no data, so it runs every break on synthetic frames. `valiwatt all` also runs the same break suite as a tracked
 `breaks` run; the report renders the break table from it and refuses to render if any break did not fire.

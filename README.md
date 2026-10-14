@@ -33,6 +33,11 @@ Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --
 `report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.
 `valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
 
+After a departure from the frozen rules (each is listed in `AGENTS.md`), the report shows the 2024 replay as post hoc
+beside the earlier replays it departs from, and those replays live only in `mlruns/`. A fresh clone then cannot render
+the report: the render refuses a 2024 replay that does not carry the recorded departure. Where `mlruns/` holds the
+earlier replays, `valiwatt all --departure` reproduces it.
+
 How it is built, and why each choice was made before any result was seen: [`docs/plan.md`](docs/plan.md). The
 standards the report maps to, quoted and checked against their PDFs: [`docs/standards.md`](docs/standards.md).
 

@@ -1,0 +1,9 @@
+{# The sentence on coverage by season, rendered from the run's intervals; see report/validation.py::season_coverage. #}
+{% macro among(keys) %}in {% for k in keys %}{{ k }}{% if loop.revindex == 2 %} and {% elif not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+{% macro season_sentence(rows, nominal) %}
+{% set inside = rows|selectattr('contains_nominal')|map(attribute='key')|list %}
+{% set outside = rows|rejectattr('contains_nominal')|map(attribute='key')|list %}
+{% set apart = rows|selectattr('disjoint')|map(attribute='key')|list %}
+{% set overlap = rows|rejectattr('disjoint')|map(attribute='key')|list %}
+{% if not outside %}With one quantile per season, the 95% CI of coverage contains the {{ nominal|pct(0) }} nominal in every season.{% elif not inside %}With one quantile per season, the 95% CI of coverage contains the {{ nominal|pct(0) }} nominal in no season.{% else %}With one quantile per season, the 95% CI of coverage contains the {{ nominal|pct(0) }} nominal {{ among(inside) }}, not {{ among(outside) }}.{% endif %} {% if not overlap %}In every season, the CIs of the two forms do not overlap.{% elif not apart %}The CIs of the two forms overlap in every season.{% else %}The CIs of the two forms do not overlap {{ among(apart) }}; they overlap {{ among(overlap) }}.{% endif %} No interval is computed on the difference between the two forms: the comparison goes no further than whether the CIs overlap.
+{%- endmacro %}

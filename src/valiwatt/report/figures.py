@@ -21,7 +21,7 @@ LABELS = {
         "mape": "EAMP mensuelle (%)", "persistence": "météo de la veille (production)",
         "observed": "météo observée (borne optimiste)", "baseline": "même heure, une semaine avant",
         "coverage": "Couverture (%)", "nominal": "nominale 90 %", "pooled": "quantile unique",
-        "by_season": "quantile par saison", "demand": "Demande (MW)", "actual": "réelle",
+        "by_season": "quantile par saison", "ci": "IC 95 %", "demand": "Demande (MW)", "actual": "réelle",
         "interval": "intervalle 90 %", "week_mape": "EAMP hebdomadaire (%)", "week_bias": "Biais hebdomadaire (%)",
         "week_cov": "Couverture hebdomadaire (%)", "threshold": "seuil de la saison",
         "drift_t": "Dérive, température", "drift_f": "Dérive, prévision", "alarm": "niveau d'alarme",
@@ -31,7 +31,7 @@ LABELS = {
         "mape": "Monthly MAPE (%)", "persistence": "previous day's weather (production)",
         "observed": "observed weather (optimistic bound)", "baseline": "same hour one week earlier",
         "coverage": "Coverage (%)", "nominal": "nominal 90%", "pooled": "one quantile",
-        "by_season": "one quantile per season", "demand": "Demand (MW)", "actual": "actual",
+        "by_season": "one quantile per season", "ci": "95% CI", "demand": "Demand (MW)", "actual": "actual",
         "interval": "90% interval", "week_mape": "Weekly MAPE (%)", "week_bias": "Weekly bias (%)",
         "week_cov": "Weekly coverage (%)", "threshold": "season's threshold",
         "drift_t": "Drift, temperature", "drift_f": "Drift, forecast", "alarm": "alarm level",
@@ -62,23 +62,32 @@ def monthly_mape(monthly: pd.DataFrame, lang: str, path: Path):
 
 
 def coverage_by_season(rows: dict, lang: str, path: Path):
-    """rows: {"pooled": {season: coverage}, "by_season": {season: coverage}}."""
+    """rows: {"pooled": {season: (coverage, ci_low, ci_high)}, "by_season": {...}}; the 95 % interval is drawn as a
+    thin error bar, the point label sits above it."""
     L = LABELS[lang]
     fig, ax = plt.subplots(figsize=(6, 3.2))
     x = np.arange(len(SEASON_ORDER))
     w = 0.36
+    top = 0.0
     for i, (key, color) in enumerate((("pooled", SERIES_1), ("by_season", SERIES_2))):
-        vals = [100 * rows[key][s] for s in SEASON_ORDER]
-        ax.bar(x + (i - 0.5) * (w + 0.02), vals, width=w, color=color, label=L[key])
-        for xi, v in zip(x, vals):
-            ax.text(xi + (i - 0.5) * (w + 0.02), v + 0.6, _num(lang, 1)(v, None), ha="center", fontsize=7, color=INK)
+        vals, lows, highs = (np.array([100 * rows[key][s][j] for s in SEASON_ORDER]) for j in range(3))
+        xs = x + (i - 0.5) * (w + 0.02)
+        ax.bar(xs, vals, width=w, color=color, label=L[key])
+        ax.errorbar(xs, vals, yerr=[vals - lows, highs - vals], fmt="none", ecolor=INK_2, elinewidth=0.8, capsize=2,
+                    capthick=0.8, label=L["ci"] if i == 0 else None)
+        for xi, v, hi in zip(xs, vals, highs):
+            ax.text(xi, hi + 0.6, _num(lang, 1)(v, None), ha="center", fontsize=7, color=INK)
+        top = max(top, highs.max())
     ax.axhline(90, color=INK_2, linewidth=0.9, linestyle="--", label=L["nominal"])
     ax.set_xticks(x, [L["seasons"][s] for s in SEASON_ORDER])
-    ax.set_ylim(60, 102)
+    ax.set_ylim(60, max(102, top + 3))
     ax.set_ylabel(L["coverage"], fontsize=9)
     ax.yaxis.set_major_formatter(_num(lang, 0))
     _style(ax)
-    ax.legend(frameon=False, fontsize=8, labelcolor=INK, loc="lower right")
+    handles, labels = ax.get_legend_handles_labels()
+    order = [labels.index(L[k]) for k in ("pooled", "by_season", "ci", "nominal")]
+    ax.legend([handles[i] for i in order], [labels[i] for i in order], frameon=False, fontsize=8, labelcolor=INK,
+              loc="lower left", bbox_to_anchor=(0, 1.0), ncol=4)
     _save(fig, path)
 
 

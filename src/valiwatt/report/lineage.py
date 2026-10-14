@@ -5,12 +5,19 @@ pseudo-replay 2023 -> frozen model 2023 -> the same validation
 breaks run
 Every run must be finished and complete, made from the code that renders the report, under the rules of the
 `rules-frozen` tag. A replay run after a recorded departure brings the earlier replays it departs from, so the report
-can label it post hoc and show them beside it.
+can label it post hoc and show them beside it. The departures section of `AGENTS.md` is read at render time too: when
+it names a commit, the replay must be a departure, and a departure replay must have its freeze commit named there. A
+store without the earlier replays (a fresh clone) then refuses the report instead of dropping the post hoc label.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+
+# A commit as `check_tag_not_moved` looks for it: at least its 12-character prefix. No English or French word is 12 hex letters long.
+COMMIT = re.compile(r"\b[0-9a-f]{12,40}\b")
+SHORT_COMMIT = re.compile(r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,11}\b")  # a commit named too briefly to be checked
 
 
 class ChainBroken(RuntimeError):
@@ -50,9 +57,33 @@ def _link(run, tag: str, expected: str, what: str) -> None:
         raise ChainBroken(f"{what} run {run.info.run_id}: {tag} is {got!r}, expected {expected!r}")
 
 
-def follow(code_sha: str, rules_sha: str, freeze: dict) -> Chain:
+def check_recorded(replay, recorded: str) -> None:
+    """The replay agrees with the departures section of AGENTS.md: a recorded departure needs a departure replay, and
+    a departure replay needs its freeze commit recorded. A section that cannot be found cannot be checked."""
+    if not recorded.strip():
+        raise ChainBroken("AGENTS.md has no departures section under its heading, so the replay cannot be checked "
+                          "against it")
+    short = SHORT_COMMIT.findall(recorded)
+    if short:
+        raise ChainBroken(f"AGENTS.md's departures section names {short} by fewer than 12 characters; the freeze commit "
+                          "is checked on its first 12, so name it by at least 12")
+    named = COMMIT.findall(recorded)
+    departure = replay.data.tags.get("departure") == "true"
+    if named and not departure:
+        raise ChainBroken(f"AGENTS.md records a departure (commits {[c[:12] for c in named]}), but replay "
+                          f"{replay.info.run_id} is not a departure: the store must hold the earlier replays it "
+                          "departs from, then run `valiwatt all --departure`")
+    commit = replay.data.tags.get("freeze_commit", "")
+    if departure and (not commit or commit[:12] not in recorded):
+        raise ChainBroken(f"replay {replay.info.run_id} is a departure, but AGENTS.md's departures section does not "
+                          f"name its freeze commit {commit[:12] or '(none)'}")
+
+
+def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None = None) -> Chain:
+    """`recorded` is the departures section of AGENTS.md; None reads it from the file."""
     from valiwatt.breaks import EXPERIMENT as BREAKS_EXP
     from valiwatt.monitor.run import EXPERIMENT as MON_EXP
+    from valiwatt.monitor.run import recorded_departures
     from valiwatt.tracking import client, latest_run
 
     c = client()
@@ -70,6 +101,7 @@ def follow(code_sha: str, rules_sha: str, freeze: dict) -> Chain:
         for run in departed:
             _complete(run, "departed replay")
             _link(run, "kind", "replay", "departed replay")
+    check_recorded(replay, recorded_departures() if recorded is None else recorded)
     val_id = replay.data.tags.get("validation_run_id", "")
     try:
         pseudo = latest_run(MON_EXP, "tags.kind = 'pseudo_replay' and attributes.status = 'FINISHED' "
