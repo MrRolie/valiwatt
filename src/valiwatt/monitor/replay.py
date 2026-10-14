@@ -101,7 +101,10 @@ def day_verdicts(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, first_
     temperature (a record and its duplicates share one timestamp); none of these moves when records stamped after the
     day are added, so each day's verdict is the replay's. The last day is judged as at the end of the data, as a replay
     judges its last day when the data end with it (a fall-back pair that straddles the end, which never happens on
-    31 December, is the one case where the two could differ)."""
+    31 December, is the one case where the two could differ). The explicit cut at the last day's last hour is kept,
+    though build_demand and station_series already drop later records as off their window (`last` = that hour):
+    removing it changes nothing, an equivalent mutant; reading a later day into a day's slice is what the lookahead
+    break on day_verdicts catches."""
     days = pd.date_range(pd.Timestamp(first_day), pd.Timestamp(last_day), freq="D")
     end = origin(days[-1]) + 24 * H
     raw, raw_t = (r[r["ts_utc"] <= end].sort_values("ts_utc", kind="stable").reset_index(drop=True)

@@ -12,8 +12,10 @@ Three known shapes of index anomaly, each handled by an explicit rule:
   one, and (2) the destination is unambiguous: the next-best destination's best cost is at least MISPLACED_MIN_RATIO
   times the chosen one's, or there is no other candidate. Both values must be inside BOUNDS_MW: a pair holding a value
   outside them is never repaired. The repair is logged with its evidence (both ratios, and the next-best destination).
-  Otherwise nothing is moved, the hour is an unresolved duplicate whose evidence names both candidate destinations, and
-  the gate fails.
+  Otherwise nothing is moved, the hour is an unresolved duplicate, and the gate fails. Its evidence carries the reason
+  (not_a_pair, blank_value, value_out_of_bounds, no_destination, swap_ratio or ambiguous_destination) and the best and
+  next-best destinations when they exist: none when the hour does not hold exactly two in-bounds values or no
+  destination was found, one or two for swap_ratio, two for ambiguous_destination.
 - Missing record or blank value: left missing, reported as runs. Never interpolated in the canonical series.
 
 Any other duplicate fails the gate: when two values claim one hour and the data cannot say which is right, the

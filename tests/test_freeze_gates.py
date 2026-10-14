@@ -365,7 +365,8 @@ def test_replay_called_directly_on_the_held_out_year_passes_the_freeze_gate(repo
     monkeypatch.setattr(mrun, "earlier_freeze_commits", lambda year: {})
     for first, last, end in (("2024-01-01", "2024-01-07", "2025-01-01T05:00Z"),
                              ("2023-12-25", "2024-01-07", "2024-01-08T05:00Z"),  # a window that crosses into 2024
-                             ("2023-12-25", "2023-12-31", "2025-01-01T05:00Z")):  # records of 2024 in view
+                             ("2023-12-25", "2023-12-31", "2025-01-01T05:00Z"),  # records of 2024 in view
+                             ("2024-01-01", "2024-01-07", "2024-01-01T05:00Z")):  # days of 2024, no record of 2024
         with pytest.raises(mrun.FreezeError, match="no `rules-frozen` tag"):
             direct_replay(first, last, end)
     git(repo, "tag", rules.FREEZE_TAG)

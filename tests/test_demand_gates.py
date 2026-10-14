@@ -294,6 +294,25 @@ def test_a_misplaced_record_that_fits_two_empty_hours_is_not_moved_and_fails_the
     json.dumps(c["demand_duplicates_resolved"].to_dict())
 
 
+
+def test_a_destination_whose_runner_up_costs_exactly_the_ratio_is_repaired():
+    """The boundary of the destination test: the next-best empty hour costs exactly MISPLACED_MIN_RATIO times the
+    chosen one (40 MW against 20 MW, exact in floating point). The rule refuses only below the ratio, so it moves."""
+    from valiwatt.quality.demand import MISPLACED_MIN_RATIO
+
+    first, last = "2021-12-28T00:00Z", "2022-01-10T00:00Z"
+    s1, s2, t = (pd.Timestamp(x) for x in ("2022-01-02T10:00Z", "2022-01-04T10:00Z", "2022-01-07T10:00Z"))
+    raw = set_mw(synth_demand(first, last), [s1 - H, s1 + H], 10_000.0)
+    raw = set_mw(set_mw(raw, [s2 - H, s2 + H], 9_990.0), [t - H, t, t + H], 20_000.0)
+    raw = drop_record(drop_record(add_record(raw, t, 10_010.0), s1), s2)
+    build, c = run(raw, first, last)
+    ev = c["demand_misplaced"].evidence[0] if build.misplaced_events else build.unresolved_duplicates[0]
+    assert ev.get("reason") is None, ev.get("reason")
+    assert MISPLACED_MIN_RATIO == 2.0 and (ev["cost_mw"], ev["runner_up"]["cost_mw"]) == (20.0, 40.0)
+    assert ev["destination_ratio"] == MISPLACED_MIN_RATIO and ev["runner_up"]["slot"] == s2
+    assert c["demand_duplicates_resolved"].passed and build.frame.loc[s1, "status"] == STATUS_REPAIRED
+    assert build.frame.loc[s1, "mw"] == 10_010.0 and build.frame.loc[s2, "status"] == "missing_record"
+
 def low_load_world():
     """The replay world with an empty low-load hour s (neighbours 5,500 MW) and, at an earlier high-load hour t, a
     second record of 4,900 MW: below the bounds, yet it fits s far better than t."""

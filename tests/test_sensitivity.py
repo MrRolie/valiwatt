@@ -58,6 +58,24 @@ def test_the_episode_grid_starts_on_the_first_judged_week_and_leaves_room_for_th
     assert row["retrain"] == 0 and not out["jobs_with_alarms"]  # factor 1 changes nothing
 
 
+
+def test_each_measurement_replay_receives_the_departure_flag(clean, monkeypatch):
+    """The 2024 measurements replay the held-out year, so each replay passes the freeze gate itself: under a recorded
+    departure it must be told so, or it refuses after the main replay has finished."""
+    seen = []
+
+    def recording_replay(*a, **kw):
+        seen.append(kw.get("departure", "not passed"))
+        return clean
+
+    monkeypatch.setattr(S, "replay", recording_replay)
+    kw = dict(days=(1,), factors=(1.0,), starts=["2022-01-15"], workers=1)
+    S.episodes(*args(clean), **kw, departure=True)
+    S.level_shifts(*args(clean), factors=(1.0,), starts=["2022-01-10"], workers=1, departure=True)
+    assert seen == [True, True]
+    S.episodes(*args(clean), **kw)
+    assert seen == [True, True, False]
+
 def test_an_alarm_resting_on_a_week_already_out_of_band_is_assisted_and_old_alarms_are_not_counted():
     a, b, c = week("2024-01-01"), week("2024-01-08"), week("2024-01-15")
     base = {w["week_start"]: {"recommendation": None, "flagged": False} for w in (a, b, c)}
