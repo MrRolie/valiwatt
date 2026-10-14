@@ -65,7 +65,7 @@ reports, generated from runs. It was revised on 2026-10-14 after a fresh-context
   points from the out-of-sample forecasts of all folds (forecasts only, never the outcome), so the grouping does not
   condition on the outcome. Every figure by group carries
   a week-block bootstrap interval, and any "A beats B" sentence needs one that excludes zero.
-- **Test cases, with criteria fixed in advance.**
+- **Test cases, with what each measures fixed in advance; neither has a criterion that could fail.**
   - *The 2020 shift:* the spring 2020 months' error and bias against the same months of the other years. Intervals
     cannot cover 2020 (section below), and the report says so.
   - *The February 2023 cold peak:* the busiest hours of the design years (the data-quality run already finds them in

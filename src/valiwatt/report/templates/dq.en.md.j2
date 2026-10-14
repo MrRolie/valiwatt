@@ -26,7 +26,7 @@ _Generated from MLflow run `{{ run_id }}` ({{ run_date }}), code `{{ commit|shor
 {% endif %}
 {% endfor %}
 
-## In short
+## In brief
 
 - **{{ c['demand_window'].metrics.hours|num }} hours** of demand, from {{ c['demand_window'].metrics.first_utc|utc }} to {{ c['demand_window'].metrics.last_utc|utc }}; **{{ c['demand_coverage'].metrics.usable_share|pct(2) }}** are usable.
 {% if c['demand_dst'].metrics.events %}

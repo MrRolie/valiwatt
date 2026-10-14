@@ -1,15 +1,10 @@
 {% set P = v.performance %}
 {% set C = v.coverage %}
 {% from 'season_coverage.fr.md.j2' import season_sentence %}
-{% from 'sentences.fr.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why %}
-{% set pct_sign = ' %' if lang == 'fr' else '%' %}
-{% macro sp(x, d=1) %}{{ (100 * x)|signed(d) }}{{ pct_sign }}{% endmacro %}
+{% from 'sentences.fr.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_error, brief_coverage, brief_peak, brief_replay, brief_misses, break_result, level_shift_note %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }} ; {{ hi|pct(d) }}]{% endmacro %}
 {% macro sci(lo, hi, d=2) %}[{{ sp(lo, d) }} ; {{ sp(hi, d) }}]{% endmacro %}
-{% macro pp(x, d=2) %}{{ (100 * x)|signed(d) }} pt{% endmacro %}
-{% macro ppci(lo, hi, d=2) %}[{{ pp(lo, d) }} ; {{ pp(hi, d) }}]{% endmacro %}
 {% macro cent(x) %}{{ x|num(0 if x == x|round(0) else 1) }}{% endmacro %}
-{% macro span(years) %}{{ years[0] }}–{{ years[1] }}{% endmacro %}
 {% set REC = {'retrain': 'réentraîner', 'recalibrate': 'recalibrer les intervalles', 'investigate_data': 'examiner les données'} %}
 {% set SEASON = {'winter': 'hiver', 'spring': 'printemps', 'summer': 'été', 'fall': 'automne'} %}
 {% set MONTH = {1: 'janvier', 2: 'février', 3: 'mars', 4: 'avril', 5: 'mai', 6: 'juin', 7: 'juillet', 8: 'août', 9: 'septembre', 10: 'octobre', 11: 'novembre', 12: 'décembre'} %}
@@ -62,11 +57,11 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 ## En bref
 
 {% set vy = K.validation_years %}
-- Sur {{ span(vy) }}, la prévision s'écarte en moyenne de {{ P.persistence.overall.mean|pct(2) }} de la demande horaire, contre {{ P.baseline.overall.mean|pct(2) }} pour une prévision naïve (la même heure, une semaine avant){% if c1.separated and c1.difference < 0 %} : elle fait mieux, et l'écart est confirmé{% elif c1.separated %} : elle fait moins bien, et l'écart est confirmé{% else %} ; l'écart n'est pas confirmé{% endif %}.
-- Ses intervalles à {{ nominal|pct(0) }} ont contenu la demande {{ C.relative.overall.mean|pct(1) }} du temps depuis {{ v.conformal.first_fold }}{% if sides.overall.under %}, moins que le nominal, IC 95 % compris{% elif sides.overall.over %}, plus que le nominal, IC 95 % compris{% else %}, et l'IC 95 % de cette couverture contient le nominal{% endif %}. {% if sides.season.under or sides.decile.under %}Ils en contiennent moins que promis dans ces groupes : {{ groups(sides.season.under, sides.decile.under) }} (section 4).{% else %}Aucune saison ni aucun décile de charge n'est sous-couvert au sens de la section 4.{% endif %}{{ '' }}
-- Aux {{ peak.hours|length }} heures les plus chargées de {{ span(K.design_years) }}{% if peak_in_month %}, toutes en {{ peak.named_month }}{% endif %}, {% if peak.evaluated == 0 %}aucun intervalle de prévision n'est calculé{% elif peak.covered == peak.evaluated %}la demande est restée dans l'intervalle chaque fois ({{ peak.evaluated }} heures jugées){% else %}la demande est sortie de l'intervalle {{ peak.evaluated - peak.covered }} fois sur {{ peak.evaluated }}{% if peak_above == peak.evaluated - peak.covered %}, toujours par le haut{% endif %}{% endif %}.
-- Rejouée comme en production, avec le modèle et les règles gelés, l'année {{ r.year }} {% if n_recs == 0 %}n'a déclenché aucune recommandation{% elif n_recs == 1 %}a déclenché 1 recommandation{% else %}a déclenché {{ n_recs }} recommandations{% endif %} (EAMP {{ r.summary.mape.mean|pct(2) }}, couverture {{ r.summary.coverage.mean|pct(1) }}){% if departures %}, **a posteriori**, après une dérogation aux règles gelées{% endif %}.
-- Le rapport mesure aussi ce que le moniteur pouvait manquer : sur {{ p.year }}, une hausse soutenue de {{ level.size|pct(0) }} de la demande a donné « réentraîner » en {{ K.step_horizon }} semaines à {{ level.up_n - level.up_missed }} des {{ level.up_n }} départs ; sur {{ r.year }}, un écart soutenu de ±{{ LR.smallest|pct(0) }} entre la demande et la prévision, à {{ LR.smallest_by_sign.up.caught + LR.smallest_by_sign.down.caught }} des {{ LR.smallest_by_sign.up.cases + LR.smallest_by_sign.down.cases }} cas (sections 6 à 8).
+- {{ brief_error(P, c1, vy) }}
+- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides) }}
+- {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }}
+- {{ brief_replay(r, n_recs, departures) }}
+- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon) }}
 
 ## Fiche du modèle
 
@@ -79,8 +74,8 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 | **Modèle** | Moindres carrés ordinaires sur des variables nommées : une constante par heure et type de jour, le chauffage et la climatisation (degrés-heures, base {{ v.config.base_c|num(0) }} °C) par bloc horaire, la demande de la veille et de la semaine précédente. Figé sur les données jusqu'au {{ f24.params.train_last_day }} ; empreinte de ses coefficients et de sa demi-largeur `{{ f24.tags.coefficient_sha256|short }}` (modèle enregistré `valiwatt-demand-persistence`, alias `replay-{{ r.year }}`). |
 | **Intervalle** | Prévision × (1 ± {{ f24.params.q|float|pct(2) }}). La demi-largeur est un quantile des {{ K.calibration_scores|num }} erreurs relatives hors échantillon de {{ f24.params.calibration_first_fold }} à {{ f24.params.calibration_last_fold }}, faites par les {{ K.calibration_folds }} modèles réajustés chaque mois de la validation, puis appliqué au modèle figé : la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini (section 1). La couverture mesurée en est la preuve (sections 4 et 7). |
 | **Erreur en validation** | EAMP de {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} sur {{ span(vy) }}, contre {{ P.baseline.overall.mean|pct(2) }} pour la référence naïve. |
-| **Rejeu de {{ r.year }}** | EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }} ; {% if n_recs == 0 %}aucune recommandation{% elif n_recs == 1 %}1 recommandation{% else %}{{ n_recs }} recommandations{% endif %} (section 7){% if departures %} ; **a posteriori**, après une dérogation{% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
-| **Cas tests** | {{ MONTH[sh.months[0]]|capitalize }} à {{ MONTH[sh.months[-1]] }} {{ sh.year }} : biais de {{ sp(sh.bias_shift_year.mean, 2) }} contre {{ sp(sh.bias_other_years.mean, 2) }} les mêmes mois des autres années ; {% if sh.separated %}écart confirmé par des intervalles disjoints{% else %}écart non confirmé par des intervalles disjoints{% endif %}, et l'intervalle de la différence, ajouté après les résultats, {% if sh.separated and dsh.separated %}le confirme aussi{% elif sh.separated %}ne le confirme pas{% elif dsh.separated %}le confirme{% else %}ne le confirme pas non plus{% endif %} (section 3). Pointe de froid de {{ peak.named_month }} : {{ peak.covered }} des {{ peak.evaluated }} heures les plus chargées dans l'intervalle. Aucun des deux cas n'avait de critère d'acceptation qui pouvait échouer. |
+| **Rejeu de {{ r.year }}** | EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }} ; {{ recs(n_recs) }} (section 7){% if departures %} ; **a posteriori**, après une dérogation{% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
+| **Cas tests** | {{ MONTH[sh.months[0]]|capitalize }} à {{ MONTH[sh.months[-1]] }} {{ sh.year }} : biais de {{ sp(sh.bias_shift_year.mean, 2) }} contre {{ sp(sh.bias_other_years.mean, 2) }} les mêmes mois des autres années ; {{ spring_card(sh, dsh) }} (section 3). Pointe de froid de {{ peak.named_month }} : {{ peak.covered }} des {{ peak.evaluated }} heures les plus chargées dans l'intervalle. Aucun des deux cas n'avait de critère d'acceptation qui pouvait échouer. |
 | **Mise en garde météo** | La production utilise la température de la veille, seule connue à l'émission. La température observée de l'heure visée, qui tient lieu d'une température de {{ primary }} parfaitement prévue, n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
 | **Limites** | Section 8. |
 | **Auteur** | {{ attribution[-1] }} |
@@ -154,7 +149,7 @@ Les différences d'EAMP sont en points de pourcentage (pt).
 
 Aucun des deux cas tests n'avait de critère d'acceptation qui pouvait échouer : le plan fixait ce que chacun mesurerait, pas un résultat qui compterait comme un échec. Ce sont des mesures.
 
-**Printemps {{ sh.year }}.** Mois de {{ months(sh.months) }} : biais de {{ sp(sh.bias_shift_year.mean, 2) }} {{ sci(sh.bias_shift_year.ci95_low, sh.bias_shift_year.ci95_high) }} en {{ sh.year }}, contre {{ sp(sh.bias_other_years.mean, 2) }} {{ sci(sh.bias_other_years.ci95_low, sh.bias_other_years.ci95_high) }} les autres années. Le critère retenu, des intervalles disjoints, {% if sh.separated %}confirme{% else %}ne confirme pas{% endif %} l'écart ; ce n'est pas la règle de la section 1, qui juge l'intervalle de la différence. *Ajouté après les résultats :* l'intervalle de la différence, calculé au rendu avec le même rééchantillonnage par semaines entières (chaque côté sur ses propres semaines, car ils ne partagent aucune heure), donne {{ pp(dsh.difference) }} {{ ppci(dsh.ci95_low, dsh.ci95_high) }} : {% if dsh.separated %}selon la règle de la section 1, l'écart est confirmé{% else %}selon la règle de la section 1, l'écart n'est pas confirmé{% endif %}. Avec la météo observée, le même cas donne {{ sp(so.bias_shift_year.mean, 2) }} {{ sci(so.bias_shift_year.ci95_low, so.bias_shift_year.ci95_high) }} en {{ so.year }} contre {{ sp(so.bias_other_years.mean, 2) }} {{ sci(so.bias_other_years.ci95_low, so.bias_other_years.ci95_high) }} : intervalles {% if so.separated %}disjoints{% else %}qui se chevauchent{% endif %} ; différence {{ pp(dso.difference) }} {{ ppci(dso.ci95_low, dso.ci95_high) }}, {% if dso.separated %}écart confirmé{% else %}écart non confirmé{% endif %} (ajouté après les résultats). Les intervalles de prévision ne couvrent pas {{ sh.year }} : ils demandent {{ K.calibration_folds }} mois de calibration.
+**Printemps {{ sh.year }}.** Mois de {{ months(sh.months) }} : biais de {{ sp(sh.bias_shift_year.mean, 2) }} {{ sci(sh.bias_shift_year.ci95_low, sh.bias_shift_year.ci95_high) }} en {{ sh.year }}, contre {{ sp(sh.bias_other_years.mean, 2) }} {{ sci(sh.bias_other_years.ci95_low, sh.bias_other_years.ci95_high) }} les autres années. Le critère retenu, des intervalles disjoints, {% if sh.separated %}confirme{% else %}ne confirme pas{% endif %} l'écart ; ce n'est pas la règle de la section 1, qui juge l'intervalle de la différence. *Ajouté après les résultats :* l'intervalle de la différence, calculé au rendu avec le même rééchantillonnage par semaines entières que les exécutions, mais avec plus de tirages (chaque côté sur ses propres semaines et avec sa propre graine, car ils ne partagent aucune heure), donne {{ pp(dsh.difference) }} {{ ppci(dsh.ci95_low, dsh.ci95_high) }} : {{ diff_verdict(dsh) }}. Avec la météo observée, le même cas donne {{ sp(so.bias_shift_year.mean, 2) }} {{ sci(so.bias_shift_year.ci95_low, so.bias_shift_year.ci95_high) }} en {{ so.year }} contre {{ sp(so.bias_other_years.mean, 2) }} {{ sci(so.bias_other_years.ci95_low, so.bias_other_years.ci95_high) }} : intervalles {% if so.separated %}disjoints{% else %}qui se chevauchent{% endif %} ; différence {{ pp(dso.difference) }} {{ ppci(dso.ci95_low, dso.ci95_high) }}, ajoutée après les résultats par le même calcul : {{ diff_verdict(dso) }}. Les intervalles de prévision ne couvrent pas {{ sh.year }} : ils demandent {{ K.calibration_folds }} mois de calibration.
 
 | Mois | EAMP | Biais |
 |---|---|---|
@@ -368,11 +363,11 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Contrôle | Bris | Résultat |
 |---|---|---|
 {% for row in b.breaks %}
-| {{ b.groups[row.group][0] }} | {{ row.fr }} | {% if row.outcome != 'passed' %}ÉCHEC{% elif row.control %}resté silencieux{% else %}déclenché{% endif %} |
+| {{ b.groups[row.group][0] }} | {{ row.fr }} | {{ break_result(row) }} |
 {% endfor %}
 
 {% set shift_break = b.breaks|selectattr('test', 'equalto', 'tests/test_replay.py::test_a_level_shift_yields_retrain')|first %}
-Le bris « {{ shift_break.fr }} » multiplie la demande du monde synthétique par {{ (1 + world.level_shift)|num(2) }}, une hausse de {{ world.level_shift|pct(0) }}. {% if level.up_missed %}Sur les vraies heures de {{ p.year }}, une hausse de {{ level.size|pct(0) }} n'a pas donné « réentraîner » en {{ K.step_horizon }} semaines à {{ level.up_missed }} des {{ level.up_n }} départs (section 8) : la règle peut se déclencher, mais {% if level.up_missed == level.up_n %}elle n'a vu une telle hausse dans la vraie demande à aucun départ{% else %}elle n'a pas vu une telle hausse dans la vraie demande à chaque départ{% endif %}.{% else %}Sur les vraies heures de {{ p.year }}, une hausse de {{ level.size|pct(0) }} a donné « réentraîner » en {{ K.step_horizon }} semaines à chaque départ (section 8).{% endif %}{{ '' }}
+{{ level_shift_note(shift_break.fr, world, level, p.year, K.step_horizon) }}
 
 ## 10. Correspondance avec SR 11-7 et le NIST AI RMF
 

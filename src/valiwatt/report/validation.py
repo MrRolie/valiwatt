@@ -164,6 +164,18 @@ def near_misses(alone: list[dict], weeks: list[dict], decisions: list[dict]) -> 
     return out
 
 
+# The spring 2020 interval of the difference is one computation made at render time, after the results, so it can
+# afford many more draws than the runs' N_BOOT: SHIFT_DIFF_BATCHES independent batches of SHIFT_DIFF_BATCH_DRAWS draws
+# on each side. Each batch resamples the two sides with its own pair of seeds, all distinct, so the sides and the
+# batches are independent. The batches also measure the Monte Carlo error of each bound (batch means: the spread of
+# the bound across batches over the square root of their number). A bound within SHIFT_DIFF_MC_MULTIPLE of those
+# errors of zero leaves the verdict undetermined at this resolution.
+SHIFT_DIFF_BATCHES = 20
+SHIFT_DIFF_BATCH_DRAWS = 20_000
+SHIFT_DIFF_SEEDS = tuple((2 * k, 2 * k + 1) for k in range(SHIFT_DIFF_BATCHES))  # (spring 2020, the other springs)
+SHIFT_DIFF_MC_MULTIPLE = 3
+
+
 def _boot_means(d: pd.DataFrame, value: str, n_boot: int, seed: int) -> np.ndarray:
     """The draws behind `evaluate.mean_with_ci`: whole weeks resampled with the same weights and seed."""
     g = d.groupby("week")[value].agg(["sum", "count"])
@@ -171,21 +183,51 @@ def _boot_means(d: pd.DataFrame, value: str, n_boot: int, seed: int) -> np.ndarr
     return (W @ g["sum"].to_numpy()) / (W @ g["count"].to_numpy())
 
 
-def shift_difference(oos: pd.DataFrame, pred_col: str, n_boot: int) -> dict:
+def shift_verdict(lo: float, hi: float, se_lo: float, se_hi: float, multiple: float = SHIFT_DIFF_MC_MULTIPLE) -> dict:
+    """Section 1's rule on an interval of the difference whose bounds carry Monte Carlo error.
+
+    "undetermined" when a bound lies within `multiple` Monte Carlo standard errors of zero (`by` "mc"), or, farther
+    out, rounds to zero as the report prints it, two decimals of a point (`by` "print"): the draws cannot tell which
+    side of zero it is on, or the verdict would contradict the printed bound. Otherwise "confirmed" when the interval
+    excludes zero and "not_confirmed" when it holds it. `near` is the bound nearest zero among those that leave the
+    verdict undetermined."""
+    near = []
+    for bound, x, se in (("low", lo, se_lo), ("high", hi, se_hi)):
+        if abs(x) <= multiple * se:
+            near.append({"bound": bound, "value": x, "se": se, "by": "mc"})
+        elif printed(x, 2) == 0:
+            near.append({"bound": bound, "value": x, "se": se, "by": "print"})
+    if near:
+        return {"verdict": "undetermined", "near": min(near, key=lambda n: abs(n["value"]))}
+    return {"verdict": "confirmed" if lo > 0 or hi < 0 else "not_confirmed", "near": None}
+
+
+def shift_difference(oos: pd.DataFrame, pred_col: str, seeds=SHIFT_DIFF_SEEDS,
+                     batch_draws: int = SHIFT_DIFF_BATCH_DRAWS) -> dict:
     """Spring of SHIFT_YEAR minus the same months of the other validation years: the difference of the mean signed
     bias, with a 95 % interval from the code's week-block bootstrap, each side resampled on its own weeks (the two
-    sides share no hour, so no paired difference exists). Computed at render time, after the results."""
+    sides share no hour, so no paired difference exists), in independent batches (`seeds`, one pair per batch). The
+    bounds are the quantiles of all the draws; their Monte Carlo standard errors come from the spread of the batches'
+    own bounds. Computed at render time, after the results."""
     from valiwatt.forecast.validate import SHIFT_MONTHS, SHIFT_YEAR
 
+    flat = [s for pair in seeds for s in pair]
+    if len(seeds) < 2 or len(set(flat)) != len(flat):
+        raise ReportRefused("the spring difference needs at least two batches and a seed of its own for each side of "
+                            "each batch")
     e = errors(oos, pred_col)
     months = pd.to_datetime(e["day"]).dt.month.isin(SHIFT_MONTHS)
     a, b = e[months & (e["year"] == SHIFT_YEAR)], e[months & (e["year"] != SHIFT_YEAR)]
     if a.empty or b.empty:
         raise ReportRefused(f"the validation frame holds no spring {SHIFT_YEAR} hours or no other spring")
-    diff = _boot_means(a, "rel_bias", n_boot, 0) - _boot_means(b, "rel_bias", n_boot, 1)
-    lo, hi = np.quantile(diff, [0.025, 0.975])
-    return {"difference": float(a["rel_bias"].mean() - b["rel_bias"].mean()), "ci95_low": float(lo),
-            "ci95_high": float(hi), "separated": bool(printed(lo, 2) > 0 or printed(hi, 2) < 0)}
+    batches = [_boot_means(a, "rel_bias", batch_draws, sa) - _boot_means(b, "rel_bias", batch_draws, sb)
+               for sa, sb in seeds]
+    per = np.array([np.quantile(d, [0.025, 0.975]) for d in batches])
+    lo, hi = (float(x) for x in np.quantile(np.concatenate(batches), [0.025, 0.975]))
+    se_lo, se_hi = (float(x) for x in per.std(axis=0, ddof=1) / np.sqrt(len(seeds)))
+    return {"difference": float(a["rel_bias"].mean() - b["rel_bias"].mean()), "ci95_low": lo, "ci95_high": hi,
+            "mc_se_low": se_lo, "mc_se_high": se_hi, "draws": len(seeds) * batch_draws, "batches": len(seeds),
+            "batch_draws": batch_draws, "mc_multiple": SHIFT_DIFF_MC_MULTIPLE, **shift_verdict(lo, hi, se_lo, se_hi)}
 
 
 def drift_reference_years(first_year: int, last_year: int, replay_year: int, folds_first: str) -> dict:
@@ -279,8 +321,8 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
         "limits": {"replay": detection_limits(r["power"]), "pseudo": detection_limits(p["power"])},
         "near": {k: near_misses(x["summary"]["retrain_under_two_week_rule_alone"], x["weeks"], x["decisions"])
                  for k, x in (("replay", r), ("pseudo", p))},
-        "shift_diff": {"persistence": shift_difference(oos, "pred_persistence", v["config"]["n_boot"]),
-                       "observed": shift_difference(oos, "pred_observed", v["config"]["n_boot"])},
+        "shift_diff": {"persistence": shift_difference(oos, "pred_persistence"),
+                       "observed": shift_difference(oos, "pred_observed")},
         "drift_years": drift_reference_years(th24["first_year"], th24["last_year"], r["year"], v["folds"]["first"]),
         "level": level_shift(p, K["shift"]),
         "peak_above": sum(h["upper"] is not None and h["target"] > h["upper"] for h in peak),

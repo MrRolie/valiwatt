@@ -53,7 +53,7 @@ def respond(raw: pd.DataFrame, obs: pd.DataFrame, new_obs: pd.DataFrame) -> pd.D
 @lru_cache(maxsize=1)
 def frozen_reference_thresholds():
     """The frozen model, the drift reference, and thresholds from the 2021 out-of-sample weeks (one set for every
-    season: the world has no seasonal error pattern), with the drift alarm fixed at a level clean weeks stay under."""
+    season: the world has no seasonal error pattern). The drift alarm is added by `thresholds()`."""
     raw, obs = world()
     f = build(build_demand(raw, FIRST, LAST).frame, obs.set_index("ts_utc")["temp_c"])
     oos = wf.run(f, wf.folds(f"{REPLAY_YEAR - 1}-01", f"{REPLAY_YEAR - 1}-12"), scenarios=("persistence",))
@@ -68,9 +68,7 @@ def frozen_reference_thresholds():
               "bias_high": float(w["rel_bias"].quantile(QUANTILES["bias_high"])),
               "coverage_low": float(w["covered"].quantile(QUANTILES["coverage_low"])), "weeks": int(len(w))}
     thresholds = {"performance": {s: dict(season) for s in ("winter", "spring", "summer", "fall")},
-                  "drift": {"temperature_high": SYNTHETIC_WORLD["drift_alarm"],
-                            "forecast_high": SYNTHETIC_WORLD["drift_alarm"]}, "last_year": REPLAY_YEAR - 1,
-                  "weekly_validation": [{"first_day": str(d)} for d in w["first_day"]]}
+                  "last_year": REPLAY_YEAR - 1, "weekly_validation": [{"first_day": str(d)} for d in w["first_day"]]}
     return frozen, ref, thresholds
 
 
@@ -80,4 +78,9 @@ def frozen_and_reference():
 
 
 def thresholds():
-    return frozen_reference_thresholds()[2]
+    """The world's thresholds, with the drift alarm fixed by hand (SYNTHETIC_WORLD, which the report prints) at a level
+    clean weeks stay under, read when called."""
+    th = frozen_reference_thresholds()[2]
+    return {"performance": th["performance"],
+            "drift": {"temperature_high": SYNTHETIC_WORLD["drift_alarm"], "forecast_high": SYNTHETIC_WORLD["drift_alarm"]},
+            "last_year": th["last_year"], "weekly_validation": th["weekly_validation"]}

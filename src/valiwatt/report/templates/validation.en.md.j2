@@ -1,15 +1,10 @@
 {% set P = v.performance %}
 {% set C = v.coverage %}
 {% from 'season_coverage.en.md.j2' import season_sentence %}
-{% from 'sentences.en.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why %}
-{% set pct_sign = '%' %}
-{% macro sp(x, d=1) %}{{ (100 * x)|signed(d) }}{{ pct_sign }}{% endmacro %}
+{% from 'sentences.en.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_error, brief_coverage, brief_peak, brief_replay, brief_misses, break_result, level_shift_note %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }}, {{ hi|pct(d) }}]{% endmacro %}
 {% macro sci(lo, hi, d=2) %}[{{ sp(lo, d) }}, {{ sp(hi, d) }}]{% endmacro %}
-{% macro pp(x, d=2) %}{{ (100 * x)|signed(d) }} pt{% endmacro %}
-{% macro ppci(lo, hi, d=2) %}[{{ pp(lo, d) }}, {{ pp(hi, d) }}]{% endmacro %}
 {% macro cent(x) %}{{ x|num(0 if x == x|round(0) else 1) }}{% endmacro %}
-{% macro span(years) %}{{ years[0] }}–{{ years[1] }}{% endmacro %}
 {% macro ordinal(x) %}{% set n = x|round(0)|int %}{{ cent(x) }}{% if x != x|round(0) %}th{% elif n % 100 in (11, 12, 13) %}th{% elif n % 10 == 1 %}st{% elif n % 10 == 2 %}nd{% elif n % 10 == 3 %}rd{% else %}th{% endif %}{% endmacro %}
 {% set REC = {'retrain': 'retrain', 'recalibrate': 'recalibrate the intervals', 'investigate_data': 'investigate the data'} %}
 {% set SEASON = {'winter': 'winter', 'spring': 'spring', 'summer': 'summer', 'fall': 'fall'} %}
@@ -63,11 +58,11 @@ _Report generated from a chain of MLflow runs followed back from the {{ r.year }
 ## In brief
 
 {% set vy = K.validation_years %}
-- Over {{ span(vy) }}, the forecast is off by {{ P.persistence.overall.mean|pct(2) }} of hourly demand on average, against {{ P.baseline.overall.mean|pct(2) }} for a naive forecast (the same hour one week earlier){% if c1.separated and c1.difference < 0 %}: it does better, and the gap is confirmed{% elif c1.separated %}: it does worse, and the gap is confirmed{% else %}; the gap is not confirmed{% endif %}.
-- Its {{ nominal|pct(0) }} intervals held demand {{ C.relative.overall.mean|pct(1) }} of the time from {{ v.conformal.first_fold }} on{% if sides.overall.under %}, less than nominal, 95% CI included{% elif sides.overall.over %}, more than nominal, 95% CI included{% else %}, and the 95% CI of that coverage contains the nominal{% endif %}. {% if sides.season.under or sides.decile.under %}They hold it less often than promised in these groups: {{ groups(sides.season.under, sides.decile.under) }} (section 4).{% else %}No season and no load decile is under-covered in the sense of section 4.{% endif %}{{ '' }}
-- At the {{ peak.hours|length }} busiest hours of {{ span(K.design_years) }}{% if peak_in_month %}, all in {{ peak.named_month }}{% endif %}, {% if peak.evaluated == 0 %}no prediction interval is computed{% elif peak.covered == peak.evaluated %}demand stayed inside the interval every time ({{ peak.evaluated }} hours judged){% else %}demand fell outside the interval {{ peak.evaluated - peak.covered }} times out of {{ peak.evaluated }}{% if peak_above == peak.evaluated - peak.covered %}, always above it{% endif %}{% endif %}.
-- Replayed as production, with the model and the rules frozen, {{ r.year }} {% if n_recs == 0 %}triggered no recommendation{% elif n_recs == 1 %}triggered 1 recommendation{% else %}triggered {{ n_recs }} recommendations{% endif %} (MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}){% if departures %}, **post hoc**, after a departure from the frozen rules{% endif %}.
-- The report also measures what the monitor could miss: on {{ p.year }}, a sustained {{ level.size|pct(0) }} rise in demand yielded "retrain" within {{ K.step_horizon }} weeks at {{ level.up_n - level.up_missed }} of {{ level.up_n }} starts; on {{ r.year }}, a sustained gap of ±{{ LR.smallest|pct(0) }} between demand and forecast did at {{ LR.smallest_by_sign.up.caught + LR.smallest_by_sign.down.caught }} of {{ LR.smallest_by_sign.up.cases + LR.smallest_by_sign.down.cases }} cases (sections 6 to 8).
+- {{ brief_error(P, c1, vy) }}
+- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides) }}
+- {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }}
+- {{ brief_replay(r, n_recs, departures) }}
+- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon) }}
 
 ## Model card
 
@@ -80,8 +75,8 @@ _Report generated from a chain of MLflow runs followed back from the {{ r.year }
 | **Model** | Ordinary least squares on named features: one constant per hour and day type, heating and cooling (degree-hours, base {{ v.config.base_c|num(0) }} °C) per time-of-day block, and demand one day and one week earlier. Frozen on data up to {{ f24.params.train_last_day }}; hash of its coefficients and half-width `{{ f24.tags.coefficient_sha256|short }}` (registered model `valiwatt-demand-persistence`, alias `replay-{{ r.year }}`). |
 | **Interval** | Forecast × (1 ± {{ f24.params.q|float|pct(2) }}). The half-width is a quantile of the {{ K.calibration_scores|num }} relative out-of-sample errors of {{ f24.params.calibration_first_fold }} to {{ f24.params.calibration_last_fold }}, made by the {{ K.calibration_folds }} models validation refitted each month, then applied to the frozen model: the shape of a split-conformal interval, without its finite-sample coverage guarantee (section 1). The measured coverage is the evidence (sections 4 and 7). |
 | **Validation error** | MAPE {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} over {{ span(vy) }}, against {{ P.baseline.overall.mean|pct(2) }} for the naive baseline. |
-| **{{ r.year }} replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {% if n_recs == 0 %}no recommendation{% elif n_recs == 1 %}1 recommendation{% else %}{{ n_recs }} recommendations{% endif %} (section 7){% if departures %}; **post hoc**, after a departure{% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
-| **Test cases** | {{ MONTH[sh.months[0]] }} to {{ MONTH[sh.months[-1]] }} {{ sh.year }}: bias {{ sp(sh.bias_shift_year.mean, 2) }} against {{ sp(sh.bias_other_years.mean, 2) }} in the same months of other years; {% if sh.separated %}a gap confirmed by disjoint intervals{% else %}a gap not confirmed by disjoint intervals{% endif %}, and the interval of the difference, added after the results, {% if sh.separated and dsh.separated %}confirms it too{% elif sh.separated %}does not confirm it{% elif dsh.separated %}confirms it{% else %}does not confirm it either{% endif %} (section 3). Cold peak of {{ peak.named_month }}: {{ peak.covered }} of the {{ peak.evaluated }} busiest hours inside the interval. Neither case had an acceptance criterion that could fail. |
+| **{{ r.year }} replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ recs(n_recs) }} (section 7){% if departures %}; **post hoc**, after a departure{% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
+| **Test cases** | {{ MONTH[sh.months[0]] }} to {{ MONTH[sh.months[-1]] }} {{ sh.year }}: bias {{ sp(sh.bias_shift_year.mean, 2) }} against {{ sp(sh.bias_other_years.mean, 2) }} in the same months of other years; {{ spring_card(sh, dsh) }} (section 3). Cold peak of {{ peak.named_month }}: {{ peak.covered }} of the {{ peak.evaluated }} busiest hours inside the interval. Neither case had an acceptance criterion that could fail. |
 | **Weather caveat** | Production uses the previous day's temperature, the only one known at issue time. The observed temperature of the target hour, which stands in for a perfectly forecast {{ primary }} temperature, is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 8. |
 | **Author** | {{ attribution[-1] }} |
@@ -155,7 +150,7 @@ MAPE differences are in percentage points (pt).
 
 Neither test case had an acceptance criterion that could fail: the plan fixed what each would measure, not a result that would count as a failure. They are measurements.
 
-**Spring {{ sh.year }}.** Months {{ months(sh.months) }}: bias {{ sp(sh.bias_shift_year.mean, 2) }} {{ sci(sh.bias_shift_year.ci95_low, sh.bias_shift_year.ci95_high) }} in {{ sh.year }}, against {{ sp(sh.bias_other_years.mean, 2) }} {{ sci(sh.bias_other_years.ci95_low, sh.bias_other_years.ci95_high) }} in the other years. The criterion used, disjoint intervals, {% if sh.separated %}confirms{% else %}does not confirm{% endif %} the gap; it is not section 1's rule, which judges the interval of the difference. *Added after the results:* the interval of the difference, computed at render time with the same resampling of whole weeks (each side on its own weeks, since they share no hour), gives {{ pp(dsh.difference) }} {{ ppci(dsh.ci95_low, dsh.ci95_high) }}: {% if dsh.separated %}under section 1's rule, the gap is confirmed{% else %}under section 1's rule, the gap is not confirmed{% endif %}. With observed weather, the same case gives {{ sp(so.bias_shift_year.mean, 2) }} {{ sci(so.bias_shift_year.ci95_low, so.bias_shift_year.ci95_high) }} in {{ so.year }} against {{ sp(so.bias_other_years.mean, 2) }} {{ sci(so.bias_other_years.ci95_low, so.bias_other_years.ci95_high) }}: intervals that {% if so.separated %}are disjoint{% else %}overlap{% endif %}; difference {{ pp(dso.difference) }} {{ ppci(dso.ci95_low, dso.ci95_high) }}, {% if dso.separated %}a confirmed gap{% else %}a gap not confirmed{% endif %} (added after the results). Prediction intervals do not cover {{ sh.year }}: they need {{ K.calibration_folds }} months of calibration.
+**Spring {{ sh.year }}.** Months {{ months(sh.months) }}: bias {{ sp(sh.bias_shift_year.mean, 2) }} {{ sci(sh.bias_shift_year.ci95_low, sh.bias_shift_year.ci95_high) }} in {{ sh.year }}, against {{ sp(sh.bias_other_years.mean, 2) }} {{ sci(sh.bias_other_years.ci95_low, sh.bias_other_years.ci95_high) }} in the other years. The criterion used, disjoint intervals, {% if sh.separated %}confirms{% else %}does not confirm{% endif %} the gap; it is not section 1's rule, which judges the interval of the difference. *Added after the results:* the interval of the difference, computed at render time with the same resampling of whole weeks as the runs, but with more draws (each side on its own weeks and with its own seed, since they share no hour), gives {{ pp(dsh.difference) }} {{ ppci(dsh.ci95_low, dsh.ci95_high) }}: {{ diff_verdict(dsh) }}. With observed weather, the same case gives {{ sp(so.bias_shift_year.mean, 2) }} {{ sci(so.bias_shift_year.ci95_low, so.bias_shift_year.ci95_high) }} in {{ so.year }} against {{ sp(so.bias_other_years.mean, 2) }} {{ sci(so.bias_other_years.ci95_low, so.bias_other_years.ci95_high) }}: intervals that {% if so.separated %}are disjoint{% else %}overlap{% endif %}; difference {{ pp(dso.difference) }} {{ ppci(dso.ci95_low, dso.ci95_high) }}, added after the results by the same computation: {{ diff_verdict(dso) }}. Prediction intervals do not cover {{ sh.year }}: they need {{ K.calibration_folds }} months of calibration.
 
 | Month | MAPE | Bias |
 |---|---|---|
@@ -369,11 +364,11 @@ Each gate and monitor has a test that injects the fault it exists to catch; a co
 | Check | Break | Result |
 |---|---|---|
 {% for row in b.breaks %}
-| {{ b.groups[row.group][1] }} | {{ row.en }} | {% if row.outcome != 'passed' %}FAILED{% elif row.control %}stayed quiet{% else %}fired{% endif %} |
+| {{ b.groups[row.group][1] }} | {{ row.en }} | {{ break_result(row) }} |
 {% endfor %}
 
 {% set shift_break = b.breaks|selectattr('test', 'equalto', 'tests/test_replay.py::test_a_level_shift_yields_retrain')|first %}
-The break "{{ shift_break.en }}" multiplies the synthetic world's demand by {{ (1 + world.level_shift)|num(2) }}, a {{ world.level_shift|pct(0) }} rise. {% if level.up_missed %}On the real {{ p.year }} hours, a {{ level.size|pct(0) }} rise did not yield "retrain" within {{ K.step_horizon }} weeks at {{ level.up_missed }} of {{ level.up_n }} starts (section 8): the rule can fire, but it did not see such a rise in real demand {% if level.up_missed == level.up_n %}at any start{% else %}at every start{% endif %}.{% else %}On the real {{ p.year }} hours, a {{ level.size|pct(0) }} rise yielded "retrain" within {{ K.step_horizon }} weeks at every start (section 8).{% endif %}{{ '' }}
+{{ level_shift_note(shift_break.en, world, level, p.year, K.step_horizon) }}
 
 ## 10. Mapping to SR 11-7 and the NIST AI RMF
 

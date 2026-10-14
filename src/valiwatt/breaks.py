@@ -335,6 +335,19 @@ BREAKS = [
        "A spring 2020 case with no spring hours makes the report refuse"),
     _b(RENDER, f"{T_SEN2}::test_an_empty_power_table_is_refused",
        "Un tableau de puissance vide fait refuser le rapport", "An empty power table makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_power_table_without_narrowed_interval_rows_is_refused",
+       "Un tableau de puissance sans lignes d'intervalles réduits fait refuser le rapport",
+       "A power table without narrowed-interval rows makes the report refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_spring_difference_whose_sides_share_a_seed_is_refused",
+       "Un intervalle de la différence du printemps 2020 dont deux tirages partagent une graine, ou fait d'un seul lot, "
+       "fait refuser le rapport",
+       "A spring 2020 interval of the difference with two draws sharing a seed, or made of one batch, makes the report "
+       "refuse"),
+    _b(RENDER, f"{T_SEN2}::test_a_bound_within_monte_carlo_error_of_zero_leaves_the_verdict_undetermined",
+       "Une borne de l'intervalle de la différence que l'erreur de Monte-Carlo ou l'arrondi ne sépare pas de zéro "
+       "laisse le verdict indéterminé",
+       "A bound of the interval of the difference that Monte Carlo error or rounding cannot separate from zero leaves "
+       "the verdict undetermined"),
     _b(RENDER, f"{T_SAFE}::test_an_agent_session_url_in_a_commit_message_is_caught",
        "L'adresse d'une session d'agent dans un message de commit, un message d'étiquette ou un fichier indexé est "
        "repérée", "An agent session's address in a commit message, a tag message or a staged file is caught"),
