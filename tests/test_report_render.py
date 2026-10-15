@@ -581,11 +581,14 @@ def test_a_one_day_alarm_names_the_year_it_came_from(lang):
     limits = {**ctx["episode_limits"], "replay": {**ctx["episode_limits"]["replay"], "one_day_alarms": 17,
                                                   "one_day": one}}
     loud = section(render({**ctx, "episode_limits": limits}, lang), 6)
-    assert ("**Alertes des chocs d'un seul jour** : sur 2024, 3 « réentraîner » (dont 0 sans aide) et 14 "
-            "« recalibrer », sur 1\u202f400 cas (départs × facteurs)." if lang == "fr" else
-            "**Alarms from one-day shocks**: on 2024, 3 \"retrain\" (0 of them clean) and 14 \"recalibrate\", out of "
-            "1,400 cases (starts × factors).") in loud
-    assert str(P_YEAR) + ", " not in loud[loud.index("**Al"):loud.index(".", loud.index("**Al"))]
+    quiet = ctx["episode_limits"]["pseudo"]["one_day"]
+    cases23, clean23 = fmt_num(quiet["cases"], 0, lang), quiet["retrain_clean"]
+    assert (f"**Alertes des chocs d'un seul jour** : sur {P_YEAR}, 0 « réentraîner » (dont {clean23} sans aide) et 0 "
+            f"« recalibrer », sur {cases23} cas (départs × facteurs) ; sur 2024, 3 « réentraîner » (dont 0 sans aide) "
+            "et 14 « recalibrer », sur 1\u202f400 cas (départs × facteurs)." if lang == "fr" else
+            f"**Alarms from one-day shocks**: on {P_YEAR}, 0 \"retrain\" ({clean23} of them clean) and 0 \"recalibrate\", out "
+            f"of {cases23} cases (starts × factors); on 2024, 3 \"retrain\" (0 of them clean) and 14 \"recalibrate\", "
+            "out of 1,400 cases (starts × factors).") in loud
 
 
 @pytest.mark.parametrize("lang", LANGS)

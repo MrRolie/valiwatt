@@ -112,7 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(func=cmd_fetch)
     p = sub.add_parser("dq", help="data-quality and representativeness checks, tracked as an MLflow run")
     p.set_defaults(func=cmd_dq)
-    p = sub.add_parser("validate", help="walk-forward validation, conformal intervals and monitoring thresholds (2019-2023)")
+    p = sub.add_parser("validate", help="walk-forward validation on 2020-2023 (models fitted from 2019), intervals of split-conformal "
+                                           "shape and the monitoring thresholds")
     p.set_defaults(func=cmd_validate)
     p = sub.add_parser("freeze", help="fit, calibrate and register the frozen model for a replay year")
     p.add_argument("--year", type=int, required=True, choices=[2023, 2024])

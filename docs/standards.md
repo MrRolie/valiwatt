@@ -24,19 +24,22 @@ cover and nothing more.
 | SR 11-7, thresholds of acceptability, then recalibration or redevelopment | Per-season weekly thresholds from validation weeks before the replayed year, calibrated since the departure of 2026-10-14 on the weeks the replay would judge; an ordered decision table that recommends *investigate the data*, *recalibrate* or *retrain*, with its evidence. It recommends; it never acts. | `monitor/rules.py`; replay runs |
 | SR 11-7, documentation and validation reports | A bilingual validation report with a model card, rendered from the tracked runs and stamped with their run IDs and the code hash. | `docs/report/` |
 | NIST MAP 2.2, 2.3 | The model card's intended use, out-of-scope uses, weather-scenario caveat and limitations; the documented validation design and data-quality findings. | Model card; plan; data-quality report |
-| NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | MLflow runs record test sets, metrics, parameters and tool versions; the pseudo-replay and the 2024 replay test the model as it would run in production; the break suite shows each gate firing; the rules' false alarms and blind spots are measured on 2023, the year they were designed on, and, since the departure of 2026-10-14, on 2024 out of sample, a measurement added after the 2024 results; the column below lists what is not measured. | MLflow runs; breaks run; this page |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | MLflow runs record test sets, metrics, parameters and tool versions; the pseudo-replay and the 2024 replay test the model as it would run in production; the break suite shows each gate firing; the rules' false alarms and blind spots are measured on 2023, the year they were designed on, and, since the departure of 2026-10-14, on 2024 out of sample, a measurement added after the 2024 results; the column below lists what is not measured. | MLflow runs; breaks run; this page |
 | NIST MANAGE 2.2 | Weekly recommendations with evidence. Who acts on them, and how, is out of scope. | Replay runs |
 
 **Not covered.** valiwatt does none of the following:
 
 - **Independent validation and effective challenge** (SR 11-7, V; NIST MEASURE 1.3). The model, the checks and this
-  mapping come from one AI agent session under one owner, with no independent human review of the code.
+  mapping come from AI agents working under one owner, with no independent human review of the code; reviews by
+  other AI models are not independent validation in SR 11-7's sense.
 - **Governance, policies and controls** (SR 11-7, VI): no control staff with authority over the model, no internal
   audit, no model inventory. On the NIST side, most of GOVERN.
 - **Periodic review** (SR 11-7, V): one replayed year, not an annual cycle.
 - **Override analysis** (SR 11-7, V): the forecast feeds no decision, so there are no overrides.
 - **Use in decisions:** no decision uses the forecast, so its materiality is not assessed.
 - **Independent review of recalibration** (SR 11-7, V.3): the monitor recommends recalibration; nobody reviews it.
+- **NIST MEASURE 2.4** (monitored when in production): nothing is in production; the replays simulate production
+  monitoring only.
 - **NIST MANAGE 2.4** (mechanisms and assigned responsibilities to supersede, disengage or deactivate the system):
   the monitor recommends; who acts on a recommendation, and how, is out of scope.
 - **NIST MANAGE 4.1** (appeal and override, decommissioning, incident response) and **MANAGE 1.4** (residual risks

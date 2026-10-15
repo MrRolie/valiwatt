@@ -12,7 +12,7 @@ import test_report_render as R
 from valiwatt.breaks import BREAKS
 from valiwatt.report import validation as RV
 from valiwatt.report.lineage import RecordedReplay
-from valiwatt.report.render import ReportRefused, environment
+from valiwatt.report.render import ReportRefused, environment, fmt_num
 
 LANGS = ("fr", "en")
 NBSP = " "
@@ -182,7 +182,8 @@ def test_the_one_day_alarms_are_counted_per_year_and_the_clean_split_is_scoped(l
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_section_6_reads_the_one_day_counts_from_each_years_rows(lang):
-    """Through derive: one-day rows of 2024 with alarms, 2023 with none; only 2024 is named, with its own counts."""
+    """Through derive: one-day rows of 2024 with alarms, 2023 with none; both years are named, each with its own
+    counts, 2023 reading 0."""
     v, dq, p, r, b, frozen = R.payloads()
     for row in r["sensitivity"]["episodes"]["rows"]:
         if row["days"] == 1:
@@ -193,10 +194,17 @@ def test_section_6_reads_the_one_day_counts_from_each_years_rows(lang):
     assert one == {"retrain": 8, "retrain_clean": 4, "recalibrate": sum(x["starts"] % 7 for x in rows),
                    "cases": sum(x["starts"] for x in rows)}
     s6 = R.section(R.render({**R.context(), **derived}, lang), 6)
-    head = "**Alertes des chocs d'un seul jour** : sur 2024, 8 « réentraîner » (dont 4 sans aide) et " if lang == "fr" \
-        else "**Alarms from one-day shocks**: on 2024, 8 \"retrain\" (4 of them clean) and "
-    assert head + str(one["recalibrate"]) in s6 and ("sur 2023" if lang == "fr" else "on 2023,") not in \
-        s6[s6.index(head):s6.index(head) + 300]
+    quiet = derived["episode_limits"]["pseudo"]["one_day"]
+    assert quiet["retrain"] == quiet["recalibrate"] == 0
+    lead = "**Alertes des chocs d'un seul jour** : " if lang == "fr" else "**Alarms from one-day shocks**: "
+    cases23 = fmt_num(quiet["cases"], 0, lang)
+    clean23 = quiet["retrain_clean"]
+    zero = (f"sur 2023, 0 « réentraîner » (dont {clean23} sans aide) et 0 « recalibrer », sur {cases23} cas"
+            if lang == "fr" else
+            f"on 2023, 0 \"retrain\" ({clean23} of them clean) and 0 \"recalibrate\", out of {cases23} cases")
+    loud = ("sur 2024, 8 « réentraîner » (dont 4 sans aide) et " if lang == "fr" else
+            "on 2024, 8 \"retrain\" (4 of them clean) and ") + str(one["recalibrate"])
+    assert lead + zero in s6 and loud in s6 and s6.index(zero) < s6.index(loud)
 
 
 # --- 4. false "recalibrate" in the limits ---------------------------------------------------------------------------
@@ -275,7 +283,7 @@ def test_the_replays_side_by_side_show_their_model_and_flagged_weeks(lang):
         f"`{R.EARLIER['model_sha256'][:12]}`", f"`{r['model']['sha256'][:12]}` |"]
     names = (("Semaines EAMP hors seuil", "Semaines biais au-dessus de sa bande", "Semaines biais au-dessous de sa bande",
               "Semaines couverture basse") if fr else
-             ("Weeks with MAPE above its threshold", "Weeks with bias above its band", "Weeks with bias below its band",
+             ("Weeks with MAPE above threshold", "Weeks with bias above its band", "Weeks with bias below its band",
               "Weeks with low coverage"))
     for key, name in zip(("mape_high", "bias_high", "bias_low", "coverage_low"), names, strict=True):
         assert rows[name] == [str(R.EARLIER["flag_weeks"][key]), f"{r['summary']['flag_weeks'][key]} |"]
@@ -297,8 +305,8 @@ def test_replays_with_different_models_each_show_their_own_hash(lang):
     assert new[:12] != "c" * 12
     assert table_rows(s7, lang)["Modèle figé (empreinte)" if fr else "Frozen model (hash)"] == [
         f"`{'c' * 12}`", f"`{new[:12]}` |"]
-    assert ("Le modèle figé ou ses intervalles diffèrent d'un rejeu à l'autre (empreintes ci-dessus)." if fr else
-            "The frozen model or its intervals differ from one replay to another (hashes above).") in s7
+    assert ("Les empreintes consignées du modèle figé diffèrent d'un rejeu à l'autre (ci-dessus)." if fr else
+            "The recorded hashes of the frozen model differ from one replay to another (above).") in s7
     assert ("même modèle figé" if fr else "same frozen model") not in s7
 
 

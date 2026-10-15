@@ -2,8 +2,9 @@
 
 The departures section names the commit the `rules-frozen` tag moved to and the commits that made the departure.
 Those commits, without the tag's, must be exactly the commits that changed a rule file (monitor/rules.py `_is_rule`)
-between the earlier freeze commit and the tag; and the departure must not change the dependencies (`pyproject.toml`,
-`uv.lock`), which the freeze gate does not hash. The earlier freeze commit is the one the ledger's plain replays ran
+between the earlier freeze commit and the tag; and this departure changed no dependency (`pyproject.toml`,
+`uv.lock`, which the freeze gate does not hash): a later departure that does must extend this check to name the
+commits that change them. The earlier freeze commit is the one the ledger's plain replays ran
 under (with several, the one the departure replays depart from). At any time, departure or not, the rule files and the
 dependencies at HEAD are the tag's: a later change would be a departure the section does not record.
 
@@ -214,6 +215,31 @@ def test_a_dependency_change_in_the_departure_fails(tmp_path, recorded, path, fa
         assert len(problems) == 1 and "dependencies changed between" in problems[0] and new[:12] in problems[0]
     else:
         assert problems == []
+
+
+def test_a_section_that_does_not_name_the_tag_commit_fails(recorded):
+    section, entries = recorded
+    tag_commit = commit_of(REPO_ROOT, FREEZE_TAG)
+    assert tag_commit[:12] in section
+    problems = departure_record_problems(REPO_ROOT, section.replace(tag_commit[:12], "the tag"), entries)
+    assert any("does not name the tag's commit" in p and tag_commit[:12] in p for p in problems)
+
+
+def test_a_dependency_change_after_the_tag_fails(tmp_path, recorded):
+    """On a scratch clone, a commit after the tag's changes pyproject.toml and the tag stays put: a dependency change
+    the section does not record."""
+    section, entries = recorded
+    clone = scratch_clone(tmp_path)
+    tag_commit = commit_of(clone, FREEZE_TAG)
+    git(clone, "checkout", "--quiet", "--detach", "HEAD")
+    with open(clone / "pyproject.toml", "a", encoding="utf-8") as f:
+        f.write("\n# scratch change\n")
+    git(clone, "add", "pyproject.toml")
+    git(clone, "-c", "user.name=scratch", "-c", "user.email=scratch@example.invalid", "-c", "commit.gpgsign=false",
+        "commit", "--quiet", "--no-verify", "-m", "scratch")
+    assert commit_of(clone, FREEZE_TAG) == tag_commit
+    problems = departure_record_problems(clone, section, entries)
+    assert problems == [f"dependencies changed after the tag's commit {tag_commit[:12]}: ['pyproject.toml']"]
 
 
 def test_a_shallow_clone_fails_loudly(tmp_path, recorded):
