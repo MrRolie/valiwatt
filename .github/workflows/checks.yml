@@ -2,6 +2,9 @@ name: checks
 
 on:
   push:
+    # Branches only: the rules-frozen tag marks the commit that freezes the rules, made before the report is
+    # rendered, so the committed report there is not the one its code would render.
+    branches: ["**"]
   pull_request:
 
 permissions:
