@@ -1,6 +1,6 @@
 # Validation et surveillance d'une prévision de la demande d'électricité au Québec
 
-_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 11), code `9ab28e51a1ec`, empreinte du code `6894ad412fe0`, règles de surveillance gelées au commit `affe089f6ed0` (étiquette `rules-frozen`), **après une dérogation aux règles gelées d'abord : le rejeu de 2024 est a posteriori (section 7)**. Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception (embargo, rééchantillonnages, quantiles, horizons, facteurs, années) des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Restent écrits dans le texte : les numéros de section, de règle et des normes citées, les unités du calendrier (24 heures, semaines du lundi au dimanche), le niveau de 95 % des intervalles de confiance, les formules, les décomptes d'un raisonnement (un jour et son écho) et la description des bris de la section 9. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 11), code `2917f290e64c`, empreinte du code `758cfe9ed9da`, règles de surveillance gelées au commit `affe089f6ed0` (étiquette `rules-frozen`), **après une dérogation aux règles gelées d'abord : le rejeu de 2024 est a posteriori (section 7)**. Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception (embargo, rééchantillonnages, quantiles, horizons, facteurs, années) des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Restent écrits dans le texte : les numéros de section, de règle et des normes citées, les unités du calendrier (24 heures, semaines du lundi au dimanche), le niveau de 95 % des intervalles de confiance, les formules, les décomptes d'un raisonnement (un jour et son écho) et la description des bris de la section 9. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -15,10 +15,10 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 ## En bref
 
 - Sur 2020–2023, la prévision s'écarte en moyenne de 4,42 % de la demande horaire, contre 7,81 % pour une prévision naïve (la même heure, une semaine avant) : elle fait mieux, et l'écart est confirmé.
-- Ses intervalles à 90 % ont contenu la demande 90,6 % du temps depuis 2021-01, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10 (section 4).
+- Ses intervalles à 90 % ont contenu la demande 90,6 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10 (section 4).
 - Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 5 fois sur 5, toujours par le haut.
 - Rejouée comme en production, avec le modèle et les règles gelés, l'année 2024 n'a déclenché aucune recommandation (EAMP 4,23 %, couverture 89,4 %), **a posteriori**, après une dérogation aux règles gelées.
-- Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 0 des 4 départs, et sur 2024 (hors échantillon, mesure ajoutée après les résultats), à 1 des 4 ; sur 2024, un écart soutenu de ±2 % entre la demande et la prévision, à 1 des 8 cas (sections 6 à 8).
+- Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 0 des 4 départs, et sur 2024 (hors échantillon, mesure ajoutée après les résultats), à 1 des 4 ; sur 2024, un écart soutenu de ±2 % entre la demande et la prévision l'a donné en 8 semaines à 1 des 8 cas (sections 6 à 8).
 
 ## Fiche du modèle
 
@@ -180,7 +180,7 @@ Aucun des deux cas tests n'avait de critère d'acceptation qui pouvait échouer 
 
 ## 4. Intervalles de prévision
 
-Nominal 90 %, à partir de 2021-01.
+Nominal 90 %, de 2021-01 à 2023-12.
 
 | Forme | Couverture | IC 95 % | Demi-largeur moyenne |
 |---|---|---|---|
@@ -189,7 +189,7 @@ Nominal 90 %, à partir de 2021-01.
 | absolue (sensibilité) | 90,1 % | [87,9 % ; 92,4 %] | 11,93 % |
 | relative, météo observée | 90,2 % | [89,0 % ; 91,4 %] | 7,60 % |
 
-L'IC 95 % de la couverture globale contient le nominal. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés, pour l'intervalle de production. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC. Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
+L'IC 95 % de la couverture globale contient le nominal. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés, pour l'intervalle de production. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les blocs horaires jour (10–15 h) et soir (16–20 h) ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC. Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
 
 ![Couverture par saison](figures/validation/validation-coverage-by-season.fr.png)
 
@@ -326,7 +326,7 @@ Sur 2023, un écart soutenu de ±6 % ou plus entre la demande et la prévision 
 | 7 j | × 1,15 | 344 | 7 (2,0 %) | 0 | 6 | 5 |
 | 7 j | × 1,30 | 344 | 38 (11,0 %) | 12 | 3 | 59 |
 
-**Un choc d'un seul jour a donné une alerte**, sur 2024. Un mauvais jour ne le peut qu'en complétant des jours en échec que les semaines contenaient déjà et que la coupe écartait jusque-là ; les semaines en cause sont dans l'exécution. Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès 3 jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
+**Alertes des chocs d'un seul jour** : sur 2023, 0 « réentraîner » (dont 0 sans aide) et 0 « recalibrer », sur 1 400 cas (départs × facteurs) ; sur 2024, 3 « réentraîner » (dont 0 sans aide) et 14 « recalibrer », sur 1 400 cas (départs × facteurs). Un mauvais jour ne peut en donner qu'en complétant des jours en échec que les semaines contenaient déjà et que la coupe écartait jusque-là ; la part sans aide n'est mesurée que pour « réentraîner », et les semaines en cause sont dans l'exécution. Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès 3 jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
 
 **Changement de niveau de la demande.** La demande est multipliée par un facteur à partir de la première semaine jugée de janvier, avril, juillet et octobre, pendant 10 semaines (semaines avant « réentraîner » ; — : rien en 10 semaines). La prévision par persistance suit la demande par ses retards : un changement de niveau ne laisse entre la prévision et la demande qu'un écart bien plus petit que lui-même. Le tableau de puissance mesure cet écart ; les deux tableaux qui suivent mesurent le changement de niveau.
 
@@ -378,6 +378,13 @@ Sur 2023, un écart soutenu de ±6 % ou plus entre la demande et la prévision 
 | EAMP | 4,23 % | 4,23 % |
 | Couverture | 89,4 % | 89,4 % |
 | Recommandations | aucune | aucune |
+| Modèle figé (empreinte) | `c8e1725aad77` | `c8e1725aad77` |
+| Semaines EAMP hors seuil | 5 | 5 |
+| Semaines biais au-dessus de sa bande | 1 | 1 |
+| Semaines biais au-dessous de sa bande | 2 | 3 |
+| Semaines couverture basse | 6 | 6 |
+
+Les rejeux de ce tableau ont appliqué le même modèle figé, à la même empreinte : la dérogation n'a changé ni le modèle ni ses intervalles. Chaque rejeu juge ses semaines contre ses propres seuils.
 
 La dérogation du 2026-10-14 porte sur ces points :
 
@@ -438,15 +445,15 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 
 - **Couverture conditionnelle.** L'intervalle de production sous-couvre l'hiver ; les déciles de charge prévue 7, 8, 9 et 10 (section 4). Les seuils de couverture de l'hiver sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation. À l'inverse, le seuil de couverture de l'été (96,4 %) dépasse le nominal de 90 % : une semaine couverte au-delà du nominal peut y être signalée basse. Les seuils mesurent l'écart à la couverture de chaque saison en validation, pas au nominal.
 - **Froids extrêmes.** La pointe de 2023-02 n'est pas couverte (0 des 5 heures les plus chargées) ; même avec la météo observée, le modèle la sous-estime, et la cause n'est pas testée. Une seule pointe est étudiée ; les vagues de froid ne sont pas mesurées comme catégorie.
-- **Épisodes de plusieurs jours** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Un épisode de plusieurs jours peut donner « réentraîner » sans que le modèle soit en cause : sur 2023, jusqu'à 34,3 % des départs pour 7 jours à × 0,70, et au plus 2,3 % pour un épisode de ±15 % ; sur 2024, jusqu'à 32,8 % des départs pour 7 jours à × 0,70, et au plus 8,7 % pour un épisode de ±15 % (section 6).
-- **Changement de niveau** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Sur 2023, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 4 départs sur 4 (janvier, avril, juillet et octobre), et une baisse de 10 % l'a donné à 3 sur 4. Sur 2024, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 3 départs sur 4 (janvier, avril, juillet et octobre), et une baisse de 10 % l'a donné à 2 sur 4. La persistance absorbe l'essentiel d'une hausse par ses retards. Sur 2023 et 2024, une baisse a donné « réentraîner » plus souvent qu'une hausse : elle laisse un écart relatif plus grand qu'une hausse de même taille, car le biais se mesure contre la demande plus basse ; la position du biais hebdomadaire de l'année dans la bande de chaque saison fait le reste. Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
+- **Épisodes de plusieurs jours** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Un épisode de plusieurs jours peut donner une fausse alerte sans que le modèle soit en cause : sur 2023, « réentraîner » jusqu'à 34,3 % des départs (7 jours à × 0,70) et au plus 2,3 % pour un épisode de ±15 %, aucun « recalibrer » ; sur 2024, « réentraîner » jusqu'à 32,8 % des départs (7 jours à × 0,70) et au plus 8,7 % pour un épisode de ±15 %, « recalibrer » jusqu'à 1,7 % des départs (7 jours à × 1,15) (section 6).
+- **Changement de niveau** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Sur 2023, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 4 départs sur 4 (départs de janvier, avril, juillet et octobre), et une baisse de 10 % l'a donné à 3 sur 4. Sur 2024, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 3 départs sur 4 (départs de janvier, juillet et octobre), et une baisse de 10 % l'a donné à 2 sur 4. La persistance absorbe l'essentiel d'une hausse par ses retards. Sur 2023 et 2024, une baisse a donné « réentraîner » plus souvent qu'une hausse : elle laisse un écart relatif plus grand qu'une hausse de même taille, car le biais se mesure contre la demande plus basse ; la position du biais hebdomadaire de l'année dans la bande de chaque saison fait le reste. Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
 - **Exclusion de l'écho** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Sur un modèle dégradé dont le biais change de côté, elle supprime « réentraîner » sur 2023 dans 4 essais sur 240 et le retarde dans 21, et sur 2024 dans 8 essais sur 240 et le retarde dans 21 (section 6) ; c'est le prix d'éviter les fausses alertes d'un épisode suivi de son écho.
 - **Puissance de « recalibrer ».** Des intervalles réduits à × 0,5 de leur demi-largeur n'ont pas donné « recalibrer » en 8 semaines à 2 des 4 départs de 2023, et à × 0,5 à 1 des 4 départs de 2024 (sections 6 et 7) : la règle 3 demande une couverture sous le seuil de la saison, étendue, 2 semaines de suite, avec un biais dans sa bande.
 - **Fausses alertes de dérive en 2024.** Les niveaux d'alarme sont le 95ᵉ centile des semaines de validation 2021–2023, dont les références couvraient de 2 à 4 années antérieures pour la température et de 1 à 3 pour la prévision ; en 2024, elles en couvrent 5 et 4. Le taux de fausses alertes de dérive en 2024 n'est pas mesuré.
 - **Règle 4 et un vrai changement de température.** Un écart de température réel et soutenu, auquel la demande répond et que le modèle suit, performance dans ses seuils, peut donner « examiner les données » : la règle ne distingue pas un vrai changement de la météo d'une erreur de données (bris « Une dérive de température, performance dans les seuils : examiner les données », section 9). La règle reste telle quelle.
 - **Qualité des données en 2024.** Le rejeu juge chaque jour sur les enregistrements bruts coupés à l'horloge, mais il ne tourne que si toute la fenêtre, 2024 comprise, a passé les portes du rapport de qualité. Les valeurs hors bornes, les enregistrements hors grille et les températures en double ne pouvaient donc pas apparaître dans le rejeu ; le moniteur quotidien y jugeait encore les heures manquantes, les valeurs vides, les doublons de demande et le silence de la station principale.
 - **Données en temps réel.** Les valeurs sont celles téléchargées le 2026-10-14 (demande) et à partir du 2026-10-14 (météo) ; ni délai de publication ni révision ne sont modélisés. La conception voit chaque moment de décision comme le rejeu voit son horloge : la série de demande y est reconstruite à partir des seuls enregistrements bruts datés de ce moment ou d'avant (pour l'ajustement d'un modèle, l'origine de son premier jour testé ; pour les retards, l'origine de chaque jour ; pour la cible, le moment où le jour est noté). La réparation qui comble l'heure manquante du 2022-01-01 05:00 UTC avec un enregistrement daté du 2023-01-01 05:00 UTC n'entre donc dans la conception qu'après l'arrivée de cet enregistrement, au même moment que dans les rejeux. La demi-largeur d'un intervalle, fixée à l'ajustement de son modèle, n'est calibrée que sur les jours déjà notés à ce moment (un jour est noté une heure après sa dernière heure, ou à la fin des données de conception) : la veille du premier jour testé d'un mois de validation en reste exclue.
-- **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'une même session d'agent IA sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. La revue a été faite par des agents à contexte neuf, ce qui n'est pas une validation indépendante au sens de SR 11-7.
+- **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'agents IA travaillant sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. Les revues ont été faites par des agents à contexte neuf et par un modèle d'IA d'un autre fournisseur, ce qui n'est pas une validation indépendante au sens de SR 11-7.
 
 ## 9. Les bris, sur des données synthétiques
 
@@ -510,7 +517,7 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Moniteurs et table de décision | Deux jours altérés ne portent jamais la statistique tronquée au-delà des jours intacts (2 000 tirages) | déclenché |
 | Moniteurs et table de décision | Les semaines incomplètes n'ont pas de statistique de dérive | déclenché |
 | Moniteurs et table de décision | Le dernier jour est jugé à la fin des données, et le dit | déclenché |
-| Moniteurs et table de décision | Des températures en double et un enregistrement hors grille font échouer leur jour | déclenché |
+| Moniteurs et table de décision | Des températures en double et un enregistrement de demande hors grille font échouer leur jour | déclenché |
 | Moniteurs et table de décision | Un changement de niveau de la demande : réentraîner | déclenché |
 | Moniteurs et table de décision | Des intervalles trop étroits : recalibrer | déclenché |
 | Moniteurs et table de décision | Deux règles à la fois : une recommandation, les deux preuves | déclenché |
@@ -566,6 +573,7 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Rendu des rapports | Témoin : sans dérogation consignée, une chaîne intacte passe ; avec une dérogation, le rejeu qui la porte passe | resté silencieux |
 | Rendu des rapports | Une dérogation consignée par un hachage de moins de 12 caractères rompt la chaîne du rapport | déclenché |
 | Rendu des rapports | Une section des dérogations introuvable dans `AGENTS.md` rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un bloc horaire absent de la couverture du run de validation, ou un bloc en trop, fait refuser le rapport | déclenché |
 | Rendu des rapports | Une saison absente de la couverture du run de validation fait refuser le rapport | déclenché |
 | Rendu des rapports | Une semaine de la première formulation de la règle 2 absente des semaines jugées du rejeu fait refuser le rapport | déclenché |
 | Rendu des rapports | Une défaillance étendue aux deux semaines sans « réentraîner » dans le rejeu fait refuser le rapport | déclenché |
@@ -584,8 +592,8 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Rendu des rapports | Un rejeu d'avant une dérogation qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport | déclenché |
 | Rendu des rapports | Un registre des rejeux modifié ou supprimé après le rendu fait échouer le test de l'estampille du rapport | déclenché |
 | Rendu des rapports | Un bris qui ne s'est pas déclenché met l'exécution des bris en échec | déclenché |
-| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres | déclenché |
-| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres | déclenché |
+| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport français | déclenché |
+| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport anglais | déclenché |
 | Pas d'information future | Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur ; une ligne notée à l'horloge même la calibre | déclenché |
 | Rendu des rapports | Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport | déclenché |
 | Rendu des rapports | Des mesures de 2024 faites avec d'autres durées, facteurs, changements de niveau ou bruits que celles de 2023 font refuser le rapport | déclenché |
@@ -607,21 +615,21 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée (examiner, réentraîner, recalibrer), avec preuves ; recommande sans agir. | Sections 5 et 7 |
 | SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
 | NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |
-| NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 9 |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 9 |
 | NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 7 |
 
-**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des dérogations ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 (petites variations des entrées et des paramètres) ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; données en temps réel.
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 (petites variations des entrées et des paramètres) ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
 
 ## 11. Provenance
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-| qualité des données | `021a47bc77824742bef41d8731c2d951` | 2026-10-15 01:50 UTC |
-| validation | `b7268bf5603f47a5a190c716274993ee` | 2026-10-15 01:51 UTC |
-| modèle figé pour 2023 | `04160feea3cf4ff583b177c5883c5735` | 2026-10-15 01:51 UTC |
-| modèle figé pour 2024 | `2823ecf3be7b4e8ca0b410fcfc16b05f` | 2026-10-15 02:22 UTC |
-| rejeu de 2023 | `ef636177ec6c4656bebcd8bc3f919d81` | 2026-10-15 02:22 UTC |
-| rejeu de 2024 | `aff7424cfb204711aae2bdcd0a442c68` | 2026-10-15 02:53 UTC |
-| bris | `669c16273b244634b4472dd5148374d5` | 2026-10-15 02:56 UTC |
+| qualité des données | `06944fc927ab464fbca9e1d403f83035` | 2026-10-15 04:25 UTC |
+| validation | `1798002f0d064b9b8ee09dd9c6b17640` | 2026-10-15 04:27 UTC |
+| modèle figé pour 2023 | `ed90f009739b4a178c7f4f31d65b42d5` | 2026-10-15 04:27 UTC |
+| modèle figé pour 2024 | `afa1d39bd8904e92b16efb8ebe5d05d6` | 2026-10-15 05:04 UTC |
+| rejeu de 2023 | `9ce73c7adac14801b627ed3226149aa8` | 2026-10-15 05:04 UTC |
+| rejeu de 2024 | `4f9502fbb33240ec96b6b5e4ea3439a0` | 2026-10-15 05:41 UTC |
+| bris | `e6f48ad3aa3046c5a52080e8cfa29adf` | 2026-10-15 05:45 UTC |
 
-Empreinte du code : `6894ad412fe0d6b6c2bdd68edbd6d8fe4ae4b86eb3afe909ad5ece9b765a36b9`. Empreinte des règles : `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.
+Empreinte du code : `758cfe9ed9da67a433bb362b3c76e9ac5259bea07bc80e13387e4df0113f56c4`. Empreinte des règles : `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.

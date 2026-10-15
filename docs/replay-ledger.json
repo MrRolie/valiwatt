@@ -51,6 +51,24 @@
       "departure_from": [
         "91f7e3faecee4a899381edd47b4ffc3f"
       ]
+    },
+    {
+      "run_id": "4f9502fbb33240ec96b6b5e4ea3439a0",
+      "year": 2024,
+      "freeze_tag": "rules-frozen",
+      "freeze_commit": "affe089f6ed03318f1046f2c1aa6efc21c44604c",
+      "rules_sha256": "e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49",
+      "code_sha256": "758cfe9ed9da67a433bb362b3c76e9ac5259bea07bc80e13387e4df0113f56c4",
+      "started_utc": "2026-10-15T05:41:12.383Z",
+      "ended_utc": "2026-10-15T05:41:14.357Z",
+      "status": "complete",
+      "mape": 0.04230586682355211,
+      "coverage": 0.8942680977392099,
+      "recommendations": [],
+      "departure": true,
+      "departure_from": [
+        "91f7e3faecee4a899381edd47b4ffc3f"
+      ]
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `021a47bc77824742bef41d8731c2d951` (2026-10-15 01:50 UTC), code `9ab28e51a1ec`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `06944fc927ab464fbca9e1d403f83035` (2026-10-15 04:25 UTC), code `2917f290e64c`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -128,13 +128,13 @@ _A very strong spike also gets its neighbour flagged: 1 pair of consecutive hour
 
 **Panel.** The mean of the stations is computed only at hours where at least 4 of the 6 stations report: 99.96% of hours (gate: passed, threshold 99%).
 
-**Shared gaps.** For 23 hours, half the stations or more were silent at the same time, including 9 hours with no station at all. The longest such run goes from 2022-04-22 04:00 UTC to 2022-04-23 00:00 UTC (21 hours). During the hours with no station at all, more stations from the same network would not have helped.
+**Shared gaps.** For 23 hours, half the stations or more were silent at the same time, including 9 hours with no station at all. The longest such run goes from 2022-04-22 04:00 UTC to 2022-04-23 00:00 UTC (21 hours). During those 9 hours, none of the 6 configured stations reported; other stations were not checked.
 
 Temperature spikes are flagged with the same rule as demand (score beyond 10, scale estimated on 2019–2023). They are not removed: no check here separates a sensor error from a real change in the weather.
 
 ## 5. Station representativeness (2019–2023 only)
 
-**Why only 2019–2023.** The following year will be replayed hour by hour as if it were production, with a model frozen at the end of 2023. No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
+**Why only 2019–2023.** The following year is replayed hour by hour as if it were production, with a model frozen at the end of 2023 (validation report). No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
 
 **Method.** For each temperature source, each day's mean demand is explained by heating degree-days (how far the day's mean temperature is below 18 °C), cooling degree-days (above 18 °C) and the day of the week, by least squares. R² is the share of the variation in daily demand that this model reproduces. All sources are compared on the same 1,752 days (439 winter days, December to February).
 
@@ -203,12 +203,12 @@ _Mean monthly gap to a weather model fitted on 2019, in % of expected demand (me
 
 Among the tabulated months, the lowest is 2020-04, −4.1 points from the same month of 2019 once weather is accounted for. In 2023, the mean gap to the same month of 2019 is +5.8 points (12 of 12 months above).
 
-A persistent gap says demand moved for reasons this weather model does not carry. It does not say which: economic activity, load growth, new uses. If a drift of this kind continues during the replay, a frozen model will carry it; that is what monitoring will have to detect.
+A persistent gap says demand moved for reasons this weather model does not carry. It does not say which: economic activity, load growth, new uses. If a drift of this kind continues during the replay, a frozen model carries it; that is what monitoring has to detect (validation report).
 
 ## 7. What this report does not show
 
-- It measures no forecast's quality: no forecast has been made yet.
-- The associations in section 5 use **observed** weather. A forecast made in advance would only have forecast weather; its results will have to say so.
+- It measures no forecast's quality: the validation report does.
+- The associations in section 5 use **observed** weather. A forecast made in advance has only forecast weather; the validation report says so of its results.
 - The intervals in section 5 are about how well the models fit the years studied, not about a forecast error.
 - It does not say why demand departs from the 2019 model.
 - It does not sort flagged spikes into errors and real events.

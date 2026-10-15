@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `021a47bc77824742bef41d8731c2d951` (2026-10-15 01:50 UTC), code `9ab28e51a1ec`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `06944fc927ab464fbca9e1d403f83035` (2026-10-15 04:25 UTC), code `2917f290e64c`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -128,13 +128,13 @@ _Un pic très fort fait aussi signaler sa voisine : 1 paire d'heures consécutiv
 
 **Panel.** La moyenne des stations n'est calculée qu'aux heures où au moins 4 stations sur 6 répondent : 99,96 % des heures (contrôle bloquant : réussi, seuil 99 %).
 
-**Lacunes partagées.** Pendant 23 heures, la moitié des stations ou plus étaient muettes en même temps, dont 9 heures sans aucune station. La plus longue de ces plages va de 2022-04-22 04:00 UTC à 2022-04-23 00:00 UTC (21 heures). Pendant les heures sans aucune station, ajouter des stations du même réseau n'aurait rien changé.
+**Lacunes partagées.** Pendant 23 heures, la moitié des stations ou plus étaient muettes en même temps, dont 9 heures sans aucune station. La plus longue de ces plages va de 2022-04-22 04:00 UTC à 2022-04-23 00:00 UTC (21 heures). Pendant ces 9 heures, aucune des 6 stations retenues ne répondait ; d'autres stations n'ont pas été vérifiées.
 
 Les pics de température sont signalés avec la même règle que la demande (score au-delà de 10, échelle estimée sur 2019–2023). Ils ne sont pas retirés : aucun contrôle ici ne sépare une erreur de capteur d'un vrai changement de temps.
 
 ## 5. Représentativité des stations (2019–2023 seulement)
 
-**Pourquoi seulement 2019–2023.** L'année suivante sera rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de 2023. Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
+**Pourquoi seulement 2019–2023.** L'année suivante est rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de 2023 (rapport de validation). Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
 
 **Méthode.** Pour chaque source de température, la demande moyenne de chaque jour est expliquée par les degrés-jours de chauffage (de combien la température moyenne du jour est sous 18 °C), les degrés-jours de climatisation (au-dessus de 18 °C) et le jour de la semaine, par moindres carrés. Le R² est la part de la variation de la demande journalière que ce modèle reproduit. Toutes les sources sont comparées sur les mêmes 1 752 jours (439 jours d'hiver, de décembre à février).
 
@@ -167,7 +167,7 @@ La moyenne donne le même poids à chaque station, quelle que soit la population
 
 ## 6. Repères à confirmer en validation
 
-**L'heure la plus chargée.** Les 5 heures les plus chargées de 2019–2023 :
+**Les heures les plus chargées.** Les 5 heures les plus chargées de 2019–2023 :
 
 | Heure finissant à | Demande (MW) | Température à Montréal (°C) |
 |---|---|---|
@@ -203,12 +203,12 @@ _Écart mensuel moyen à un modèle météo ajusté sur 2019, en % de la demande
 
 Parmi les mois tabulés, le plus bas est 2020-04, à −4,1 points du même mois de 2019 une fois la météo prise en compte. En 2023, l'écart moyen au même mois de 2019 est de +5,8 points (12 mois sur 12 au-dessus).
 
-Un écart persistant dit que la demande a bougé pour des raisons que ce modèle météo ne porte pas. Il ne dit pas lesquelles : activité économique, croissance de la charge, nouveaux usages. Si une dérive de ce genre se poursuit pendant le rejeu, un modèle figé la subira ; c'est ce que la surveillance devra détecter.
+Un écart persistant dit que la demande a bougé pour des raisons que ce modèle météo ne porte pas. Il ne dit pas lesquelles : activité économique, croissance de la charge, nouveaux usages. Si une dérive de ce genre se poursuit pendant le rejeu, un modèle figé la subit ; c'est ce que la surveillance doit détecter (rapport de validation).
 
 ## 7. Ce que ce rapport ne montre pas
 
-- Il ne mesure la qualité d'aucune prévision : aucune prévision n'est encore faite.
-- Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'aurait qu'une météo prévue ; ses résultats devront le dire.
+- Il ne mesure la qualité d'aucune prévision : c'est le rapport de validation qui la mesure.
+- Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'a qu'une météo prévue ; le rapport de validation le dit de ses résultats.
 - Les intervalles de la section 5 portent sur l'ajustement des modèles aux années étudiées, pas sur une erreur de prévision.
 - Il ne dit pas pourquoi la demande s'écarte du modèle de 2019.
 - Il ne classe pas les pics signalés en erreurs ou en événements réels.
