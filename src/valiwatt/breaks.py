@@ -55,7 +55,7 @@ T_GRD, T_VAL, T_REP, T_DRF = "tests/test_guards.py", "tests/test_validate.py", "
 T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.py", "tests/test_sensitivity.py"
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
 T_COV, T_SEN2, T_LED = "tests/test_report_coverage.py", "tests/test_report_sentences.py", "tests/test_replay_ledger.py"
-T_ASOF, T_EVAL = "tests/test_as_of.py", "tests/test_evaluate.py"
+T_ASOF, T_EVAL, T_WORD = "tests/test_as_of.py", "tests/test_evaluate.py", "tests/test_report_wording.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -212,7 +212,7 @@ BREAKS = [
     _b(MON, f"{T_REP}::test_the_last_day_is_judged_at_the_end_of_the_data_and_says_so",
        "Le dernier jour est jugé à la fin des données, et le dit", "The last day is judged at the end of the data, and says so"),
     _b(MON, f"{T_REP}::test_duplicated_temperatures_and_an_off_grid_demand_record_fail_their_day",
-       "Des températures en double et un enregistrement hors grille font échouer leur jour",
+       "Des températures en double et un enregistrement de demande hors grille font échouer leur jour",
        "Duplicated temperatures and an off-grid demand record fail their day"),
     _b(MON, f"{T_REP}::test_a_level_shift_yields_retrain",
        "Un changement de niveau de la demande : réentraîner", "A shift in the demand level: retrain"),
@@ -383,6 +383,9 @@ BREAKS = [
     _b(RENDER, f"{T_LIN}::test_a_departures_section_that_cannot_be_found_is_refused",
        "Une section des dérogations introuvable dans `AGENTS.md` rompt la chaîne du rapport",
        "A departures section that cannot be found in `AGENTS.md` breaks the report's run chain"),
+    _b(RENDER, f"{T_WORD}::test_hour_block_coverage_rows_unlike_the_configured_blocks_are_refused",
+       "Un bloc horaire absent de la couverture du run de validation, ou un bloc en trop, fait refuser le rapport",
+       "An hour block missing from the validation run's coverage, or one too many, makes the report refuse"),
     _b(RENDER, f"{T_COV}::test_a_season_missing_from_the_run_is_refused",
        "Une saison absente de la couverture du run de validation fait refuser le rapport",
        "A season missing from the validation run's coverage makes the report refuse"),
@@ -445,14 +448,18 @@ BREAKS = [
        "Un bris qui ne s'est pas déclenché met l'exécution des bris en échec", "A break that did not fire marks the breaks run failed"),
     _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers[fr]",
        "Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict "
-       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres",
+       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, "
+       "rapport français",
        "A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the "
-       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers"),
+       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, "
+       "French report"),
     _b(RENDER, f"{T_SEN2}::test_no_spring_verdict_contradicts_its_own_printed_numbers[en]",
        "Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict "
-       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres",
+       "indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, "
+       "rapport anglais",
        "A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the "
-       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers"),
+       "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, "
+       "English report"),
     _b(LOOK, f"{T_EVAL}::test_a_row_scored_at_the_fit_clock_calibrates_and_one_scored_an_hour_later_does_not",
        "Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur ; une ligne notée à "
        "l'horloge même la calibre",

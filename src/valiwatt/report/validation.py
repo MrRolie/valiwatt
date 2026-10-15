@@ -83,6 +83,16 @@ def coverage_sides(rows: list[dict], nominal: float, low: str = "covered_low", h
             "over": [r["key"] for r in rows if printed(r[low]) > n]}
 
 
+def hour_blocks(rows: list[dict], blocks: dict) -> list[dict]:
+    """The coverage rows of the hour blocks in the order the run's configuration lists them, the order of the report's
+    table; a block missing from the rows, or a row for a block the configuration lacks, is refused."""
+    by_key = {r["key"]: r for r in rows}
+    if sorted(by_key) != sorted(blocks) or len(by_key) != len(rows):
+        raise ReportRefused(f"the validation run's hour-block coverage rows {sorted(by_key)} are not its configured "
+                            f"blocks {sorted(blocks)}")
+    return [by_key[k] for k in blocks]
+
+
 def detection_limits(power: dict) -> dict:
     """What a replay's power table shows, for the sentences that sum it up.
 
@@ -304,13 +314,15 @@ def constants(v: dict, frozen24: dict, p: dict) -> dict:
 
 
 def level_shift(p: dict, size: float) -> dict:
-    """The largest level shift measured on a replay's year: rises missed and falls caught within the horizon."""
+    """The largest level shift measured on a replay's year: rises missed and falls caught within the horizon. `months`
+    names every start of a rise (the starts the measure tested), `missed_months` only those whose rise was missed."""
     rows = p["sensitivity"]["level_shifts"]
     up = [x for x in rows if abs(x["shift"] - size) < 1e-9]
     down = [x for x in rows if abs(x["shift"] + size) < 1e-9]
     return {"size": size, "up_n": len(up), "up_missed": sum(x["weeks"] is None for x in up),
             "down_n": len(down), "down_caught": sum(x["weeks"] is not None for x in down),
-            "months": [pd.Timestamp(x["start"]).month for x in up]}
+            "months": [pd.Timestamp(x["start"]).month for x in up],
+            "missed_months": [pd.Timestamp(x["start"]).month for x in up if x["weeks"] is None]}
 
 
 SENSITIVITY_PARTS = ("episodes", "level_shifts", "echo_exclusion_cost")
@@ -347,19 +359,27 @@ def same_sensitivity_design(p: dict, r: dict) -> None:
 
 
 def episode_limits(S: dict, mild_factors: list) -> dict:
-    """What section 8 sums up of one year's measures: the episode of several days that most often yields *retrain*
-    (None when none does) and its share of starts; the largest share for the mildest factors; the alarms (*retrain*
-    or *recalibrate*) one-day shocks gave; and the echo exclusion's cost, summed over its noise levels."""
+    """What sections 6 and 8 sum up of one year's measures: the episode of several days that most often yields
+    *retrain* (None when none does) and its share of starts; the one that most often yields *recalibrate*, likewise;
+    the largest *retrain* share for the mildest factors; the alarms one-day shocks gave (`one_day`: *retrain*, of which
+    clean, and *recalibrate*, over all their cases, a start times a factor; the measures split *retrain* alone into
+    clean and assisted); and the echo exclusion's cost, summed over its noise levels."""
     worst, share, mild = None, 0.0, 0.0
+    recal_worst, recal_share = None, 0.0
     for row in S["episodes"]["rows"]:
         rate = row["retrain"] / row["starts"]
         if row["days"] > 1 and rate > share:
             worst, share = row, rate
+        if row["days"] > 1 and row["recalibrate"] / row["starts"] > recal_share:
+            recal_worst, recal_share = row, row["recalibrate"] / row["starts"]
         if row["factor"] in mild_factors and rate > mild:
             mild = rate
     ec = S["echo_exclusion_cost"]["rows"]
-    return {"worst": worst, "share": share, "mild": mild,
-            "one_day_alarms": sum(x["retrain"] + x["recalibrate"] for x in S["episodes"]["rows"] if x["days"] == 1),
+    one = [x for x in S["episodes"]["rows"] if x["days"] == 1]
+    one_day = {"retrain": sum(x["retrain"] for x in one), "retrain_clean": sum(x["retrain_clean"] for x in one),
+               "recalibrate": sum(x["recalibrate"] for x in one), "cases": sum(x["starts"] for x in one)}
+    return {"worst": worst, "share": share, "mild": mild, "recal_worst": recal_worst, "recal_share": recal_share,
+            "one_day": one_day, "one_day_alarms": one_day["retrain"] + one_day["recalibrate"],
             "echo": {k: sum(x[k] for x in ec) for k in ("suppressed", "runs", "delayed")}}
 
 
@@ -385,6 +405,8 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
         "seasons": season_coverage(C, nominal),
         "sides": {"season": coverage_sides(sorted(C["relative"]["season"],
                                                   key=lambda x: F.SEASON_ORDER.index(x["key"])), nominal),
+                  "hour_group": coverage_sides(hour_blocks(C["relative"]["hour_group"], v["config"]["hour_blocks"]),
+                                               nominal),
                   "decile": coverage_sides(C["relative"]["decile"], nominal),
                   "overall": coverage_sides([{"key": "all", "covered_low": C["relative"]["overall"]["ci95_low"],
                                               "covered_high": C["relative"]["overall"]["ci95_high"]}], nominal)},
@@ -412,12 +434,14 @@ def recommendations(decisions: list[dict]) -> list[dict]:
 
 
 def departure(c, run) -> dict:
-    """A departed replay as the report shows it: from the store, or from its ledger entry when the store lacks it."""
+    """A departed replay as the report shows it: from the store, or from its ledger entry when the store lacks it. The
+    ledger holds neither the model's hash nor the flagged weeks: None for an entry, so the report says nothing of them."""
     if isinstance(run, RecordedReplay):
-        return ledger.as_departure(run.entry)
+        return {**ledger.as_departure(run.entry), "model_sha256": None, "flag_weeks": None}
     results = _json(c, run, "results/replay.json")
     return {"id": run.info.run_id, "freeze_commit": run.data.tags.get("freeze_commit", ""), "recorded": False,
-            "summary": results["summary"], "recommendations": recommendations(results["decisions"])}
+            "summary": results["summary"], "recommendations": recommendations(results["decisions"]),
+            "model_sha256": results["model"]["sha256"], "flag_weeks": results["summary"]["flag_weeks"]}
 
 
 # The one departure from the frozen monitoring rules (AGENTS.md, "Departures from the frozen monitoring rules"): its

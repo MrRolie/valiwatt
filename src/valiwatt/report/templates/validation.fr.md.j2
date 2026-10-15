@@ -1,7 +1,7 @@
 {% set P = v.performance %}
 {% set C = v.coverage %}
 {% from 'season_coverage.fr.md.j2' import season_sentence %}
-{% from 'sentences.fr.md.j2' import level_shift_note_replay, set_aside, episode_limit, level_limit, level_why, recs_list, departure_item %}
+{% from 'sentences.fr.md.j2' import level_shift_note_replay, set_aside, episode_limit, level_limit, level_why, recs_list, departure_item, one_day_alarms, departed_model %}
 {% from 'sentences.fr.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_error, brief_coverage, brief_peak, brief_replay, brief_misses, break_result, level_shift_note %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }} ; {{ hi|pct(d) }}]{% endmacro %}
 {% macro sci(lo, hi, d=2) %}[{{ sp(lo, d) }} ; {{ sp(hi, d) }}]{% endmacro %}
@@ -37,6 +37,7 @@
 {% set HB = v.config.hour_blocks %}
 {% set BLOCK = {'night': 'nuit', 'morning': 'matin', 'day': 'jour', 'evening': 'soir', 'late': 'fin de soirée'} %}
 {% macro block(b) %}{{ BLOCK[b] }} ({{ HB[b][0] }}–{{ HB[b][1] }} h){% endmacro %}
+{% set HBS = {'under': [], 'over': []} %}{% for side in ['under', 'over'] %}{% for b in sides.hour_group[side] %}{% set _ = HBS[side].append(block(b)) %}{% endfor %}{% endfor %}
 {% set SM = K.season_months %}
 {% set LR = limits.replay %}
 {% set LP = limits.pseudo %}
@@ -59,10 +60,10 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 {% set vy = K.validation_years %}
 - {{ brief_error(P, c1, vy) }}
-- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides) }}
+- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides, v.folds.last, HBS.under) }}
 - {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }}
 - {{ brief_replay(r, n_recs, departures) }}
-- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24) }}
+- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24, K.power_horizon) }}
 
 ## Fiche du modèle
 
@@ -170,7 +171,7 @@ Aucun des deux cas tests n'avait de critère d'acceptation qui pouvait échouer 
 
 ## 4. Intervalles de prévision
 
-Nominal {{ nominal|pct(0) }}, à partir de {{ v.conformal.first_fold }}.
+Nominal {{ nominal|pct(0) }}, de {{ v.conformal.first_fold }} à {{ v.folds.last }}.
 
 | Forme | Couverture | IC 95 % | Demi-largeur moyenne |
 |---|---|---|---|
@@ -178,7 +179,7 @@ Nominal {{ nominal|pct(0) }}, à partir de {{ v.conformal.first_fold }}.
 | {{ label }} | {{ C[name].overall.mean|pct(1) }} | {{ ci(C[name].overall.ci95_low, C[name].overall.ci95_high, 1) }} | {{ C[name].mean_half_width_pct|num(2) }}{{ pct_sign }} |
 {% endfor %}
 
-{% if not sides.overall.under and not sides.overall.over %}L'IC 95 % de la couverture globale contient le nominal{% elif sides.overall.under %}La couverture globale est sous le nominal, IC 95 % compris{% else %}La couverture globale est au-dessus du nominal, IC 95 % compris{% endif %}. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés, pour l'intervalle de production. {{ coverage_sides(sides.season, sides.decile, nominal) }} Un quantile par saison est une analyse de sensibilité. {{ season_sentence(seasons, nominal) }} Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
+{% if not sides.overall.under and not sides.overall.over %}L'IC 95 % de la couverture globale contient le nominal{% elif sides.overall.under %}La couverture globale est sous le nominal, IC 95 % compris{% else %}La couverture globale est au-dessus du nominal, IC 95 % compris{% endif %}. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés, pour l'intervalle de production. {{ coverage_sides(sides.season, sides.decile, nominal, HBS) }} Un quantile par saison est une analyse de sensibilité. {{ season_sentence(seasons, nominal) }} Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
 
 ![Couverture par saison]({{ fig.validation_coverage_by_season }})
 
@@ -275,8 +276,8 @@ Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} h
 {{ Y24 }}
 
 {{ episode_table(S24.episodes.rows) }}
-{% set one_day = [] %}{% for y, E in [(p.year, E23), (r.year, E24)] if E.one_day_alarms %}{% set _ = one_day.append(y) %}{% endfor %}
-{% if not one_day %}Aucun choc d'un seul jour n'a donné d'alerte, ni sur {{ p.year }} ni sur {{ r.year }} : un mauvais jour gâte au plus deux jours d'une semaine, que la coupe écarte ; il ne peut que compléter des jours en échec que les semaines contenaient déjà. {% else %}**Un choc d'un seul jour a donné une alerte**, sur {{ and_list(one_day) }}. Un mauvais jour ne le peut qu'en complétant des jours en échec que les semaines contenaient déjà et que la coupe écartait jusque-là ; les semaines en cause sont dans l'exécution. {% endif %}Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès {{ K.trim_days + 1 }} jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
+{% set one_day = [] %}{% for y, E in [(p.year, E23), (r.year, E24)] if E.one_day_alarms %}{% set _ = one_day.append((y, E.one_day)) %}{% endfor %}
+{% if not one_day %}Aucun choc d'un seul jour n'a donné d'alerte, ni sur {{ p.year }} ni sur {{ r.year }} : un mauvais jour gâte au plus deux jours d'une semaine, que la coupe écarte ; il ne peut que compléter des jours en échec que les semaines contenaient déjà. {% else %}{{ one_day_alarms(one_day) }} {% endif %}Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès {{ K.trim_days + 1 }} jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
 
 {% macro starts_of(a, b) %}{% if a.months == b.months %}{{ months(a.months) }}{% else %}{{ months(a.months) }} en {{ p.year }} et de {{ months(b.months) }} en {{ r.year }}{% endif %}{% endmacro %}
 **Changement de niveau de la demande.** La demande est multipliée par un facteur à partir de la première semaine jugée de {{ starts_of(level, level24) }}, pendant {{ K.step_horizon }} semaines (semaines avant « réentraîner » ; — : rien en {{ K.step_horizon }} semaines). La prévision par persistance suit la demande par ses retards : un changement de niveau ne laisse entre la prévision et la demande qu'un écart bien plus petit que lui-même. Le tableau de puissance mesure cet écart ; les deux tableaux qui suivent mesurent le changement de niveau.
@@ -316,6 +317,12 @@ Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} h
 | EAMP | {% for d in departures %}{{ d.summary.mape.mean|pct(2) }} | {% endfor %}{{ r.summary.mape.mean|pct(2) }} |
 | Couverture | {% for d in departures %}{{ d.summary.coverage.mean|pct(1) }} | {% endfor %}{{ r.summary.coverage.mean|pct(1) }} |
 | Recommandations | {% for d in departures %}{{ recs_list(d.recommendations) }} | {% endfor %}{{ recs_list(r.decisions|selectattr('recommendation')|list) }} |
+| Modèle figé (empreinte) | {% for d in departures %}{% if d.model_sha256 is none %}—{% else %}`{{ d.model_sha256|short }}`{% endif %} | {% endfor %}`{{ r.model.sha256|short }}` |
+{% for key, label in [('mape_high', 'Semaines EAMP hors seuil'), ('bias_high', 'Semaines biais au-dessus de sa bande'), ('bias_low', 'Semaines biais au-dessous de sa bande'), ('coverage_low', 'Semaines couverture basse')] %}
+| {{ label }} | {% for d in departures %}{% if d.flag_weeks is none %}—{% else %}{{ d.flag_weeks[key] }}{% endif %} | {% endfor %}{{ r.summary.flag_weeks[key] }} |
+{% endfor %}
+
+{{ departed_model(departures, r.model.sha256) }}
 
 La dérogation du {{ D.date }} porte sur ces points :
 
@@ -376,10 +383,10 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 ## 8. Limites
 
 {% set high_thr = [] %}{% for s in ['winter', 'spring', 'summer', 'fall'] %}{% if th24.performance[s].coverage_low|round(3) > nominal|round(3) %}{% set _ = high_thr.append(s) %}{% endif %}{% endfor %}
-- **Couverture conditionnelle.** {% if sides.season.under or sides.decile.under %}L'intervalle de production sous-couvre {{ groups(sides.season.under, sides.decile.under) }} (section 4).{% if sides.season.under %} Les seuils de couverture de {{ groups(sides.season.under, []) }} sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation.{% endif %}{% else %}Aucune saison ni aucun décile n'est sous-couvert au sens de la section 4.{% endif %}{% if high_thr %} À l'inverse, le seuil de couverture de {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) dépasse le nominal de {{ nominal|pct(0) }} : une semaine couverte au-delà du nominal peut y être signalée basse. Les seuils mesurent l'écart à la couverture de chaque saison en validation, pas au nominal.{% endif %}{{ '' }}
+- **Couverture conditionnelle.** {% if sides.season.under or sides.decile.under or HBS.under %}L'intervalle de production sous-couvre {{ groups(sides.season.under, sides.decile.under, HBS.under) }} (section 4).{% if sides.season.under %} Les seuils de couverture de {{ groups(sides.season.under, []) }} sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation.{% endif %}{% else %}Aucune saison, aucun bloc horaire ni aucun décile n'est sous-couvert au sens de la section 4.{% endif %}{% if high_thr %} À l'inverse, le seuil de couverture de {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) dépasse le nominal de {{ nominal|pct(0) }} : une semaine couverte au-delà du nominal peut y être signalée basse. Les seuils mesurent l'écart à la couverture de chaque saison en validation, pas au nominal.{% endif %}{{ '' }}
 - **Froids extrêmes.** {% if peak.evaluated == 0 %}Aucun intervalle de prévision ne couvre la pointe de {{ peak.named_month }}{% elif peak.covered == 0 %}La pointe de {{ peak.named_month }} n'est pas couverte{% else %}La pointe de {{ peak.named_month }} n'est couverte qu'en partie{% endif %} ({{ peak.covered }} des {{ peak.evaluated }} heures les plus chargées){% if gaps|min > 0 %} ; même avec la météo observée, le modèle la sous-estime, et la cause n'est pas testée{% endif %}. Une seule pointe est étudiée ; les vagues de froid ne sont pas mesurées comme catégorie.
 {% set MEASURED = '(mesuré sur ' ~ p.year ~ ", l'année de conception des règles, et sur " ~ r.year ~ ', hors échantillon, mesure ajoutée après les résultats)' %}
-- **Épisodes de plusieurs jours** {{ MEASURED }}. {% if E23.worst or E24.worst %}Un épisode de plusieurs jours peut donner « réentraîner » sans que le modèle soit en cause : {% else %}Un épisode n'est pas une défaillance du modèle : {% endif %}{{ episode_limit(E23, p.year, K.mild) }} ; {{ episode_limit(E24, r.year, K.mild) }} (section 6).
+- **Épisodes de plusieurs jours** {{ MEASURED }}. {% if E23.worst or E24.worst or E23.recal_worst or E24.recal_worst %}Un épisode de plusieurs jours peut donner une fausse alerte sans que le modèle soit en cause : {% else %}Un épisode n'est pas une défaillance du modèle : {% endif %}{{ episode_limit(E23, p.year, K.mild) }} ; {{ episode_limit(E24, r.year, K.mild) }} (section 6).
 - **Changement de niveau** {{ MEASURED }}. {{ level_limit(level, p.year, K.step_horizon) }} {{ level_limit(level24, r.year, K.step_horizon) }} {% set why = level_why([(p.year, level), (r.year, level24)]) %}{% if why|trim %}{{ why }} {% endif %}Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
 - **Exclusion de l'écho** {{ MEASURED }}. Sur un modèle dégradé dont le biais change de côté, elle supprime « réentraîner » sur {{ p.year }} dans {{ E23.echo.suppressed }} essais sur {{ E23.echo.runs }} et le retarde dans {{ E23.echo.delayed }}, et sur {{ r.year }} dans {{ E24.echo.suppressed }} essais sur {{ E24.echo.runs }} et le retarde dans {{ E24.echo.delayed }} (section 6) ; c'est le prix d'éviter les fausses alertes d'un épisode suivi de son écho.
 {% set silent23 = LP.strongest_caught.cases - LP.strongest_caught.caught %}
@@ -421,10 +428,10 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée (examiner, réentraîner, recalibrer), avec preuves ; recommande sans agir. | Sections 5 et 7 |
 | SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
 | NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |
-| NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 9 |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 9 |
 | NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 7 |
 
-**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des dérogations ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 (petites variations des entrées et des paramètres) ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; données en temps réel.
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 (petites variations des entrées et des paramètres) ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
 
 ## 11. Provenance
 

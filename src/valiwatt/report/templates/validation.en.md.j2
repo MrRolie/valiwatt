@@ -1,7 +1,7 @@
 {% set P = v.performance %}
 {% set C = v.coverage %}
 {% from 'season_coverage.en.md.j2' import season_sentence %}
-{% from 'sentences.en.md.j2' import level_shift_note_replay, set_aside, episode_limit, level_limit, level_why, recs_list, departure_item %}
+{% from 'sentences.en.md.j2' import level_shift_note_replay, set_aside, episode_limit, level_limit, level_why, recs_list, departure_item, one_day_alarms, departed_model %}
 {% from 'sentences.en.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_error, brief_coverage, brief_peak, brief_replay, brief_misses, break_result, level_shift_note %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }}, {{ hi|pct(d) }}]{% endmacro %}
 {% macro sci(lo, hi, d=2) %}[{{ sp(lo, d) }}, {{ sp(hi, d) }}]{% endmacro %}
@@ -38,6 +38,7 @@
 {% set HB = v.config.hour_blocks %}
 {% set BLOCK = {'night': 'night', 'morning': 'morning', 'day': 'day', 'evening': 'evening', 'late': 'late evening'} %}
 {% macro block(b) %}{{ BLOCK[b] }} ({{ HB[b][0] }}–{{ HB[b][1] }} h){% endmacro %}
+{% set HBS = {'under': [], 'over': []} %}{% for side in ['under', 'over'] %}{% for b in sides.hour_group[side] %}{% set _ = HBS[side].append(block(b)) %}{% endfor %}{% endfor %}
 {% set SM = K.season_months %}
 {% set LR = limits.replay %}
 {% set LP = limits.pseudo %}
@@ -60,10 +61,10 @@ _Report generated from a chain of MLflow runs followed back from the {{ r.year }
 
 {% set vy = K.validation_years %}
 - {{ brief_error(P, c1, vy) }}
-- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides) }}
+- {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides, v.folds.last, HBS.under) }}
 - {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }}
 - {{ brief_replay(r, n_recs, departures) }}
-- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24) }}
+- {{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24, K.power_horizon) }}
 
 ## Model card
 
@@ -76,7 +77,7 @@ _Report generated from a chain of MLflow runs followed back from the {{ r.year }
 | **Model** | Ordinary least squares on named features: one constant per hour and day type, heating and cooling (degree-hours, base {{ v.config.base_c|num(0) }} °C) per time-of-day block, and demand one day and one week earlier. Frozen on data up to {{ f24.params.train_last_day }}; hash of its coefficients and half-width `{{ f24.tags.coefficient_sha256|short }}` (registered model `valiwatt-demand-persistence`, alias `replay-{{ r.year }}`). |
 | **Interval** | Forecast × (1 ± {{ f24.params.q|float|pct(2) }}). The half-width is a quantile of the {{ K.calibration_scores|num }} relative out-of-sample errors of {{ f24.params.calibration_first_fold }} to {{ f24.params.calibration_last_fold }}, made by the {{ K.calibration_folds }} models validation refitted each month and already scored when the frozen model is fitted (section 8), then applied to that model: the shape of a split-conformal interval, without its finite-sample coverage guarantee (section 1). The measured coverage is the evidence (sections 4 and 7). |
 | **Validation error** | MAPE {{ P.persistence.overall.mean|pct(2) }} {{ ci(P.persistence.overall.ci95_low, P.persistence.overall.ci95_high) }} over {{ span(vy) }}, against {{ P.baseline.overall.mean|pct(2) }} for the naive baseline. |
-| **{{ r.year }} replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ recs(n_recs) }} (section 7){% if departures %}; **post hoc**: replayed again after a departure from the frozen rules, decided after the {{ r.year }} results had been seen and recorded in `AGENTS.md` (section "Departures from the frozen monitoring rules", which lists it); the earlier replay is shown beside it (section 7){% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
+| **{{ r.year }} replay** | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ recs(n_recs) }} (section 7){% if departures %}; **post hoc**: replayed again after a departure from the frozen rules, which was decided after the {{ r.year }} results had been seen and is recorded in `AGENTS.md` (section "Departures from the frozen monitoring rules", which lists it); the earlier replay is shown beside it (section 7){% endif %}. {{ power_limit(LR, r.year, K.power_horizon) }} |
 | **Test cases** | {{ MONTH[sh.months[0]] }} to {{ MONTH[sh.months[-1]] }} {{ sh.year }}: bias {{ sp(sh.bias_shift_year.mean, 2) }} against {{ sp(sh.bias_other_years.mean, 2) }} in the same months of other years; {{ spring_card(sh, dsh) }} (section 3). Cold peak of {{ peak.named_month }}: {{ peak.covered }} of the {{ peak.evaluated }} busiest hours inside the interval. Neither case had an acceptance criterion that could fail. |
 | **Weather caveat** | Production uses the previous day's temperature, the only one known at issue time. The observed temperature of the target hour, which stands in for a perfectly forecast {{ primary }} temperature, is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 8. |
@@ -171,7 +172,7 @@ Neither test case had an acceptance criterion that could fail: the plan fixed wh
 
 ## 4. Prediction intervals
 
-Nominal {{ nominal|pct(0) }}, from {{ v.conformal.first_fold }}.
+Nominal {{ nominal|pct(0) }}, from {{ v.conformal.first_fold }} to {{ v.folds.last }}.
 
 | Form | Coverage | 95% CI | Mean half-width |
 |---|---|---|---|
@@ -179,7 +180,7 @@ Nominal {{ nominal|pct(0) }}, from {{ v.conformal.first_fold }}.
 | {{ label }} | {{ C[name].overall.mean|pct(1) }} | {{ ci(C[name].overall.ci95_low, C[name].overall.ci95_high, 1) }} | {{ C[name].mean_half_width_pct|num(2) }}{{ pct_sign }} |
 {% endfor %}
 
-{% if not sides.overall.under and not sides.overall.over %}The 95% CI of overall coverage contains the nominal{% elif sides.overall.under %}Overall coverage is below nominal, 95% CI included{% else %}Overall coverage is above nominal, 95% CI included{% endif %}. Conditional coverage is read from the 95% CIs of the tables below, as printed, for the production interval. {{ coverage_sides(sides.season, sides.decile, nominal) }} One quantile per season is a sensitivity run. {{ season_sentence(seasons, nominal) }} The decile table shows what one quantile per season leaves at high loads. The production form stays the one fixed before validation; changing it after seeing the results would make them depend on the choice.
+{% if not sides.overall.under and not sides.overall.over %}The 95% CI of overall coverage contains the nominal{% elif sides.overall.under %}Overall coverage is below nominal, 95% CI included{% else %}Overall coverage is above nominal, 95% CI included{% endif %}. Conditional coverage is read from the 95% CIs of the tables below, as printed, for the production interval. {{ coverage_sides(sides.season, sides.decile, nominal, HBS) }} One quantile per season is a sensitivity run. {{ season_sentence(seasons, nominal) }} The decile table shows what one quantile per season leaves at high loads. The production form stays the one fixed before validation; changing it after seeing the results would make them depend on the choice.
 
 ![Coverage by season]({{ fig.validation_coverage_by_season }})
 
@@ -276,8 +277,8 @@ MAPE difference (frozen minus refitted), on the same {{ pr.hours|num }} hours: {
 {{ Y24 }}
 
 {{ episode_table(S24.episodes.rows) }}
-{% set one_day = [] %}{% for y, E in [(p.year, E23), (r.year, E24)] if E.one_day_alarms %}{% set _ = one_day.append(y) %}{% endfor %}
-{% if not one_day %}No one-day shock gave an alarm, on {{ p.year }} or on {{ r.year }}: one bad day spoils at most two days of a week, which the trim sets aside, so it can only complete failing days the weeks already held. {% else %}**A one-day shock gave an alarm**, on {{ and_list(one_day) }}. One bad day can do so only by completing failing days the weeks already held, which the trim had been setting aside; the weeks involved are in the run. {% endif %}An episode of several days does more: through the day-old lag it spoils one day more than it lasts, and through the week-old lag as many days the following week, so from {{ K.trim_days + 1 }} days on both weeks can be broad on the same failure with no failing days of their own. When one of the two weeks' bias stays inside its band (a band wide on that side, or a week that also holds days of the episode, as when it crosses a Monday), the echo exclusion does not engage. Weekly statistics cannot tell such an episode from two weeks of model failure; the rules stay as written, and these tables give the price.
+{% set one_day = [] %}{% for y, E in [(p.year, E23), (r.year, E24)] if E.one_day_alarms %}{% set _ = one_day.append((y, E.one_day)) %}{% endfor %}
+{% if not one_day %}No one-day shock gave an alarm, on {{ p.year }} or on {{ r.year }}: one bad day spoils at most two days of a week, which the trim sets aside, so it can only complete failing days the weeks already held. {% else %}{{ one_day_alarms(one_day) }} {% endif %}An episode of several days does more: through the day-old lag it spoils one day more than it lasts, and through the week-old lag as many days the following week, so from {{ K.trim_days + 1 }} days on both weeks can be broad on the same failure with no failing days of their own. When one of the two weeks' bias stays inside its band (a band wide on that side, or a week that also holds days of the episode, as when it crosses a Monday), the echo exclusion does not engage. Weekly statistics cannot tell such an episode from two weeks of model failure; the rules stay as written, and these tables give the price.
 
 {% macro starts_of(a, b) %}{% if a.months == b.months %}{{ months(a.months) }}{% else %}{{ months(a.months) }} in {{ p.year }} and of {{ months(b.months) }} in {{ r.year }}{% endif %}{% endmacro %}
 **A shift in the level of demand.** Demand is multiplied by a factor from the first judged week of {{ starts_of(level, level24) }}, for {{ K.step_horizon }} weeks (weeks until "retrain"; —: nothing within {{ K.step_horizon }} weeks). The persistence forecast follows demand through its lags, so a shift in level leaves a gap between forecast and demand much smaller than the shift itself. The power table measures that gap; the two tables below measure the shift in level.
@@ -317,6 +318,12 @@ MAPE difference (frozen minus refitted), on the same {{ pr.hours|num }} hours: {
 | MAPE | {% for d in departures %}{{ d.summary.mape.mean|pct(2) }} | {% endfor %}{{ r.summary.mape.mean|pct(2) }} |
 | Coverage | {% for d in departures %}{{ d.summary.coverage.mean|pct(1) }} | {% endfor %}{{ r.summary.coverage.mean|pct(1) }} |
 | Recommendations | {% for d in departures %}{{ recs_list(d.recommendations) }} | {% endfor %}{{ recs_list(r.decisions|selectattr('recommendation')|list) }} |
+| Frozen model (hash) | {% for d in departures %}{% if d.model_sha256 is none %}—{% else %}`{{ d.model_sha256|short }}`{% endif %} | {% endfor %}`{{ r.model.sha256|short }}` |
+{% for key, label in [('mape_high', 'Weeks with MAPE above its threshold'), ('bias_high', 'Weeks with bias above its band'), ('bias_low', 'Weeks with bias below its band'), ('coverage_low', 'Weeks with low coverage')] %}
+| {{ label }} | {% for d in departures %}{% if d.flag_weeks is none %}—{% else %}{{ d.flag_weeks[key] }}{% endif %} | {% endfor %}{{ r.summary.flag_weeks[key] }} |
+{% endfor %}
+
+{{ departed_model(departures, r.model.sha256) }}
 
 The departure of {{ D.date }} covers these items:
 
@@ -377,10 +384,10 @@ For each week with a drift alarm, the Evidently report is kept in the run, and E
 ## 8. Limitations
 
 {% set high_thr = [] %}{% for s in ['winter', 'spring', 'summer', 'fall'] %}{% if th24.performance[s].coverage_low|round(3) > nominal|round(3) %}{% set _ = high_thr.append(s) %}{% endif %}{% endfor %}
-- **Conditional coverage.** {% if sides.season.under or sides.decile.under %}The production interval under-covers {{ groups(sides.season.under, sides.decile.under) }} (section 4).{% if sides.season.under %} The coverage thresholds of {{ groups(sides.season.under, []) }} are drawn from weeks that already had that under-coverage: the monitor does not flag it as decay.{% endif %}{% else %}No season and no decile is under-covered in the sense of section 4.{% endif %}{% if high_thr %} The other way round, the coverage threshold of {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) is above the {{ nominal|pct(0) }} nominal: a week covered above nominal can be flagged low there. The thresholds measure departure from each season's validation coverage, not from nominal.{% endif %}{{ '' }}
+- **Conditional coverage.** {% if sides.season.under or sides.decile.under or HBS.under %}The production interval under-covers {{ groups(sides.season.under, sides.decile.under, HBS.under) }} (section 4).{% if sides.season.under %} The coverage thresholds of {{ groups(sides.season.under, []) }} are drawn from weeks that already had that under-coverage: the monitor does not flag it as decay.{% endif %}{% else %}No season, no hour block and no decile is under-covered in the sense of section 4.{% endif %}{% if high_thr %} The other way round, the coverage threshold of {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) is above the {{ nominal|pct(0) }} nominal: a week covered above nominal can be flagged low there. The thresholds measure departure from each season's validation coverage, not from nominal.{% endif %}{{ '' }}
 - **Extreme cold.** {% if peak.evaluated == 0 %}No prediction interval covers the {{ peak.named_month }} peak{% elif peak.covered == 0 %}The {{ peak.named_month }} peak is not covered{% else %}The {{ peak.named_month }} peak is only partly covered{% endif %} ({{ peak.covered }} of the {{ peak.evaluated }} busiest hours){% if gaps|min > 0 %}; even with observed weather, the model under-forecasts it, and the cause is not tested{% endif %}. Only one peak is studied; cold snaps are not measured as a class.
 {% set MEASURED = '(measured on ' ~ p.year ~ ', the year the rules were designed on, and on ' ~ r.year ~ ', out of sample, a measurement added after the results)' %}
-- **Episodes of several days** {{ MEASURED }}. {% if E23.worst or E24.worst %}An episode of several days can yield "retrain" with nothing wrong in the model: {% else %}An episode is not a model failure: {% endif %}{{ episode_limit(E23, p.year, K.mild) }}; {{ episode_limit(E24, r.year, K.mild) }} (section 6).
+- **Episodes of several days** {{ MEASURED }}. {% if E23.worst or E24.worst or E23.recal_worst or E24.recal_worst %}An episode of several days can give a false alarm with nothing wrong in the model: {% else %}An episode is not a model failure: {% endif %}{{ episode_limit(E23, p.year, K.mild) }}; {{ episode_limit(E24, r.year, K.mild) }} (section 6).
 - **Shift in level** {{ MEASURED }}. {{ level_limit(level, p.year, K.step_horizon) }} {{ level_limit(level24, r.year, K.step_horizon) }} {% set why = level_why([(p.year, level), (r.year, level24)]) %}{% if why|trim %}{{ why }} {% endif %}The power tables measure a gap between forecast and demand, not a shift in level.
 - **Echo exclusion** {{ MEASURED }}. On a degraded model whose bias changes sides, it suppresses "retrain" on {{ p.year }} in {{ E23.echo.suppressed }} of {{ E23.echo.runs }} runs and delays it in {{ E23.echo.delayed }}, and on {{ r.year }} in {{ E24.echo.suppressed }} of {{ E24.echo.runs }} runs and delays it in {{ E24.echo.delayed }} (section 6); that is the price of avoiding the false alarms of an episode followed by its echo.
 {% set silent23 = LP.strongest_caught.cases - LP.strongest_caught.caught %}
@@ -422,10 +429,10 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | SR 11-7, thresholds of acceptability, then recalibration or redevelopment | Per-season thresholds from earlier weeks; an ordered decision table (investigate, retrain, recalibrate), with evidence; recommends without acting. | Sections 5 and 7 |
 | SR 11-7, documentation and validation reports | This report and its model card, rendered from the runs and stamped with their IDs and the code hash. | This report |
 | NIST MAP 2.2, 2.3 | Intended use, out of scope, weather caveat, limitations; validation design and data-quality findings documented. | Model card; plan |
-| NIST MEASURE 1.1, 2.1, 2.3, 2.4, 2.5, 2.13 | MLflow runs (test sets, metrics, parameters, versions); replays under production conditions; breaks; the "not covered" list below. | Runs; section 9 |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | MLflow runs (test sets, metrics, parameters, versions); replays under production conditions; breaks; the "not covered" list below. | Runs; section 9 |
 | NIST MANAGE 2.2 | Weekly recommendations with evidence; who acts on them, and how, is out of scope. | Section 7 |
 
-**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; most of NIST GOVERN); periodic review; override analysis; use in decisions and materiality; independent review of a recalibration; sensitivity analysis in SR 11-7's sense (small changes in inputs and parameter values); NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the model card's limitations; real-time data.
+**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; most of NIST GOVERN); periodic review; analysis of overrides of the model's outputs; use in decisions and materiality; independent review of a recalibration; sensitivity analysis in SR 11-7's sense (small changes in inputs and parameter values); NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the model card's limitations; NIST MEASURE 2.4 (monitoring in production: simulated by the replay only); real-time data.
 
 ## 11. Provenance
 

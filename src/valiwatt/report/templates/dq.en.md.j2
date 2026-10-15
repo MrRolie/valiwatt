@@ -158,7 +158,7 @@ No hour flagged.
 
 {% set sg = c['weather_shared_gaps'] %}
 {% if sg.evidence %}
-**Shared gaps.** For {{ sg.metrics.hours_half_or_more_missing }} hours, half the stations or more were silent at the same time{% if sg.metrics.hours_all_missing %}, including {{ sg.metrics.hours_all_missing }} hours with no station at all{% endif %}. The longest such run goes from {{ sg.evidence[0].start|utc }} to {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} hours). {% if sg.metrics.hours_all_missing %}During the hours with no station at all, more stations from the same network would not have helped.{% endif +%}
+**Shared gaps.** For {{ sg.metrics.hours_half_or_more_missing }} hours, half the stations or more were silent at the same time{% if sg.metrics.hours_all_missing %}, including {{ sg.metrics.hours_all_missing }} hours with no station at all{% endif %}. The longest such run goes from {{ sg.evidence[0].start|utc }} to {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} hours). {% if sg.metrics.hours_all_missing %}During those {{ sg.metrics.hours_all_missing }} hours, none of the {{ c['weather_panel_coverage'].metrics.stations }} configured stations reported; other stations were not checked.{% endif +%}
 {% else %}
 **Shared gaps.** At no hour were half the stations silent at the same time.
 {% endif %}
@@ -167,7 +167,7 @@ Temperature spikes are flagged with the same rule as demand (score beyond {{ c['
 
 ## 5. Station representativeness ({{ years }} only)
 
-**Why only {{ years }}.** The following year will be replayed hour by hour as if it were production, with a model frozen at the end of {{ rep.design_last_year }}. No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
+**Why only {{ years }}.** The following year is replayed hour by hour as if it were production, with a model frozen at the end of {{ rep.design_last_year }} (validation report). No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
 
 **Method.** For each temperature source, each day's mean demand is explained by heating degree-days (how far the day's mean temperature is below {{ rep.base_c|num }} °C), cooling degree-days (above {{ rep.base_c|num }} °C) and the day of the week, by least squares. R² is the share of the variation in daily demand that this model reproduces. All sources are compared on the same {{ rep.days|num }} days ({{ rep.winter_days }} winter days, December to February).
 
@@ -242,12 +242,12 @@ _Mean monthly gap to a weather model fitted on {{ rb.fit_year }}, in % of expect
 {% set last = rb.years|last %}
 Among the tabulated months, the lowest is {{ low.month }}, {{ low.vs_fit_year_pp|signed(1) }} points from the same month of {{ rb.fit_year }} once weather is accounted for. In {{ last.year }}, the mean gap to the same month of {{ rb.fit_year }} is {{ last.mean_vs_fit_year_pp|signed(1) }} points ({{ last.months_above|int }} of {{ last.months|int }} months above).
 
-A persistent gap says demand moved for reasons this weather model does not carry. It does not say which: economic activity, load growth, new uses. If a drift of this kind continues during the replay, a frozen model will carry it; that is what monitoring will have to detect.
+A persistent gap says demand moved for reasons this weather model does not carry. It does not say which: economic activity, load growth, new uses. If a drift of this kind continues during the replay, a frozen model carries it; that is what monitoring has to detect (validation report).
 
 ## 7. What this report does not show
 
-- It measures no forecast's quality: no forecast has been made yet.
-- The associations in section 5 use **observed** weather. A forecast made in advance would only have forecast weather; its results will have to say so.
+- It measures no forecast's quality: the validation report does.
+- The associations in section 5 use **observed** weather. A forecast made in advance has only forecast weather; the validation report says so of its results.
 - The intervals in section 5 are about how well the models fit the years studied, not about a forecast error.
 - It does not say why demand departs from the {{ rb.fit_year }} model.
 - It does not sort flagged spikes into errors and real events.

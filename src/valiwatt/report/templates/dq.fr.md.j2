@@ -158,7 +158,7 @@ Aucune heure signalée.
 
 {% set sg = c['weather_shared_gaps'] %}
 {% if sg.evidence %}
-**Lacunes partagées.** Pendant {{ sg.metrics.hours_half_or_more_missing }} heures, la moitié des stations ou plus étaient muettes en même temps{% if sg.metrics.hours_all_missing %}, dont {{ sg.metrics.hours_all_missing }} heures sans aucune station{% endif %}. La plus longue de ces plages va de {{ sg.evidence[0].start|utc }} à {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} heures). {% if sg.metrics.hours_all_missing %}Pendant les heures sans aucune station, ajouter des stations du même réseau n'aurait rien changé.{% endif +%}
+**Lacunes partagées.** Pendant {{ sg.metrics.hours_half_or_more_missing }} heures, la moitié des stations ou plus étaient muettes en même temps{% if sg.metrics.hours_all_missing %}, dont {{ sg.metrics.hours_all_missing }} heures sans aucune station{% endif %}. La plus longue de ces plages va de {{ sg.evidence[0].start|utc }} à {{ sg.evidence[0].end|utc }} ({{ sg.evidence[0].hours }} heures). {% if sg.metrics.hours_all_missing %}Pendant ces {{ sg.metrics.hours_all_missing }} heures, aucune des {{ c['weather_panel_coverage'].metrics.stations }} stations retenues ne répondait ; d'autres stations n'ont pas été vérifiées.{% endif +%}
 {% else %}
 **Lacunes partagées.** À aucune heure la moitié des stations n'était muette en même temps.
 {% endif %}
@@ -167,7 +167,7 @@ Les pics de température sont signalés avec la même règle que la demande (sco
 
 ## 5. Représentativité des stations ({{ years }} seulement)
 
-**Pourquoi seulement {{ years }}.** L'année suivante sera rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }}. Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
+**Pourquoi seulement {{ years }}.** L'année suivante est rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }} (rapport de validation). Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
 
 **Méthode.** Pour chaque source de température, la demande moyenne de chaque jour est expliquée par les degrés-jours de chauffage (de combien la température moyenne du jour est sous {{ rep.base_c|num }} °C), les degrés-jours de climatisation (au-dessus de {{ rep.base_c|num }} °C) et le jour de la semaine, par moindres carrés. Le R² est la part de la variation de la demande journalière que ce modèle reproduit. Toutes les sources sont comparées sur les mêmes {{ rep.days|num }} jours ({{ rep.winter_days }} jours d'hiver, de décembre à février).
 
@@ -204,7 +204,7 @@ La moyenne donne le même poids à chaque station, quelle que soit la population
 
 ## 6. Repères à confirmer en validation
 
-**L'heure la plus chargée.** Les {{ rep.top_hours|length }} heures les plus chargées de {{ years }} :
+**Les heures les plus chargées.** Les {{ rep.top_hours|length }} heures les plus chargées de {{ years }} :
 
 | Heure finissant à | Demande (MW) | Température à {{ primary.centre }} (°C) |
 |---|---|---|
@@ -242,12 +242,12 @@ _Écart mensuel moyen à un modèle météo ajusté sur {{ rb.fit_year }}, en % 
 {% set last = rb.years|last %}
 Parmi les mois tabulés, le plus bas est {{ low.month }}, à {{ low.vs_fit_year_pp|signed(1) }} points du même mois de {{ rb.fit_year }} une fois la météo prise en compte. En {{ last.year }}, l'écart moyen au même mois de {{ rb.fit_year }} est de {{ last.mean_vs_fit_year_pp|signed(1) }} points ({{ last.months_above|int }} mois sur {{ last.months|int }} au-dessus).
 
-Un écart persistant dit que la demande a bougé pour des raisons que ce modèle météo ne porte pas. Il ne dit pas lesquelles : activité économique, croissance de la charge, nouveaux usages. Si une dérive de ce genre se poursuit pendant le rejeu, un modèle figé la subira ; c'est ce que la surveillance devra détecter.
+Un écart persistant dit que la demande a bougé pour des raisons que ce modèle météo ne porte pas. Il ne dit pas lesquelles : activité économique, croissance de la charge, nouveaux usages. Si une dérive de ce genre se poursuit pendant le rejeu, un modèle figé la subit ; c'est ce que la surveillance doit détecter (rapport de validation).
 
 ## 7. Ce que ce rapport ne montre pas
 
-- Il ne mesure la qualité d'aucune prévision : aucune prévision n'est encore faite.
-- Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'aurait qu'une météo prévue ; ses résultats devront le dire.
+- Il ne mesure la qualité d'aucune prévision : c'est le rapport de validation qui la mesure.
+- Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'a qu'une météo prévue ; le rapport de validation le dit de ses résultats.
 - Les intervalles de la section 5 portent sur l'ajustement des modèles aux années étudiées, pas sur une erreur de prévision.
 - Il ne dit pas pourquoi la demande s'écarte du modèle de {{ rb.fit_year }}.
 - Il ne classe pas les pics signalés en erreurs ou en événements réels.

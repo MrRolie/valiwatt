@@ -128,6 +128,8 @@ def replay(g, year, base, decisions, near):
             "days": 366 if year == R_YEAR else 365, "hours_issued": int(g(8700, 8760)),
             "hours_scored": int(g(8600, 8700)), "days_failed": int(g(1, 5)), "weeks_evaluated": 51, "weeks": 53,
             "recommendations": recs,
+            "flag_weeks": {k: base // 100 + i for i, k in enumerate(("mape_high", "bias_high", "bias_low",
+                                                                      "coverage_low"))},
             "retrain_under_two_week_rule_alone": [{"week_start": pair[1]["week_start"],
                                                    "weeks": [{k: w[k] for k in ("week_start", "stats", "flags",
                                                                                 "trimmed")} for w in pair]}]},
@@ -248,7 +250,10 @@ FIG = {k: f"figures/validation/{k}.png" for k in (
 FREEZE = {"freeze_commit": "f" * 40, "freeze_tag": "rules-frozen"}
 EARLIER = {"id": "1" * 32, "freeze_commit": "e" * 40, "recorded": False,
            "summary": {"mape": {"mean": 0.04231}, "coverage": {"mean": 0.8943}, "recommendations": {"recalibrate": 1}},
-           "recommendations": [{"week_start": "2024-06-17", "recommendation": "recalibrate"}]}
+           "recommendations": [{"week_start": "2024-06-17", "recommendation": "recalibrate"}],
+           "model_sha256": f"{402:064x}", "flag_weeks": {"mape_high": 11, "bias_high": 12, "bias_low": 13,
+                                                        "coverage_low": 14}}
+NOT_IN_LEDGER = {"model_sha256": None, "flag_weeks": None}  # what `departure` gives a replay shown from the ledger
 
 _BASE = {}
 
@@ -495,43 +500,64 @@ def test_2024_measures_made_with_another_design_are_refused():
 
 
 def test_episode_limits_read_each_years_rows():
-    rows = [{"days": 1, "factor": 0.85, "starts": 100, "retrain": 2, "recalibrate": 1},
-            {"days": 3, "factor": 1.3, "starts": 100, "retrain": 30, "recalibrate": 0},
-            {"days": 5, "factor": 0.85, "starts": 50, "retrain": 10, "recalibrate": 0}]
+    rows = [{"days": 1, "factor": 0.85, "starts": 100, "retrain": 2, "retrain_clean": 1, "recalibrate": 1},
+            {"days": 3, "factor": 1.3, "starts": 100, "retrain": 30, "retrain_clean": 4, "recalibrate": 0},
+            {"days": 5, "factor": 0.85, "starts": 50, "retrain": 10, "retrain_clean": 0, "recalibrate": 0}]
     S = {"episodes": {"rows": rows}, "echo_exclusion_cost": {"rows": [
         {"suppressed": 2, "runs": 60, "delayed": 1}, {"suppressed": 3, "runs": 60, "delayed": 4}]}}
     E = RV.episode_limits(S, [0.85, 1.15])
     assert E["worst"] is rows[1] and E["share"] == 0.3 and E["mild"] == 0.2 and E["one_day_alarms"] == 3
+    assert E["one_day"] == {"retrain": 2, "retrain_clean": 1, "recalibrate": 1, "cases": 100}
+    assert E["recal_worst"] is None and E["recal_share"] == 0.0  # the one-day row's recalibrate is not an episode's
     assert E["echo"] == {"suppressed": 5, "runs": 120, "delayed": 5}
     none = RV.episode_limits({"episodes": {"rows": [{**rows[0], "retrain": 0, "recalibrate": 0}]},
                               "echo_exclusion_cost": {"rows": []}}, [0.85])
     assert none["worst"] is None and none["one_day_alarms"] == 0
     # A one-day shock that retrains more often than any episode is an alarm, not the worst episode of several days.
     hot = RV.episode_limits({**S, "episodes": {"rows": [*rows, {"days": 1, "factor": 1.3, "starts": 10, "retrain": 9,
-                                                                 "recalibrate": 0}]}}, [0.85, 1.15])
+                                                                 "retrain_clean": 2, "recalibrate": 0}]}}, [0.85, 1.15])
     assert hot["worst"] is rows[1] and hot["share"] == 0.3 and hot["one_day_alarms"] == 12
+    assert hot["one_day"] == {"retrain": 11, "retrain_clean": 3, "recalibrate": 1, "cases": 110}
+    # The episode of several days that most often recalibrates, by its share of starts (3 of 50 beats 4 of 100).
+    recal = RV.episode_limits({**S, "episodes": {"rows": [{**rows[0], "recalibrate": 9}, {**rows[1], "recalibrate": 4},
+                                                           {**rows[2], "recalibrate": 3}]}}, [0.85])
+    assert recal["recal_worst"]["days"] == 5 and recal["recal_share"] == 0.06
 
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_every_limit_branch_renders_a_true_clause(lang):
     m = environment(lang).get_template(f"sentences.{lang}.md.j2").module
+    quiet = {"recal_worst": None, "recal_share": 0.0}
+    loud = {"recal_worst": {"days": 7, "factor": 1.15}, "recal_share": 0.0174}
     worst = {"worst": {"days": 5, "factor": 1.3}, "share": 0.123, "mild": 0.021}
-    text = str(m.episode_limit(worst, 2024, 0.15))
-    assert text == ("sur 2024, jusqu'à 12,3 % des départs pour 5 jours à × 1,30, et au plus 2,1 % pour un "
-                    "épisode de ±15 %" if lang == "fr" else
-                    "on 2024, up to 12.3% of starts for 5 days at × 1.30, and at most 2.1% for an episode of ±15%")
-    text = str(m.episode_limit({"worst": None, "share": 0, "mild": 0}, 2024, 0.15))
-    assert text == ("sur 2024, aucun épisode de plusieurs jours n'a donné « réentraîner »" if lang == "fr" else
-                    "on 2024, no episode of several days yielded \"retrain\"")
+    retrain = ("sur 2024, « réentraîner » jusqu'à 12,3\u00a0% des départs (5 jours à × 1,30) et au plus 2,1\u00a0% pour "
+               "un épisode de ±15\u00a0%, " if lang == "fr" else
+               "on 2024, \"retrain\" at up to 12.3% of starts (5 days at × 1.30) and at most 2.1% for an episode of "
+               "±15%, ")
+    recal = ("« recalibrer » jusqu'à 1,7\u00a0% des départs (7 jours à × 1,15)" if lang == "fr" else
+             "\"recalibrate\" at up to 1.7% of starts (7 days at × 1.15)")
+    no_recal = "aucun « recalibrer »" if lang == "fr" else "no \"recalibrate\""
+    assert str(m.episode_limit({**worst, **quiet}, 2024, 0.15)) == retrain + no_recal
+    assert str(m.episode_limit({**worst, **loud}, 2024, 0.15)) == retrain + recal
+    none = {"worst": None, "share": 0, "mild": 0}
+    no_retrain = "sur 2024, aucun « réentraîner », " if lang == "fr" else "on 2024, no \"retrain\", "
+    assert str(m.episode_limit({**none, **quiet}, 2024, 0.15)) == no_retrain + no_recal
+    assert str(m.episode_limit({**none, **loud}, 2024, 0.15)) == no_retrain + recal
     absorbs = "La persistance absorbe" if lang == "fr" else "Persistence absorbs"
     for missed, caught in ((0, 4), (1, 1), (2, 1), (2, 3)):
-        level = {"size": 0.1, "up_n": 4, "up_missed": missed, "down_n": 4, "down_caught": caught, "months": [1, 3]}
+        level = {"size": 0.1, "up_n": 4, "up_missed": missed, "down_n": 4, "down_caught": caught,
+                 "months": [1, 3, 6, 9], "missed_months": [1, 3, 6][:missed]}
         text = str(m.level_limit(level, 2024, 10))
         assert text.startswith("Sur 2024, " if lang == "fr" else "On 2024, ") and text.endswith(".")
         assert ("à chaque départ" in text if lang == "fr" else "at every start" in text) == (missed == 0)
-        if missed and lang == "fr":
-            assert f"à {missed} départ{'s' if missed > 1 else ''} sur 4 (janvier et mars)" in text
-        quiet = {"size": 0.1, "up_n": 4, "up_missed": 0, "down_n": 4, "down_caught": 4, "months": [1, 3]}
+        if missed:  # only the starts whose rise was missed are named
+            named = {1: ("janvier", "January"), 2: ("janvier et mars", "January and March")}[missed]
+            assert (f"à {missed} départ{'s' if missed > 1 else ''} sur 4 (départ{'s' if missed > 1 else ''} de "
+                    f"{named[0]})" if lang == "fr" else
+                    f"at {missed} of 4 starts (the {named[1]} start{'s' if missed > 1 else ''})") in text
+            assert ("juin" not in text) if lang == "fr" else ("June" not in text)
+        quiet = {"size": 0.1, "up_n": 4, "up_missed": 0, "down_n": 4, "down_caught": 4, "months": [1, 3],
+                 "missed_months": []}
         for pair in (((2023, level), (2024, quiet)), ((2023, quiet), (2024, level))):
             why = str(m.level_why(list(pair)))
             fall = missed > 0 and caught > 4 - missed
@@ -551,10 +577,15 @@ def test_a_one_day_alarm_names_the_year_it_came_from(lang):
     quiet = section(render(ctx, lang), 6)
     assert ("Aucun choc d'un seul jour n'a donné d'alerte, ni sur 2023 ni sur 2024" if lang == "fr" else
             "No one-day shock gave an alarm, on 2023 or on 2024") in quiet
-    limits = {**ctx["episode_limits"], "replay": {**ctx["episode_limits"]["replay"], "one_day_alarms": 2}}
+    one = {"retrain": 3, "retrain_clean": 0, "recalibrate": 14, "cases": 1400}
+    limits = {**ctx["episode_limits"], "replay": {**ctx["episode_limits"]["replay"], "one_day_alarms": 17,
+                                                  "one_day": one}}
     loud = section(render({**ctx, "episode_limits": limits}, lang), 6)
-    assert ("**Un choc d'un seul jour a donné une alerte**, sur 2024." if lang == "fr" else
-            "**A one-day shock gave an alarm**, on 2024.") in loud
+    assert ("**Alertes des chocs d'un seul jour** : sur 2024, 3 « réentraîner » (dont 0 sans aide) et 14 "
+            "« recalibrer », sur 1\u202f400 cas (départs × facteurs)." if lang == "fr" else
+            "**Alarms from one-day shocks**: on 2024, 3 \"retrain\" (0 of them clean) and 14 \"recalibrate\", out of "
+            "1,400 cases (starts × factors).") in loud
+    assert str(P_YEAR) + ", " not in loud[loud.index("**Al"):loud.index(".", loud.index("**Al"))]
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -649,7 +680,7 @@ ITEM_WORDS = {"fr": ("destination est sans ambiguïté", "hors des bornes physiq
 @pytest.mark.parametrize("recorded", [False, True])
 def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_it(lang, recorded, monkeypatch):
     monkeypatch.setitem(RV.DEPARTURE, "date", "2031-02-03")  # the date is read from DEPARTURE, never typed
-    ctx = context(departures=[{**EARLIER, "recorded": recorded}])
+    ctx = context(departures=[{**EARLIER, "recorded": recorded, **(NOT_IN_LEDGER if recorded else {})}])
     text = render(ctx, lang)
     s7 = section(text, 7)
     opening, where = POST_HOC[lang]
@@ -681,8 +712,8 @@ def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_
     card = card_row(text, ("Rejeu de " if lang == "fr" else "") + str(R_YEAR))
     assert ("**a posteriori** : rejoué à nouveau après une dérogation aux règles gelées, décidée après que les "
             "résultats de 2024 eurent été vus et consignée dans `AGENTS.md`" if lang == "fr" else
-            "**post hoc**: replayed again after a departure from the frozen rules, decided after the 2024 results had "
-            "been seen and recorded in `AGENTS.md`") in card
+            "**post hoc**: replayed again after a departure from the frozen rules, which was decided after the 2024 "
+            "results had been seen and is recorded in `AGENTS.md`") in card
     assert where in card and DEPARTED_CLAUSES[lang]["card"] in card
     s10 = section(text, 10)
     assert ("ce contrôle est le rejeu d'avant" if lang == "fr" else "that back-test is the earlier replay") in s10
@@ -759,13 +790,15 @@ def test_a_departed_replay_from_the_store_brings_its_recommendations(monkeypatch
         class data:
             tags = {"freeze_commit": "e" * 40}
 
-    results = {"summary": {"mape": {"mean": 0.04}}, "decisions": [
-        {"week_start": "2024-03-04T00:00:00", "recommendation": "retrain"},
-        {"week_start": "2024-03-11T00:00:00", "recommendation": None}]}
+    flags = {"mape_high": 5, "bias_high": 1, "bias_low": 2, "coverage_low": 6}
+    results = {"summary": {"mape": {"mean": 0.04}, "flag_weeks": flags}, "model": {"sha256": "5" * 64},
+               "decisions": [{"week_start": "2024-03-04T00:00:00", "recommendation": "retrain"},
+                             {"week_start": "2024-03-11T00:00:00", "recommendation": None}]}
     monkeypatch.setattr(RV, "_json", lambda c, run, path: results)
     d = RV.departure(None, Run)
     assert d["recommendations"] == [{"week_start": "2024-03-04", "recommendation": "retrain"}]
     assert d["recorded"] is False and d["freeze_commit"] == "e" * 40
+    assert d["model_sha256"] == "5" * 64 and d["flag_weeks"] == flags  # what section 7 sets side by side
 
 
 # --- item 5: the repair paragraph states what the bounds rule does ---------------------------------------------------
