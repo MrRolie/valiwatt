@@ -39,19 +39,19 @@ Every gate and monitor has a break that makes it fire.
 
 ```sh
 uv sync
-uv run valiwatt all              # fetch the data, run every check, render the report
+uv run valiwatt all --departure  # fetch the data, run every check, render the report (see below)
 uv run pytest -m "not network"   # the offline tests, every injected break included
 uv run pytest -m network         # the live tests only: the public endpoints and the quoted licence and standard texts
 ```
 
 A plain `uv run pytest` runs both sets.
 
-`valiwatt all` downloads the public data into `data/`, then runs the whole chain as tracked MLflow runs (stored in
-`mlruns/`): data quality, validation on 2019–2023, the frozen models, the 2023 rehearsal and the 2024 replay, and the
-breaks. It renders the reports into `docs/report/` (French, the reference, and English), stamped with the IDs of the
-runs they come from and the hash of the code that made them; a test fails when the code no longer matches the stamp.
-Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure with the one command, and the runs, not
-the rendered files, are the source of truth.
+`valiwatt all --departure` downloads the public data into `data/`, then runs the whole chain as tracked MLflow runs
+(stored in `mlruns/`): data quality, validation on 2019–2023, the frozen models, the 2023 rehearsal and the 2024
+replay, and the breaks. It renders the reports into `docs/report/` (French, the reference, and English), stamped with
+the IDs of the runs they come from and the hash of the code that made them; a test fails when the code no longer
+matches the stamp. Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure with the one command,
+and the runs, not the rendered files, are the source of truth.
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
 entry per finished 2024 replay: its run ID, freeze commit, rules and code hashes, times, MAPE, coverage and

@@ -123,13 +123,19 @@ def test_the_power_sentence_has_a_true_branch_for_every_table(lang):
         power({-0.02: set(), 0.02: set(), 0.08: both, -0.08: both}, {0.9: set(), 0.5: both}),
         power({-0.02: set(), 0.02: set(), 0.08: {"2024-01-01"}, -0.08: both}, {0.9: {"2024-01-01"}, 0.5: set()}),
         power({-0.02: both, 0.02: both}, {0.5: {"2024-04-01"}}),
+        # not monotone: the smallest size is caught everywhere, the largest is not
+        power({-0.02: both, 0.02: both, 0.04: {"2024-01-01"}, -0.04: both}, {0.5: both}),
     ]
     for p in cases:
         L = RV.detection_limits(p)
         text = str(macros(lang).power_limit(L, 2024, 8))
         assert "None" not in text and "\n" not in text
-        if L["every_from"] is None:
-            assert ("aucune taille" if lang == "fr" else "no size") in text
+        if L["every_from"] is None:  # even the largest size missed at some start, whatever the smaller ones did
+            largest = ("±" + f"{100 * L['sizes'][-1]:.0f}" + ("\u00a0%" if lang == "fr" else "%"))
+            assert (f"même le plus grand écart mesuré entre la demande et la prévision, {largest}, n'a pas donné"
+                    if lang == "fr" else
+                    f"even the largest gap measured between demand and forecast, {largest}, did not yield") in text
+            assert ("aucune taille" if lang == "fr" else "no size") not in text
         else:
             assert ("±" + f"{100 * L['every_from']:.0f}") in text
         up, down = L["smallest_by_sign"]["up"], L["smallest_by_sign"]["down"]
