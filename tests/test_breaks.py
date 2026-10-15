@@ -24,6 +24,22 @@ def test_every_break_names_a_known_group_and_both_languages():
     assert all(b.group in GROUPS and b.fr and b.en for b in BREAKS)
 
 
+def test_every_break_names_a_test_node_pytest_collects():
+    """A break's id must be a node pytest reports under that exact name (a parametrized test needs its parameter id):
+    the breaks run looks each id up in the junit outcomes, and an id that matches no node counts as not fired."""
+    import subprocess
+    import sys
+
+    from valiwatt.paths import REPO_ROOT
+
+    files = sorted({b.test.split("::")[0] for b in BREAKS})
+    out = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", *files],
+                         cwd=REPO_ROOT, capture_output=True, text=True, check=False).stdout
+    collected = {line.strip() for line in out.splitlines() if "::" in line}
+    assert collected, out[-2000:]
+    assert sorted(b.test for b in BREAKS if b.test not in collected) == []
+
+
 def test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed(tmp_path, monkeypatch):
     from functools import partial
 

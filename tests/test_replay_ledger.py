@@ -259,6 +259,8 @@ def test_a_departed_replay_absent_from_the_store_renders_from_the_ledger(monkeyp
     ctx = RV.context(chain, CODE, RULES)
     shown = ctx["departures"]
     assert len(shown) == 1 and shown[0]["recorded"] is True and shown[0]["id"] == EARLIER
+    assert ctx["departure_record"] == {"date": RV.DEPARTURE["date"], "changes": list(RV.DEPARTURE["changes"]),
+                                       "from_commit": "e" * 40}
     assert shown[0]["summary"] == {
         "mape": {"mean": 0.0423}, "coverage": {"mean": 0.894}, "recommendations": {"retrain": 1}}
     words = {"fr": ("Le rejeu `" + EARLIER + "` (règles du commit `eeeeeeeeeeee`)", "son EAMP de 4,23\u00a0%",

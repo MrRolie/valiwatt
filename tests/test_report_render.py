@@ -105,8 +105,9 @@ def sensitivity(g, year, base):
     for i, s in enumerate(seasons):
         for f in (-0.1, -0.05, 0.05, 0.1):
             up_missed = f == 0.1 and i < (3 if year == P_YEAR else 1)
+            down_missed = f == -0.1 and i == 0 and year == P_YEAR
             shifts.append({"start": s, "season": SEASONS[i], "shift": f,
-                           "weeks": None if up_missed else int(g(1, 10))})
+                           "weeks": None if up_missed or down_missed else int(g(1, 10))})
     echo = [{"sd": sd, "runs": base + 10 * i, "retrain_with": base + 10 * i + 1, "retrain_without": base + 10 * i + 2,
              "suppressed": base + 10 * i + 3, "delayed": base + 10 * i + 4} for i, sd in enumerate((0.06, 0.10, 0.15))]
     return {"episodes": {"rows": rows, "first_start": f"{year}-01-0{3 if year == P_YEAR else 8}"},
@@ -338,7 +339,7 @@ def test_each_spring_verdict_is_read_from_its_own_forecast(lang):
     assert not_confirmed in observed and confirmed not in observed
     dsh, dso = ctx["shift_diff"]["persistence"], ctx["shift_diff"]["observed"]
     for d, part in ((dsh, persistence), (dso, observed)):
-        assert fmt_num(100 * d["mc_se_low"], 3, lang) in part
+        assert fmt_num(100 * d["mc_se_low"], d["digits"], lang) in part
     card = card_row(text, "Cas tests" if lang == "fr" else "Test cases")
     assert ("confirme l'écart" if lang == "fr" else "confirms the gap") in card
     assert ("ne confirme pas l'écart" if lang == "fr" else "does not confirm the gap") not in card
@@ -357,8 +358,9 @@ def test_the_in_brief_misses_put_each_year_in_its_place(lang):
     assert gap.startswith(f"{R_YEAR}, ")
     lv, lv24 = ctx["level"], ctx["level24"]
     assert (lv["up_n"] - lv["up_missed"], lv24["up_n"] - lv24["up_missed"]) == (1, 3)
-    assert (f"à 1 des 4 départs, et sur {R_YEAR}, hors échantillon, à 3 des 4" if lang == "fr" else
-            f"at 1 of 4 starts, and on {R_YEAR}, out of sample, at 3 of 4") in rise
+    assert (f"à 1 des 4 départs, et sur {R_YEAR} (hors échantillon, mesure ajoutée après les résultats), à 3 des 4" if lang == "fr" else
+            f"at 1 of 4 starts, and on {R_YEAR} (out of sample, a measurement added after the results), at 3 of 4") \
+        in rise
 
 
 Y_LABEL = {"fr": ("** (l'année de conception des règles) :", "** (hors échantillon, mesure ajoutée après les résultats) :"),
@@ -410,11 +412,20 @@ def test_the_limits_give_each_years_measures(lang):
     echo = next(x for x in s8.splitlines() if x.startswith("- **" + ("Exclusion" if lang == "fr" else "Echo")))
     for E, year in ((E23, P_YEAR), (E24, R_YEAR)):
         e = E["echo"]
-        assert (f"sur {year} dans {e['suppressed']} essais sur {e['runs']}" if lang == "fr" else
-                f"on {year} in {e['suppressed']} of {e['runs']} runs") in echo
+        assert (f"sur {year} dans {e['suppressed']} essais sur {e['runs']} et le retarde dans {e['delayed']}"
+                if lang == "fr" else
+                f"on {year} in {e['suppressed']} of {e['runs']} runs and delays it in {e['delayed']}") in echo
+    assert E23["echo"]["delayed"] != E24["echo"]["delayed"]
     level = next(x for x in s8.splitlines() if x.startswith("- **" + ("Changement" if lang == "fr" else "Shift")))
     lv, lv24 = ctx["level"], ctx["level24"]
     assert (lv["up_missed"], lv24["up_missed"]) == (3, 1)
+    assert (lv["down_caught"], lv["down_n"], lv24["down_caught"], lv24["down_n"]) == (3, 4, 4, 4)
+    for year, caught in ((P_YEAR, 3), (R_YEAR, 4)):
+        if (lv if year == P_YEAR else lv24)["up_missed"]:
+            fall = (f"une baisse de 10\u00a0% l'a donné à {caught} sur 4." if lang == "fr" else
+                    f"a 10% fall did at {caught} of 4.")
+            clause = level[level.index(f"Sur {year}," if lang == "fr" else f"On {year},"):]
+            assert clause[:clause.index(".") + 1].endswith(fall)
     assert (f"Sur {P_YEAR}, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 "
             f"semaines à 3 départs sur 4" if lang == "fr" else
             f"On {P_YEAR}, a sustained 10% rise in demand did not yield \"retrain\" within 10 weeks at 3 of 4 starts") \
@@ -447,10 +458,11 @@ def test_the_synthetic_level_shift_is_set_against_both_years(lang):
     lv24 = ctx["level24"]
     assert (f"Sur les vraies heures de {P_YEAR}, une hausse" if lang == "fr" else
             f"On the real {P_YEAR} hours, a 10% rise") in s9
-    assert (f"Sur les vraies heures de {R_YEAR}, hors échantillon, la même hausse n'a pas donné « réentraîner » en "
-            f"10 semaines à {lv24['up_missed']} des {lv24['up_n']} départs" if lang == "fr" else
-            f"On the real {R_YEAR} hours, out of sample, the same rise did not yield \"retrain\" within 10 weeks at "
-            f"{lv24['up_missed']} of {lv24['up_n']} starts") in s9
+    assert (f"Sur les vraies heures de {R_YEAR} (hors échantillon, mesure ajoutée après les résultats), la même "
+            f"hausse n'a pas donné « réentraîner » en 10 semaines à {lv24['up_missed']} des {lv24['up_n']} départs"
+            if lang == "fr" else
+            f"On the real {R_YEAR} hours (out of sample, a measurement added after the results), the same rise did "
+            f"not yield \"retrain\" within 10 weeks at {lv24['up_missed']} of {lv24['up_n']} starts") in s9
 
 
 # --- the 2024 measures: refused when absent or made differently ------------------------------------------------------
@@ -494,6 +506,10 @@ def test_episode_limits_read_each_years_rows():
     none = RV.episode_limits({"episodes": {"rows": [{**rows[0], "retrain": 0, "recalibrate": 0}]},
                               "echo_exclusion_cost": {"rows": []}}, [0.85])
     assert none["worst"] is None and none["one_day_alarms"] == 0
+    # A one-day shock that retrains more often than any episode is an alarm, not the worst episode of several days.
+    hot = RV.episode_limits({**S, "episodes": {"rows": [*rows, {"days": 1, "factor": 1.3, "starts": 10, "retrain": 9,
+                                                                 "recalibrate": 0}]}}, [0.85, 1.15])
+    assert hot["worst"] is rows[1] and hot["share"] == 0.3 and hot["one_day_alarms"] == 12
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -631,7 +647,8 @@ ITEM_WORDS = {"fr": ("destination est sans ambiguïté", "hors des bornes physiq
 
 @pytest.mark.parametrize("lang", LANGS)
 @pytest.mark.parametrize("recorded", [False, True])
-def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_it(lang, recorded):
+def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_it(lang, recorded, monkeypatch):
+    monkeypatch.setitem(RV.DEPARTURE, "date", "2031-02-03")  # the date is read from DEPARTURE, never typed
     ctx = context(departures=[{**EARLIER, "recorded": recorded}])
     text = render(ctx, lang)
     s7 = section(text, 7)
@@ -658,8 +675,8 @@ def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_
     assert len(items) == len(RV.DEPARTURE["changes"])
     for words, item in zip(ITEM_WORDS[lang], items, strict=True):
         assert words in item and item.endswith(".") and item.count(". ") == 0
-    assert ("La dérogation du 2026-10-14 porte sur ces points" if lang == "fr" else
-            "The departure of 2026-10-14 covers these items") in s7
+    assert ("La dérogation du 2031-02-03 porte sur ces points" if lang == "fr" else
+            "The departure of 2031-02-03 covers these items") in s7
     assert (LEDGER_LABEL[lang] in s7) == recorded
     card = card_row(text, ("Rejeu de " if lang == "fr" else "") + str(R_YEAR))
     assert ("**a posteriori** : rejoué à nouveau après une dérogation aux règles gelées, décidée après que les "
@@ -669,16 +686,18 @@ def test_a_departure_replay_is_labelled_post_hoc_with_the_earlier_replay_beside_
     assert where in card and DEPARTED_CLAUSES[lang]["card"] in card
     s10 = section(text, 10)
     assert ("ce contrôle est le rejeu d'avant" if lang == "fr" else "that back-test is the earlier replay") in s10
-    assert DEPARTED_CLAUSES[lang]["process"] in s10
+    assert DEPARTED_CLAUSES[lang]["process"] in s10 and DEPARTED_CLAUSES[lang]["backtest"] in s10
 
 
 DEPARTED_CLAUSES = {
     "fr": {"card": "; le rejeu d'avant est montré à côté (section 7).",
            "process": "; l'étiquette a été déplacée une fois, par une dérogation consignée dans `AGENTS.md`, et le "
-                      "rejeu d'avant est montré à côté (section 7). Chaque garde a son bris."},
+                      "rejeu d'avant est montré à côté (section 7). Chaque garde a son bris.",
+           "backtest": "Depuis la dérogation, ce contrôle est le rejeu d'avant, sur les règles gelées avant 2024"},
     "en": {"card": "; the earlier replay is shown beside it (section 7).",
            "process": "; the tag was moved once, by a departure recorded in `AGENTS.md`, and the earlier replay is "
-                      "shown beside the new one (section 7). Each guard has its break."}}
+                      "shown beside the new one (section 7). Each guard has its break.",
+           "backtest": "Since the departure, that back-test is the earlier replay, on the rules frozen before 2024"}}
 
 
 LEDGER_LABEL = {"fr": "**Consigné dans le registre, non rejoué ici.**", "en": "**Recorded in the ledger, not re-run here.**"}
@@ -693,6 +712,22 @@ def test_a_plain_replay_carries_no_departure_label(lang):
     m = environment(lang).get_template(f"sentences.{lang}.md.j2").module
     for key in RV.DEPARTURE["changes"]:
         assert str(m.departure_item(key, R_YEAR, [24, 168])) not in text
+
+
+def test_agents_md_records_the_departure_the_report_describes():
+    """One list, two homes: the report names the departure's items from DEPARTURE, AGENTS.md records them. Once the
+    departures section names a commit, its entry carries DEPARTURE's date and exactly its items, in order; before
+    that, it lists none."""
+    from valiwatt.monitor.run import recorded_departures
+    from valiwatt.report.lineage import COMMIT
+
+    section = recorded_departures()
+    items = re.findall(r"^\s*- ([A-Z][0-9]+):", section, re.M)
+    if COMMIT.findall(section):
+        assert RV.DEPARTURE["date"] in section
+        assert tuple(items) == RV.DEPARTURE["changes"]
+    else:
+        assert items == []
 
 
 def test_a_replay_departing_from_replays_under_two_freeze_commits_is_refused():
