@@ -365,9 +365,11 @@ def test_a_validation_frame_without_its_spring_is_refused():
         RV.shift_difference(oos, "pred_persistence", batch_draws=50)
 
 
-# The fixture's constants are unlike the real ones (3, 400 000 draws in 20 batches of 20 000) and its two standard
-# errors print unlike each other, so a sentence that prints a constant, or one bound's error for the other, fails.
-SPRING_K, SPRING_DIGITS, SPRING_BATCHES, SPRING_BATCH_DRAWS = 4, 4, 7, 17_571
+# The fixture's constants are unlike the real ones (a multiple of 3, 4 decimals of a point, 400 000 draws in 20 batches
+# of 20 000) and unlike each other, and its two standard errors print unlike each other, so a sentence that prints a
+# constant, one constant for another, or one bound's error for the other, fails.
+SPRING_K, SPRING_DIGITS, SPRING_BATCHES, SPRING_BATCH_DRAWS = 4, 5, 7, 17_571
+assert SPRING_DIGITS != RV.SHIFT_DIFF_DIGITS and SPRING_K != RV.SHIFT_DIFF_MC_MULTIPLE and SPRING_K != SPRING_DIGITS
 SPRING_CASES = {  # (verdict, by, bound): ci95_low, ci95_high, mc_se_low, mc_se_high
     ("confirmed", None, None): (-0.0251, -0.0002, 0.0000213, 0.0000347),
     ("not_confirmed", None, None): (-0.0251, 0.0050, 0.0000213, 0.0000347),
@@ -417,13 +419,14 @@ SPRING = {"fr": {"confirmed": "selon la règle de la section 1, l'écart est con
                           "mc": "does not decide at this resolution: a bound lies no more than 4 Monte Carlo",
                           "print": "does not decide at this resolution: a bound rounds to zero"},
                  "disjoint": ("a gap confirmed by disjoint intervals", "a gap not confirmed by disjoint intervals")}}
-# How each case's numbers print, four decimals of a point: the two standard errors, then the bounds.
+# How each case's numbers print, SPRING_DIGITS = 5 decimals of a point: the two standard errors, then the bounds. At
+# the real 4 decimals each would print otherwise, so a sentence that types the real precision fails.
 SPRING_PRINTED = {
-    ("confirmed", None, None): (("0,0021", "0,0035"), ("−2,5100", "−0,0200")),
-    ("not_confirmed", None, None): (("0,0021", "0,0035"), ("−2,5100", "+0,5000")),
-    ("undetermined", "mc", "high"): (("0,0021", "0,0035"), ("−2,5100", "−0,0020")),
-    ("undetermined", "mc", "low"): (("0,0021", "0,0035"), ("+0,0030", "+2,5100")),
-    ("undetermined", "print", "high"): (("0,0021", "0,0006"), ("−2,5100", "−0,0040")),
+    ("confirmed", None, None): (("0,00213", "0,00347"), ("−2,51000", "−0,02000")),
+    ("not_confirmed", None, None): (("0,00213", "0,00347"), ("−2,51000", "+0,50000")),
+    ("undetermined", "mc", "high"): (("0,00213", "0,00347"), ("−2,51000", "−0,00200")),
+    ("undetermined", "mc", "low"): (("0,00213", "0,00347"), ("+0,00300", "+2,51000")),
+    ("undetermined", "print", "high"): (("0,00213", "0,00062"), ("−2,51000", "−0,00400")),
 }
 
 

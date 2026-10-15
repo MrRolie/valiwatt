@@ -25,8 +25,9 @@ once after the 2024 results had been seen: on 2026-10-14, by the owner's ruling,
 replay ran again as a departure; the report labels it post hoc and shows the earlier replay beside it. What is built:
 
 - the data layer and its gates;
-- a day-ahead forecast (ordinary least squares on named features) with walk-forward validation, conformal prediction
-  intervals and two test cases;
+- a day-ahead forecast (ordinary least squares on named features) with walk-forward validation, prediction
+  intervals of split-conformal shape (without that method's finite-sample coverage guarantee: their coverage is
+  measured out of sample) and two test cases;
 - a frozen model registered in MLflow;
 - a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
   rules frozen by the `rules-frozen` tag before 2024 was replayed and changed once since, as above;
@@ -47,11 +48,11 @@ uv run pytest -m network         # the live tests only: the public endpoints and
 A plain `uv run pytest` runs both sets.
 
 `valiwatt all --departure` downloads the public data into `data/`, then runs the whole chain as tracked MLflow runs
-(stored in `mlruns/`): data quality, validation on 2019–2023, the frozen models, the 2023 rehearsal and the 2024
-replay, and the breaks. It renders the reports into `docs/report/` (French, the reference, and English), stamped with
-the IDs of the runs they come from and the hash of the code that made them; a test fails when the code no longer
-matches the stamp. Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure with the one command,
-and the runs, not the rendered files, are the source of truth.
+(stored in `mlruns/`): data quality, walk-forward validation on 2020–2023 with models fitted from 2019, the frozen
+models, the 2023 rehearsal and the 2024 replay, and the breaks. It renders the reports into `docs/report/` (French,
+the reference, and English), stamped with the IDs of the runs they come from and the hash of the code that made them;
+a test fails when the code no longer matches the stamp. Neither `data/` nor `mlruns/` is in git: anyone can
+regenerate every figure with the one command, and the runs, not the rendered files, are the source of truth.
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
 entry per finished 2024 replay since the history rewrite of 2026-10-14: its run ID, freeze commit, rules and code

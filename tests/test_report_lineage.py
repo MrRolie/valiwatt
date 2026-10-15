@@ -110,8 +110,13 @@ def test_a_recorded_departure_the_replay_does_not_carry_is_refused(monkeypatch):
     freeze commit AGENTS.md does not name."""
     runs = clean_chain()
     serve(monkeypatch, runs)
-    with pytest.raises(lineage.ChainBroken, match="AGENTS.md records a departure .* is not a departure"):
+    with pytest.raises(lineage.ChainBroken, match="AGENTS.md records a departure .* is not a departure") as refused:
         lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED)
+    # The fix it names: the earlier replays come from the store or from the committed ledger (the freeze gate reads
+    # both, monitor/run.py ledger_freeze_commits), so a fresh clone holding only the ledger can still depart.
+    assert str(refused.value).endswith(
+        "is not a departure: the earlier replays it departs from must be in mlruns/ or docs/replay-ledger.json; run "
+        "`valiwatt all --departure`")
     runs["earlier"] = fake_run("earlier", kind="replay", status="complete", freeze_commit="e" * 40)
     runs["replay"].data.tags |= {"departure": "true", "departure_from": "earlier"}
     with pytest.raises(lineage.ChainBroken, match="does not name its freeze commit"):
@@ -147,3 +152,10 @@ def test_a_departure_named_by_a_short_hash_is_refused(monkeypatch):
     serve(monkeypatch, clean_chain())
     with pytest.raises(lineage.ChainBroken, match="fewer than 12 characters"):
         lineage.follow(CODE, RULES, FREEZE, recorded="- 2026-10-14: rules changed at 8ad0fd0 (post hoc).")
+
+
+def test_the_freeze_gate_and_the_report_read_the_same_ledger():
+    """The ledger's path has two homes: the freeze gate's (monitor/run.py, a rule file) and the report's writer and
+    reader (report/ledger.py). Moving one without the other would let the gate miss the replays the report records."""
+    assert (monitor_run.REPO_ROOT / monitor_run.LEDGER).resolve() == ledger.LEDGER.resolve()
+    assert ledger.LEDGER.resolve().relative_to(monitor_run.REPO_ROOT.resolve()).as_posix() == "docs/replay-ledger.json"

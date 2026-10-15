@@ -82,8 +82,8 @@ def check_recorded(replay, recorded: str) -> None:
     departure = replay.data.tags.get("departure") == "true"
     if named and not departure:
         raise ChainBroken(f"AGENTS.md records a departure (commits {[c[:12] for c in named]}), but replay "
-                          f"{replay.info.run_id} is not a departure: the store must hold the earlier replays it "
-                          "departs from, then run `valiwatt all --departure`")
+                          f"{replay.info.run_id} is not a departure: the earlier replays it departs from must be in "
+                          "mlruns/ or docs/replay-ledger.json; run `valiwatt all --departure`")
     commit = replay.data.tags.get("freeze_commit", "")
     if departure and (not commit or commit[:12] not in recorded):
         raise ChainBroken(f"replay {replay.info.run_id} is a departure, but AGENTS.md's departures section does not "
