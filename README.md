@@ -122,5 +122,5 @@ licences ([`docs/data-licences.md`](docs/data-licences.md)).
 ## Continuous integration
 
 `.github/workflows/checks.yml` runs the offline tests (every injected break included) and the public-safety scan on
-every push. CI's scan covers paths, credentials, forbidden files, every file in the history and every commit and tag
+every branch push and pull request. CI's scan covers paths, credentials, forbidden files, every file in the history and every commit and tag
 message, but not private names: those live in a gitignored list, so only the local `valiwatt safety` checks them.
