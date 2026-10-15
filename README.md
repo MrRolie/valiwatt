@@ -54,11 +54,14 @@ matches the stamp. Neither `data/` nor `mlruns/` is in git: anyone can regenerat
 and the runs, not the rendered files, are the source of truth.
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
-entry per finished 2024 replay: its run ID, freeze commit, rules and code hashes, times, MAPE, coverage and
-recommendations. `valiwatt report` appends the replays it lacks before it renders (`valiwatt ledger` does only that);
-an entry is never rewritten, a run that disagrees with its entry is refused, and the new content must pass the
-public-safety scan before it is written. The ledger is not written during the replay itself, because every run records
-whether the tree was clean. Its hash is in the report's stamp, so a test fails when it changes after the render.
+entry per finished 2024 replay since the history rewrite of 2026-10-14: its run ID, freeze commit, rules and code
+hashes, when its run was logged, MAPE, coverage and recommendations. The four 2024 replays that ran before the
+rewrite, under the same rules and with the same MAPE, coverage and recommendations, ran under a commit the rewrite
+replaced and are not in it (`AGENTS.md`). `valiwatt report` appends the replays it lacks before it renders (`valiwatt
+ledger` does only that); an entry is never rewritten, a run that disagrees with its entry is refused, and the new
+content must pass the public-safety scan before it is written. The ledger is not written during the replay itself,
+because every run records whether the tree was clean. Its hash is in the report's stamp, so a test fails when it
+changes after the render.
 
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
 `ledger`, `report`. The 2024 replay refuses to run until the monitoring rules are frozen by the `rules-frozen` tag.

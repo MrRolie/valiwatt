@@ -126,19 +126,21 @@ from the frozen monitoring rules of the same day (section 4); the changes are in
   that run.
 - **Freeze before 2024.** The monitoring rules (statistics, windows, quantiles, the decision table of section 5, the
   Evidently test) may be tuned on the 2023 pseudo-replay. They are then frozen in a named commit, the `rules-frozen`
-  tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the package
-  and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a file added
-  later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a tag moved
-  since an earlier 2024 replay unless `AGENTS.md` records that move by commit and the run is asked for with
+  tag, before the 2024 replay ever runs, and the report cites that commit. The rule files are every file of the
+  package and its configuration except those that only render, scan or dispatch (`monitor/rules.py` lists them); a
+  file added later counts too. The 2024 replay refuses to run when any rule file differs from the tag, and refuses a
+  tag moved since an earlier 2024 replay unless `AGENTS.md` records that move by commit and the run is asked for with
   `--departure`; such a run names the replays it departs from. The earlier replays are those of the MLflow store
   (deleted runs included) and those of the committed replay ledger (below), so a fresh clone sees them too. The gate
   runs inside the replay function itself, so no entry point replays 2024 without it. Every run, the data-quality run
-  included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is listed
-  in `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. A change to
-  the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash, takes the same path by hand: it
-  is recorded in `AGENTS.md` and the tag is moved to its commit. Every finished 2024 replay is also entered in the
-  committed, append-only replay ledger (`docs/replay-ledger.json`), so an earlier replay shown beside a post hoc one is
-  still shown, from its entry and labelled as not re-run, in a clone whose `mlruns/` lacks it.
+  included, carries the rules hash, and runs made under other rules are refused. Any later change to the rules is
+  listed in `AGENTS.md` as a departure, labelled post hoc in the report, and the earlier replay is shown beside it. A
+  change to the dependencies (`pyproject.toml`, `uv.lock`), which the freeze gate does not hash, takes the same path
+  by hand: it is recorded in `AGENTS.md` and the tag is moved to its commit. Every finished 2024 replay since the
+  history rewrite of 2026-10-14 is also entered in the committed, append-only replay ledger
+  (`docs/replay-ledger.json`; the four that ran before the rewrite, with the same rules and results, are counted in
+  `AGENTS.md`), so an earlier replay shown beside a post hoc one is still shown, from its entry and labelled as not
+  re-run, in a clone whose `mlruns/` lacks it.
 - **The one departure, 2026-10-14.** The rules changed once after the 2024 results had been seen: on 2026-10-14, by the
   owner's ruling, after an independent review of the code by another AI model (not independent validation in SR 11-7's
   sense). The change is recorded in `AGENTS.md`; the report labels the 2024 replay that ran again post hoc and shows the
