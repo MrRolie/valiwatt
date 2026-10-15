@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `a3661dac6c664dd69ef8eff17404570d` (2026-10-14 12:48 UTC), code `10e6bc8ea8ca`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `021a47bc77824742bef41d8731c2d951` (2026-10-15 01:50 UTC), code `9ab28e51a1ec`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -12,7 +12,7 @@ _Generated from MLflow run `a3661dac6c664dd69ef8eff17404570d` (2026-10-14 12:48 
 >
 > Built with Claude Code under the repository owner's direction.
 
-## In short
+## In brief
 
 - **52,608 hours** of demand, from 2019-01-01 06:00 UTC to 2025-01-01 05:00 UTC; **99.89%** are usable.
 - When clocks go back in the fall, two values arrive under the same UTC hour and the hour before is missing. The order of the two values is not recorded, so these **12 hours** (6 nights) are masked, never guessed.
@@ -90,7 +90,7 @@ The margin ranges from 0 to 682 MW. A rule that ordered some nights and not othe
 
 ### 3.2 Misplaced record: repair with evidence
 
-The timestamp 2023-01-01 05:00 UTC carries two values while 2022-01-01 05:00 UTC has none. The value 22,945.84 MW fits naturally between the neighbours of 2022-01-01 05:00 UTC, and 20,516.80 MW between those of 2023-01-01 05:00 UTC. The total path is 2,145 MW in this assignment against 9,864 MW the other way round: a ratio of 4.6. The rule needs a ratio of at least 2.0 to move a value; otherwise nothing moves and the gate fails. The value is therefore moved, and the hour is labelled "repaired" in the canonical series.
+The timestamp 2023-01-01 05:00 UTC carries two values while 2022-01-01 05:00 UTC has none. The value 22,945.84 MW fits naturally between the neighbours of 2022-01-01 05:00 UTC, and 20,516.80 MW between those of 2023-01-01 05:00 UTC. The total path is 2,145 MW in this assignment against 9,864 MW the other way round: a ratio of 4.6. 2022-01-01 05:00 UTC is the only hour without a record whose two neighbours are known: no other destination is possible. The rule moves a value only if both values are inside the physical bounds (5,000 to 60,000 MW), if the ratio between the two assignments is at least 2.0, and if the destination is unambiguous: the next best hour without a record whose neighbours are known costs at least 2.0 times the chosen destination's cost, or there is none. Otherwise nothing moves, the hour stays an unresolved duplicate, and the gate fails; the duplicate's evidence gives the reason and, when the hour holds exactly two values, both inside the bounds, and a destination was found, names the best destination and the next best if there is one (both, when the destination is ambiguous). The value is therefore moved, and the hour is labelled "repaired" in the canonical series. Finally, no hour whose value lies outside those bounds is returned as usable, whatever the path (the check over the whole window or the series the replay rebuilds at its clock): a last pass marks it out of bounds.
 
 ### 3.3 Missing values
 
