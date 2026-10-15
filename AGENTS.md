@@ -80,11 +80,33 @@ post hoc and shows the earlier replay beside it, and the 2024 replay runs again 
 numbers, and the freeze gate does not hash them, so this rule is kept by hand: record the change here and move the
 tag to the commit that makes it, so the 2024 replay runs again with `--departure` and the report labels it post hoc.
 
-Write each commit here by at least its first 12 characters. The report reads this section when it renders: if the
-section names a commit, the 2024 replay must be a departure, and a departure replay's freeze commit must be named
-here; otherwise the report refuses to render. A departure replay needs the earlier 2024 replays in `mlruns/`, which is
-not in git. After a departure, a fresh clone cannot render the report: its 2024 replay finds no earlier replay, runs
-as a plain one, and the render refuses it. Where `mlruns/` holds the earlier replays, `valiwatt all --departure` is
-the command that reproduces the report. The earlier replays' results are not stored anywhere else yet.
+Write each commit here by at least its first 12 characters, and write no other hexadecimal run of 7 characters or
+more: the report reads this section when it renders. If the section names a commit, the 2024 replay must be a
+departure, and a departure replay's freeze commit must be named here; otherwise the report refuses to render. The
+freeze gate finds the earlier 2024 replays in `mlruns/` and in the committed ledger `docs/replay-ledger.json`, so a
+fresh clone sees a departure too, and `valiwatt all --departure` reproduces the report; an earlier replay the store
+lacks is shown from its ledger entry, labelled as recorded in the ledger and not re-run.
 
-None yet.
+- **2026-10-14, the owner's ruling; the tag moved to `affe089f6ed0`.** After the 2024 results, an independent
+  review of v1 found that the design code could see a repaired value before the replay could, that the thresholds
+  were calibrated on weeks the replay would not judge, and gaps in two gates. The owner ruled one departure carrying
+  exactly these changes, made in commits `bea83455ab50`, `05d359b412a2`, `9c2975ea87fc`, `64f14c2d0084` and
+  `39670300a5de`:
+  - A3: a misplaced record moves only to an unambiguous destination. The next-best destination must cost at least
+    the minimum ratio times the chosen one; otherwise the hour stays an unresolved duplicate and its gate fails.
+  - A4: duplicate values outside the demand bounds are never repaired into place, and no path returns a usable hour
+    outside the bounds.
+  - B1: the validation folds, the threshold sets and the frozen models see each decision time as the replay sees its
+    clock. They are built from the raw records cut at that time, so a repair whose source record arrives later cannot
+    reach them, and an interval's half-width calibrates only on days scored by the fit clock that fixes it.
+  - B2: the origin guard's 168-hour term, implied by its 24-hour term, could never fire alone and is removed.
+  - B3: the thresholds calibrate on the weeks the replay judges. One shared predicate leaves out a week holding a day
+    that fails the replay's data-quality verdict, and a week with fewer than 7 days in range.
+  - B4: the freeze gate runs inside `replay()` for the held-out year, so no entry point skips it.
+  - B5: the moved-tag check reads the earlier replays' freeze commits from the committed ledger as well as the store.
+  - B6: the false-alarm and blind-spot measures run on the 2024 replay too; the report labels them out of sample and
+    added after the results.
+
+  Rule 4 (a temperature drift with performance inside the bands sends the monitor to "investigate the data") is
+  unchanged and disclosed as a limitation. The 2024 replay ran again with `--departure`; the report labels it post
+  hoc and shows the earlier replay beside it.
