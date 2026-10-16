@@ -9,7 +9,7 @@ import pandas as pd
 
 from valiwatt.forecast.features import day_origin
 from valiwatt.forecast.guards import require_embargo
-from valiwatt.forecast.model import OLSForecaster, baseline
+from valiwatt.forecast.model import OLSForecaster, baseline, forecaster
 
 EMBARGO_DAYS = 7
 
@@ -47,13 +47,19 @@ def split(f: pd.DataFrame, fold: Fold) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persistence"),
-        train_at: Callable[[pd.Timestamp], pd.DataFrame] | None = None) -> pd.DataFrame:
+        train_at: Callable[[pd.Timestamp], pd.DataFrame] | None = None, models=None) -> pd.DataFrame:
     """Out-of-sample predictions for every fold: one row per test hour with the target, when it was scored, each
-    scenario's forecast and the baseline.
+    forecast and the baseline.
 
     f: the test rows (in design code, each as the replay issues and scores it: `features.AsOf.issued`).
     train_at: the feature table as seen at a clock (`features.AsOf.table`); each fold trains on it at its
-    `fit_clock`. Without it, training rows come from f."""
+    `fit_clock`. Without it, training rows come from f.
+    scenarios: v1's least squares on each temperature input (columns `pred_<scenario>`, `n_train_<scenario>`).
+    models: keys of `model.MODELS` (v2): one forecaster per key per fold, each on its own usable training rows
+    (columns `pred_<key>`, `n_train_<key>`); given, it alone sets the forecasts and `scenarios` is unused. The least
+    squares keys are v1's scenario names, so `pred_persistence` keeps its meaning."""
+    keys = list(scenarios) if models is None else list(models)
+    make = OLSForecaster if models is None else forecaster
     parts = []
     for fold in fold_list:
         train, test = split(f, fold)
@@ -65,9 +71,9 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
         out = pd.DataFrame({"target": test["target"], "fold": str(fold.test_month), "day": test["day"],
                             "scored_at": test["scored_at"], "hour": test["hour"], "day_type": test["day_type"],
                             "baseline": baseline(test)}, index=test.index)
-        for s in scenarios:
-            m = OLSForecaster(s).fit(train)
-            out[f"pred_{s}"] = m.predict(test)
-            out[f"n_train_{s}"] = m.n_train
+        for k in keys:
+            m = make(k).fit(train)
+            out[f"pred_{k}"] = m.predict(test)
+            out[f"n_train_{k}"] = m.n_train
         parts.append(out)
     return pd.concat(parts)

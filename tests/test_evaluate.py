@@ -13,8 +13,12 @@ from valiwatt.forecast.evaluate import (
     relative_conformal,
     weekly_stats,
 )
-from valiwatt.forecast.features import scored_at
+from valiwatt.config import DESIGN_LAST, LST_OFFSET
+from valiwatt.forecast import walkforward as wf
+from valiwatt.forecast.features import day_origin, scored_at
 from valiwatt.forecast.guards import LookaheadError
+
+H = pd.Timedelta(hours=1)
 
 
 def oos(months=24, seed=0, scale=0.03):
@@ -68,21 +72,64 @@ def test_rows_without_the_time_they_were_scored_calibrate_no_half_width():
 
 
 def test_a_row_scored_at_the_fit_clock_calibrates_and_one_scored_an_hour_later_does_not():
-    """The cap is `scored_at <= fit_clock`. A row scored at the fit clock itself is in view when the half-width is
-    fixed and calibrates it; one scored an hour later is not. On the real data, the frozen 2024 model's half-width
-    calibrates on day 2023-12-31, scored at the end of the design data, which is its fit clock."""
+    """The cap on when a row was scored is `scored_at <= fit_clock`: of the rows of a day the replay scored well before
+    the clock, one scored at the fit clock itself is in view when the half-width is fixed and calibrates it; one scored
+    an hour later is not. The last day of the data is scored at its end, but the replay scores a day an hour after its
+    last hour: the end of the data is no scoring, so that day calibrates no half-width fixed at the end of the data,
+    and does once the clock reaches the hour the replay scores it."""
     clock = pd.Timestamp("2023-12-31T05:00Z")
-    rows = pd.DataFrame({"scored_at": [clock - pd.Timedelta(hours=1), clock, clock + pd.Timedelta(hours=1)]},
-                        index=["before", "at", "after"])
+    day = pd.Timestamp("2023-12-20")  # the replay scores it at 2023-12-21 06:00 UTC, well before the clock
+    rows = pd.DataFrame({"scored_at": [clock - H, clock, clock + H], "day": day}, index=["before", "at", "after"])
     assert list(calibration_rows(rows, clock).index) == ["before", "at"]
-    # The last day of the data is scored at its end: a fit clock at the end of the data keeps it, an hour earlier
-    # does not.
     out = oos(months=2)
     end = out.index.max()
     last = out["day"] == out["day"].max()
-    assert (out.loc[last, "scored_at"] == end).all()
-    assert len(calibration_rows(out, end)) == len(out)
-    assert len(calibration_rows(out, end - pd.Timedelta(hours=1))) == int((~last).sum())
+    assert (out.loc[last, "scored_at"] == end).all() and end == day_origin(out["day"].max() + pd.Timedelta(days=1))
+    assert len(calibration_rows(out, end)) == int((~last).sum())
+    assert len(calibration_rows(out, end - H)) == int((~last).sum())
+    assert len(calibration_rows(out, end + H)) == len(out)
+
+
+def design_rows(first_day: str, last: pd.Timestamp = DESIGN_LAST) -> pd.DataFrame:
+    """Hourly design rows from `first_day` to the end of the data, each day scored as design code scores it."""
+    idx = pd.date_range(day_origin(pd.Timestamp(first_day)) + H, last, freq="h")
+    rows = pd.DataFrame({"day": (idx - H + LST_OFFSET).tz_convert(None).normalize()}, index=idx)
+    rows["scored_at"] = scored_at(rows["day"], idx.max())
+    return rows
+
+
+def test_the_eve_of_the_replayed_year_never_calibrates_a_half_width():
+    """The 2024-shaped freeze: the design data end at its fit clock, so design code scores 2023-12-31 at that clock and
+    v1's rule kept the eve. The 2023-shaped freeze: the data run past its fit clock, 2022-12-31 is scored an hour after
+    it, and v1's rule left it out. With v2's rule neither freeze calibrates on its eve; the day before it calibrates in
+    both."""
+    for year in (2024, 2023):
+        clock = wf.folds(f"{year}-01", f"{year}-01")[0].fit_clock
+        eve = pd.Timestamp(f"{year - 1}-12-31")
+        rows = design_rows(f"{year - 1}-12-01")
+        window = rows[rows["day"] <= eve]  # the calibration folds end with the eve's month
+        v1_kept = window[window["scored_at"] <= clock]
+        assert (v1_kept["day"] == eve).any() == (year == 2024), year
+        kept = calibration_rows(window, clock)
+        assert not (kept["day"] == eve).any(), year
+        assert int((kept["day"] == eve - pd.Timedelta(days=1)).sum()) == 24, year
+        assert len(kept) == int((window["day"] < eve).sum()), year
+
+
+def test_rows_without_a_day_calibrate_no_half_width():
+    """The replay's scoring time of a row is read from its day; a row that does not say its day cannot be shown to
+    have been scored by the fit clock, so it is refused."""
+    out = oos()
+    clock = out["scored_at"].iloc[len(out) // 2]
+    assert 0 < len(calibration_rows(out, clock)) < len(out)  # the control: rows that say it are kept or left out
+    assert len(relative_conformal(out, "pred")) > 0
+    no_day = out.drop(columns="day")
+    one_blank = out.assign(day=out["day"].where(out.index != out.index[10]))
+    for blind in (no_day, one_blank):
+        with pytest.raises(LookaheadError):
+            calibration_rows(blind, clock)
+        with pytest.raises(LookaheadError):
+            relative_conformal(blind, "pred")
 
 
 def test_inflated_errors_drop_coverage():

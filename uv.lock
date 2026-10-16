@@ -1950,6 +1950,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "requests" },
+    { name = "scikit-learn" },
     { name = "scipy" },
 ]
 
@@ -1970,6 +1971,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "requests", specifier = ">=2.32" },
+    { name = "scikit-learn", specifier = "==1.9.1" },
     { name = "scipy", specifier = "==1.18.1" },
 ]
 
