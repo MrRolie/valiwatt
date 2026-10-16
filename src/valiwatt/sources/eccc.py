@@ -5,6 +5,10 @@ are empty and whose date header is blank, so every response is verified before i
 observation at all comes as a row of only its first 9 fields (station identity and time); those are kept as missing
 observations and counted. Temperature at a UTC hour is the observation at that instant, unlike Hydro-Québec's demand,
 which is the mean over the hour ending then.
+
+The window ends with 2024 by default; with 2025 (fetched only behind the v2 freeze, docs/plan-v2.md, section 11.3.1)
+the months of 2025 are fetched beside the others, and `force` is refused: it would download again the 2019-2024
+months v2's first 2024 replay read. A month is fetched again by removing its file.
 """
 
 from __future__ import annotations
@@ -16,9 +20,9 @@ import json
 
 import pandas as pd
 
-from valiwatt.config import Station, fetch_months
+from valiwatt.config import THROUGH_DEFAULT, Station, fetch_months
 from valiwatt.paths import RAW_ECCC, rel
-from valiwatt.sources.http import FetchRefused, get, sha256_bytes, sha256_file, utc_now, write_json
+from valiwatt.sources.http import FetchRefused, get, require_fetchable, sha256_bytes, sha256_file, utc_now, write_json
 
 BULK_URL = "https://climate.weather.gc.ca/climate_data/bulk_data_e.html"
 DATE_COL = "Date/Time (UTC)"
@@ -86,11 +90,20 @@ def verify_month(text: str, climate_id: str, year: int, month: int) -> tuple[int
     return len(body), no_obs
 
 
-def fetch_station(station: Station, force: bool = False, log=print) -> dict:
+def fetch_station(station: Station, force: bool = False, log=print, through: int = THROUGH_DEFAULT) -> dict:
+    """The station's months of the window through `through`; a month whose file still matches the manifest is not
+    fetched again unless `force`. The manifest keeps the entries of months outside the window (a 2025 month fetched
+    earlier), so a 2024 fetch never forgets them."""
+    require_fetchable(through)
+    if force and int(through) > THROUGH_DEFAULT:
+        raise FetchRefused(f"--force is refused through {through}: it would download again the 2019-2024 ECCC months "
+                           "v2's first 2024 replay read; remove a month's file to fetch it again")
     manifest_path = RAW_ECCC / station.climate_id / "manifest.json"
     previous = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {"months": {}}
-    months = {}
-    for year, month in fetch_months():
+    window = fetch_months(through)
+    keys = {f"{y:04d}-{m:02d}" for y, m in window}
+    months = {k: v for k, v in previous["months"].items() if k not in keys}
+    for year, month in window:
         key = f"{year:04d}-{month:02d}"
         path = month_path(station, year, month)
         prev = previous["months"].get(key)
@@ -121,10 +134,11 @@ def fetch_station(station: Station, force: bool = False, log=print) -> dict:
     return manifest
 
 
-def load_station(station: Station) -> pd.DataFrame:
-    """Hourly observations for one station over the fetch window, UTC-indexed, numeric columns as floats."""
+def load_station(station: Station, through: int = THROUGH_DEFAULT) -> pd.DataFrame:
+    """Hourly observations for one station over the fetch window through `through`, UTC-indexed, numeric columns as
+    floats."""
     frames = []
-    for year, month in fetch_months():
+    for year, month in fetch_months(through):
         text = month_path(station, year, month).read_bytes().decode("utf-8-sig")
         verify_month(text, station.climate_id, year, month)
         df = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)[list(COLUMNS)]

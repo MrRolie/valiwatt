@@ -1,4 +1,6 @@
-"""Time alignment and the no-lookahead rail for design-window analysis."""
+"""Time alignment and the no-lookahead rail for design-window analysis; the data windows and freezes of v2."""
+
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -26,6 +28,33 @@ def test_demand_window_matches_six_calendar_years_of_hour_ending_labels():
     assert DEMAND_FIRST == pd.Timestamp("2019-01-01T06:00Z")
     assert len(pd.date_range(DEMAND_FIRST, pd.Timestamp("2025-01-01T05:00Z"), freq="h")) == 52_608
     assert fetch_months()[0] == (2019, 1) and fetch_months()[-1] == (2025, 1)
+
+
+def test_the_window_ends_with_the_last_hour_of_its_last_year():
+    from valiwatt.config import DEMAND_LAST, THROUGH_DEFAULT, THROUGH_YEARS, data_last
+
+    assert data_last(2024) == DEMAND_LAST == pd.Timestamp("2025-01-01T05:00Z")
+    assert data_last(2025) == pd.Timestamp("2026-01-01T05:00Z")
+    assert data_last(2023) == DESIGN_LAST  # the design window ends with 2023, the same way
+    assert lst_day(pd.DatetimeIndex([data_last(2025)]))[0].strftime("%Y-%m-%d") == "2025-12-31"
+    assert THROUGH_DEFAULT == 2024 and THROUGH_YEARS == (2024, 2025)
+    assert fetch_months(2024) == fetch_months()
+    assert fetch_months(2025)[0] == (2019, 1) and fetch_months(2025)[-1] == (2026, 1)
+    assert len(fetch_months(2025)) == len(fetch_months()) + 12
+
+
+def test_the_freezes_and_the_labels_are_configured():
+    from valiwatt import config
+
+    assert config.FREEZE_TAG == "rules-frozen-v2" and config.FIRST_RUN_TAG == "v2-first-run"
+    assert set(config.FREEZES) == {"rules-frozen", "rules-frozen-v2"}
+    assert config.FREEZES["rules-frozen"]["years"] == (2024,) and config.FREEZES["rules-frozen"]["end"] == "v1"
+    assert config.FREEZES["rules-frozen-v2"]["years"] == (2024, 2025) and config.FREEZES["rules-frozen-v2"]["end"] is None
+    assert config.EVALUATION == {2023: "rehearsal", 2024: "seen_by_developers", 2025: "held_out"}
+    assert config.HELD_OUT_YEAR == 2025 and config.IN_SAMPLE_LABEL == "in_sample_for_choice"
+    agents = (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text(encoding="utf-8")
+    for freeze in config.FREEZES.values():
+        assert freeze["heading"] + "\n" in agents  # each freeze's departures section exists under that heading
 
 
 def test_design_window_ends_with_2023_local_time():

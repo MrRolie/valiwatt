@@ -1,18 +1,36 @@
-"""ECCC station observations: index, bounds, coverage and spikes per station, over the demand window."""
+"""ECCC station observations: index, bounds, coverage and spikes per station, over the demand window; and the NBM
+forecast's gates and findings (docs/plan-v2.md, section 3.4).
+
+`usable_temperature` is the one bounds filter: the station's gate, the feature tables (design and replay), the
+forecast's covering rule and its gate all read temperatures through it."""
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
-from valiwatt.config import DEMAND_FIRST, DEMAND_LAST, DESIGN_LAST, Station
+from valiwatt.config import DEMAND_FIRST, DEMAND_LAST, DESIGN_LAST, LST_OFFSET, Station
 from valiwatt.quality.checks import CheckResult, robust_z, runs_of_true, spike_statistic
+
+if TYPE_CHECKING:  # features imports this module
+    from valiwatt.forecast.features import IssuedForecast
 
 # Loose physical bounds for an hourly air temperature in southern Québec.
 BOUNDS_C = (-60.0, 45.0)
 # Share of demand-window hours with a temperature observation.
 MIN_COVERAGE = 0.95
 SPIKE_Z = 10.0
+# Share of the window's days the forecast must feed (set after the archive's day counts for 2019-2024 were seen,
+# docs/plan-v2.md, section 3.4).
+NBM_MIN_DAY_COVERAGE = 0.98
+
+
+def usable_temperature(series: pd.Series) -> pd.Series:
+    """The temperatures (°C) a model may read: values outside BOUNDS_C blanked, blanks kept blank. The one bounds
+    filter, for the station and for the forecast, in design code and in the replay."""
+    return series.where((series >= BOUNDS_C[0]) & (series <= BOUNDS_C[1]))
 
 
 def station_series(obs: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd.Timestamp = DEMAND_LAST) -> pd.DataFrame:
@@ -39,7 +57,7 @@ def weather_checks(station: Station, frame: pd.DataFrame) -> list[CheckResult]:
         )
     ]
     observed = temp.dropna()
-    out = observed[(observed < BOUNDS_C[0]) | (observed > BOUNDS_C[1])]
+    out = observed[usable_temperature(observed).isna()]
     checks.append(
         CheckResult(
             f"weather_bounds[{k}]",
@@ -135,3 +153,81 @@ def panel_checks(frames: dict[str, pd.DataFrame], panel: pd.Series) -> list[Chec
             evidence=sorted(shared, key=lambda g: -g["hours"])[:5],
         ),
     ]
+
+
+def _lst_day(ts: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    return (ts - pd.Timedelta(hours=1) + LST_OFFSET).tz_convert(None).normalize()
+
+
+def forecast_checks(runs: pd.DataFrame, issued: IssuedForecast, observed: pd.Series,
+                    design_last: pd.Timestamp = DESIGN_LAST) -> list[CheckResult]:
+    """The NBM forecast's gates and finding over a window (docs/plan-v2.md, section 3.4).
+
+    runs: the window's runs (`sources.nbm.load_runs`); issued: `forecast_temperature` on every day of the window;
+    observed: the primary station's temperature on the hourly grid (the forecast's error is read on days up to
+    `design_last` only).
+    - gate nbm_bounds: every point of the runs, converted to °C, inside the one filter's bounds;
+    - gate nbm_coverage: at least NBM_MIN_DAY_COVERAGE of the window's days fed by a run;
+    - finding nbm_runs, never gating: the identical duplicate points; the feeding run's UTC hour by year; the rank and
+      lead (from the run time to the origin) counts; every day no run fed, with why; the longest lead of any run's
+      points (valid time minus run time), by year of run time (`longest_lead_h`), and the years where it reaches
+      sources.nbm.REUSE_LEAD_H (`leads_at_or_above_reuse_bound`: section 9.2 argues that a run feeds at most two
+      consecutive days while every lead is below it, so a year listed is a finding against that argument and a trigger
+      for a section 18 entry); the days fed by a run that also fed the day before; the forecast minus the observation
+      by year and season on the design days."""
+    from valiwatt.forecast.evaluate import SEASONS  # evaluate's imports reach the feature code, which imports this
+    from valiwatt.sources.nbm import REUSE_LEAD_H
+
+    celsius = (runs["tmp_f"].astype(float) - 32.0) * 5.0 / 9.0
+    outside = celsius.notna() & usable_temperature(celsius).isna()
+    bounds = CheckResult(
+        "nbm_bounds", "gate", passed=not outside.any(),
+        metrics={"low_c": BOUNDS_C[0], "high_c": BOUNDS_C[1], "violations": int(outside.sum()), "points": len(runs),
+                 "blank_points": int(celsius.isna().sum()), "min_c": celsius.min(), "max_c": celsius.max()},
+        evidence=[{"runtime": r.runtime, "ftime": r.ftime, "tmp_f": r.tmp_f, "temp_c": c}
+                  for r, c in zip(runs[outside].head(20).itertuples(), celsius[outside].head(20))])
+
+    record = issued.record
+    fed = record["reason"] == ""
+    days = len(record)
+    share = float(fed.mean()) if days else 0.0
+    coverage = CheckResult("nbm_coverage", "gate", passed=days > 0 and share >= NBM_MIN_DAY_COVERAGE,
+                           metrics={"share": share, "threshold": NBM_MIN_DAY_COVERAGE, "days": days,
+                                    "fed_days": int(fed.sum())})
+
+    f = record[fed]
+    day_year = pd.DatetimeIndex(f.index).year
+    run_hour = pd.DatetimeIndex(f["runtime"]).hour
+    hour_by_year = {int(y): {int(h): int(n) for h, n in g.value_counts().sort_index().items()}
+                    for y, g in pd.Series(run_hour, index=day_year).groupby(level=0)}
+    lead_point_h = (runs["ftime"] - runs["runtime"]) / pd.Timedelta(hours=1)
+    longest = {int(y): float(v) for y, v in lead_point_h.groupby(runs["runtime"].dt.year).max().items()}
+    at_or_above = [y for y, v in longest.items() if v >= REUSE_LEAD_H]
+    previous = f["runtime"].reindex(pd.DatetimeIndex(f.index) - pd.Timedelta(days=1)).to_numpy()
+    reused = f.index[f["runtime"].to_numpy() == previous]
+
+    hourly = issued.hourly
+    obs = usable_temperature(observed.reindex(hourly.index))
+    design = hourly.index <= pd.Timestamp(design_last)
+    err = (hourly - obs)[design].dropna()
+    err_day = _lst_day(pd.DatetimeIndex(err.index))
+    by_year_season = {}
+    for (y, s), g in err.groupby([err_day.year, err_day.month.map(SEASONS)]):
+        by_year_season.setdefault(int(y), {})[s] = {"mean_c": float(g.mean()), "mae_c": float(g.abs().mean()),
+                                                    "hours": len(g)}
+    not_fed = record[~fed]
+    finding = CheckResult(
+        "nbm_runs", "finding", passed=True,
+        metrics={"identical_duplicates": int(runs.attrs.get("identical_duplicates", 0)), "runs": int(runs["runtime"].nunique()),
+                 "points": len(runs), "run_hour_by_year": hour_by_year,
+                 "rank_counts": {int(k): int(v) for k, v in f["rank"].value_counts().sort_index().items()},
+                 "lead_counts": {float(k): int(v) for k, v in f["lead_h"].value_counts().sort_index().items()},
+                 "days_not_fed": len(not_fed),
+                 "reasons": {str(k): int(v) for k, v in not_fed["reason"].value_counts().items()},
+                 "longest_lead_h": longest, "reuse_lead_h": REUSE_LEAD_H,
+                 "leads_at_or_above_reuse_bound": at_or_above,
+                 "days_fed_by_the_previous_days_run": len(reused),
+                 "error_vs_observed": by_year_season, "error_last_utc": pd.Timestamp(design_last)},
+        evidence=[{"day": d, "reason": r} for d, r in not_fed["reason"].items()]
+        + [{"reused_day": d, "runtime": f.loc[d, "runtime"]} for d in reused])
+    return [bounds, coverage, finding]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from valiwatt.config import DESIGN_LAST, LST_OFFSET
@@ -26,14 +27,23 @@ def origin_violations(f: pd.DataFrame) -> dict[str, pd.Series]:
 
     There is no term for the 168-hour lag: an hour 168 hours back is earlier than the hour 24 hours back, so the lag
     can read past the origin only when the 24-hour inputs (the 24-hour lag and the persistence temperature) already
-    do, and a term of its own could never fire alone."""
+    do, and a term of its own could never fire alone.
+
+    A weather forecast is read from its availability only (docs/plan-v2.md, section 3.2): every `available_<s>` column
+    present (the feeding run's availability, features.build) must be at or before the row's origin; a row no run fed
+    (NaT) never violates."""
     h, origin = pd.Timedelta(hours=1), pd.DatetimeIndex(f["origin"])
+    late = np.zeros(len(f), dtype=bool)
+    for c in (c for c in f.columns if str(c).startswith("available_")):
+        late |= np.asarray(pd.DatetimeIndex(f[c]) > origin, dtype=bool)  # NaT compares False
     return {"input_24h_after_origin": pd.Series((f.index - 24 * h) > origin, index=f.index),
-            "target_not_after_origin": pd.Series(f.index <= origin, index=f.index)}
+            "target_not_after_origin": pd.Series(f.index <= origin, index=f.index),
+            "forecast_available_after_origin": pd.Series(late, index=f.index)}
 
 
 def require_known_at_origin(f: pd.DataFrame) -> None:
-    """Every lag and persistence input must come from at or before the row's origin, and the target hour after it."""
+    """Every lag and persistence input must come from at or before the row's origin, the target hour after it, and
+    every weather forecast a row reads from a run available at or before it."""
     terms = origin_violations(f)
     bad = pd.concat(terms.values(), axis=1).any(axis=1)
     if bad.any():

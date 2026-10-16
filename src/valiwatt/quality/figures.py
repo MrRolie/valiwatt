@@ -24,6 +24,10 @@ LABELS = {
         "r2": "R² de la demande journalière (degrés-jours et jour de la semaine)",
         "resid": "Écart au modèle de 2019 (%)",
         "panel": "panel (moyenne)",
+        "fed_days": "Jours alimentés par une prévision",
+        "month_days": "jours du mois",
+        "fed": "jours alimentés",
+        "run_hour": "Heure de la prévision utilisée (UTC)",
     },
     "en": {
         "daily_mw": "Daily mean demand (MW)",
@@ -31,8 +35,15 @@ LABELS = {
         "r2": "R² of daily demand (degree-days and day of week)",
         "resid": "Gap to the 2019 model (%)",
         "panel": "panel (mean)",
+        "fed_days": "Days fed by a forecast",
+        "month_days": "days in the month",
+        "fed": "days fed",
+        "run_hour": "Hour of the run used (UTC)",
     },
 }
+
+# The data-quality run's figure of the forecast's feeding, under figures/<lang>/ (rendered by the reports).
+FORECAST_FEEDING = "nbm_feeding.png"
 
 
 def _style(ax):
@@ -110,4 +121,26 @@ def residual_by_month(resid: pd.DataFrame, lang: str, path: Path):
     ax.set_ylabel(LABELS[lang]["resid"], fontsize=9)
     ax.yaxis.set_major_formatter(_num(lang))
     _style(ax)
+    _save(fig, path)
+
+
+def forecast_feeding(record: pd.DataFrame, lang: str, path: Path):
+    """The forecast's feeding (features.IssuedForecast.record): above, the days of each month fed by a run against the
+    month's days; below, the UTC hour of the run that fed each day."""
+    days = pd.DatetimeIndex(record.index)
+    fed = (record["reason"] == "").to_numpy()
+    counts = pd.DataFrame({"days": 1, "fed": fed.astype(int)}, index=days.to_period("M")).groupby(level=0).sum()
+    x = counts.index.to_timestamp()
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(8, 4.6), sharex=True, height_ratios=(3, 2))
+    top.bar(x, counts["days"], width=20, color=GRID, label=LABELS[lang]["month_days"])
+    top.bar(x, counts["fed"], width=20, color=SERIES_1, label=LABELS[lang]["fed"])
+    top.set_ylabel(LABELS[lang]["fed_days"], fontsize=9)
+    top.yaxis.set_major_formatter(_num(lang))
+    top.legend(frameon=False, fontsize=8, loc="lower left")
+    _style(top)
+    bottom.scatter(days[fed], pd.DatetimeIndex(record["runtime"][fed]).hour, s=4, color=SERIES_2, edgecolors="none")
+    bottom.set_ylim(-1, 24)
+    bottom.set_yticks([0, 6, 12, 18])
+    bottom.set_ylabel(LABELS[lang]["run_hour"], fontsize=9)
+    _style(bottom)
     _save(fig, path)

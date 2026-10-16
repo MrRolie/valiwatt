@@ -10,6 +10,7 @@ DATA = REPO_ROOT / "data"
 RAW = DATA / "raw"
 RAW_HQ = RAW / "hydroquebec"
 RAW_ECCC = RAW / "eccc"
+RAW_NBM = RAW / "nbm"
 INTERIM = DATA / "interim"
 MLRUNS = REPO_ROOT / "mlruns"
 REPORTS = REPO_ROOT / "docs" / "report"  # rendered reports, committed (owner's ruling)

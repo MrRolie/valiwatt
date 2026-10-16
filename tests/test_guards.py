@@ -3,9 +3,9 @@
 import pandas as pd
 import pytest
 
-from conftest import synth_demand, synth_obs
+from conftest import synth_demand, synth_obs, synth_runs
 from valiwatt.forecast import walkforward as wf
-from valiwatt.forecast.features import build
+from valiwatt.forecast.features import FORECAST_LAGS, build, forecast_temperature
 from valiwatt.forecast.guards import (
     DESIGN_LAST_DAY,
     LookaheadError,
@@ -75,3 +75,37 @@ def test_walk_forward_refuses_a_fold_that_breaks_the_embargo(monkeypatch):
     fold = wf.Fold(pd.Period("2021-03", "M"), pd.Timestamp("2021-02-27"))  # 1 day before the month: no embargo
     with pytest.raises(LookaheadError):
         wf.run(f, [fold])
+
+
+def forecast_frame():
+    """A table with both forecast scenarios fed, as features.build gives it."""
+    first, last = pd.Timestamp("2021-02-01T06:00Z"), pd.Timestamp("2021-03-01T05:00Z")
+    days = pd.date_range("2021-02-01", "2021-02-28", freq="D")
+    runs = synth_runs(first - pd.Timedelta(days=2), last)
+    issued = {s: forecast_temperature(runs, days, lag) for s, lag in FORECAST_LAGS.items()}
+    return build(build_demand(synth_demand(first, last), first, last).frame,
+                 synth_obs(first, last).set_index("ts_utc")["temp_c"], issued)
+
+
+def test_a_row_whose_forecast_became_available_after_its_origin_is_refused():
+    f = forecast_frame()
+    assert f["available_forecast"].notna().all()
+    require_known_at_origin(f)
+    for column in ("available_forecast", "available_forecast_late"):
+        broken = f.copy()
+        t = broken.index[100]
+        broken.loc[t, column] = broken.loc[t, "origin"] + pd.Timedelta(hours=1)
+        assert fired(broken) == ["forecast_available_after_origin"]  # this term alone
+        with pytest.raises(LookaheadError, match="forecast_available_after_origin"):
+            require_known_at_origin(broken)
+
+
+def test_a_forecast_available_at_the_origin_passes():
+    f = forecast_frame()
+    at = f.copy()
+    at["available_forecast"] = at["origin"]  # available exactly at the origin
+    at.loc[at.index[:30], "available_forecast_late"] = pd.NaT  # a day no run fed
+    assert fired(at) == []
+    require_known_at_origin(at)
+    v1_shaped = f.drop(columns=[c for c in f.columns if c.startswith("available_")])
+    assert fired(v1_shaped) == [] and "forecast_available_after_origin" in origin_violations(v1_shaped)
