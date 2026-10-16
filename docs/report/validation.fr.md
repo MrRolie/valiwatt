@@ -1,6 +1,6 @@
 # Validation et surveillance d'une prévision de la demande d'électricité au Québec
 
-_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 11), code `2917f290e64c`, empreinte du code `758cfe9ed9da`, règles de surveillance gelées au commit `affe089f6ed0` (étiquette `rules-frozen`), **après une dérogation aux règles gelées d'abord : le rejeu de 2024 est a posteriori (section 7)**. Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception (embargo, rééchantillonnages, quantiles, horizons, facteurs, années) des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Restent écrits dans le texte : les numéros de section, de règle et des normes citées, les unités du calendrier (24 heures, semaines du lundi au dimanche), le niveau de 95 % des intervalles de confiance, les formules, les décomptes d'un raisonnement (un jour et son écho) et la description des bris de la section 9. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 11), code `3a67ac3d2e3f`, empreinte du code `d21f1f49cd46`, règles de surveillance gelées au commit `affe089f6ed0` (étiquette `rules-frozen`), **après une dérogation aux règles gelées d'abord : le rejeu de 2024 est a posteriori (section 7)**. Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception (embargo, rééchantillonnages, quantiles, horizons, facteurs, années) des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Restent écrits dans le texte : les numéros de section, de règle et des normes citées, les unités du calendrier (24 heures, semaines du lundi au dimanche), le niveau de 95 % des intervalles de confiance, les formules, les décomptes d'un raisonnement (un jour et son écho) et la description des bris de la section 9. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -624,12 +624,12 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-| qualité des données | `06944fc927ab464fbca9e1d403f83035` | 2026-10-15 04:25 UTC |
-| validation | `1798002f0d064b9b8ee09dd9c6b17640` | 2026-10-15 04:27 UTC |
-| modèle figé pour 2023 | `ed90f009739b4a178c7f4f31d65b42d5` | 2026-10-15 04:27 UTC |
-| modèle figé pour 2024 | `afa1d39bd8904e92b16efb8ebe5d05d6` | 2026-10-15 05:04 UTC |
-| rejeu de 2023 | `9ce73c7adac14801b627ed3226149aa8` | 2026-10-15 05:04 UTC |
-| rejeu de 2024 | `4f9502fbb33240ec96b6b5e4ea3439a0` | 2026-10-15 05:41 UTC |
-| bris | `e6f48ad3aa3046c5a52080e8cfa29adf` | 2026-10-15 05:45 UTC |
+| qualité des données | `06ef010ae4cb47e0aeeaff547b3093c8` | 2026-10-16 03:10 UTC |
+| validation | `198ddcd70f154ff4b1a8b918bb8e8c67` | 2026-10-16 03:12 UTC |
+| modèle figé pour 2023 | `3cb920027d524ab5bc490c16c90b5330` | 2026-10-16 03:12 UTC |
+| modèle figé pour 2024 | `e0fc291ffb07464494d82f9a05bc2968` | 2026-10-16 03:46 UTC |
+| rejeu de 2023 | `265d2a96a9974f22a664871ec6e98864` | 2026-10-16 03:46 UTC |
+| rejeu de 2024 | `9f87c124e34344a8a65e4a7679c3c458` | 2026-10-16 04:26 UTC |
+| bris | `90f58bd8739b4c70965c3f0ed317bfdd` | 2026-10-16 04:32 UTC |
 
-Empreinte du code : `758cfe9ed9da67a433bb362b3c76e9ac5259bea07bc80e13387e4df0113f56c4`. Empreinte des règles : `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.
+Empreinte du code : `d21f1f49cd46720509d643553973150f978e58ce230cf27a34e7e7494e5a0e67`. Empreinte des règles : `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.

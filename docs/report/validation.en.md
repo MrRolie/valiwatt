@@ -1,6 +1,6 @@
 # Validating and monitoring a forecast of Québec's electricity demand
 
-_Report generated from a chain of MLflow runs followed back from the 2024 replay (section 11), code `2917f290e64c`, code hash `758cfe9ed9da`, monitoring rules frozen at commit `affe089f6ed0` (tag `rules-frozen`), **after a departure from the rules as first frozen: the 2024 replay is post hoc (section 7)**. Every measured value comes from those runs, and every design constant (embargo, resamples, quantiles, horizons, factors, years) from the runs or from the code that made them; none is typed by hand. Written in the text are: the numbers of sections, rules and the standards cited, the units of the calendar (24 hours, weeks from Monday to Sunday), the 95% level of the confidence intervals, the formulas, the counts in a line of reasoning (a day and its echo) and the description of the breaks in section 9. This English version is derived from the French one, which is the reference._
+_Report generated from a chain of MLflow runs followed back from the 2024 replay (section 11), code `3a67ac3d2e3f`, code hash `d21f1f49cd46`, monitoring rules frozen at commit `affe089f6ed0` (tag `rules-frozen`), **after a departure from the rules as first frozen: the 2024 replay is post hoc (section 7)**. Every measured value comes from those runs, and every design constant (embargo, resamples, quantiles, horizons, factors, years) from the runs or from the code that made them; none is typed by hand. Written in the text are: the numbers of sections, rules and the standards cited, the units of the calendar (24 hours, weeks from Monday to Sunday), the 95% level of the confidence intervals, the formulas, the counts in a line of reasoning (a day and its echo) and the description of the breaks in section 9. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -624,12 +624,12 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Run | ID | Date |
 |---|---|---|
-| data quality | `06944fc927ab464fbca9e1d403f83035` | 2026-10-15 04:25 UTC |
-| validation | `1798002f0d064b9b8ee09dd9c6b17640` | 2026-10-15 04:27 UTC |
-| model frozen for 2023 | `ed90f009739b4a178c7f4f31d65b42d5` | 2026-10-15 04:27 UTC |
-| model frozen for 2024 | `afa1d39bd8904e92b16efb8ebe5d05d6` | 2026-10-15 05:04 UTC |
-| 2023 replay | `9ce73c7adac14801b627ed3226149aa8` | 2026-10-15 05:04 UTC |
-| 2024 replay | `4f9502fbb33240ec96b6b5e4ea3439a0` | 2026-10-15 05:41 UTC |
-| breaks | `e6f48ad3aa3046c5a52080e8cfa29adf` | 2026-10-15 05:45 UTC |
+| data quality | `06ef010ae4cb47e0aeeaff547b3093c8` | 2026-10-16 03:10 UTC |
+| validation | `198ddcd70f154ff4b1a8b918bb8e8c67` | 2026-10-16 03:12 UTC |
+| model frozen for 2023 | `3cb920027d524ab5bc490c16c90b5330` | 2026-10-16 03:12 UTC |
+| model frozen for 2024 | `e0fc291ffb07464494d82f9a05bc2968` | 2026-10-16 03:46 UTC |
+| 2023 replay | `265d2a96a9974f22a664871ec6e98864` | 2026-10-16 03:46 UTC |
+| 2024 replay | `9f87c124e34344a8a65e4a7679c3c458` | 2026-10-16 04:26 UTC |
+| breaks | `90f58bd8739b4c70965c3f0ed317bfdd` | 2026-10-16 04:32 UTC |
 
-Code hash: `758cfe9ed9da67a433bb362b3c76e9ac5259bea07bc80e13387e4df0113f56c4`. Rules hash: `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` fails when the repository's code no longer matches this hash.
+Code hash: `d21f1f49cd46720509d643553973150f978e58ce230cf27a34e7e7494e5a0e67`. Rules hash: `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` fails when the repository's code no longer matches this hash.

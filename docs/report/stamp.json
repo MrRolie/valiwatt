@@ -1,19 +1,19 @@
 {
-  "code_sha256": "758cfe9ed9da67a433bb362b3c76e9ac5259bea07bc80e13387e4df0113f56c4",
+  "code_sha256": "d21f1f49cd46720509d643553973150f978e58ce230cf27a34e7e7494e5a0e67",
   "rules_sha256": "e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49",
   "freeze_commit": "affe089f6ed03318f1046f2c1aa6efc21c44604c",
   "runs": {
-    "dq": "06944fc927ab464fbca9e1d403f83035",
-    "validation": "1798002f0d064b9b8ee09dd9c6b17640",
-    "frozen_2023": "ed90f009739b4a178c7f4f31d65b42d5",
-    "frozen_2024": "afa1d39bd8904e92b16efb8ebe5d05d6",
-    "pseudo_replay": "9ce73c7adac14801b627ed3226149aa8",
-    "replay": "4f9502fbb33240ec96b6b5e4ea3439a0",
-    "breaks": "e6f48ad3aa3046c5a52080e8cfa29adf"
+    "dq": "06ef010ae4cb47e0aeeaff547b3093c8",
+    "validation": "198ddcd70f154ff4b1a8b918bb8e8c67",
+    "frozen_2023": "3cb920027d524ab5bc490c16c90b5330",
+    "frozen_2024": "e0fc291ffb07464494d82f9a05bc2968",
+    "pseudo_replay": "265d2a96a9974f22a664871ec6e98864",
+    "replay": "9f87c124e34344a8a65e4a7679c3c458",
+    "breaks": "90f58bd8739b4c70965c3f0ed317bfdd"
   },
   "files": {
-    "dq.en.md": "544a83b02378bc25a82b692e5569427116dbf6634bd91a819bcf5722b4382a0c",
-    "dq.fr.md": "40d5d133ac1a09d8ce7eb2adefc77191551cffb4ce37aa9d12d3716647feea96",
+    "dq.en.md": "2760fe340024fe05ccbc5dea09e78b9f498c1240d932b5602240d2a3a4a6ea4a",
+    "dq.fr.md": "230248979803c3aaedb2e359ed0ed9eacb747af50cca5939d6362b10d9a10c66",
     "figures/en/daily_demand.png": "c354ea6759d2951fbb7b4a946a5f9eeb6e6a42ec1be2bdd43a81651709b0df5f",
     "figures/en/heating_curve.png": "fc6af2475ad1c817393ac3bdd7dac0752390e1fff7431c0db0d1ee57605bbc33",
     "figures/en/r2_by_source.png": "8a004e6a3abc91c446b5503bb98f68fb33f3a9a4d7557789de9e75d4a8ffef44",
@@ -34,8 +34,10 @@
     "figures/validation/validation-monthly-mape.fr.png": "e29bde24c96e39c904125a4f3bdd1ec2e6a426602c8d6603e46c31715eb690cc",
     "figures/validation/validation-peak-hours.en.png": "0689738014ab96149aaacdbcbe3c2bb58a6eafab5ff3928405fe27681d8d0894",
     "figures/validation/validation-peak-hours.fr.png": "5904f5d087e531cbcda8a8286608db96cac8c6279158ed6cba9e06406b24cd4b",
-    "validation.en.md": "2e40a8a236fe4a8aeca5c630d55b6a4fedbd813cfe2e454cabe66b458e5bf161",
-    "validation.fr.md": "49f2676cff56e75a260bf47c67bd13a94f2da60e71f7ce02e420aab0a07b62b4"
+    "story.en.md": "5a3dce9b03a67b30892cf31b3a7bfd01708575875fb83319fcfc6833683f11a1",
+    "story.fr.md": "cd301b204c4af54eb8fb0a0b8035d40e9dba4577c9aa7b6d582bb4e5979153aa",
+    "validation.en.md": "98ceb7bbf62b92bfb9f2bf44762d29b0f135d2a4734447b8c6ef904499d74793",
+    "validation.fr.md": "ea787d04d7bdcb86773471d61c3f9f31469360c644245905b9fdee174c36adda"
   },
-  "ledger_sha256": "2d329706139052d7be33fe05531897281bbdd0bf3199b8373ebea9ec9032d314"
+  "ledger_sha256": "cb302dec85298bb079f1a2100c034996b263117798fe594bd6acaf046a41da70"
 }
