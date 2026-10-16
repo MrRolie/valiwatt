@@ -67,6 +67,16 @@ the gap goes to the owner as a question.
   it renders), never mid-chain, and committed in the same commit as the report render, whose stamp holds its hash. A
   replay from before a departure that the store lacks is shown from its entry, labelled as recorded in the ledger and
   not re-run.
+- **v2's model family: an additive model** (2026-10-15, the ruling the model rule above asks for). A spline
+  temperature response for each hour of the day, plus v1's calendar cells and its 24-hour and 168-hour demand lags,
+  fitted by ridge regression. He chose it on a scratch walk-forward spike over 2020–2023, outside the tracked runs,
+  so v2's 2020–2023 results are not out of sample for that choice.
+- **v2's weather input: NOAA's National Blend of Models forecast for Montréal-Trudeau, from the Iowa Environmental
+  Mesonet archive** (2026-10-15). It is fetched by script and never committed. IEM declares it public domain; NOAA asks
+  for attribution, forbids implying its endorsement, and requires modified values to be labelled as derived. The quoted
+  terms go in `docs/data-licences.md` with v2.
+- **v2's test** (2026-10-15). v2 is frozen on 2019–2023. Its 2024 replay is labelled seen by the developers, never a
+  held-out result. The clean held-out replay is 2025, once Hydro-Québec publishes it.
 
 ## Departures from the brief
 
