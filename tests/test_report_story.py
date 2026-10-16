@@ -65,7 +65,8 @@ LINK = r"\[section (\d+)\]\((validation\.(?:fr|en)\.md)#([^)]+)\)"
 @pytest.mark.parametrize("lang", LANGS)
 @pytest.mark.parametrize("departures", [(), (R.EARLIER,)])
 def test_the_story_renders_in_full_seven_beats_each_ending_with_its_link(lang, departures):
-    text = render(context(departures), lang)
+    ctx = context(departures)
+    text = render(ctx, lang)
     assert "None" not in text and "{{" not in text and "{%" not in text and "{#" not in text
     assert tuple(beats(text)) == HEADINGS[lang]
     for line in R.ATTRIBUTION:
@@ -75,6 +76,12 @@ def test_the_story_renders_in_full_seven_beats_each_ending_with_its_link(lang, d
     for body in beats(text).values():
         last = [p for p in body.strip().split("\n\n") if not p.startswith("![")][-1]
         assert re.fullmatch(rf".*\({LINK}(, {LINK})*\)", last, re.S), last[-200:]
+    # each beat links to the sections that carry its rest, in paragraph order: the methods; the validation; the
+    # validation and the test cases; the intervals (and the limitations when a season is under-covered); the 2024
+    # replay; the 2023 rerun and the 2024 replay; the breaks (the ledger's refusal) and the limitations
+    four = [4, 8] if ctx["sides"]["season"]["under"] else [4]
+    expected = [[1], [2], [2, 3], four, [7], [6, 7], [9, 8]]
+    assert [[int(n) for n, *_ in re.findall(LINK, body)] for body in beats(text).values()] == expected
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -307,6 +314,15 @@ def test_the_coverage_sides_name_each_group_or_say_none(lang):
     four = beat(render(sided(decile=(("10",), ())), lang), 4)
     assert S["under"] in four and S["no_over"] in four and S["caveat"] not in four
     assert [n for n, *_ in re.findall(LINK, four)] == ["4"]
+    # an hour block alone on either side: the block is named, and "no group" is not said on that side
+    night = "le bloc horaire nuit (0–5 h)" if lang == "fr" else "hour block night (0–5 h)"
+    day = "le bloc horaire jour (10–15 h)" if lang == "fr" else "hour block day (10–15 h)"
+    four = beat(render(sided(hour=(("night",), ())), lang), 4)
+    assert S["under"] in four and S["no_under"] not in four and S["no_over"] in four and S["over"] not in four
+    assert night in four.split(S["no_over"])[0].split(S["under"])[1]
+    four = beat(render(sided(hour=((), ("day",))), lang), 4)
+    assert S["over"] in four and S["no_over"] not in four and S["no_under"] in four and S["under"] not in four
+    assert day in four.split(S["over"])[1]
     for key, overall in (("o_under", (("all",), ())), ("o_over", ((), ("all",))), ("o_in", ((), ()))):
         four = beat(render(sided(overall=overall), lang), 4)
         assert [k for k in ("o_under", "o_over", "o_in") if S[k] in four] == [key]
@@ -356,6 +372,9 @@ def test_silence_is_called_no_proof_only_when_a_change_went_unnoticed(lang):
 # --- the honesty ledger: no departure, a departure that moved the result, one that did not --------------------------
 
 POST_HOC = {"fr": "**a posteriori**", "en": "**post hoc**"}
+# the departure clause says this replay ran again after the change, so the numbers that follow it are the rerun's
+RERUN = {"fr": "ce rejeu a été refait après ce changement : il est **a posteriori**.",
+         "en": "this replay ran again after that change: it is **post hoc**."}
 LEDGER = {"fr": ("Le résultat de 2024 n'a pas bougé", "Le résultat de 2024 a bougé",
                  "aucune dérogation ne les a changées depuis", "ont appliqué le même modèle figé",
                  "Le modèle figé diffère d'un rejeu à l'autre", "Les rejeux dont l'empreinte est consignée"),
@@ -372,6 +391,7 @@ def test_a_plain_replay_says_the_rules_did_not_change(lang):
     assert plain in seven and "`rules-frozen`" in seven and f"`{'f' * 12}`" in seven
     assert same not in seven and moved not in seven and model not in seven
     assert POST_HOC[lang] not in text and ("a posteriori" if lang == "fr" else "post hoc") not in text
+    assert ("refait" if lang == "fr" else "ran again") not in text
 
 
 def matching(recorded=False, **summary):
@@ -398,6 +418,9 @@ def test_a_departure_whose_printed_headline_held_says_it_did_not_move(lang):
     assert pct(ctx["r"]["summary"]["mape"]["mean"], 2, lang) in seven
     assert ("mêmes recommandations" if lang == "fr" else "the same recommendations") in seven
     assert POST_HOC[lang] in beat(text, 5) and ("2031-02-03" not in seven)
+    five = beat(text, 5)
+    assert RERUN[lang] in five
+    assert five.index(RERUN[lang]) < five.index(pct(ctx["r"]["summary"]["mape"]["mean"], 2, lang))
     assert ("le " if lang == "fr" else "on ") + RV.DEPARTURE["date"] in seven
     # no recommendation either side
     ctx = context((matching(),))
