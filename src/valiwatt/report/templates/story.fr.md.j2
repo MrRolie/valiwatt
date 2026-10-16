@@ -1,0 +1,89 @@
+{# La version courte du rapport de validation, à lire d'abord : sept points, chacun renvoyant à la section du rapport
+   complet qui en porte le reste. Rendue du même contexte que le rapport complet (report/validation.py), chaque nombre
+   lu des exécutions ; chaque branche dit seulement ce que ses données montrent. tests/test_report_story.py parcourt
+   les branches. #}
+{% from 'sentences.fr.md.j2' import groups, span, recs_list, brief_error, sp %}
+{% set P = v.performance %}
+{% set C = v.coverage %}
+{% set vy = K.validation_years %}
+{% set c1 = v.compare.persistence_vs_baseline %}
+{% set peak = v.cases.peak %}
+{% set LR = limits.replay %}
+{% set LP = limits.pseudo %}
+{% set f24 = frozen[r.year] %}
+{% set primary = dq.sources.eccc|selectattr('primary')|map(attribute='centre')|first %}
+{% set recs24 = r.decisions|selectattr('recommendation')|list %}
+{% set HB = v.config.hour_blocks %}
+{% set BLOCK = {'night': 'nuit', 'morning': 'matin', 'day': 'jour', 'evening': 'soir', 'late': 'fin de soirée'} %}
+{% macro block(b) %}{{ BLOCK[b] }} ({{ HB[b][0] }}–{{ HB[b][1] }} h){% endmacro %}
+{% set HBS = {'under': [], 'over': []} %}{% for side in ['under', 'over'] %}{% for b in sides.hour_group[side] %}{% set _ = HBS[side].append(block(b)) %}{% endfor %}{% endfor %}
+{% set IN_SEASON = {'winter': 'en hiver', 'spring': 'au printemps', 'summer': 'en été', 'fall': 'en automne'} %}
+{# Les ancres des sections du rapport complet, comme GitHub les tire de ses titres (tests/test_report_story.py les
+   vérifie contre les titres rendus). #}
+{% set ANCHOR = {1: '1-les-méthodes-en-mots-simples', 2: '2-validation-sur-' ~ vy[0] ~ vy[1], 3: '3-cas-tests', 4: '4-intervalles-de-prévision', 6: '6-le-modèle-figé-répété-sur-' ~ p.year, 7: '7-' ~ r.year ~ '-rejouée-comme-en-production', 8: '8-limites', 9: '9-les-bris-sur-des-données-synthétiques'} %}
+{% macro sec(n) %}[section {{ n }}](validation.fr.md#{{ ANCHOR[n] }}){% endmacro %}
+{% set gaps = [] %}{% for h in peak.hours %}{% set _ = gaps.append((h.target - h.pred_observed) / h.target) %}{% endfor %}
+{% set misses = peak.evaluated - peak.covered %}
+{% set below = misses - peak_above %}
+# Peut-on se fier à une prévision de la demande d'électricité du Québec ?
+
+_La version courte du rapport de validation, en sept points : à lire d'abord._
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+Le [rapport complet](validation.fr.md) est la référence, et chaque point renvoie à sa section. Chaque nombre ici vient des mêmes exécutions MLflow : code `{{ commit|short }}`{% if dirty %} **avec des modifications non validées**{% endif %}, rejeu de {{ r.year }} `{{ runs.replay.id }}`. La version anglaise est dérivée de celle-ci.
+
+## La question
+
+Peut-on se fier à une prévision simple de la demande horaire d'électricité du Québec, et à quoi verrait-on qu'il faut cesser de s'y fier ? Ce projet ne cherche pas la meilleure prévision : il vérifie celle-ci comme le ferait une équipe de gestion du risque de modèle. Il mesure son erreur sur des mois qu'elle n'a pas vus, vérifie ce que valent ses fourchettes, puis rejoue une année entière comme en production, sous un moniteur qui peut recommander d'examiner les données, de recalibrer les fourchettes ou de réentraîner le modèle. Le moniteur recommande ; il n'agit jamais. ({{ sec(1) }})
+
+## La prévision
+
+À la fin de chaque journée, elle prévoit les 24 heures du lendemain à partir de l'heure et du type de jour, de la demande de la veille et de la semaine précédente, et de la température de la veille à {{ primary }}, la seule connue quand la prévision est émise. Chaque mois de {{ vy[0] }} à {{ vy[1] }} est prévu par un modèle ajusté sur les seules heures qui le précèdent. {{ brief_error(P, c1, vy) }} Avec la température réellement observée de l'heure visée, comme si la météo était parfaitement prévue, l'écart moyen serait de {{ P.observed.overall.mean|pct(2) }} : c'est une borne optimiste, dont la prévision ne dispose pas. ({{ sec(2) }})
+
+{% set by_season = P.persistence.season|sort(attribute='ape') %}
+{% set by_decile = P.persistence.decile|sort(attribute='ape') %}
+## {% if peak.evaluated and misses %}Où elle casse : le froid{% else %}Le froid{% endif %}{{ '' }}
+
+Son écart moyen va de {{ by_season[0].ape|pct(2) }} {{ IN_SEASON[by_season[0].key] }} à {{ by_season[-1].ape|pct(2) }} {{ IN_SEASON[by_season[-1].key] }} ; par décile de charge prévue (dix tranches, de la plus faible à la plus forte), il va de {{ by_decile[0].ape|pct(2) }} (décile {{ by_decile[0].key }}) à {{ by_decile[-1].ape|pct(2) }} (décile {{ by_decile[-1].key }}). Aux {{ peak.hours|length }} heures les plus chargées de {{ span(K.design_years) }}{% if peak_in_month %}, toutes pendant la pointe de froid de {{ peak.named_month }}{% endif %}, {% if peak.evaluated == 0 %}aucune fourchette n'est calculée{% elif misses == 0 %}la demande est restée dans la fourchette à {{ nominal|pct(0) }} chaque fois ({{ peak.evaluated }} heures jugées){% else %}la demande est restée dans la fourchette à {{ nominal|pct(0) }} à {{ peak.covered }} des {{ peak.evaluated }} heures jugées{% if peak_above %} ; elle l'a dépassée par le haut à {{ peak_above }}{% if below %} et par le bas à {{ below }}{% endif %}{% else %} ; elle est passée sous la fourchette à {{ below }}{% endif %}{% endif %}. {% if gaps %}{% if gaps|min > 0 %}Même avec la température observée, la prévision reste de {{ (gaps|min)|pct(1) }} à {{ (gaps|max)|pct(1) }} sous la demande à ces heures ; la cause n'est pas testée{% else %}Avec la température observée, l'écart relatif entre la demande et la prévision va de {{ sp(gaps|min) }} à {{ sp(gaps|max) }} à ces heures (positif quand la prévision est sous la demande) ; la cause n'est pas testée{% endif %}, et une seule pointe est étudiée. {% endif %}({{ sec(2) }}, {{ sec(3) }})
+
+![Pointe de froid]({{ fig.validation_peak_hours }})
+
+## Quelle confiance lui accorder ?
+
+Chaque prévision vient avec une fourchette qui promet de contenir la demande {{ nominal|pct(0) }} du temps. De {{ v.conformal.first_fold }} à {{ v.folds.last }}, elle l'a contenue {{ C.relative.overall.mean|pct(1) }} du temps{% if sides.overall.under %} : moins que promis, au-delà de l'incertitude de la mesure{% elif sides.overall.over %} : plus que promis, au-delà de l'incertitude de la mesure{% else %} : l'écart à la promesse reste dans l'incertitude de la mesure{% endif %}. {% if sides.season.under or sides.decile.under or HBS.under %}Elle promet trop là où la demande en sort plus souvent que promis, au-delà de cette incertitude : {{ groups(sides.season.under, sides.decile.under, HBS.under) }}.{% else %}Aucune saison, aucun bloc horaire ni aucun décile de charge prévue n'en sort plus souvent que promis au-delà de cette incertitude.{% endif %} {% if sides.season.over or sides.decile.over or HBS.over %}Elle est plus large qu'il ne faut là où la demande reste dedans plus souvent que promis, au-delà de cette incertitude : {{ groups(sides.season.over, sides.decile.over, HBS.over) }}.{% else %}Dans aucun groupe la demande ne reste dedans plus souvent que promis au-delà de cette incertitude.{% endif %}{% if sides.season.under %} Les seuils de couverture de {{ groups(sides.season.under, []) }} sont tirés de semaines qui avaient déjà ce défaut : le moniteur ne le signale pas comme une dégradation.{% endif %} ({{ sec(4) }}{% if sides.season.under %}, {{ sec(8) }}{% endif %})
+
+## Le vrai test : {{ r.year }}
+
+L'année {{ r.year }} a ensuite été rejouée heure par heure, comme en production. Le modèle, figé sur les données jusqu'au {{ f24.params.train_last_day }}, n'a pas été réajusté, et chaque lecture passait par une horloge qui refuse toute donnée postérieure. {% if departures %}Les règles du moniteur avaient été gelées avant ce rejeu, puis ont été changées une fois après que les résultats de {{ r.year }} eurent été vus (plus bas) : ce rejeu est **a posteriori**.{% else %}Les règles du moniteur avaient été gelées avant ce rejeu.{% endif %} L'écart moyen a été de {{ r.summary.mape.mean|pct(2) }}, et la fourchette à {{ nominal|pct(0) }} a contenu la demande {{ r.summary.coverage.mean|pct(1) }} du temps. {% if not recs24 %}Le moniteur n'a rien recommandé de toute l'année.{% elif recs24|length == 1 %}Le moniteur a fait une recommandation : {{ recs_list(recs24) }}.{% else %}Le moniteur a fait {{ recs24|length }} recommandations : {{ recs_list(recs24) }}.{% endif %} ({{ sec(7) }})
+
+![Rejeu de {{ r.year }}]({{ fig.replay_2024_weekly }})
+
+{% set small = LR.smallest_by_sign %}
+{# Every sustained gap and every rise imposed, on both years: the 2023 power table counts as much as the 2024 one. #}
+{% set missed_any = LR.every_from is none or LR.every_from != LR.smallest or LP.every_from is none or LP.every_from != LP.smallest or level.up_missed or level24.up_missed %}
+## Le silence est-il une bonne nouvelle ?
+
+Un moniteur muet ne rassure que s'il sait voir un vrai changement. Le rapport l'a mesuré en imposant des changements soutenus à quelques départs fixés et en rejouant les vraies règles. Sur {{ r.year }}, {% if LR.every_from is not none %}un écart soutenu de ±{{ LR.every_from|pct(0) }} ou plus entre la demande et la prévision a donné « réentraîner » en {{ K.power_horizon }} semaines au plus à chacun des {{ LR.starts }} départs{% else %}même le plus grand écart mesuré entre la demande et la prévision, ±{{ LR.sizes[-1]|pct(0) }}, n'a pas donné « réentraîner » en {{ K.power_horizon }} semaines à tous les {{ LR.starts }} départs{% endif %} ; un écart de ±{{ LR.smallest|pct(0) }} l'a donné à {{ small.up.caught + small.down.caught }} des {{ small.up.cases + small.down.cases }} cas. La prévision s'appuie sur la demande de la veille : elle suit une hausse durable de la demande, et ne laisse entre les deux qu'un écart bien plus petit que la hausse elle-même. Une hausse soutenue de {{ level.size|pct(0) }} a donné « réentraîner » en {{ K.step_horizon }} semaines à {{ level.up_n - level.up_missed }} des {{ level.up_n }} départs sur {{ p.year }} (l'année de conception des règles), et à {{ level24.up_n - level24.up_missed }} des {{ level24.up_n }} sur {{ r.year }} (hors échantillon, mesure ajoutée après les résultats). {% if missed_any %}Le silence n'est donc pas une preuve : des changements soutenus sont passés inaperçus à certains des départs mesurés.{% else %}À chacun des départs mesurés, sur {{ p.year }} comme sur {{ r.year }}, chaque écart soutenu et chaque hausse de {{ level.size|pct(0) }} imposés ont été repérés ; ce ne sont que quelques départs.{% endif %} ({{ sec(6) }}, {{ sec(7) }})
+
+## Le registre d'honnêteté
+
+{% if departures %}
+{% set D = departure_record %}
+{% set mine = [] %}{% for x in recs24 %}{% set _ = mine.append(x.week_start|day ~ x.recommendation) %}{% endfor %}
+{% set moved = [] %}{% for d in departures %}{% set theirs = [] %}{% for x in d.recommendations %}{% set _ = theirs.append(x.week_start|day ~ x.recommendation) %}{% endfor %}{% if d.summary.mape.mean|pct(2) != r.summary.mape.mean|pct(2) or d.summary.coverage.mean|pct(1) != r.summary.coverage.mean|pct(1) or theirs|sort != mine|sort %}{% set _ = moved.append(d) %}{% endif %}{% endfor %}
+{% set known = departures|rejectattr('model_sha256', 'none')|list %}
+{% set same_model = known|selectattr('model_sha256', 'equalto', r.model.sha256)|list|length == known|length %}
+Les règles du moniteur ont été changées une fois, le {{ D.date }}, après que les résultats de {{ r.year }} eurent été vus. La dérogation est consignée dans [`AGENTS.md`](../../AGENTS.md), et le rapport complet montre le rejeu d'avant à côté de celui d'après. {% if known %}{% if same_model %}{% if known|length == departures|length %}Les rejeux d'avant et d'après{% else %}Les rejeux dont l'empreinte est consignée{% endif %} ont appliqué le même modèle figé.{% else %}Le modèle figé diffère d'un rejeu à l'autre.{% endif %} {% endif %}{% if not moved %}Le résultat de {{ r.year }} n'a pas bougé : même écart moyen ({{ r.summary.mape.mean|pct(2) }}), même couverture ({{ r.summary.coverage.mean|pct(1) }}) et {% if recs24 %}mêmes recommandations{% else %}aucune recommandation{% endif %}, avant comme après.{% else %}Le résultat de {{ r.year }} a bougé : avant la dérogation, {% for d in departures %}écart moyen de {{ d.summary.mape.mean|pct(2) }}, couverture de {{ d.summary.coverage.mean|pct(1) }}, recommandations : {{ recs_list(d.recommendations) }}{% if not loop.last %} ; {% endif %}{% endfor %} ; après, écart moyen de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }}, recommandations : {{ recs_list(recs24) }}.{% endif %}{{ '' }}
+{% else %}
+Les règles du moniteur ont été gelées (étiquette `{{ freeze.freeze_tag }}`, commit `{{ freeze.freeze_commit|short }}`) avant le rejeu de {{ r.year }}, et aucune dérogation ne les a changées depuis.
+{% endif %}
+
+Chaque rejeu de {{ r.year }} terminé depuis la réécriture de l'historique consignée dans `AGENTS.md` est inscrit au registre des rejeux, [`docs/replay-ledger.json`](../replay-ledger.json) : une entrée n'est jamais réécrite, et un rejeu qui ne concorde pas avec son entrée fait refuser le rapport. ({{ sec(9) }})
+
+Ce que le rapport ne montre pas : une revue humaine indépendante du code (tout vient d'agents IA sous la direction d'un seul propriétaire), le taux de fausses alertes de dérive en {{ r.year }}, les vagues de froid comme catégorie, ni les délais de publication ou les révisions des données. ({{ sec(8) }})

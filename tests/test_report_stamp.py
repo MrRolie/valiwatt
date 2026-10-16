@@ -120,10 +120,11 @@ def test_the_render_writes_its_stamp_through_make_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(RV, "environment", lambda lang: SimpleNamespace(get_template=Template))
 
     written = RV.render_validation()
-    assert written == [out / "dq.fr.md", out / "validation.fr.md", out / "validation.en.md"]
+    assert written == [out / "dq.fr.md", out / "validation.fr.md", out / "story.fr.md", out / "validation.en.md",
+                       out / "story.en.md"]
     stamp = json.loads((out / "stamp.json").read_text(encoding="utf-8"))
     assert stamp["ledger_sha256"] == ledger.digest() != ledger.ABSENT
     assert stamp == {"code_sha256": "c" * 64, "rules_sha256": "d" * 64, "freeze_commit": "f" * 40, "runs": runs,
                      "files": RV.file_hashes(), "ledger_sha256": ledger.digest()}
-    assert set(stamp["files"]) == {"dq.fr.md", "validation.fr.md", "validation.en.md"}
+    assert set(stamp["files"]) == {"dq.fr.md", "validation.fr.md", "validation.en.md", "story.fr.md", "story.en.md"}
     check_ledger(stamp)

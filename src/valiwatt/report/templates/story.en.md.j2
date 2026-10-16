@@ -1,0 +1,89 @@
+{# The short version of the validation report, to read first: seven points, each pointing to the section of the full
+   report that carries the rest. Rendered from the same context as the full report (report/validation.py), every
+   number read from the runs; each branch says only what its data show. Derived from story.fr.md.j2, the reference.
+   tests/test_report_story.py walks the branches. #}
+{% from 'sentences.en.md.j2' import groups, span, recs_list, brief_error, sp %}
+{% set P = v.performance %}
+{% set C = v.coverage %}
+{% set vy = K.validation_years %}
+{% set c1 = v.compare.persistence_vs_baseline %}
+{% set peak = v.cases.peak %}
+{% set LR = limits.replay %}
+{% set LP = limits.pseudo %}
+{% set f24 = frozen[r.year] %}
+{% set primary = dq.sources.eccc|selectattr('primary')|map(attribute='centre')|first %}
+{% set recs24 = r.decisions|selectattr('recommendation')|list %}
+{% set HB = v.config.hour_blocks %}
+{% set BLOCK = {'night': 'night', 'morning': 'morning', 'day': 'day', 'evening': 'evening', 'late': 'late evening'} %}
+{% macro block(b) %}{{ BLOCK[b] }} ({{ HB[b][0] }}–{{ HB[b][1] }} h){% endmacro %}
+{% set HBS = {'under': [], 'over': []} %}{% for side in ['under', 'over'] %}{% for b in sides.hour_group[side] %}{% set _ = HBS[side].append(block(b)) %}{% endfor %}{% endfor %}
+{% set IN_SEASON = {'winter': 'in winter', 'spring': 'in spring', 'summer': 'in summer', 'fall': 'in fall'} %}
+{# The anchors of the full report's sections, as GitHub derives them from its headings (tests/test_report_story.py
+   checks them against the rendered headings). #}
+{% set ANCHOR = {1: '1-the-methods-in-plain-words', 2: '2-validation-on-' ~ vy[0] ~ vy[1], 3: '3-test-cases', 4: '4-prediction-intervals', 6: '6-the-frozen-model-rehearsed-on-' ~ p.year, 7: '7-' ~ r.year ~ '-replayed-as-production', 8: '8-limitations', 9: '9-breaks-on-synthetic-data'} %}
+{% macro sec(n) %}[section {{ n }}](validation.en.md#{{ ANCHOR[n] }}){% endmacro %}
+{% set gaps = [] %}{% for h in peak.hours %}{% set _ = gaps.append((h.target - h.pred_observed) / h.target) %}{% endfor %}
+{% set misses = peak.evaluated - peak.covered %}
+{% set below = misses - peak_above %}
+# Can a forecast of Québec's electricity demand be trusted?
+
+_The short version of the validation report, in seven points: read this first._
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+The [full report](validation.en.md) is the reference, and each point links to its section. Every number here comes from the same MLflow runs: code `{{ commit|short }}`{% if dirty %} **with uncommitted changes**{% endif %}, {{ r.year }} replay `{{ runs.replay.id }}`. This English version is derived from the French one, which is the reference.
+
+## The question
+
+Can a simple forecast of Québec's hourly electricity demand be trusted, and how would you know when to stop trusting it? This project does not look for the best forecast: it checks this one the way a model-risk team would. It measures its error on months it has not seen, checks what its ranges are worth, then replays a whole year as production, under a monitor that can recommend investigating the data, recalibrating the ranges or retraining the model. The monitor recommends; it never acts. ({{ sec(1) }})
+
+## The forecast
+
+At the end of each day, it forecasts the next day's 24 hours from the hour and the type of day, the previous day's and the previous week's demand, and the previous day's temperature in {{ primary }}, the only one known when the forecast is issued. Each month from {{ vy[0] }} to {{ vy[1] }} is forecast by a model fitted on the hours before it only. {{ brief_error(P, c1, vy) }} With the target hour's actually observed temperature, as if the weather were perfectly forecast, the average gap would be {{ P.observed.overall.mean|pct(2) }}: an optimistic bound, which the forecast does not have. ({{ sec(2) }})
+
+{% set by_season = P.persistence.season|sort(attribute='ape') %}
+{% set by_decile = P.persistence.decile|sort(attribute='ape') %}
+## {% if peak.evaluated and misses %}Where it breaks: the cold{% else %}The cold{% endif %}{{ '' }}
+
+Its average gap runs from {{ by_season[0].ape|pct(2) }} {{ IN_SEASON[by_season[0].key] }} to {{ by_season[-1].ape|pct(2) }} {{ IN_SEASON[by_season[-1].key] }}; by forecast-load decile (ten bands, from the lightest to the heaviest), it runs from {{ by_decile[0].ape|pct(2) }} (decile {{ by_decile[0].key }}) to {{ by_decile[-1].ape|pct(2) }} (decile {{ by_decile[-1].key }}). At the {{ peak.hours|length }} busiest hours of {{ span(K.design_years) }}{% if peak_in_month %}, all during the cold peak of {{ peak.named_month }}{% endif %}, {% if peak.evaluated == 0 %}no range is computed{% elif misses == 0 %}demand stayed inside the {{ nominal|pct(0) }} range every time ({{ peak.evaluated }} hours judged){% else %}demand stayed inside the {{ nominal|pct(0) }} range at {{ peak.covered }} of {{ peak.evaluated }} hours judged{% if peak_above %}; it went above it at {{ peak_above }}{% if below %} and below it at {{ below }}{% endif %}{% else %}; it fell below the range at {{ below }}{% endif %}{% endif %}. {% if gaps %}{% if gaps|min > 0 %}Even with the observed temperature, the forecast stays {{ (gaps|min)|pct(1) }} to {{ (gaps|max)|pct(1) }} below demand at those hours; the cause is not tested{% else %}With the observed temperature, the relative gap between demand and forecast runs from {{ sp(gaps|min) }} to {{ sp(gaps|max) }} at those hours (positive when the forecast is below demand); the cause is not tested{% endif %}, and only one peak is studied. {% endif %}({{ sec(2) }}, {{ sec(3) }})
+
+![Cold peak]({{ fig.validation_peak_hours }})
+
+## How sure it is
+
+Each forecast comes with a range that promises to hold demand {{ nominal|pct(0) }} of the time. From {{ v.conformal.first_fold }} to {{ v.folds.last }}, it held it {{ C.relative.overall.mean|pct(1) }} of the time{% if sides.overall.under %}: less than promised, beyond the uncertainty of the measurement{% elif sides.overall.over %}: more than promised, beyond the uncertainty of the measurement{% else %}: the gap to the promise stays within the uncertainty of the measurement{% endif %}. {% if sides.season.under or sides.decile.under or HBS.under %}It promises too much where demand falls outside it more often than promised, beyond that uncertainty: {{ groups(sides.season.under, sides.decile.under, HBS.under) }}.{% else %}No season, no hour block and no forecast-load decile has demand falling outside it more often than promised beyond that uncertainty.{% endif %} {% if sides.season.over or sides.decile.over or HBS.over %}It is wider than it needs to be where demand stays inside it more often than promised, beyond that uncertainty: {{ groups(sides.season.over, sides.decile.over, HBS.over) }}.{% else %}In no group does demand stay inside it more often than promised beyond that uncertainty.{% endif %}{% if sides.season.under %} The coverage thresholds of {{ groups(sides.season.under, []) }} are drawn from weeks that already had this flaw: the monitor does not flag it as decay.{% endif %} ({{ sec(4) }}{% if sides.season.under %}, {{ sec(8) }}{% endif %})
+
+## The real test: {{ r.year }}
+
+{{ r.year }} was then replayed hour by hour, as production. The model, frozen on the data up to {{ f24.params.train_last_day }}, was not refitted, and every read went through a clock that refuses any later record. {% if departures %}The monitor's rules had been frozen before this replay, then were changed once after the {{ r.year }} results had been seen (below): this replay is **post hoc**.{% else %}The monitor's rules had been frozen before this replay.{% endif %} The average gap was {{ r.summary.mape.mean|pct(2) }}, and the {{ nominal|pct(0) }} range held demand {{ r.summary.coverage.mean|pct(1) }} of the time. {% if not recs24 %}The monitor recommended nothing all year.{% elif recs24|length == 1 %}The monitor made one recommendation: {{ recs_list(recs24) }}.{% else %}The monitor made {{ recs24|length }} recommendations: {{ recs_list(recs24) }}.{% endif %} ({{ sec(7) }})
+
+![{{ r.year }} replay]({{ fig.replay_2024_weekly }})
+
+{% set small = LR.smallest_by_sign %}
+{# Every sustained gap and every rise imposed, on both years: the 2023 power table counts as much as the 2024 one. #}
+{% set missed_any = LR.every_from is none or LR.every_from != LR.smallest or LP.every_from is none or LP.every_from != LP.smallest or level.up_missed or level24.up_missed %}
+## Is silence good news?
+
+A silent monitor reassures only if it can see a real change. The report measured that by imposing sustained changes at a few fixed starts and replaying the real rules. On {{ r.year }}, {% if LR.every_from is not none %}a sustained gap of ±{{ LR.every_from|pct(0) }} or more between demand and forecast yielded "retrain" within {{ K.power_horizon }} weeks at each of the {{ LR.starts }} starts{% else %}even the largest gap measured between demand and forecast, ±{{ LR.sizes[-1]|pct(0) }}, did not yield "retrain" within {{ K.power_horizon }} weeks at all {{ LR.starts }} starts{% endif %}; a gap of ±{{ LR.smallest|pct(0) }} yielded it at {{ small.up.caught + small.down.caught }} of {{ small.up.cases + small.down.cases }} cases. The forecast leans on the previous day's demand: it follows a lasting rise in demand, and leaves between the two only a gap much smaller than the rise itself. A sustained {{ level.size|pct(0) }} rise yielded "retrain" within {{ K.step_horizon }} weeks at {{ level.up_n - level.up_missed }} of {{ level.up_n }} starts on {{ p.year }} (the year the rules were designed on), and at {{ level24.up_n - level24.up_missed }} of {{ level24.up_n }} on {{ r.year }} (out of sample, a measurement added after the results). {% if missed_any %}Silence is therefore no proof: sustained changes went unnoticed at some of the starts measured.{% else %}At each of the starts measured, on {{ p.year }} as on {{ r.year }}, every sustained gap and every {{ level.size|pct(0) }} rise imposed was caught; these are only a few starts.{% endif %} ({{ sec(6) }}, {{ sec(7) }})
+
+## The honesty ledger
+
+{% if departures %}
+{% set D = departure_record %}
+{% set mine = [] %}{% for x in recs24 %}{% set _ = mine.append(x.week_start|day ~ x.recommendation) %}{% endfor %}
+{% set moved = [] %}{% for d in departures %}{% set theirs = [] %}{% for x in d.recommendations %}{% set _ = theirs.append(x.week_start|day ~ x.recommendation) %}{% endfor %}{% if d.summary.mape.mean|pct(2) != r.summary.mape.mean|pct(2) or d.summary.coverage.mean|pct(1) != r.summary.coverage.mean|pct(1) or theirs|sort != mine|sort %}{% set _ = moved.append(d) %}{% endif %}{% endfor %}
+{% set known = departures|rejectattr('model_sha256', 'none')|list %}
+{% set same_model = known|selectattr('model_sha256', 'equalto', r.model.sha256)|list|length == known|length %}
+The monitor's rules were changed once, on {{ D.date }}, after the {{ r.year }} results had been seen. The departure is recorded in [`AGENTS.md`](../../AGENTS.md), and the full report shows the earlier replay beside the later one. {% if known %}{% if same_model %}{% if known|length == departures|length %}The replays before and after{% else %}The replays whose hash is recorded{% endif %} applied the same frozen model.{% else %}The frozen model differs from one replay to another.{% endif %} {% endif %}{% if not moved %}The {{ r.year }} result did not move: the same average gap ({{ r.summary.mape.mean|pct(2) }}), the same coverage ({{ r.summary.coverage.mean|pct(1) }}) and {% if recs24 %}the same recommendations{% else %}no recommendation{% endif %}, before and after.{% else %}The {{ r.year }} result moved: before the departure, {% for d in departures %}an average gap of {{ d.summary.mape.mean|pct(2) }}, coverage of {{ d.summary.coverage.mean|pct(1) }}, recommendations: {{ recs_list(d.recommendations) }}{% if not loop.last %}; {% endif %}{% endfor %}; after, an average gap of {{ r.summary.mape.mean|pct(2) }}, coverage of {{ r.summary.coverage.mean|pct(1) }}, recommendations: {{ recs_list(recs24) }}.{% endif %}{{ '' }}
+{% else %}
+The monitor's rules were frozen (tag `{{ freeze.freeze_tag }}`, commit `{{ freeze.freeze_commit|short }}`) before the {{ r.year }} replay, and no departure has changed them since.
+{% endif %}
+
+Every finished {{ r.year }} replay since the history rewrite recorded in `AGENTS.md` is entered in the replay ledger, [`docs/replay-ledger.json`](../replay-ledger.json): an entry is never rewritten, and a replay that disagrees with its entry makes the report refuse to render. ({{ sec(9) }})
+
+What the report does not show: an independent human review of the code (everything comes from AI agents under one owner's direction), the false drift-alarm rate in {{ r.year }}, cold snaps as a class, nor publication delays or revisions of the data. ({{ sec(8) }})

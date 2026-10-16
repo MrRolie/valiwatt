@@ -8,8 +8,13 @@ trusted, how it is watched once it runs, and what it says when it should no long
 baseline; how often its prediction intervals cover the actual demand, overall and season by season; what the monitor
 recommended when 2024 was replayed hour by hour under rules frozen before 2024 was seen, and again after the one
 change made to those rules since; and how often the rules raise a false alarm or miss a real change, measured on a
-2023 rehearsal and on 2024. The numbers are in the « En bref » block at the top of each report ("In brief" in
-English), and every one of them comes from a tracked run:
+2023 rehearsal and on 2024. Every number comes from a tracked run.
+
+Read the short version first: the same findings told in seven plain points (the question, the forecast, the
+cold, how sure it is, the 2024 replay, what the monitor's silence is worth, and what changed after the results),
+each linking to the section of the full report that carries the rest: [French](docs/report/story.fr.md), the
+reference; [English](docs/report/story.en.md). The full reports, rendered from the same runs, are the reference behind
+it; each opens with an « En bref » block ("In brief" in English):
 
 - validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF:
   [French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md);

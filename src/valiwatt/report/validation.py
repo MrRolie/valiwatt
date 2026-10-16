@@ -539,12 +539,13 @@ def render_validation(dq_run_id: str | None = None) -> list[Path]:
     retrieved = min(s["first_retrieved_utc"] for s in ctx["dq"]["sources"]["eccc"])[:10]
     for lang in LANGS:
         figs = figures(ctx, lang)
-        text = environment(lang).get_template(f"validation.{lang}.md.j2").render(
-            **ctx, fig=figs, lang=lang, attribution=attribution.lines(lang, retrieved=retrieved))
-        assert_public_safe(text)
-        out = OUT / f"validation.{lang}.md"
-        out.write_text(text, encoding="utf-8")
-        written.append(out)
+        for doc in ("validation", "story"):  # the story, read first, is rendered from the same context and figures
+            text = environment(lang).get_template(f"{doc}.{lang}.md.j2").render(
+                **ctx, fig=figs, lang=lang, attribution=attribution.lines(lang, retrieved=retrieved))
+            assert_public_safe(text)
+            out = OUT / f"{doc}.{lang}.md"
+            out.write_text(text, encoding="utf-8")
+            written.append(out)
     stamp = make_stamp(code_sha, rules_sha, chain.freeze["freeze_commit"], {k: x["id"] for k, x in ctx["runs"].items()})
     STAMP.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print("rendered " + ", ".join(p.relative_to(REPO_ROOT).as_posix() for p in written)
