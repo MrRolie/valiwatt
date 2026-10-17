@@ -118,9 +118,11 @@ def test_each_status_names_its_scope_in_both_languages(lang):
         assert (SAY[lang]["held_out"] in line) == (status in ("confirmed", "input_only", "not_confirmed"))
         text = RP.render(ctx, lang)
         assert brief(text, lang)[0].startswith(line)
-        # the page is checked, not only the sentence: a page that does not open with it refuses, whatever the status
+        # the page is checked, not only the sentence: a page that does not open with it refuses, whatever the status,
+        # and the refusal names a 2025 result only for a status that states one
+        opens = "the 2025 result" if status in ("confirmed", "input_only", "not_confirmed") else "its status"
         for doc, page in (("validation", text), ("story", RP.render(ctx, lang, doc="story"))):
-            with pytest.raises(ReportRefused, match="does not open with"):
+            with pytest.raises(ReportRefused, match=f"does not open with {opens}$"):
                 RV.check_rendered(page.replace(line, ""), lang, ctx, doc, line)
         seen.add(line)
     assert len(seen) == len(STATUS_STATE)
@@ -1080,8 +1082,9 @@ def test_a_report_on_the_2025_vintage_before_any_2025_start_is_refused(two_vinta
 
 def test_a_2025_vintage_data_quality_report_leaves_2025_to_the_validation_report(two_vintages, monkeypatch):
     """After a first 2025 start, a through-2025 data-quality run renders: its section 4.1 lists only the days before
-    2025 no forecast fed (2025's are the validation report's, from the run the test of record read), and says which of
-    its counts cover the whole window, 2025 included. A through-2024 run says nothing of 2025."""
+    2025 no forecast fed, the hour of the forecast only for the years before 2025, and no 2025 lead at or above the
+    bound of plan section 9.2 (2025's are the validation report's, from the run the test of record read), and says
+    which of its counts cover the whole window, 2025 included. A through-2024 run says nothing of 2025."""
     import json as _json
 
     from conftest import synth_runs
@@ -1097,14 +1100,23 @@ def test_a_2025_vintage_data_quality_report_leaves_2025_to_the_validation_report
     for first in ("2024-06-10", "2025-06-10"):  # four days of no run: the days after them go unfed
         gap |= (runs["runtime"] >= pd.Timestamp(f"{first}T00:00Z")) & \
             (runs["runtime"] < pd.Timestamp(f"{first}T00:00Z") + pd.Timedelta(days=4))
-    monkeypatch.setattr(dq.nbm, "load_runs", nbm_store(runs[~gap].reset_index(drop=True)))
+    rt = pd.Timestamp("2025-06-01T01:00Z")  # and a 2025 point 76 hours after its issue: a 2025 lead finding
+    long = pd.DataFrame([{"runtime": rt, "ftime": rt + pd.Timedelta(hours=76), "tmp_f": 60.0}])
+    runs = pd.concat([runs[~gap], long], ignore_index=True).sort_values(["runtime", "ftime"])
+    monkeypatch.setattr(dq.nbm, "load_runs", nbm_store(runs.drop_duplicates(["runtime", "ftime"], keep="last")
+                                                      .reset_index(drop=True)))
     W.install_lane_d(monkeypatch, starts=[W.start("b" * 32, W.utc(10), True, W.gate("clean"))])
     early, late = two_vintages(2024), two_vintages(2025)
     results = _json.loads(Path(tracking.client().download_artifacts(late, "results/dq_results.json")).read_text())
-    not_fed = rr.nbm_findings(results)["not_fed"]
+    found = rr.nbm_findings(results)
+    not_fed = found["not_fed"]
     before = [d for d in not_fed if str(d["day"])[:4] == "2024"]
     held = [d for d in not_fed if str(d["day"])[:4] == "2025"]
     assert before and held
+    # The run holds 2025's lead finding and 2025's hour of the forecast: the page leaves both to the validation report.
+    assert found["at_or_above"] == [2025] and "2025" in found["runs"]["run_hour_by_year"]
+    hour_by_year = {"fr": "**Heure de la prévision utilisée, par année**", "en": "**Hour of the forecast used, by year**"}
+    leads = {"fr": "**Les délais.**", "en": "**The leads.**"}
     whole = {"fr": "Les comptes de cette section portent sur toute la fenêtre, 2025 compris",
              "en": "This section's counts cover the whole window, 2025 included"}
     for path, lang in zip(rr.render(late), LANGS):
@@ -1118,6 +1130,10 @@ def test_a_2025_vintage_data_quality_report_leaves_2025_to_the_validation_report
         day = environment(lang).filters["day"]
         assert all(day(d["day"]) in days for d in before) and not any(day(d["day"]) in days for d in held), lang
         assert whole[lang] in four
+        by_year = four.split(hour_by_year[lang], 1)[1].split("\n\n", 1)[0]
+        lead = next(x for x in four.split("\n\n") if x.startswith(leads[lang]))
+        assert "2024" in by_year and "2024" in lead, lang  # the control: both state the years before 2025
+        assert "2025" not in by_year and "2025" not in lead and LEAD_FINDING[lang] not in lead, lang
     for path, lang in zip(rr.render(early), LANGS):
         body = path.read_text(encoding="utf-8")
         assert whole[lang] not in body and "2025" not in rr.forecast_section(body)

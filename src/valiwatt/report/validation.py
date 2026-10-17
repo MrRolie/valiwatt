@@ -51,6 +51,8 @@ OUT = REPORTS
 STAMP = OUT / "stamp.json"
 LANGS = ("fr", "en")
 HELD_OUT = 2025
+# The statuses that state a result on held-out data (plan section 8.5); the others state none.
+HELD_OUT_RESULTS = ("confirmed", "input_only", "not_confirmed")
 
 
 def _json(c, run, path: str) -> dict:
@@ -979,7 +981,7 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
     assert_attributed(text, lang)
     held = ctx.get("held")
     status = ctx.get("status")
-    if status in ("confirmed", "input_only", "not_confirmed") and say["held_out"] not in (status_line or ""):
+    if status in HELD_OUT_RESULTS and say["held_out"] not in (status_line or ""):
         raise ReportRefused(f"the {doc} states a held-out result without the held-out label")
     if status in ("confirmed", "input_only") and (held is None or held["record"].get("evaluation") != "held_out"):
         raise ReportRefused("a better claim needs the test of record labelled held out")
@@ -991,8 +993,8 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
     first = (_bullets_after(text, "## En bref" if lang == "fr" else "## In brief") or [""])[0] \
         if doc == "validation" else _first_point(text)
     if not status_line or not first.startswith(status_line.strip()):
-        raise ReportRefused(f"the {doc} does not open with " + ("its status" if status == "candidate" else
-                                                                 "the 2025 result"))
+        raise ReportRefused(f"the {doc} does not open with " + ("the 2025 result" if status in HELD_OUT_RESULTS else
+                                                                 "its status"))
     if doc != "validation":
         return
     if ctx.get("store_only"):

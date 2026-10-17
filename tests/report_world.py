@@ -1,18 +1,13 @@
 """Shared test helpers for the v2 ledger, lineage and report: v2 ledger entries, 2025 starts and their gates'
-records, and stand-ins for lane D's interfaces (monitor/run.py `replay_starts` and `frozen_digest`), written to the
-shapes lane D's spec gives them. A stand-in is installed only where monitor/run.py lacks the real function, so once
-lane D lands the tests that run on a real MLflow store exercise the real seam."""
+records, in the shapes monitor/run.py gives them (`replay_starts`, the 2025 gate's record), and a fixed list of starts
+a fake store's tests install in place of `replay_starts`. The digest is monitor/run.py's own `frozen_digest`; the
+tests that run on a real MLflow store read the starts through the real `replay_starts`."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import tempfile
-from pathlib import Path
-
-from valiwatt import tracking
 from valiwatt.config import FREEZE_TAG
 from valiwatt.monitor import run as monitor_run
+from valiwatt.monitor.run import frozen_digest
 from valiwatt.report import ledger
 
 F0, F1, F2 = "a0" * 20, "b1" * 20, "c2" * 20  # freeze commits
@@ -20,14 +15,6 @@ RULES, CODE = "d" * 64, "c" * 64
 MODEL = "e" * 64
 FROZEN = {"production": MODEL, "comparators": {"forecast": "1" * 64, "persistence": "2" * 64},
           "thresholds": "3" * 64, "cold_c": "-14.5", "reference": "4" * 64}
-
-
-def frozen_digest(d: dict) -> str:
-    """Lane D's `frozen_digest`, as its spec gives it: sha256 of the dict as canonical JSON (sorted keys, no
-    spaces)."""
-    return hashlib.sha256(json.dumps(d, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
 DIGEST = frozen_digest(FROZEN)
 
 
@@ -97,49 +84,9 @@ def from_entry(e: dict) -> dict:
                  freeze_commit=e["freeze_commit"], holds_results=True)
 
 
-def store_starts(year: int, tag: str = FREEZE_TAG, client=None, ledger_data: dict | None = None) -> list[dict]:
-    """A stand-in for lane D's `replay_starts` over a real MLflow store: every replay run of `year` under `tag` (no
-    freeze tag counts as v1's), whatever its status, deleted included, each with its gate's record, plus the ledger's
-    entries the store lacks, by start time."""
-    from mlflow.entities import ViewType
-
-    c = client or tracking.client()
-    exp = c.get_experiment_by_name(monitor_run.EXPERIMENT)
-    runs = [] if exp is None else c.search_runs(
-        [exp.experiment_id], f"tags.kind = 'replay' and tags.year = '{year}'", run_view_type=ViewType.ALL,
-        max_results=50_000)
-    out = []
-    for r in runs:
-        t = r.data.tags
-        if (t.get("freeze_tag") or ledger.V1_TAG) != tag:
-            continue
-        with tempfile.TemporaryDirectory() as tmp:
-            try:
-                g = json.loads(Path(c.download_artifacts(r.info.run_id, "results/held_out_gate.json", tmp))
-                               .read_text(encoding="utf-8"))
-            except Exception:  # noqa: BLE001 - no gate's record
-                g = None
-        out.append({"run_id": r.info.run_id, "started_utc": ledger._utc(r.info.start_time),
-                    "freeze_commit": t.get("freeze_commit", ""), "git_commit": t.get("git_commit", ""),
-                    "standing": t.get("standing", ""),
-                    "finished": r.info.status == "FINISHED" and t.get("status") == "complete",
-                    "running": r.info.status == "RUNNING", "stage": t.get("stage", ""), "error": t.get("error", ""),
-                    "gate": g, "holds_results": bool(r.data.metrics) or r.info.status == "FINISHED"})
-    data = ledger_data if ledger_data is not None else {"replays": ledger.read()}
-    ids = {s["run_id"] for s in out}
-    for e in data.get("replays", []):
-        if e["freeze_tag"] == tag and e["year"] == year and e["run_id"] not in ids:
-            out.append(from_entry(e))
-    return sorted(out, key=lambda s: (s["started_utc"], s["run_id"]))
-
-
 def install_lane_d(monkeypatch, starts=None) -> None:
-    """Lane D's functions where monitor/run.py lacks them; `starts`, when given, a fixed list `replay_starts`
-    returns (a fake store's), whatever is installed."""
-    if not hasattr(monitor_run, "frozen_digest"):
-        monkeypatch.setattr(monitor_run, "frozen_digest", frozen_digest, raising=False)
+    """`starts`, when given, the fixed list monitor/run.py `replay_starts` returns (a fake store's 2025 starts); without
+    it, the real `replay_starts` reads the store."""
     if starts is not None:
         monkeypatch.setattr(monitor_run, "replay_starts", lambda year, tag=FREEZE_TAG, client=None, ledger=None:
-                            [s for s in starts if year == 2025], raising=False)
-    elif not hasattr(monitor_run, "replay_starts"):
-        monkeypatch.setattr(monitor_run, "replay_starts", store_starts, raising=False)
+                            [s for s in starts if year == 2025])

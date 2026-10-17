@@ -70,6 +70,17 @@ def test_a_clean_chain_is_followed(monkeypatch):
         "replay": "replay", "breaks": "breaks"}
 
 
+def test_the_chain_reads_the_departures_section_of_its_own_freeze(monkeypatch):
+    """follow reads AGENTS.md's departures section of the freeze it follows (monitor.run.recorded_departures with that
+    freeze's tag), never the section the function reads by default, v2's."""
+    serve(monkeypatch, clean_chain())
+    asked = []
+    monkeypatch.setattr(monitor_run, "recorded_departures",
+                        lambda agents=None, tag=None: asked.append(tag) or NONE_RECORDED)
+    lineage.follow(CODE, RULES, FREEZE)
+    assert asked == [FREEZE["freeze_tag"]] == ["rules-frozen"]
+
+
 # Each break: the run to spoil, the tag to set on it, and the words the refusal must carry. A new link is one row.
 BROKEN_LINKS = {
     "breaks_failed": ("breaks", "status", "failed", "breaks run breaks is not marked complete"),

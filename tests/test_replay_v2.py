@@ -675,7 +675,8 @@ def test_the_replay_function_refuses_2025_without_its_open_started_run(chain):
     no run ID, a run ID the store lacks, a run of another commit, year, kind (an evidence run, a rehearsal's) or
     freeze commit, a run whose status tag is not
     started or that is not RUNNING, and a diagnostic run whose replay_run_id names a 2025 replay that did not finish
-    complete, one of other commits, or none. An active run in this process is no authority: only the ID given is read.
+    complete, one of other commits, a run of another kind (a finished diagnostic run), or none. An active run in this
+    process is no authority: only the ID given is read.
     The controls: a started replay run, and a diagnostic run naming its finished replay."""
     base = {"kind": "replay", "year": "2025", "freeze_tag": FREEZE_TAG, "freeze_commit": chain.f0,
             "git_commit": head(chain), "status": "started"}
@@ -694,6 +695,8 @@ def test_the_replay_function_refuses_2025_without_its_open_started_run(chain):
     elsewhere = rw.fake_run(base | {"status": "complete", "git_commit": chain.f0})
     diagnostic = base | {"kind": "diagnostic"}
     mrun.check_2025_run(rw.fake_run(diagnostic | {"replay_run_id": finished}, status="RUNNING"))
+    # A finished, complete 2025 diagnostic run of these commits, naming the finished replay: no replay itself.
+    finished_diagnostic = rw.fake_run(diagnostic | {"status": "complete", "replay_run_id": finished})
     cases = {None: "no run ID was given", "0" * 32: "holds no run",
              rw.fake_run(base | {"git_commit": chain.f0}, status="RUNNING"): "not HEAD",
              rw.fake_run(base | {"year": "2024"}, status="RUNNING"): "its year is '2024'",
@@ -704,6 +707,7 @@ def test_the_replay_function_refuses_2025_without_its_open_started_run(chain):
              rw.fake_run(base): "not RUNNING",
              rw.fake_run(diagnostic | {"replay_run_id": failed}, status="RUNNING"): "names no finished",
              rw.fake_run(diagnostic | {"replay_run_id": elsewhere}, status="RUNNING"): "names no finished",
+             rw.fake_run(diagnostic | {"replay_run_id": finished_diagnostic}, status="RUNNING"): "names no finished",
              rw.fake_run(diagnostic, status="RUNNING"): "replay_run_id 'none'"}
     for run_id, said in cases.items():
         with pytest.raises(mrun.FreezeError, match=said):

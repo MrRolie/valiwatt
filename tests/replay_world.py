@@ -455,25 +455,14 @@ def log_frozen_models(w: V2World, validation_run_id: str, dq_run_id: str, model=
 
 
 def ledger_entry(run_id: str) -> dict:
-    """The v2 ledger entry of a finished replay run, in lane E's v2 shape (report/ledger.py V2_FIELDS)."""
+    """The ledger entry of a finished replay run, written by the ledger's own code (report/ledger.py `entry`, its
+    shape checked by `check_entry`), so the 2025 gate reads in these tests the entry `valiwatt ledger` writes."""
     from valiwatt import tracking
-    from valiwatt.monitor import run as mrun
+    from valiwatt.report import ledger
 
     c = tracking.client()
     run = c.get_run(run_id)
-    res = mrun._load_json_artifact(c, run_id, "results/replay.json")
-    t = run.data.tags
-    recs = [{"week_start": str(d["week_start"])[:10], "recommendation": d["recommendation"]}
-            for d in res["decisions"] if d["recommendation"]]
-    return {"run_id": run_id, "year": int(t["year"]), "freeze_tag": res["freeze_tag"],
-            "freeze_commit": t["freeze_commit"], "rules_sha256": t["rules_sha256"], "code_sha256": t["code_sha256"],
-            "started_utc": mrun._utc(run.info.start_time), "ended_utc": mrun._utc(run.info.end_time),
-            "status": t["status"], "mape": res["summary"]["mape"]["mean"],
-            "coverage": res["summary"]["coverage"]["mean"], "recommendations": recs,
-            "departure": t["departure"] == "true", "departure_from": [x for x in t["departure_from"].split(",") if x],
-            "evaluation": t["evaluation"], "model_sha256": t["coefficient_sha256"],
-            "verdict": {k: res["verdict"][k] for k in ("shipped", "family")},
-            "frozen_sha256": mrun.frozen_digest(res["frozen_sha256"]), "standing": t.get("standing", "")}
+    return ledger.entry(run, ledger.results_of(c, run))
 
 
 def write_ledger(repo: Path, entries: list[dict], message: str = "ledger") -> str:

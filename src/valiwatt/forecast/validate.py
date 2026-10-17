@@ -195,7 +195,8 @@ def validation_inputs(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, w
     out = {"f_primary": f_primary, "f_panel": design_features(asof, src["panel"]),
            "train_primary": lambda clock: asof.table(clock, src["primary"], forecasts),
            "train_panel": lambda clock: asof.table(clock, src["panel"]),
-           "day_verdicts": replay_day_verdicts(raw_demand, raw_temperature, f_primary["day"].min(), last_day)}
+           "day_verdicts": replay_day_verdicts(raw_demand, raw_temperature, f_primary["day"].min(), last_day,
+                                               runs=runs)}
     if forecasts is not None:
         out["forecast_record"] = {s: issued.record for s, issued in forecasts.items()}
     return out

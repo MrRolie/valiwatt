@@ -656,6 +656,46 @@ def test_run_validate_binds_every_key_validation_inputs_returns(monkeypatch):
         inspect.signature(real).bind(**args, forecasts=None)
 
 
+def test_a_day_no_run_fed_fails_forecast_missing_in_the_verdicts_validation_calibrates_on(monkeypatch):
+    """`valiwatt validate` hands run_validation the replay's day-level verdicts computed with the design runs: a day no
+    run fed fails forecast_missing there as in the replay, so no threshold calibrates on its week. On every design day
+    the verdict agrees with validation's own forecast record; without the runs (v1's verdicts), the day passes."""
+    from valiwatt.config import DEMAND_FIRST
+    from valiwatt.forecast.features import REASONS
+    from valiwatt.monitor import run as mrun
+    from valiwatt.quality import run as qrun
+
+    last, unfed = pd.Timestamp("2019-02-01T05:00Z"), pd.Timestamp("2019-01-16")
+    raw, obs = synth_demand(DEMAND_FIRST, last), synth_obs(DEMAND_FIRST, last)
+    weather = pd.DataFrame({f"{s.key}.temp_c": obs["temp_c"].to_numpy() for s in stations()},
+                           index=pd.DatetimeIndex(obs["ts_utc"]))
+    runs = synth_runs(DEMAND_FIRST - pd.Timedelta(days=3), last)
+    runs = without_runs_for(runs[runs["runtime"] + pd.Timedelta(hours=2) <= last].reset_index(drop=True), unfed)
+    monkeypatch.setattr(qrun, "load_runs", lambda dq, years=None: runs)
+    monkeypatch.setattr(vd, "load_inputs", lambda: (fake_dq(), None, weather))
+    monkeypatch.setattr(mrun, "load_raw", lambda dq: (raw, obs))
+    monkeypatch.setattr(vd.validation_inputs, "__defaults__", (last, None))  # the world's last record
+    bound = {}
+
+    def spy(**k):
+        bound.update(k)
+        raise Reached("run_validation")
+
+    monkeypatch.setattr(vd, "run_validation", spy)
+    with pytest.raises(Reached):
+        vd.run_validate(n_boot=3)
+    verdicts, record = bound["day_verdicts"], bound["forecast_record"]["forecast"]
+    missing = [{"kind": "forecast_missing", "reason": REASONS[1]}]
+    assert record.loc[unfed, "reason"] == REASONS[1] and verdicts[unfed] == missing
+    assert set(verdicts) <= set(record.index)
+    for day, problems in verdicts.items():
+        reason = record.loc[day, "reason"]
+        assert [p for p in problems if p["kind"] == "forecast_missing"] == (
+            [{"kind": "forecast_missing", "reason": reason}] if reason else []), day
+    # The control: v1's verdicts, without the runs, let the unfed day pass.
+    assert vd.validation_inputs(raw, obs, weather, last=last)["day_verdicts"][unfed] == []
+
+
 def test_the_forecast_record_is_logged_per_design_day(v2, tmp_path, monkeypatch):
     """The control: `valiwatt validate` logs the forecast record of every design day, the frames v2 adds and a
     results file that holds v2's keys and reads back as JSON."""
