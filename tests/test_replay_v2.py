@@ -751,6 +751,113 @@ def test_a_2025_run_exists_only_with_its_tags(chain, monkeypatch):
         mrun.held_out_gate(2025)
 
 
+@pytest.mark.parametrize("name, value", [
+    ("MLFLOW_RUN_ID", "0" * 32), ("MLFLOW_RUN_CONTEXT", '{"mlflow.runName": "ambient-name"}'),
+    ("MLFLOW_EXPERIMENT_NAME", "valiwatt-validation"), ("MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING", "true")],
+    ids=["run_id", "run_context", "experiment_name", "system_metrics"])
+def test_a_2025_start_refuses_an_ambient_mlflow_environment_before_any_run_exists(chain, monkeypatch, name, value):
+    """An MLflow environment variable other than the allowed ones, each of which can make mlflow.start_run enter
+    another run, add to it or fail once it exists: the 2025 start is refused before any run exists, so it is no start
+    (replay_starts lists none) and, the variable unset, the next start is the test of record."""
+    from mlflow.entities import ViewType
+
+    c = tracking.client()
+
+    def every_run():
+        return {r.info.run_id for e in c.search_experiments()
+                for r in c.search_runs([e.experiment_id], "", run_view_type=ViewType.ALL)}
+
+    before = every_run()
+    monkeypatch.setenv(name, value)
+    with pytest.raises(RuntimeError, match=rf"MLflow environment variables \['{name}'\] are set"):
+        mrun.run_replay(2025, n_boot=20)
+    assert every_run() == before and mrun.replay_starts(2025) == []
+    monkeypatch.delenv(name)
+    assert tracking.ambient_mlflow_env() == []
+
+
+def test_a_2025_start_is_a_fresh_run_whatever_run_id_the_environment_names(chain, monkeypatch):
+    """Past the environment's refusal (the allowed variables widened here to let MLFLOW_RUN_ID and MLFLOW_RUN_CONTEXT
+    through): MLFLOW_RUN_ID naming an older run of another experiment (mlflow.start_run would resume it, in its
+    experiment and with its start time, where replay_starts never looks), the 2025 start is still a fresh run of the
+    monitoring experiment, listed by replay_starts, and the older run is left as it was."""
+    from mlflow.entities import ViewType
+
+    monkeypatch.setattr(tracking, "MLFLOW_ENV_ALLOWED", (*tracking.MLFLOW_ENV_ALLOWED, "MLFLOW_RUN_ID",
+                                                         "MLFLOW_RUN_CONTEXT"))
+    c = tracking.client()
+    other = c.get_experiment_by_name("valiwatt-validation")
+    (old,) = c.search_runs([other.experiment_id], "", run_view_type=ViewType.ALL, max_results=1)
+    old_tags = dict(old.data.tags)
+    monkeypatch.setenv("MLFLOW_RUN_ID", old.info.run_id)
+    real = mrun.load_raw
+
+    def stop(*args, **kwargs):
+        raise RuntimeError("stopped on purpose")
+
+    monkeypatch.setattr(mrun, "load_raw", stop)
+    with pytest.raises(RuntimeError, match="stopped on purpose"):
+        mrun.run_replay(2025, n_boot=20)
+    monkeypatch.setattr(mrun, "load_raw", real)
+    (run,) = rw.replay_runs(2025)
+    assert run.info.run_id != old.info.run_id
+    assert run.info.experiment_id == c.get_experiment_by_name(mrun.EXPERIMENT).experiment_id
+    assert [s["run_id"] for s in mrun.replay_starts(2025)] == [run.info.run_id]
+    after = c.get_run(old.info.run_id)
+    assert dict(after.data.tags) == old_tags and after.info.start_time == old.info.start_time
+    # An ambient context naming the run otherwise neither renames it nor stops its creation; the context's other tags
+    # (mlflow's user and source) are kept beside the run's own.
+    monkeypatch.delenv("MLFLOW_RUN_ID", raising=False)  # end_run clears it once the start ends
+    monkeypatch.setenv("MLFLOW_RUN_CONTEXT", '{"mlflow.runName": "ambient-name", "ambient.key": "kept"}')
+    with tracking.start_run(mrun.EXPERIMENT, "named", tags={"kind": "probe"}) as probe:
+        pass
+    t = c.get_run(probe.info.run_id).data.tags
+    assert (t["mlflow.runName"], t["kind"], t["ambient.key"]) == ("named", "probe", "kept") and "mlflow.user" in t
+
+
+def test_a_run_that_could_not_be_entered_is_refused_before_it_exists(chain, monkeypatch):
+    """A run already active, or another experiment selected with mlflow.set_experiment, would refuse entering a fresh
+    run once created: tracking.start_run refuses before creating any. Should entering fail all the same, the created
+    run is ended FAILED with its error's class, never left RUNNING: a 2025 start so stopped is a stopped start, which
+    the next gate refuses as one, not a running one."""
+    import mlflow
+    from mlflow.entities import ViewType
+    from mlflow.tracking import fluent
+
+    c = tracking.client()
+
+    def every_run():
+        return {r.info.run_id for e in c.search_experiments()
+                for r in c.search_runs([e.experiment_id], "", run_view_type=ViewType.ALL)}
+
+    with tracking.start_run("valiwatt-validation", "outer"):
+        before = every_run()
+        with pytest.raises(RuntimeError, match="is active"):
+            with tracking.start_run(mrun.EXPERIMENT, "inner"):
+                pass
+        assert every_run() == before
+    with monkeypatch.context() as mp:
+        mp.setattr(fluent, "_active_experiment_id", c.get_experiment_by_name("valiwatt-validation").experiment_id)
+        before = every_run()
+        with pytest.raises(RuntimeError, match="is selected"):
+            mrun.run_replay(2025, n_boot=20)
+        assert every_run() == before and rw.replay_runs(2025) == []
+
+    def refused(*args, **kwargs):
+        raise OSError("cannot enter")
+
+    with monkeypatch.context() as mp:
+        mp.setattr(mlflow, "start_run", refused)
+        with pytest.raises(OSError, match="cannot enter"):
+            mrun.run_replay(2025, n_boot=20)
+    (run,) = rw.replay_runs(2025)
+    assert (run.info.status, run.data.tags.get("error"), run.data.tags.get("kind")) == ("FAILED", "OSError", "replay")
+    (s,) = mrun.replay_starts(2025)
+    assert (s["running"], s["finished"], s["error"]) == (False, False, "OSError")
+    with pytest.raises(mrun.FreezeError, match=r"stopped at stage 'opened' with error 'OSError'"):
+        mrun.held_out_gate(2025)
+
+
 def test_a_gate_refusal_opens_no_run(chain, monkeypatch):
     """A refused 2025 start opens no run and leaves the start lock free: the next start, once the refusal's cause is
     gone, opens one run."""

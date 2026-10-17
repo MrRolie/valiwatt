@@ -1242,6 +1242,38 @@ BREAKS = [
        "juste après sa création laisse un départ arrêté que la porte suivante voit",
        "A 2025 run exists only with its tags: their computation failing creates none, and a stop right after its "
        "creation leaves a stopped start the next gate sees"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_refuses_an_ambient_mlflow_environment_before_any_run_exists[run_id]",
+       "Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_ID) est refusé avant qu'aucune "
+       "exécution n'existe : ce n'est pas un départ",
+       "A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_ID) is refused before any run exists: it is "
+       "no start"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_refuses_an_ambient_mlflow_environment_before_any_run_exists[run_context]",
+       "Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_CONTEXT) est refusé avant qu'aucune "
+       "exécution n'existe : ce n'est pas un départ",
+       "A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_CONTEXT) is refused before any run exists: it is "
+       "no start"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_refuses_an_ambient_mlflow_environment_before_any_run_exists[experiment_name]",
+       "Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_EXPERIMENT_NAME) est refusé avant qu'aucune "
+       "exécution n'existe : ce n'est pas un départ",
+       "A 2025 start under an MLflow environment variable not allowed (MLFLOW_EXPERIMENT_NAME) is refused before any run exists: it is "
+       "no start"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_refuses_an_ambient_mlflow_environment_before_any_run_exists[system_metrics]",
+       "Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) est refusé avant qu'aucune "
+       "exécution n'existe : ce n'est pas un départ",
+       "A 2025 start under an MLflow environment variable not allowed (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) is refused before any run exists: it is "
+       "no start"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_is_a_fresh_run_whatever_run_id_the_environment_names",
+       "Un départ de 2025 est toujours une exécution neuve de l'expérience de suivi, même quand l'environnement nomme "
+       "une exécution plus ancienne d'une autre expérience (MLFLOW_RUN_ID) : la porte suivante le voit",
+       "A 2025 start is always a fresh run of the monitoring experiment, even when the environment names an older run "
+       "of another experiment (MLFLOW_RUN_ID): the next gate sees it"),
+    _b(FREEZE, f"{T_R2}::test_a_run_that_could_not_be_entered_is_refused_before_it_exists",
+       "Une exécution qui ne pourrait pas être ouverte (une autre déjà active, une autre expérience choisie) est refusée "
+       "avant d'exister ; si l'ouverture échoue quand même, elle finit en échec avec la classe de son erreur, jamais "
+       "« en cours » : un départ de 2025 ainsi arrêté est un départ arrêté",
+       "A run that could not be entered (another already active, another experiment selected) is refused before it "
+       "exists; should entering fail all the same, it ends failed with its error's class, never running: a 2025 start "
+       "so stopped is a stopped start"),
     _b(FREEZE, f"{T_R2}::test_a_gate_refusal_opens_no_run",
        "Témoin : un refus de la porte n'ouvre aucune exécution", "Control: a gate refusal opens no run", control=True),
     _b(FREEZE, f"{T_R2}::test_the_replay_function_refuses_2025_without_its_open_started_run",
