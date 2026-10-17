@@ -56,6 +56,11 @@ T_SAFE, T_FRZ, T_SEN = "tests/test_public_safety.py", "tests/test_freeze_gates.p
 T_LIN, T_BRK = "tests/test_report_lineage.py", "tests/test_breaks.py"
 T_COV, T_SEN2, T_LED = "tests/test_report_coverage.py", "tests/test_report_sentences.py", "tests/test_replay_ledger.py"
 T_ASOF, T_EVAL, T_WORD = "tests/test_as_of.py", "tests/test_evaluate.py", "tests/test_report_wording.py"
+T_NBM, T_FEAT, T_FETCH = "tests/test_nbm_source.py", "tests/test_features.py", "tests/test_fetch_guards.py"
+T_DEC, T_MOD, T_WF = "tests/test_decision_rule.py", "tests/test_model.py", "tests/test_walkforward.py"
+T_FRO, T_R2, T_REND = "tests/test_frozen.py", "tests/test_replay_v2.py", "tests/test_report_render.py"
+T_E2E, T_STAMP, T_CLI = "tests/test_report_end_to_end.py", "tests/test_report_stamp.py", "tests/test_cli.py"
+T_DEP, T_TAGS, T_PLAN = "tests/test_departure_record.py", "tests/test_tags.py", "tests/test_plan_record.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -461,10 +466,12 @@ BREAKS = [
        "verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, "
        "English report"),
     _b(LOOK, f"{T_EVAL}::test_a_row_scored_at_the_fit_clock_calibrates_and_one_scored_an_hour_later_does_not",
-       "Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur ; une ligne notée à "
-       "l'horloge même la calibre",
-       "A row scored an hour after the fit clock does not calibrate the half-width; a row scored at the fit clock "
-       "itself does"),
+       "Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur, une ligne notée à "
+       "l'horloge même la calibre ; le dernier jour des données, noté à la fin des données, ne calibre pas une "
+       "demi-largeur fixée à ce moment",
+       "A row scored an hour after the fit clock does not calibrate the half-width and one scored at the fit clock "
+       "itself does; the last day of the data, scored at the end of the data, does not calibrate a half-width fixed "
+       "then"),
     _b(RENDER, "tests/test_report_render.py::test_a_2024_replay_without_its_sensitivity_measures_is_refused",
        "Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport",
        "A 2024 replay without its false-alarm and blind-spot measures makes the report refuse"),
@@ -477,6 +484,1199 @@ BREAKS = [
        "décrit pas, fait refuser le rapport",
        "A 2024 replay departing from replays made under two freeze commits, a departure the report does not describe, "
        "makes the report refuse"),
+    # v2 (docs/plan-v2.md, section 12): the forecast input, its fetch and its data quality.
+    _b(DQ, f"{T_NBM}::test_a_response_for_another_station_or_model_is_refused",
+       "Une réponse de prévisions pour une autre station ou un autre modèle est refusée",
+       "A forecast response for another station or model is refused"),
+    _b(DQ, f"{T_NBM}::test_a_non_numeric_temperature_is_refused",
+       "Une température prévue qui n'est ni un nombre ni vide est refusée",
+       "A forecast temperature that is neither a number nor blank is refused"),
+    _b(DQ, f"{T_NBM}::test_an_empty_response_is_refused",
+       "Une réponse de prévisions vide est refusée", "An empty forecast response is refused"),
+    _b(DQ, f"{T_NBM}::test_a_runtime_outside_the_requested_year_is_refused",
+       "Une prévision émise hors de l'année demandée est refusée",
+       "A forecast run outside the requested year is refused"),
+    _b(DQ, f"{T_NBM}::test_a_refused_response_writes_nothing",
+       "Une réponse de prévisions refusée n'écrit rien", "A refused forecast response writes nothing"),
+    _b(DQ, f"{T_NBM}::test_a_clean_year_verifies_and_the_next_years_first_run_is_inside_its_request",
+       "Témoin : une année de prévisions propre est vérifiée, et la première prévision de l'année suivante est dans sa "
+       "requête",
+       "Control: a clean year of forecasts verifies, and the next year's first run is inside its request",
+       control=True),
+    _b(DQ, f"{T_NBM}::test_an_undated_point_is_refused_at_verification_and_load",
+       "Un point de prévision sans heure d'émission ou sans heure de validité est refusé à la vérification et au "
+       "chargement, avec ses lignes",
+       "A forecast point without its run time or its valid time is refused at verification and at load, naming its "
+       "lines"),
+    _b(DQ, f"{T_NBM}::test_two_values_for_one_point_refuse_the_load",
+       "Deux valeurs pour un même point de prévision font refuser le chargement",
+       "Two values for one forecast point refuse the load"),
+    _b(DQ, f"{T_NBM}::test_identical_duplicates_are_dropped_and_counted",
+       "Témoin : des points de prévision en double identiques sont écartés et comptés, sans refus",
+       "Control: identical duplicate forecast points are dropped and counted, with no refusal", control=True),
+    _b(DQ, f"{T_NBM}::test_a_primary_station_other_than_7025251_refuses_the_pairing",
+       "Une station principale autre que celle de Montréal-Trudeau fait refuser l'appariement de la prévision",
+       "A primary station other than Montréal-Trudeau's refuses the forecast's pairing"),
+    _b(DQ, f"{T_NBM}::test_a_file_that_no_longer_matches_its_manifest_is_refused",
+       "Un fichier de prévisions qui ne correspond plus à son manifeste est refusé",
+       "A forecast file that no longer matches its manifest is refused"),
+    _b(DQ, f"{T_WEA}::test_clean_forecast_passes_its_gates",
+       "Témoin : une prévision propre passe ses portes", "Control: a clean forecast passes its gates", control=True),
+    _b(DQ, f"{T_WEA}::test_an_impossible_forecast_temperature_fails_the_nbm_bounds_gate",
+       "Une température prévue impossible fait échouer la porte des bornes de la prévision",
+       "An impossible forecast temperature fails the forecast's bounds gate"),
+    _b(DQ, f"{T_WEA}::test_forecast_days_below_coverage_fail_the_nbm_coverage_gate",
+       "Trop peu de jours alimentés par une prévision font échouer la porte de couverture de la prévision ; un jour "
+       "sans prévision à lui, alimenté par celle de la veille, ne la fait pas échouer",
+       "Too few days fed by a forecast fail the forecast's coverage gate; a day without runs of its own, fed by the "
+       "eve's run, does not"),
+    _b(DQ, f"{T_WEA}::test_the_nbm_coverage_gate_passes_at_98_percent_of_days_fed_and_fails_below",
+       "49 jours alimentés sur 50 (98 %) passent la porte de couverture de la prévision ; 48 sur 50, ou 48 sur 49, la "
+       "font échouer",
+       "49 of 50 days fed (98%) pass the forecast's coverage gate; 48 of 50, or 48 of 49, fail it"),
+    _b(DQ, f"{T_WEA}::test_station_and_forecast_share_one_bounds_filter",
+       "La station et la prévision passent par un seul filtre de bornes",
+       "The station and the forecast share one bounds filter"),
+    _b(DQ, f"{T_WEA}::test_the_forecast_error_is_read_on_the_design_days_only",
+       "L'erreur de la prévision contre la station ne lit que les heures de la fenêtre de conception, et jamais une "
+       "observation hors bornes",
+       "The forecast's error against the station reads only the design window's hours, never an observation outside "
+       "the bounds"),
+    _b(DQ, f"{T_FEAT}::test_a_run_missing_one_bracket_point_gives_way_to_the_next",
+       "Une prévision à laquelle manque un point d'encadrement cède la place à la suivante",
+       "A run missing one bracketing point gives way to the next"),
+    _b(DQ, f"{T_FEAT}::test_a_point_outside_the_bounds_does_not_cover",
+       "Une prévision dont un point d'encadrement est hors bornes ne couvre pas le jour",
+       "A run with a bracketing point outside the bounds does not cover the day"),
+    _b(DQ, f"{T_FEAT}::test_a_blank_point_does_not_cover",
+       "Une prévision dont un point d'encadrement est vide ne couvre pas le jour",
+       "A run with a blank bracketing point does not cover the day"),
+    _b(DQ, f"{T_FEAT}::test_no_covering_run_among_twelve_leaves_the_day_without_a_forecast_and_says_why",
+       "Sans prévision couvrante parmi les douze plus récentes, le jour reste sans prévision, avec sa raison",
+       "With no covering run among the twelve freshest, the day has no forecast and says why"),
+    _b(DQ, f"{T_FEAT}::test_hourly_values_are_linear_in_time_inside_one_run_and_in_celsius",
+       "Témoin : les valeurs horaires sont linéaires dans le temps entre les points d'une même prévision, en degrés "
+       "Celsius",
+       "Control: hourly values are linear in time between one run's points, in degrees Celsius", control=True),
+    _b(DQ, f"{T_FEAT}::test_two_runs_are_never_mixed",
+       "Les points de deux prévisions ne sont jamais mélangés", "Points of two runs are never mixed"),
+    _b(DQ, f"{T_PIPE}::test_a_failing_nbm_gate_stops_the_chain",
+       "Une porte de la prévision qui échoue arrête la chaîne", "A failing forecast gate stops the chain"),
+    _b(DQ, f"{T_PIPE}::test_data_quality_checks_the_rows_the_loader_returns",
+       "La qualité des données vérifie exactement les prévisions que le chargement remet ensuite, et refuse un point "
+       "sans heure d'émission au lieu de l'écarter en silence",
+       "Data quality checks exactly the forecast rows the loader hands on, and refuses a point without its run time "
+       "instead of dropping it silently"),
+    _b(DQ, f"{T_PIPE}::test_dq_runs_load_runs_against_its_own_manifest_hash",
+       "Des fichiers de prévisions autres que ceux qu'a vérifiés l'exécution de qualité des données sont refusés",
+       "Forecast files other than those the data-quality run checked are refused"),
+    _b(DQ, f"{T_PIPE}::test_hydroquebec_records_after_the_window_are_set_aside_and_counted",
+       "Témoin : les enregistrements d'Hydro-Québec après la fenêtre sont écartés au chargement et comptés",
+       "Control: Hydro-Québec records after the window are set aside at load and counted", control=True),
+    _b(DQ, f"{T_PIPE}::test_revised_2019_2024_records_are_listed_by_the_2025_data_quality_run",
+       "Témoin : les enregistrements de 2019 à 2024 révisés sont listés par l'exécution de qualité des données "
+       "jusqu'à 2025",
+       "Control: the revised 2019-2024 records are listed by the through-2025 data-quality run", control=True),
+    _b(DQ, f"{T_PIPE}::test_the_2025_dq_run_logs_its_revision_artifact",
+       "Témoin : l'exécution de qualité des données jusqu'à 2025 consigne la liste des révisions, vide ou non",
+       "Control: the through-2025 data-quality run logs its list of revisions, empty or not", control=True),
+    _b(DQ, f"{T_PIPE}::test_a_lead_at_or_above_75_hours_is_reported_against_the_two_day_argument",
+       "Témoin : une échéance de 75 heures ou plus est signalée contre l'argument des deux jours",
+       "Control: a lead of 75 hours or more is reported against the two-day argument", control=True),
+    _b(DQ, f"{T_FETCH}::test_every_hydroquebec_request_is_bounded_by_the_portal",
+       "Chaque requête à Hydro-Québec, jusqu'à 2024 ou 2025, est bornée par le portail à la fin de l'année de sa "
+       "fenêtre, et son compte est demandé sous la même borne",
+       "Every Hydro-Québec request, through 2024 or 2025, is bounded by the portal at the end of its window's year "
+       "and its count is asked under that same bound"),
+    _b(DQ, f"{T_FETCH}::test_a_response_holding_a_record_past_its_bound_is_refused_and_writes_nothing",
+       "Une réponse contenant un enregistrement au-delà de sa borne est refusée et rien n'est écrit",
+       "A response holding a record past its bound is refused and nothing is written"),
+    _b(DQ, f"{T_FETCH}::test_the_bound_is_the_last_hour_of_the_window",
+       "Témoin : la borne de chaque requête est la dernière heure de la fenêtre",
+       "Control: each request's bound is the window's last hour", control=True),
+    _b(DQ, f"{T_FETCH}::test_a_2024_export_ending_at_the_window_s_last_hour_is_written",
+       "Témoin : un export de 2024 qui finit à la dernière heure de la fenêtre est écrit",
+       "Control: a 2024 export ending at the window's last hour is written", control=True),
+    _b(DQ, f"{T_FETCH}::test_a_plain_fetch_never_asks_the_portal_again_for_a_verified_file",
+       "Témoin : un téléchargement simple ne redemande jamais au portail un fichier déjà vérifié",
+       "Control: a plain fetch never asks the portal again for a verified file", control=True),
+    _b(DQ, f"{T_FETCH}::test_a_forced_2025_fetch_of_the_weather_files_is_refused",
+       "Un téléchargement forcé de 2025 des fichiers météo est refusé avant toute requête",
+       "A forced 2025 fetch of the weather files is refused before any request"),
+    _b(DQ, f"{T_CLI}::test_fetch_through_2025_goes_through_the_sources_gate",
+       "La commande « fetch » jusqu'à 2025 passe par la porte de chaque source avant toute requête, et refuse, avant "
+       "qu'aucune source ne s'exécute, de forcer une autre source qu'Hydro-Québec",
+       "The fetch command through 2025 goes through each source's gate before any request, and refuses, before any "
+       "source runs, to force a source other than Hydro-Québec"),
+    _b(DQ, f"{T_R2}::test_a_day_no_run_fed_is_not_predicted_and_fails_forecast_missing",
+       "Un jour qu'aucune prévision météo n'alimente n'est pas prévu et échoue (prévision manquante) : examiner les "
+       "données",
+       "A day no forecast run fed is not predicted and fails as forecast missing: investigate the data"),
+    _b(DQ, f"{T_VAL}::test_a_design_temperature_outside_the_bounds_is_blank_as_in_the_replay",
+       "Une température de conception hors des bornes est vide, comme dans le rejeu",
+       "A design temperature outside the bounds is blank, as in the replay"),
+    # v2: no lookahead, the forecast's availability and the knots.
+    _b(LOOK, f"{T_NBM}::test_load_runs_reads_only_the_listed_years",
+       "Seuls les fichiers de prévisions des années nommées sont lus",
+       "Only the forecast files of the listed years are read"),
+    _b(LOOK, f"{T_FEAT}::test_the_freshest_run_available_by_the_origin_feeds_the_day",
+       "Témoin : la prévision la plus récente disponible à l'origine alimente le jour",
+       "Control: the freshest run available by the origin feeds the day", control=True),
+    _b(LOOK, f"{T_FEAT}::test_a_run_available_after_the_origin_is_never_used",
+       "Une prévision disponible après l'origine n'est jamais utilisée, même absurde, et la suivante l'est",
+       "A run available after the origin is never used, even with absurd values, and the next-freshest is"),
+    _b(LOOK, f"{T_FEAT}::test_an_undated_run_is_refused_by_the_run_rule",
+       "La règle du choix de la prévision refuse une prévision sans heure d'émission : sa disponibilité ne peut être "
+       "établie",
+       "The run rule refuses a forecast run without its run time: its availability cannot be established"),
+    _b(LOOK, f"{T_FEAT}::test_the_eve_of_the_design_edge_keeps_its_forecast",
+       "Témoin : le 31 décembre 2023 est prévu par sa propre prévision de 01 h UTC, qui lit son point du 1er janvier "
+       "2024 à 06 h UTC",
+       "Control: 31 December 2023 is forecast from its own 01 UTC run, which reads that run's 1 January 2024 06 UTC "
+       "point", control=True),
+    _b(LOOK, f"{T_FEAT}::test_build_without_forecasts_keeps_every_v1_column",
+       "Témoin : sans prévision, la table de v1 garde chaque colonne et chaque valeur",
+       "Control: without a forecast, the v1 table keeps every column and every value", control=True),
+    _b(LOOK, f"{T_FEAT}::test_build_refuses_a_finite_forecast_without_its_availability",
+       "La table des variables refuse une prévision météo finie dont la prévision n'a pas d'heure de disponibilité, "
+       "ou une heure postérieure à l'origine de sa ligne",
+       "The feature table refuses a finite weather forecast whose run has no availability time, or one after its "
+       "row's origin"),
+    _b(LOOK, f"{T_GRD}::test_a_row_whose_forecast_became_available_after_its_origin_is_refused",
+       "Une ligne dont la prévision est devenue disponible après son origine est refusée",
+       "A row whose forecast became available after its origin is refused"),
+    _b(LOOK, f"{T_GRD}::test_a_forecast_available_at_the_origin_passes",
+       "Témoin : une prévision disponible à l'origine même est acceptée",
+       "Control: a forecast available at the origin itself passes", control=True),
+    _b(LOOK, f"{T_GRD}::test_a_finite_forecast_without_its_availability_is_refused",
+       "Une ligne dont la prévision météo n'a pas d'heure de disponibilité est refusée",
+       "A row whose weather forecast has no availability time is refused"),
+    _b(LOOK, f"{T_GRD}::test_a_row_without_its_origin_is_refused",
+       "Une ligne sans origine est refusée, même avec une prévision disponible 24 heures après son heure cible, et "
+       "même sans aucune entrée de prévision",
+       "A row without its origin is refused, even with a forecast available 24 hours after its target hour, and even "
+       "with no forecast input at all"),
+    _b(LOOK, f"{T_WF}::test_a_fold_trains_only_on_rows_whose_forecast_was_known_at_their_origin",
+       "La validation glissante refuse, avant tout ajustement, une ligne d'entraînement d'un pli, même fournie à part, "
+       "dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine",
+       "Walk-forward refuses, before any fit, a fold's training row, even one supplied separately, whose forecast has "
+       "no availability or became available after its origin, or that has no origin"),
+    _b(LOOK, f"{T_WF}::test_a_fold_forecasts_only_rows_whose_forecast_was_known_at_their_origin",
+       "La validation glissante refuse, avant tout ajustement, une ligne de test d'un pli dont la prévision n'a pas de "
+       "disponibilité, est disponible après son origine, ou qui n'a pas d'origine : elle n'atteint jamais "
+       "l'étalonnage des intervalles",
+       "Walk-forward refuses, before any fit, a fold's test row whose forecast has no availability or became "
+       "available after its origin, or that has no origin: it never reaches the interval calibration"),
+    _b(LOOK, f"{T_MOD}::test_a_fit_on_a_forecast_without_its_availability_is_refused",
+       "Un ajustement sur la prévision météo, le GAM ou les moindres carrés, refuse avant de placer ses nœuds une "
+       "ligne dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine",
+       "A fit on the weather forecast, the GAM or least squares, refuses before placing its knots a row whose "
+       "forecast has no availability or became available after its origin, or that has no origin"),
+    _b(LOOK, f"{T_MOD}::test_a_fit_whose_knots_saw_a_test_row_is_refused",
+       "Des nœuds de spline placés aussi sur des heures de test font refuser l'ajustement, même pour une seule heure "
+       "de test qui ne déplace aucun nœud d'un centième de degré ; des nœuds décalés de 1,1e-12 °C de la règle sont "
+       "refusés",
+       "Spline knots placed on test hours as well are refused by the fit, even for a single test hour that moves no "
+       "knot by a hundredth of a degree; knots 1.1e-12 °C off the rule are refused"),
+    _b(LOOK, f"{T_MOD}::test_a_fit_on_its_own_rows_passes_the_knot_check",
+       "Témoin : un ajustement sur ses seules heures utilisables passe la vérification des nœuds, à sa tolérance de "
+       "1e-12 °C près, et prévoit encore les heures sans cible",
+       "Control: a fit on its own usable hours passes the knot check, to its 1e-12 °C tolerance, and still forecasts "
+       "the hours without a target", control=True),
+    _b(LOOK, f"{T_FRO}::test_a_freeze_whose_knots_are_not_the_rule_on_its_training_rows_is_refused",
+       "Un gel dont les nœuds ne suivent pas la règle sur ses propres lignes d'entraînement est refusé",
+       "A freeze whose knots are not the rule on its own training rows is refused"),
+    _b(LOOK, f"{T_EVAL}::test_the_eve_of_the_replayed_year_never_calibrates_a_half_width",
+       "La veille de l'année rejouée ne calibre jamais une demi-largeur, ni au gel de 2024 ni à celui de 2023",
+       "The eve of the replayed year never calibrates a half-width, in the 2024 freeze or the 2023 one"),
+    _b(LOOK, f"{T_EVAL}::test_rows_without_a_day_calibrate_no_half_width",
+       "Des erreurs hors échantillon qui ne disent pas leur jour ne calibrent aucune demi-largeur",
+       "Out-of-sample rows that do not say their day calibrate no half-width"),
+    _b(LOOK, f"{T_FRO}::test_the_2024_freeze_half_width_leaves_the_eve_out",
+       "La demi-largeur du gel de 2024 laisse de côté la veille de l'année rejouée",
+       "The 2024 freeze's half-width leaves out the eve of the replayed year"),
+    _b(LOOK, f"{T_VAL}::test_a_forecast_run_available_after_the_design_window_is_refused",
+       "Une alimentation de conception contenant une prévision disponible après la fenêtre de conception est refusée",
+       "A design feed holding a forecast run available after the design window is refused"),
+    _b(LOOK, f"{T_VAL}::test_design_code_reads_only_the_design_years_run_files",
+       "Le code de conception ne lit que les fichiers de prévisions des années de conception",
+       "Design code reads only the design years' forecast run files"),
+    _b(LOOK, f"{T_VAL}::test_the_2024_boundary_run_in_the_2023_file_is_kept_when_available_in_time",
+       "Témoin : la prévision de 01 h UTC du 1er janvier 2024, dans le fichier de 2023 et disponible à temps, est "
+       "gardée",
+       "Control: the 1 January 2024 01 UTC run in the 2023 file, available in time, is kept", control=True),
+    _b(LOOK, f"{T_VAL}::test_cold_c_comes_from_design_forecast_temperatures_only",
+       "Le seuil de froid vient des seules températures prévues de la période de conception",
+       "The cold threshold comes from the design forecast temperatures only"),
+    _b(LOOK, f"{T_VAL}::test_run_validate_binds_every_key_validation_inputs_returns",
+       "La validation reçoit chaque entrée qu'elle prépare et ne demande que les années de conception",
+       "Validation binds every input it prepares and asks the loader for the design years only"),
+    _b(LOOK, f"{T_VAL}::test_the_forecast_record_is_logged_per_design_day",
+       "Témoin : le registre de la prévision est consigné pour chaque jour de conception",
+       "Control: the forecast record is logged for every design day", control=True),
+    _b(LOOK, f"{T_ASOF}::test_the_design_forecast_temperature_at_each_origin_uses_only_runs_available_by_then",
+       "La température prévue à chaque origine de conception n'utilise que les prévisions disponibles à ce moment",
+       "Each design origin's forecast temperature uses only the runs available by then"),
+    _b(LOOK, f"{T_R2}::test_the_replay_and_validation_feed_the_same_run_on_a_sparse_archive",
+       "Sur une archive lacunaire, le rejeu et la validation retiennent la même prévision pour chaque jour",
+       "On a sparse archive, the replay and validation feed each day from the same run"),
+    _b(LOOK, f"{T_R2}::test_a_temperature_drift_reference_holding_replayed_days_is_refused",
+       "Une référence de dérive de température contenant des jours rejoués est refusée",
+       "A temperature-drift reference holding replayed days is refused"),
+    _b(LOOK, f"{T_R2}::test_comparators_are_scored_on_the_inputs_recorded_at_issue",
+       "Les modèles de comparaison sont notés sur les entrées enregistrées à l'émission",
+       "The comparison models are scored on the inputs recorded at issue"),
+    _b(LOOK, f"{T_R2}::test_a_rehearsal_whose_issued_forecast_differs_from_validation_s_is_refused",
+       "Une répétition dont la prévision émise diffère de celle de la validation est refusée",
+       "A rehearsal whose issued forecast differs from validation's is refused"),
+    _b(LOOK, f"{T_R2}::test_the_2023_rehearsal_runs_end_to_end_and_refuses_an_input_validation_did_not_issue",
+       "La répétition de 2023 s'exécute de bout en bout et refuse une entrée que la validation n'a pas émise",
+       "The 2023 rehearsal runs end to end and refuses an input validation did not issue"),
+    _b(LOOK, f"{T_R2}::test_the_2024_replay_reads_no_record_of_2025",
+       "Le rejeu de 2024 ne lit aucun enregistrement de 2025", "The 2024 replay reads no record of 2025"),
+    _b(LOOK, f"{T_R2}::test_the_evidence_replay_receives_no_record_of_2025",
+       "Le rejeu de la preuve ne reçoit aucun enregistrement de 2025",
+       "The evidence's replay receives no record of 2025"),
+    # v2: the replay's clock on the forecast feed.
+    _b(CLOCK, f"{T_R2}::test_the_replay_sees_a_run_only_once_it_is_available",
+       "Le rejeu ne voit une prévision qu'une fois disponible, et le verdict des jours non plus",
+       "The replay sees a forecast run only once it is available, and so does the day verdict"),
+    # v2: the monitors on the forecast input, and the decision rule of plan section 8.
+    _b(MON, f"{T_VAL}::test_drift_temperature_thresholds_read_the_forecast_input",
+       "Les seuils de dérive de température lisent la prévision émise, pas l'observation",
+       "The temperature drift thresholds read the issued forecast, not the observation"),
+    _b(MON, f"{T_VAL}::test_a_day_no_run_fed_fails_forecast_missing_in_the_verdicts_validation_calibrates_on",
+       "Un jour qu'aucune prévision n'a alimenté échoue au critère « prévision manquante » dans les verdicts du jour "
+       "que lit le calibrage de la validation, comme dans le rejeu",
+       "A day no forecast fed fails the forecast-missing criterion in the day verdicts validation's calibration reads, "
+       "as in the replay"),
+    _b(MON, f"{T_R2}::test_forecast_input_drift_with_performance_inside_yields_investigate",
+       "Une dérive de la température prévue, performance dans les bornes, donne « examiner les données »",
+       "Drift of the forecast temperature input, with performance inside, yields investigate the data"),
+    _b(MON, f"{T_R2}::test_the_reuse_measure_feeds_one_corrupted_run_to_two_days",
+       "Témoin : la mesure de réutilisation fait alimenter deux jours par une même prévision faussée",
+       "Control: the reuse measure feeds one corrupted run to two days", control=True),
+    _b(MON, f"{T_R2}::test_the_reuse_measure_never_claims_two_days_from_a_run_that_misses_one",
+       "La mesure de réutilisation ne présente jamais comme deux jours une prévision qui en manque un",
+       "The reuse measure never reports two days from a run that misses one"),
+    _b(MON, f"{T_R2}::test_replay_without_runs_is_v1_s",
+       "Témoin : sans prévisions météo, le rejeu est celui de la v1",
+       "Control: without forecast runs, the replay is v1's", control=True),
+    _b(MON, f"{T_R2}::test_the_decision_rule_runs_on_the_replayed_year_with_its_label",
+       "Témoin : la règle de décision s'applique à l'année rejouée, avec son étiquette d'évaluation",
+       "Control: the decision rule runs on the replayed year, with its evaluation label", control=True),
+    _b(MON, f"{T_SEN}::test_the_v2_measures_run_with_the_forecast_feed",
+       "Témoin : les mesures de sensibilité de v2 s'exécutent avec le flux de prévisions",
+       "Control: v2's sensitivity measures run with the forecast feed", control=True),
+    _b(MON, f"{T_DEC}::test_a_contrast_whose_interval_lies_below_zero_is_better",
+       "Un contraste dont l'intervalle est sous zéro est meilleur",
+       "A contrast whose interval lies below zero is better"),
+    _b(MON, f"{T_DEC}::test_a_contrast_whose_interval_lies_above_zero_is_worse",
+       "Un contraste dont l'intervalle est au-dessus de zéro est moins bon",
+       "A contrast whose interval lies above zero is worse"),
+    _b(MON, f"{T_DEC}::test_a_contrast_whose_interval_holds_zero_is_not_separated",
+       "Un contraste dont l'intervalle contient zéro n'est pas départagé",
+       "A contrast whose interval holds zero is not separated"),
+    _b(MON, f"{T_DEC}::test_a_bound_printing_as_zero_is_not_separated",
+       "Une borne qui s'imprime 0,00 point ne départage pas et une borne qui s'imprime 0,01 point départage, des deux "
+       "côtés : l'état suit les bornes imprimées",
+       "A bound that prints as 0.00 points does not separate and one that prints as 0.01 points does, on both sides: "
+       "the state follows the printed bounds"),
+    _b(MON, f"{T_DEC}::test_a_better_contrast_whose_cold_tail_is_not_worse_is_better[shipped]",
+       "Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre v1 tel que "
+       "livré",
+       "A better contrast whose cold tail is not worse gets the verdict better, against v1 as shipped"),
+    _b(MON, f"{T_DEC}::test_a_better_contrast_whose_cold_tail_is_not_worse_is_better[family]",
+       "Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre la forme "
+       "de v1 sur la prévision",
+       "A better contrast whose cold tail is not worse gets the verdict better, against v1's form on the forecast"),
+    _b(MON, f"{T_DEC}::test_a_better_contrast_whose_cold_tail_is_not_testable_is_better_cold_untested[shipped]",
+       "Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue "
+       "froide non testable, contre v1 tel que livré",
+       "A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not "
+       "testable, against v1 as shipped"),
+    _b(MON, f"{T_DEC}::test_a_better_contrast_whose_cold_tail_is_not_testable_is_better_cold_untested[family]",
+       "Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue "
+       "froide non testable, contre la forme de v1 sur la prévision",
+       "A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not "
+       "testable, against v1's form on the forecast"),
+    _b(MON, f"{T_DEC}::test_a_contrast_not_separated_or_better_with_a_worse_cold_tail_is_not_shown_better[shipped]",
+       "Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré "
+       "meilleur, contre v1 tel que livré",
+       "A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1 as "
+       "shipped"),
+    _b(MON, f"{T_DEC}::test_a_contrast_not_separated_or_better_with_a_worse_cold_tail_is_not_shown_better[family]",
+       "Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré "
+       "meilleur, contre la forme de v1 sur la prévision",
+       "A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1's "
+       "form on the forecast"),
+    _b(MON, f"{T_DEC}::test_a_worse_contrast_is_worse[shipped]",
+       "Un contraste moins bon reçoit le verdict moins bon, contre v1 tel que livré",
+       "A worse contrast gets the verdict worse, against v1 as shipped"),
+    _b(MON, f"{T_DEC}::test_a_worse_contrast_is_worse[family]",
+       "Un contraste moins bon reçoit le verdict moins bon, contre la forme de v1 sur la prévision",
+       "A worse contrast gets the verdict worse, against v1's form on the forecast"),
+    _b(MON, f"{T_DEC}::test_a_verdict_on_an_unknown_state_is_refused",
+       "Un verdict sur un état inconnu est refusé", "A verdict on an unknown state is refused"),
+    _b(MON, f"{T_DEC}::test_v2_closer_on_every_hour_is_better_on_both_comparisons",
+       "Témoin : un v2 plus proche à chaque heure est meilleur sur les deux comparaisons",
+       "Control: a v2 closer on every hour is better on both comparisons", control=True),
+    _b(MON, f"{T_DEC}::test_a_contrast_is_scored_on_the_common_hours_only",
+       "Des heures où un modèle a une prévision et un autre non, loin de la cible et froides, ne changent ni les "
+       "contrastes ni la queue froide : tout est mesuré sur les heures communes",
+       "Hours where one model has a forecast and another has none, far off and cold, change neither the contrasts nor "
+       "the cold tail: everything is scored on the common hours"),
+    _b(MON, f"{T_DEC}::test_the_contrasts_are_errors_hourly_ape_at_the_ruled_bootstrap",
+       "Les contrastes qui décident des verdicts, ceux de la queue froide compris, sont la différence appariée de "
+       "l'erreur absolue horaire rapportée à la demande observée, sur les heures communes, à mille "
+       "rééchantillonnages par semaines et graine 0 : une autre métrique, une autre graine ou un autre nombre de "
+       "rééchantillonnages échoue",
+       "The contrasts that decide the verdicts, the cold tail's included, are the paired difference in hourly absolute "
+       "error over the observed demand, on the common hours, at a thousand week-block resamples and seed 0: another "
+       "metric, seed or number of resamples fails"),
+    _b(MON, f"{T_DEC}::test_the_three_contrasts_are_additive",
+       "Sur les mêmes heures, les trois contrastes s'additionnent : changement entier = famille + entrée",
+       "On one set of hours the three contrasts add up: the whole change = family + input"),
+    _b(MON, f"{T_DEC}::test_the_peak_hours_are_the_busiest_of_the_year_with_missing_forecasts_kept",
+       "Les cinq heures les plus chargées sont prises sur toute l'année selon la demande, une prévision manquante "
+       "gardée avec sa raison, et des heures plus calmes ne les remplacent pas",
+       "The five busiest hours are taken over the whole year by demand, a missing forecast kept with its reason, and "
+       "quieter hours never replace them"),
+    _b(MON, f"{T_DEC}::test_the_cold_tail_needs_120_hours_in_at_least_4_weeks",
+       "La queue froide n'est pas testable à 119 heures en 6 semaines, ni à 120 heures en 3 semaines, ni à 119 heures "
+       "sous le seuil plus une au seuil ; elle l'est à 120 heures en 4 semaines",
+       "The cold tail is not testable at 119 hours in 6 weeks, at 120 hours in 3 weeks, or at 119 hours below the "
+       "threshold plus one at it; it is at 120 hours in 4 weeks"),
+    _b(MON, f"{T_DEC}::test_the_cold_tail_is_not_testable_at_119_hours_and_testable_at_120",
+       "La queue froide n'est pas testable à 119 heures froides et l'est à 120, et le verdict le dit",
+       "The cold tail is not testable at 119 cold hours and is at 120, and the verdict says so"),
+    _b(MON, f"{T_DEC}::test_a_better_contrast_with_a_worse_cold_tail_is_not_shown_better",
+       "Un v2 meilleur en moyenne mais moins bon sur les heures froides n'est pas montré meilleur",
+       "A v2 better on average but worse on the cold hours is not shown better"),
+    _b(MON, f"{T_DEC}::test_the_cold_threshold_reads_inputs_only",
+       "Le seuil froid ne lit que les températures prévues : changer toutes les demandes ne le change pas",
+       "The cold threshold reads the forecast temperatures only: changing every demand value leaves it unchanged"),
+    _b(MON, f"{T_DEC}::test_the_status_follows_the_test_of_record",
+       "Le statut de la fiche du modèle suit le test de référence : candidat sans départ de 2025, inachevé tant qu'il "
+       "n'a pas fini, quelle que soit sa position, même avant qu'elle soit consignée, a posteriori s'il l'est, un "
+       "statut sur données réservées seulement sur un 2025 propre et fini ; un test fini dont la position n'est ni "
+       "propre ni a posteriori est refusé",
+       "The model card's status follows the test of record: candidate with no 2025 start, unfinished until it "
+       "finishes whatever its standing, even before its standing is logged, post hoc when it is, a held-out status "
+       "only on a finished clean 2025; a finished test whose standing is neither clean nor post hoc is refused"),
+    _b(MON, f"{T_DEC}::test_only_a_clean_test_of_record_is_labelled_held_out",
+       "Seul un test de référence propre est étiqueté « données réservées » : un test de référence a posteriori est "
+       "étiqueté a posteriori, un départ qui suit un départ fini est vu par les développeurs, et un départ qui suit "
+       "un départ arrêté sans la décision du propriétaire qui le nomme est refusé",
+       "Only a clean test of record is labelled held out: a post-hoc one is labelled post hoc, a start after a "
+       "finished one is seen by the developers, and a start after a stopped one without the owner's ruling naming it "
+       "is refused"),
+    # v2: the monitor never acts, the comparison models included.
+    _b(ACT, f"{T_R2}::test_comparators_crossing_their_thresholds_yield_no_recommendation",
+       "Témoin : des modèles de comparaison hors de leurs seuils ne déclenchent aucune recommandation",
+       "Control: comparison models crossing their thresholds yield no recommendation", control=True),
+    _b(ACT, f"{T_R2}::test_a_comparator_changed_during_the_replay_fails_it",
+       "Un modèle de comparaison modifié pendant le rejeu le fait échouer",
+       "A comparison model changed during the replay fails it"),
+    # v2: the frozen models.
+    _b(FREEZE, f"{T_MOD}::test_the_gam_predicts_what_the_ruled_pipeline_predicts",
+       "Le GAM prévoit ce que prévoit le pipeline scikit-learn tranché par le propriétaire, mêmes colonnes, même "
+       "normalisation et même ridge, extrapolation sous et au-dessus de la plage d'entraînement comprise",
+       "The GAM forecasts what the scikit-learn pipeline the owner ruled forecasts, with the same columns, scaler and "
+       "ridge, extrapolation below and above the training range included"),
+    _b(FREEZE, f"{T_WF}::test_models_none_is_v1_exactly",
+       "Témoin : sans les modèles de v2, la validation glissante reste exactement celle de v1",
+       "Control: without v2's models, the walk-forward is exactly v1's", control=True),
+    _b(FREEZE, f"{T_VAL}::test_models_none_is_v1_validation_exactly",
+       "Témoin : sans les modèles de v2, la validation est exactement celle de v1",
+       "Control: without the v2 models, validation is exactly v1's", control=True),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_round_trips_through_json_and_predicts_as_fitted",
+       "Témoin : le GAM figé, relu de son fichier, prévoit ce que prévoient le GAM ajusté et le pipeline scikit-learn "
+       "tranché, construit à part, au-delà de la plage d'entraînement compris",
+       "Control: the frozen GAM, read back from its file, forecasts what the fitted GAM and the ruled scikit-learn "
+       "pipeline, built independently, forecast, past the training range included", control=True),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_with_an_altered_knot_scale_or_coefficient_is_refused",
+       "Un GAM figé dont un nœud, une échelle, un coefficient ou tout autre champ de son empreinte a changé est refusé",
+       "A frozen GAM whose knot, scale, coefficient or any other hashed field changed is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_with_another_degree_extrapolation_or_bias_is_refused",
+       "Un GAM figé d'un autre degré, d'une autre extrapolation ou d'un autre réglage de biais est refusé, et chacun "
+       "de ces réglages change l'empreinte",
+       "A frozen GAM with another degree, extrapolation or bias setting is refused, and each setting changes the hash"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_whose_knots_are_not_ten_finite_increasing_values_is_refused",
+       "Un GAM figé dont les nœuds ne sont pas dix valeurs finies strictement croissantes est refusé",
+       "A frozen GAM whose knots are not ten finite, strictly increasing values is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[extrapolation]",
+       "Le GAM figé prévoit à partir de son seul fichier : l'extrapolation du module changée après le gel ne change ni "
+       "sa prévision ni ses courbes, et son fichier relu est refusé",
+       "The frozen GAM forecasts from its file alone: the module's extrapolation changed after the freeze changes "
+       "neither its forecast nor its curves, and its file read again is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[degree]",
+       "Le GAM figé prévoit à partir de son seul fichier : le degré du module changé après le gel ne change ni sa "
+       "prévision ni ses courbes, et son fichier relu est refusé",
+       "The frozen GAM forecasts from its file alone: the module's spline degree changed after the freeze changes "
+       "neither its forecast nor its curves, and its file read again is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[include_bias]",
+       "Le GAM figé prévoit à partir de son seul fichier : la colonne de biais du module changée après le gel ne "
+       "change ni sa prévision ni ses courbes, et son fichier relu est refusé",
+       "The frozen GAM forecasts from its file alone: the module's bias setting changed after the freeze changes "
+       "neither its forecast nor its curves, and its file read again is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[n_knots]",
+       "Le GAM figé prévoit à partir de son seul fichier : le nombre de nœuds du module changé après le gel ne change "
+       "ni sa prévision ni ses courbes, et son fichier relu est refusé",
+       "The frozen GAM forecasts from its file alone: the module's number of knots changed after the freeze changes "
+       "neither its forecast nor its curves, and its file read again is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[day_types]",
+       "Le GAM figé prévoit à partir de son seul fichier : les types de jour du module remis dans un autre ordre après "
+       "le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose",
+       "The frozen GAM forecasts from its file alone: with the module's day types reordered after the freeze, its "
+       "file reads back under the same hash and forecasts exactly the same"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[day_types_added]",
+       "Le GAM figé prévoit à partir de son seul fichier : un type de jour ajouté au module après le gel, son fichier "
+       "se relit sous la même empreinte et prévoit exactement la même chose",
+       "The frozen GAM forecasts from its file alone: with a day type added to the module after the freeze, its file "
+       "reads back under the same hash and forecasts exactly the same"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_reads_its_cells_in_their_stored_order_and_refuses_columns_it_cannot_"
+               "rebuild",
+       "Un GAM figé dont les colonnes ne sont pas celles que ses nœuds, ses réglages et ses types de jour engendrent, "
+       "nom pour nom et dans l'ordre, est refusé à la prévision ; écrit avec ses types de jour dans un autre ordre, il "
+       "prévoit la même chose",
+       "A frozen GAM whose columns are not those its knots, settings and day types generate, name for name and in "
+       "order, is refused when it forecasts; written with its day types in another order, it forecasts the same"),
+    _b(FREEZE, f"{T_FRO}::test_a_production_model_with_a_lag_coefficient_not_positive_is_refused",
+       "Un modèle de production dont un coefficient de retard n'est pas positif est refusé",
+       "A production model with a lag coefficient that is not positive is refused"),
+    _b(FREEZE, f"{T_FRO}::test_the_freeze_refuses_a_production_model_whose_lag_coefficient_is_not_positive",
+       "Le gel refuse, avant toute consignation, un modèle de production dont un coefficient de retard n'est pas "
+       "positif",
+       "The freeze refuses, before logging anything, a production model whose lag coefficient is not positive"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_ols_keeps_v1_s_forecast",
+       "Témoin : les moindres carrés figés gardent la prévision de v1",
+       "Control: the frozen least squares keep v1's forecast", control=True),
+    _b(FREEZE, f"{T_FRO}::test_comparators_are_logged_and_reloaded_against_their_hashes",
+       "Un modèle de comparaison modifié, remplacé par un autre modèle, figé pour une autre année ou manquant est "
+       "refusé",
+       "A comparison model that was edited, replaced by another model, frozen for another year or missing is refused"),
+    # v2: the freeze gate, the tags and the records.
+    _b(FREEZE, f"{T_PIPE}::test_a_real_data_run_without_the_first_run_tag_is_refused",
+       "Un calcul sur données réelles hors de la descendance de l'étiquette v2-first-run est refusé",
+       "A real-data run from a commit that does not descend from the v2-first-run tag is refused"),
+    _b(FREEZE, f"{T_PIPE}::test_a_real_data_run_from_a_descendant_of_the_first_run_tag_passes",
+       "Témoin : un calcul sur données réelles depuis un descendant de l'étiquette v2-first-run passe",
+       "Control: a real-data run from a descendant of the v2-first-run tag passes", control=True),
+    _b(FREEZE, f"{T_FETCH}::test_a_2025_fetch_before_the_freeze_is_refused",
+       "Un téléchargement de 2025 avant le gel est refusé", "A 2025 fetch before the freeze is refused"),
+    _b(FREEZE, f"{T_FETCH}::test_a_2025_fetch_from_a_dirty_tree_is_refused",
+       "Un téléchargement de 2025 depuis un arbre de travail aux changements non validés est refusé",
+       "A 2025 fetch from a tree with uncommitted changes is refused"),
+    _b(FREEZE, f"{T_FETCH}::test_a_partial_2025_export_is_refused_and_writes_nothing",
+       "Un export de 2025 incomplet est refusé et rien n'est écrit",
+       "A partial 2025 export is refused and nothing is written"),
+    _b(FREEZE, f"{T_FRZ}::test_a_dependency_changed_after_the_v2_tag_is_refused_and_named",
+       "Une dépendance modifiée après l'étiquette de gel de v2 est refusée et nommée",
+       "A dependency changed after the v2 freeze tag is refused and named"),
+    _b(FREEZE, f"{T_FRZ}::test_v1_replays_never_count_as_a_moved_v2_tag",
+       "Témoin : les rejeux de v1 ne comptent jamais comme un déplacement de l'étiquette de gel de v2",
+       "Control: v1's replays never count as a moved v2 freeze tag", control=True),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_replay_under_a_moved_v2_tag_is_refused_unless_recorded",
+       "Un rejeu de v2 sous une étiquette de gel de v2 déplacée est refusé sauf dérogation consignée",
+       "A v2 replay under a moved v2 freeze tag is refused unless the departure is recorded"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_replay_run_on_its_own_sees_a_tag_moved_since_v2_s_2024_replay",
+       "Un rejeu de 2025 lancé seul voit une étiquette déplacée depuis le rejeu de 2024 de v2 : la vérification suit "
+       "le gel, pas l'année",
+       "A 2025 replay run on its own sees a tag moved since v2's 2024 replay: the check is scoped by freeze, not by "
+       "year"),
+    _b(FREEZE, f"{T_FRZ}::test_an_unfinished_start_counts_for_the_moved_tag_check",
+       "Un départ inachevé compte pour la vérification de l'étiquette déplacée",
+       "An unfinished start counts for the moved-tag check"),
+    _b(FREEZE, f"{T_FRZ}::test_a_stored_replay_without_a_freeze_tag_counts_as_v1_s",
+       "Un rejeu stocké sans étiquette de gel compte comme un rejeu de v1",
+       "A stored replay without a freeze tag counts as v1's"),
+    _b(FREEZE, f"{T_FRZ}::test_every_freeze_tag_in_the_repository_is_listed_in_freezes",
+       "Une étiquette nommée comme un gel que la configuration ne liste pas est refusée",
+       "A tag named like a freeze that the configuration does not list is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_recorded_departures_reads_the_section_of_its_tag",
+       "Témoin : les dérogations consignées sont lues dans la section de leur étiquette de gel",
+       "Control: recorded departures are read from the section of their freeze tag", control=True),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_departure_entry_naming_only_the_new_freeze_commit_is_refused",
+       "Une entrée de dérogation de v2 qui ne nomme que le nouveau commit de gel est refusée : ni le commit d'où "
+       "l'étiquette est partie ni le changement de règle entre les deux ne sont consignés",
+       "A v2 departure entry naming only the new freeze commit is refused: neither the commit the tag moved from nor "
+       "the rule change between them is recorded"),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_departure_entry_not_naming_the_commit_the_tag_moved_from_is_refused",
+       "Une entrée de dérogation de v2 qui ne nomme pas le commit de gel d'où l'étiquette est partie, celui d'un rejeu "
+       "antérieur, est refusée",
+       "A v2 departure entry that does not name the freeze commit the tag moved from, an earlier replay's, is "
+       "refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_departure_entry_missing_a_change_commit_is_refused",
+       "Une entrée de dérogation de v2 qui omet un commit de règle entre ses deux commits de gel, lu commit par "
+       "commit, est refusée et le commit est nommé",
+       "A v2 departure entry that leaves out a rule commit between its two freeze commits, read commit by commit, is "
+       "refused and the commit named"),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_departure_entry_naming_an_unrelated_commit_is_refused",
+       "Une entrée de dérogation de v2 qui nomme un commit de son déplacement ne touchant ni une règle ni une "
+       "dépendance est refusée",
+       "A v2 departure entry naming a commit of its move that touches no rule file or dependency is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_departure_record_whose_moves_do_not_join_is_refused",
+       "Un registre de dérogations de v2 dont le second déplacement ne part pas du commit où le premier a mené "
+       "l'étiquette est refusé",
+       "A v2 departure record whose second move does not start at the commit the first moved the tag to is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_v2_tag_moved_back_without_a_departure_entry_is_refused",
+       "Une étiquette de gel de v2 ramenée sur un commit d'arrivée antérieur, sans entrée qui consigne ce "
+       "déplacement, est refusée ; sur le dernier commit d'arrivée, elle passe",
+       "A v2 freeze tag moved back to an earlier moved-to commit, with no entry recording that move, is refused; on "
+       "the last moved-to commit it passes"),
+    _b(FREEZE, f"{T_FRZ}::test_the_2025_gate_refuses_an_incomplete_departure_record_before_the_run_opens",
+       "La porte de 2025 refuse un registre de dérogations incomplet avant l'ouverture de l'exécution, et rien ne "
+       "s'ouvre",
+       "The 2025 gate refuses an incomplete departure record before the run opens, and nothing opens"),
+    _b(FREEZE, f"{T_DEP}::test_before_the_v2_freeze_a_v2_record_fails",
+       "Avant l'étiquette de gel de v2, une entrée du registre sous elle, une section de v2 qui nomme un commit, une "
+       "section absente ou une tête qui ne descend pas de v1 font échouer l'historique",
+       "Before the v2 freeze tag, a ledger entry under it, a v2 section naming a commit, a missing section or a head "
+       "that does not descend from v1 fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_departure_naming_the_freeze_commit_it_moved_from_passes",
+       "Témoin : une dérogation de v2 qui nomme le commit de gel d'où l'étiquette est partie passe l'historique de v2",
+       "Control: a v2 departure naming the freeze commit it moved from passes v2's history check", control=True),
+    _b(FREEZE, f"{T_DEP}::test_a_recorded_v2_dependency_departure_passes",
+       "Témoin : un changement de dépendance consigné comme dérogation passe l'historique de v2",
+       "Control: a dependency change recorded as a departure passes v2's history check", control=True),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_rule_change_after_the_tag_fails",
+       "Un commit de règle après l'étiquette de gel de v2, non consigné, fait échouer l'historique",
+       "A rule commit after the v2 freeze tag, not recorded, fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_dependency_change_after_the_tag_fails[pyproject.toml]",
+       "Un changement de pyproject.toml après l'étiquette de gel de v2, non consigné, fait échouer l'historique",
+       "A pyproject.toml change after the v2 freeze tag, not recorded, fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_dependency_change_after_the_tag_fails[uv.lock]",
+       "Un changement de uv.lock après l'étiquette de gel de v2, non consigné, fait échouer l'historique",
+       "A uv.lock change after the v2 freeze tag, not recorded, fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_rule_change_reverted_with_the_tag_unmoved_fails",
+       "Un changement de règle annulé ensuite, l'étiquette restée en place, fait échouer l'historique lu commit par "
+       "commit",
+       "A rule change reverted later, the tag left in place, fails the history read commit by commit"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_departure_missing_a_change_commit_fails",
+       "Une dérogation de v2 qui ne nomme pas un commit de changement de son déplacement fait échouer l'historique",
+       "A v2 departure that does not name a change commit of its move fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_departure_naming_an_unrelated_commit_fails",
+       "Une dérogation de v2 qui nomme un commit ni changement de son déplacement ni commit de gel fait échouer "
+       "l'historique",
+       "A v2 departure naming a commit that is neither a change of its move nor a freeze commit fails the history "
+       "check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_departure_not_naming_its_freeze_commits_fails",
+       "Une dérogation de v2 qui ne nomme pas le commit d'où l'étiquette est partie, ou celui où elle est arrivée, "
+       "fait échouer l'historique",
+       "A v2 departure that does not name the commit the tag moved from, or the one it moved to, fails the history "
+       "check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_move_without_its_departure_entry_fails",
+       "Un déplacement de l'étiquette de gel de v2 sans entrée de dérogation, ou une entrée sans déplacement, fait "
+       "échouer l'historique",
+       "A move of the v2 freeze tag without its departure entry, or an entry with no move, fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_section_entry_with_another_head_fails",
+       "Une entrée de la section de v2 qui nomme un commit sans être une dérogation ni la décision du propriétaire sur "
+       "2025 avec son issue fait échouer l'historique",
+       "A v2 section entry naming a commit that is neither a departure nor the owner's ruling on 2025 with its "
+       "outcome fails the history check"),
+    _b(FREEZE, f"{T_DEP}::test_a_v2_tag_moved_without_its_pin_fails",
+       "Une étiquette de gel de v2 déplacée sans que son épingle soit validée fait échouer l'historique dès le commit "
+       "suivant",
+       "A v2 freeze tag moved without its pin committed fails the history check from the next commit on"),
+    _b(FREEZE, f"{T_TAGS}::test_a_pinned_tag_moved_fails",
+       "Une étiquette déplacée hors du commit de son épingle fait échouer le test des étiquettes",
+       "A tag moved off its pinned commit fails the tags test"),
+    _b(FREEZE, f"{T_PLAN}::test_a_rule_change_after_the_first_run_not_named_fails[src/valiwatt/monitor/rules.py]",
+       "Un changement de fichier de règles après v2-first-run que la section 18 du plan ne nomme pas fait échouer "
+       "l'historique du plan",
+       "A rule-file change after v2-first-run that the plan's section 18 does not name fails the plan's history "
+       "check"),
+    _b(FREEZE, f"{T_PLAN}::test_a_rule_change_after_the_first_run_not_named_fails[pyproject.toml]",
+       "Un changement de pyproject.toml après v2-first-run que la section 18 du plan ne nomme pas fait échouer "
+       "l'historique du plan",
+       "A pyproject.toml change after v2-first-run that the plan's section 18 does not name fails the plan's history "
+       "check"),
+    _b(FREEZE, f"{T_PLAN}::test_a_rule_change_after_the_first_run_not_named_fails[uv.lock]",
+       "Un changement de uv.lock après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique "
+       "du plan",
+       "A uv.lock change after v2-first-run that the plan's section 18 does not name fails the plan's history check"),
+    _b(FREEZE, f"{T_PLAN}::test_a_plan_edit_outside_section_18_not_named_fails",
+       "Une modification du plan de v2 après plan-v2, hors de sa section 18 et non nommée par elle, fait échouer "
+       "l'historique du plan",
+       "An edit of v2's plan after plan-v2, outside its section 18 and not named there, fails the plan's history "
+       "check"),
+    _b(FREEZE, f"{T_PLAN}::test_a_section_18_entry_rewritten_must_be_named",
+       "Une entrée de la section 18 du plan réécrite sans être nommée fait échouer l'historique du plan",
+       "A section 18 entry of the plan rewritten without being named fails the plan's history check"),
+    # v2: the 2025 gate (plan sections 11.3.4 and 11.3.5), its starts, its diagnostics and the evidence.
+    _b(FREEZE, f"{T_FRZ}::test_a_clean_2025_start_with_nothing_changed_passes",
+       "Témoin : un départ de 2025 propre, rien n'ayant changé, passe la porte",
+       "Control: a clean 2025 start with nothing changed passes the gate", control=True),
+    _b(FREEZE, f"{T_FRZ}::test_the_2025_gate_walks_every_commit_after_the_first_freeze_commit",
+       "La porte de 2025 parcourt chaque commit après le premier commit de gel et refuse un changement de règle ou de "
+       "dépendance, même annulé ensuite, en nommant les commits et les fichiers ; un commit vide passe",
+       "The 2025 gate walks every commit after the first freeze commit and refuses a rule or dependency change, even "
+       "one reverted later, naming the commits and files; an empty commit passes"),
+    _b(FREEZE, f"{T_FRZ}::test_the_2025_gate_refuses_a_merge_a_shallow_clone_and_a_head_off_the_freeze_commit",
+       "La porte de 2025 refuse une fusion, un clone superficiel et une tête qui ne descend pas du commit de gel",
+       "The 2025 gate refuses a merge, a shallow clone and a head that does not descend from the freeze commit"),
+    _b(FREEZE, f"{T_FRZ}::test_a_fix_after_a_failed_first_2024_start_refuses_the_2025_gate",
+       "Un correctif après l'échec du premier départ de 2024 fait refuser la porte de 2025, qui le nomme",
+       "A fix after a failed first 2024 start refuses the 2025 gate, which names it"),
+    _b(FREEZE, f"{T_FRZ}::test_an_owner_s_ruling_entry_lifts_a_refusal_with_its_outcome[clean]",
+       "La décision du propriétaire, avec sa preuve, lève un refus avec son issue : propre, étiqueté "
+       "« données réservées »",
+       "The owner's ruling entry, with its evidence, lifts a refusal with its outcome: clean, labelled held out"),
+    _b(FREEZE, f"{T_FRZ}::test_an_owner_s_ruling_entry_lifts_a_refusal_with_its_outcome[post_hoc]",
+       "La décision du propriétaire, avec sa preuve, lève un refus avec son issue : a posteriori, étiqueté a "
+       "posteriori",
+       "The owner's ruling entry, with its evidence, lifts a refusal with its outcome: post hoc, labelled post hoc"),
+    _b(FREEZE, f"{T_FRZ}::test_a_ruling_entry_that_does_not_apply_leaves_the_refusal",
+       "Une décision du propriétaire qui ne s'applique pas laisse le refus : suivie d'un changement de règle, sur un "
+       "commit dont un départ antérieur descend, introuvable, ou sans exécution de preuve finie faite d'un arbre "
+       "propre",
+       "An owner's ruling that does not apply leaves the refusal: followed by a rule change, on a commit an earlier "
+       "start descends past, unresolved, or without a finished evidence run made from a clean tree"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_start_whose_frozen_artifacts_differ_is_refused",
+       "Un départ de 2025 dont un artefact figé diffère de la première entrée de 2024 de v2 est refusé",
+       "A 2025 start one of whose frozen artifacts differs from v2's first 2024 entry is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_start_without_its_runs_in_the_store_is_refused",
+       "Un départ de 2025 dont les exécutions manquent au magasin, comme dans une copie fraîche, est refusé",
+       "A 2025 start whose runs are missing from the store, as in a fresh clone, is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_gate_refuses_a_data_quality_run_that_is_not_a_passing_through_2025_run",
+       "La porte de 2025 refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025",
+       "The 2025 gate refuses a data-quality run that is not a passing through-2025 run"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_gate_refuses_a_raw_file_the_data_quality_run_did_not_check",
+       "La porte de 2025 refuse un fichier brut que le contrôle de qualité des données n'a pas vérifié, sans lire "
+       "aucune demande",
+       "The 2025 gate refuses a raw file the data-quality run did not check, reading no demand record"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_start_while_another_is_running_is_refused",
+       "Un départ de 2025 pendant qu'un autre est en cours est refusé",
+       "A 2025 start while another is running is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_two_simultaneous_2025_starts_open_one_run",
+       "Deux départs de 2025 simultanés n'ouvrent qu'une exécution ; l'autre est refusé",
+       "Two simultaneous 2025 starts open one run; the other is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_diagnostic_run_without_its_finished_replay_refuses_the_gate",
+       "Une exécution de diagnostic de 2025 sans son rejeu fini et complet fait refuser la porte",
+       "A 2025 diagnostic run without its finished, complete replay refuses the gate"),
+    _b(FREEZE, f"{T_FRZ}::test_a_2025_replay_without_a_v2_2024_ledger_entry_is_refused",
+       "Un rejeu de 2025 sans entrée de 2024 de v2 au registre des rejeux est refusé",
+       "A 2025 replay without a v2 2024 entry in the replay ledger is refused"),
+    _b(FREEZE, f"{T_FRZ}::test_after_an_unfinished_test_of_record_a_later_start_refuses_until_a_ruling",
+       "Après un test de référence inachevé, un départ suivant est refusé, en disant si l'exécution arrêtée tient un "
+       "résultat, jusqu'à une décision du propriétaire qui nomme le départ arrêté",
+       "After an unfinished test of record, a later start refuses, saying whether the stopped run holds any result, "
+       "until an owner's ruling names the stopped start"),
+    _b(FREEZE, f"{T_FRZ}::test_a_later_2025_start_is_tagged_seen_by_developers",
+       "Un départ de 2025 ultérieur à un test de référence fini est étiqueté « vu par les développeurs »",
+       "A 2025 start after a finished test of record is tagged seen by the developers"),
+    _b(FREEZE, f"{T_FRZ}::test_the_replay_function_refuses_2025_on_its_own",
+       "La fonction de rejeu, appelée seule, refuse 2025", "The replay function, called on its own, refuses 2025"),
+    _b(FREEZE, f"{T_R2}::test_the_2025_replay_refuses_until_the_window_reaches_its_end",
+       "Le rejeu de 2025 est refusé tant que la fenêtre des données n'atteint pas la fin de 2025",
+       "The 2025 replay is refused until the data window reaches the end of 2025"),
+    _b(FREEZE, f"{T_R2}::test_the_2025_replay_refuses_a_dirty_tree",
+       "Le rejeu de 2025 refuse un arbre de travail aux changements non validés",
+       "The 2025 replay refuses a working tree with uncommitted changes"),
+    _b(FREEZE, f"{T_R2}::test_the_2025_replay_uses_the_artifacts_frozen_for_2024",
+       "Le rejeu de 2025 lit les artefacts figés pour 2024, jamais les plus récents",
+       "The 2025 replay reads the artifacts frozen for 2024, never the latest"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_replay_stopped_midway_leaves_its_started_run",
+       "Un rejeu de 2025 arrêté en cours laisse son exécution démarrée, avec l'étape atteinte et la classe de son "
+       "erreur ; arrêté par un contrôle, il ne tient aucune métrique ni aucun résultat",
+       "A 2025 replay stopped midway leaves its started run, with the step it reached and its error's class; one "
+       "stopped by a check holds no metric and no result"),
+    _b(FREEZE, f"{T_R2}::test_a_gate_refusal_opens_no_run",
+       "Témoin : un refus de la porte n'ouvre aucune exécution", "Control: a gate refusal opens no run", control=True),
+    _b(FREEZE, f"{T_R2}::test_the_replay_function_refuses_2025_without_its_open_started_run",
+       "La fonction de rejeu refuse 2025 sans son exécution ouverte et démarrée, de ce code et de ce genre",
+       "The replay function refuses 2025 without its open, started run, of this code and of this kind"),
+    _b(FREEZE, f"{T_R2}::test_the_diagnostics_run_after_the_replay_has_finished",
+       "Les diagnostics s'exécutent après la fin du rejeu, dans leur propre exécution ; leur échec laisse le rejeu "
+       "fini",
+       "The diagnostics run after the replay has finished, in a run of their own; their failure leaves the replay "
+       "finished"),
+    _b(FREEZE, f"{T_R2}::test_two_workers_replay_2025_under_the_diagnostic_run",
+       "Deux processus rejouent 2025 sous l'exécution de diagnostic, chacun la cherchant dans le magasin ; un "
+       "identifiant que le magasin n'a pas est refusé dans le processus",
+       "Two worker processes replay 2025 under the diagnostic run, each looking it up in the store; a run ID the "
+       "store does not hold is refused inside a worker"),
+    _b(FREEZE, f"{T_R2}::test_the_evidence_compares_every_column_and_decides_nothing",
+       "La preuve compare chaque colonne de chaque heure et ne décide rien",
+       "The evidence compares every column of every hour and decides nothing"),
+    _b(FREEZE, f"{T_R2}::test_the_evidence_refuses_a_dirty_tree",
+       "La preuve refuse un arbre de travail aux changements non validés",
+       "The evidence refuses a working tree with uncommitted changes"),
+    _b(FREEZE, f"{T_R2}::test_the_evidence_refuses_a_data_quality_run_that_is_not_a_passing_through_2025_run",
+       "La preuve refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025",
+       "The evidence refuses a data-quality run that is not a passing through-2025 run"),
+    _b(FREEZE, f"{T_CLI}::test_all_never_runs_the_2025_replay",
+       "La commande « all » ne rejoue jamais 2025 ni ne lance la preuve, quels que soient ses drapeaux, et refuse "
+       "--through",
+       "The all command never replays 2025 nor runs the evidence, whatever its flags, and refuses --through"),
+    _b(FREEZE, f"{T_CLI}::test_no_flag_but_departure_reaches_the_2025_replay",
+       "Aucun drapeau autre que --departure n'atteint le rejeu de 2025",
+       "No flag but --departure reaches the 2025 replay"),
+    _b(FREEZE, f"{T_CLI}::test_replay_accepts_2025_and_freeze_does_not",
+       "La commande « freeze » refuse 2025 : 2025 est jugé par les artefacts figés pour 2024",
+       "The freeze command refuses 2025: 2025 is judged by the artifacts frozen for 2024"),
+    # v2: the replay ledger.
+    _b(RENDER, f"{T_LED}::test_the_v1_entries_equal_those_of_the_ledger_at_tag_v1",
+       "Une entrée de v1 du registre des rejeux modifiée depuis l'étiquette v1 est repérée",
+       "A v1 replay-ledger entry changed since tag v1 is caught"),
+    _b(RENDER, f"{T_LED}::test_a_v2_entry_of_another_year_is_refused",
+       "Une entrée de v2 d'une année que son gel ne rejoue pas est refusée",
+       "A v2 entry of a year its freeze does not replay is refused"),
+    _b(RENDER, f"{T_LED}::test_an_entry_of_an_unknown_freeze_tag_is_refused",
+       "Une entrée du registre sous une étiquette de gel inconnue est refusée",
+       "A ledger entry under an unknown freeze tag is refused"),
+    _b(RENDER, f"{T_LED}::test_a_v1_entry_with_v2_fields_is_refused",
+       "Une entrée de v1 qui porte les champs de v2 est refusée", "A v1 entry carrying v2's fields is refused"),
+    _b(RENDER, f"{T_LED}::test_a_v2_entry_without_its_evaluation_label_is_refused",
+       "Une entrée de v2 sans son étiquette d'évaluation est refusée",
+       "A v2 entry without its evaluation label is refused"),
+    _b(RENDER, f"{T_LED}::test_a_v2_label_other_than_its_starts_give_is_refused",
+       "Une étiquette d'évaluation autre que celle que donnent les départs de 2025 est refusée",
+       "An evaluation label other than the one the 2025 starts give is refused"),
+    _b(RENDER, f"{T_LED}::test_a_post_hoc_test_of_record_labelled_held_out_is_refused",
+       "Un test de référence a posteriori étiqueté « données réservées » est refusé",
+       "A post-hoc test of record labelled held out is refused"),
+    _b(RENDER, f"{T_LED}::test_a_ruled_test_of_record_after_a_stopped_start_passes[clean-held_out]",
+       "Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, "
+       "propre et étiqueté « données réservées »",
+       "Control: after a stopped start, the start the owner's ruling names becomes the test of record, clean and "
+       "labelled held out", control=True),
+    _b(RENDER, f"{T_LED}::test_a_ruled_test_of_record_after_a_stopped_start_passes[post_hoc-post_hoc]",
+       "Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, "
+       "a posteriori et étiqueté a posteriori",
+       "Control: after a stopped start, the start the owner's ruling names becomes the test of record, post hoc and "
+       "labelled post hoc", control=True),
+    _b(RENDER, f"{T_LED}::test_a_later_2025_entry_labelled_seen_by_developers_passes",
+       "Témoin : un rejeu de 2025 refait, étiqueté « vu par les développeurs », passe",
+       "Control: a later 2025 rerun labelled seen by the developers passes", control=True),
+    _b(RENDER, f"{T_LED}::test_a_2024_entry_with_a_standing_or_a_2025_entry_without_one_is_refused",
+       "Une entrée de 2024 qui porte une position, ou de 2025 qui n'en porte pas, est refusée",
+       "A 2024 entry with a standing, or a 2025 entry without one, is refused"),
+    _b(RENDER, f"{T_LED}::test_a_non_departure_v2_entry_under_another_freeze_commit_is_refused",
+       "Une entrée de v2 qui n'est pas une dérogation, sous un autre commit de gel que la première entrée de 2024 de "
+       "v2, est refusée",
+       "A v2 entry that is no departure, under another freeze commit than v2's first 2024 entry, is refused"),
+    _b(RENDER, f"{T_LED}::test_a_v2_2025_entry_before_any_v2_2024_entry_is_refused",
+       "Une entrée de 2025 antérieure à toute entrée de 2024 de v2 est refusée",
+       "A 2025 entry before any v2 2024 entry is refused"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused"
+               "[evaluation-seen_by_developers]",
+       "Un rejeu du magasin qui diffère de son entrée de v2 par l'étiquette d'évaluation est refusé",
+       "A stored replay differing from its v2 entry in its evaluation label is refused"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused"
+               "[model_sha256-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff]",
+       "Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte du modèle de production est refusé",
+       "A stored replay differing from its v2 entry in the production model's hash is refused"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused[verdict-value2]",
+       "Un rejeu du magasin qui diffère de son entrée de v2 par les verdicts de la règle de décision est refusé",
+       "A stored replay differing from its v2 entry in the decision rule's verdicts is refused"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused"
+               "[frozen_sha256-0000000000000000000000000000000000000000000000000000000000000000]",
+       "Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte des artefacts figés est refusé",
+       "A stored replay differing from its v2 entry in the frozen artifacts' hash is refused"),
+    _b(RENDER, f"{T_LED}::test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused[standing-post_hoc]",
+       "Un rejeu du magasin qui diffère de son entrée de v2 par la position est refusé",
+       "A stored replay differing from its v2 entry in its standing is refused"),
+    _b(RENDER, f"{T_LED}::test_the_earliest_started_2025_replay_is_the_test_of_record",
+       "Un départ de 2025 plus tardif présenté comme test de référence est refusé",
+       "A later 2025 start offered as the test of record is refused"),
+    _b(RENDER, f"{T_LED}::test_a_stopped_first_start_gives_way_only_to_the_start_its_ruling_names",
+       "Après un départ arrêté, un départ sans la décision du propriétaire qui le nomme ne devient pas le test de "
+       "référence",
+       "After a stopped start, a start without the owner's ruling naming it does not become the test of record"),
+    _b(RENDER, f"{T_LED}::test_a_finished_replay_not_marked_complete_stays_out_of_the_ledger",
+       "Un rejeu que MLflow dit fini mais qui ne s'est pas marqué complet n'entre pas au registre des rejeux",
+       "A replay MLflow calls finished that never marked itself complete stays out of the replay ledger"),
+    # v2: the report's run chain and its 2025 records.
+    _b(RENDER, f"{T_LIN}::test_the_chain_follows_the_v2_2024_replay_not_a_v1_or_a_2025_one",
+       "Témoin : la chaîne suit le rejeu de 2024 de v2, pas un rejeu de v1 ni un rejeu de 2025",
+       "Control: the chain follows v2's 2024 replay, not a v1 replay nor a 2025 one", control=True),
+    _b(RENDER, f"{T_LIN}::test_a_clean_2025_with_nothing_changed_renders_beside_the_2024_replay_of_record[fr]",
+       "Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à "
+       "côté, rapport français",
+       "Control: a clean 2025 with nothing changed renders beside the 2024 replay of record, the rerun beside it, "
+       "French report", control=True),
+    _b(RENDER, f"{T_LIN}::test_a_clean_2025_with_nothing_changed_renders_beside_the_2024_replay_of_record[en]",
+       "Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à "
+       "côté, rapport anglais",
+       "Control: a clean 2025 with nothing changed renders beside the 2024 replay of record, the rerun beside it, "
+       "English report", control=True),
+    _b(RENDER, f"{T_LIN}::test_a_2025_replay_whose_frozen_hashes_differ_from_the_2024_record_s_is_refused",
+       "Un rejeu de 2025 jugé par des artefacts figés d'autres empreintes que ceux du rejeu de 2024 de référence rompt "
+       "la chaîne du rapport",
+       "A 2025 replay judged by frozen artifacts with other hashes than the 2024 replay of record's breaks the "
+       "report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_a_2025_rerun_whose_frozen_hashes_differ_from_the_2024_record_s_is_refused",
+       "Un rejeu de 2025 refait, jugé par des artefacts figés dont une empreinte diffère de celles du rejeu de 2024 de "
+       "référence, rompt la chaîne du rapport",
+       "A 2025 rerun judged by frozen artifacts one of whose hashes differs from the 2024 replay of record's breaks "
+       "the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_a_2025_record_whose_data_quality_run_does_not_reach_the_end_of_2025_is_refused",
+       "Un rejeu de 2025, le test de référence ou un rejeu refait, dont l'exécution de qualité des données ne va pas "
+       "jusqu'à la fin de 2025 rompt la chaîne du rapport",
+       "A 2025 replay, the test of record or a rerun, whose data-quality run does not reach the end of 2025 breaks "
+       "the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_an_unfinished_test_of_record_judged_by_other_frozen_artifacts_is_refused",
+       "Un test de référence de 2025 inachevé dont le registre de la porte nomme d'autres artefacts figés que ceux du "
+       "rejeu de 2024 de référence rompt la chaîne du rapport",
+       "An unfinished 2025 test of record whose gate's record names other frozen artifacts than the 2024 replay of "
+       "record's breaks the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_a_2024_replay_tagged_with_another_evaluation_is_refused",
+       "Un rejeu de 2024 étiqueté autrement que « vu par les développeurs », ou sans étiquette, fait refuser le "
+       "rapport",
+       "A 2024 replay tagged with another evaluation label than seen by the developers, or with none, makes the "
+       "report refuse"),
+    _b(RENDER, f"{T_LIN}::test_a_record_from_older_code_is_stated_not_refused[fr]",
+       "Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport "
+       "français",
+       "Control: a record made on older code renders with its code stated, not refused, French report", control=True),
+    _b(RENDER, f"{T_LIN}::test_a_record_from_older_code_is_stated_not_refused[en]",
+       "Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport "
+       "anglais",
+       "Control: a record made on older code renders with its code stated, not refused, English report", control=True),
+    _b(RENDER, f"{T_LIN}::test_a_comparator_hash_that_differs_from_the_replay_s_is_refused",
+       "Un modèle de comparaison dont l'empreinte diffère de celle que le rejeu a consignée rompt la chaîne du rapport",
+       "A comparison model whose hash differs from the one the replay logged breaks the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_a_v2_departure_from_an_unfinished_start_and_two_freeze_commits_renders[fr]",
+       "Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de "
+       "gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport "
+       "français",
+       "A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry "
+       "names, breaks the chain; an unfinished start is shown as unfinished, French report"),
+    _b(RENDER, f"{T_LIN}::test_a_v2_departure_from_an_unfinished_start_and_two_freeze_commits_renders[en]",
+       "Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de "
+       "gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport "
+       "anglais",
+       "A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry "
+       "names, breaks the chain; an unfinished start is shown as unfinished, English report"),
+    _b(RENDER, f"{T_LIN}::test_v1_history_comes_only_from_rules_frozen_entries",
+       "L'historique de v1 ne vient que de ses entrées « rules-frozen » ; sans son entrée simple, la chaîne est rompue",
+       "v1's history comes only from its rules-frozen entries; without its plain entry the chain breaks"),
+    _b(RENDER, f"{T_LIN}::test_check_recorded_reads_the_v2_section",
+       "Une étiquette de gel ramenée à un commit d'avant, ou posée sur un commit de changement nommé, est refusée ; "
+       "une décision du propriétaire sur 2025 n'est pas une dérogation",
+       "A freeze tag moved back to an earlier commit, or onto a named change commit, is refused; an owner's ruling on "
+       "2025 is no departure"),
+    _b(RENDER, f"{T_LIN}::test_check_recorded_refuses_an_incomplete_v2_departure_record",
+       "Le rapport refuse un registre de dérogations de v2 incomplet, par la règle même de la porte du rejeu",
+       "The report refuses an incomplete v2 departure record, by the replay gate's own rule"),
+    _b(RENDER, f"{T_LIN}::test_check_named_refuses_a_predecessor_under_a_change_commit_the_entry_names",
+       "Un rejeu d'avant une dérogation fait sous un commit de changement que l'entrée nomme, ni commit de départ ni "
+       "commit d'arrivée de l'étiquette, rompt la chaîne du rapport",
+       "A replay from before a departure made under a change commit the entry names, neither a commit the tag moved "
+       "from nor one it moved to, breaks the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_the_report_prints_the_standing_its_gate_logged",
+       "Une position que le registre de la porte n'a pas consignée, ou un statut tiré d'autre chose que le test de "
+       "référence, fait refuser le rapport",
+       "A standing the gate's record did not log, or a status drawn from anything but the test of record, makes the "
+       "report refuse"),
+    _b(RENDER, f"{T_LIN}::test_a_finished_2025_replay_without_its_gate_record_is_refused",
+       "Un rejeu de 2025 fini sans sa position ou sans le registre de sa porte rompt la chaîne du rapport",
+       "A finished 2025 replay without its standing or its gate's record breaks the report's run chain"),
+    _b(RENDER, f"{T_LIN}::test_the_ruling_entry_the_gate_read_is_printed[fr]",
+       "Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, "
+       "rapport français",
+       "Control: the owner's ruling the gate read is printed, with the stopped start it names, French report",
+       control=True),
+    _b(RENDER, f"{T_LIN}::test_the_ruling_entry_the_gate_read_is_printed[en]",
+       "Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, "
+       "rapport anglais",
+       "Control: the owner's ruling the gate read is printed, with the stopped start it names, English report",
+       control=True),
+    # v2: what the report renders, its labels and the 2025 test of record.
+    _b(RENDER, f"{T_REND}::test_each_status_names_its_scope_in_both_languages[fr]",
+       "Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, "
+       "rapport français",
+       "A report or story that does not open with its status sentence, whatever the status, is refused, French "
+       "report"),
+    _b(RENDER, f"{T_REND}::test_each_status_names_its_scope_in_both_languages[en]",
+       "Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, "
+       "rapport anglais",
+       "A report or story that does not open with its status sentence, whatever the status, is refused, English "
+       "report"),
+    _b(RENDER, f"{T_REND}::test_a_2024_v2_number_without_its_label_is_refused",
+       "Un nombre de v2 sur 2024 sans son étiquette d'évaluation fait refuser le rapport",
+       "A v2 number on 2024 without its evaluation label makes the report refuse"),
+    _b(RENDER, f"{T_REND}::test_a_better_claim_without_the_held_out_label_is_refused[fr]",
+       "Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait "
+       "refuser le rapport, rapport français",
+       "A better claim without the held-out label, in the sentence or on the page, makes the report refuse, French "
+       "report"),
+    _b(RENDER, f"{T_REND}::test_a_better_claim_without_the_held_out_label_is_refused[en]",
+       "Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait "
+       "refuser le rapport, rapport anglais",
+       "A better claim without the held-out label, in the sentence or on the page, makes the report refuse, English "
+       "report"),
+    _b(RENDER, f"{T_REND}::test_a_better_claim_from_a_2025_that_is_not_clean_is_refused[fr]",
+       "« Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport français",
+       "A better claim from a 2025 that is not clean makes the report refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_a_better_claim_from_a_2025_that_is_not_clean_is_refused[en]",
+       "« Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport anglais",
+       "A better claim from a 2025 that is not clean makes the report refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_a_2025_verdict_without_a_2025_replay_is_refused[fr]",
+       "Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport français",
+       "A 2025 verdict without a 2025 replay makes the report refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_a_2025_verdict_without_a_2025_replay_is_refused[en]",
+       "Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport anglais",
+       "A 2025 verdict without a 2025 replay makes the report refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_v1_2024_numbers_come_from_its_ledger_entries[fr]",
+       "Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport "
+       "français",
+       "A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_v1_2024_numbers_come_from_its_ledger_entries[en]",
+       "Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport "
+       "anglais",
+       "A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_an_unfinished_2025_start_not_listed_is_refused[fr]",
+       "Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport français",
+       "An unfinished 2025 start not listed in section 9 makes the report refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_an_unfinished_2025_start_not_listed_is_refused[en]",
+       "Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport anglais",
+       "An unfinished 2025 start not listed in section 9 makes the report refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_a_later_passing_rerun_never_overrides_the_test_of_record[fr]",
+       "Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et "
+       "recommandation restent les siens, rapport français",
+       "A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the "
+       "recommendation stay its own, French report"),
+    _b(RENDER, f"{T_REND}::test_a_later_passing_rerun_never_overrides_the_test_of_record[en]",
+       "Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et "
+       "recommandation restent les siens, rapport anglais",
+       "A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the "
+       "recommendation stay its own, English report"),
+    _b(RENDER, f"{T_REND}::test_a_clean_2025_not_confirmed_without_its_recommendation_is_refused[not_confirmed-fr]",
+       "Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait "
+       "refuser le rapport (non confirmé), rapport français",
+       "A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the "
+       "story, makes the report refuse (not confirmed), French report"),
+    _b(RENDER, f"{T_REND}::test_a_clean_2025_not_confirmed_without_its_recommendation_is_refused[not_confirmed-en]",
+       "Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait "
+       "refuser le rapport (non confirmé), rapport anglais",
+       "A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the "
+       "story, makes the report refuse (not confirmed), English report"),
+    _b(RENDER, f"{T_REND}::test_a_clean_2025_not_confirmed_without_its_recommendation_is_refused[input_only-fr]",
+       "Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait "
+       "refuser le rapport (meilleur que v1 tel que livré seulement), rapport français",
+       "A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the "
+       "story, makes the report refuse (better than v1 as shipped only), French report"),
+    _b(RENDER, f"{T_REND}::test_a_clean_2025_not_confirmed_without_its_recommendation_is_refused[input_only-en]",
+       "Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait "
+       "refuser le rapport (meilleur que v1 tel que livré seulement), rapport anglais",
+       "A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the "
+       "story, makes the report refuse (better than v1 as shipped only), English report"),
+    _b(RENDER, f"{T_REND}::test_an_unfinished_test_of_record_renders_no_2025_claim[fr]",
+       "Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait "
+       "refuser le rapport, rapport français",
+       "An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report "
+       "refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_an_unfinished_test_of_record_renders_no_2025_claim[en]",
+       "Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait "
+       "refuser le rapport, rapport anglais",
+       "An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report "
+       "refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_a_stopped_start_followed_by_a_ruled_test_of_record_renders[fr]",
+       "Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le "
+       "rapport est rendu, rapport français",
+       "A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the "
+       "report renders, French report"),
+    _b(RENDER, f"{T_REND}::test_a_stopped_start_followed_by_a_ruled_test_of_record_renders[en]",
+       "Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le "
+       "rapport est rendu, rapport anglais",
+       "A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the "
+       "report renders, English report"),
+    _b(RENDER, f"{T_REND}::test_a_2025_lead_of_75_hours_in_the_record_s_data_quality_run_must_be_stated[fr]",
+       "Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé "
+       "à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et "
+       "inversement, rapport français",
+       "A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the "
+       "report refuse, even when section 2 states another year's; and the reverse, French report"),
+    _b(RENDER, f"{T_REND}::test_a_2025_lead_of_75_hours_in_the_record_s_data_quality_run_must_be_stated[en]",
+       "Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé "
+       "à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et "
+       "inversement, rapport anglais",
+       "A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the "
+       "report refuse, even when section 2 states another year's; and the reverse, English report"),
+    _b(RENDER, f"{T_REND}::test_2025_s_days_not_fed_are_2025_s_alone",
+       "Un jour de 2024 sans prévision, que liste l'exécution de qualité des données jusqu'à 2025, n'est pas compté "
+       "parmi les jours de 2025",
+       "A 2024 day without a forecast, listed by the through-2025 data-quality run, is not counted among 2025's days"),
+    _b(RENDER, f"{T_REND}::test_the_revised_records_are_listed_whatever_the_standing[clean-fr]",
+       "Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux "
+       "enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en "
+       "omet un, imprime une autre valeur ou le liste ailleurs est refusée "
+       "(2025 propre), rapport français",
+       "The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both "
+       "shown), whatever 2025's standing; a page "
+       "that drops one, prints another value or lists it elsewhere is refused (2025 clean), French report"),
+    _b(RENDER, f"{T_REND}::test_the_revised_records_are_listed_whatever_the_standing[clean-en]",
+       "Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux "
+       "enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en "
+       "omet un, imprime une autre valeur ou le liste ailleurs est refusée "
+       "(2025 propre), rapport anglais",
+       "The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both "
+       "shown), whatever 2025's standing; a page "
+       "that drops one, prints another value or lists it elsewhere is refused (2025 clean), English report"),
+    _b(RENDER, f"{T_REND}::test_the_revised_records_are_listed_whatever_the_standing[post_hoc-fr]",
+       "Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux "
+       "enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en "
+       "omet un, imprime une autre valeur ou le liste ailleurs est refusée "
+       "(2025 a posteriori), rapport français",
+       "The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both "
+       "shown), whatever 2025's standing; a page "
+       "that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), French report"),
+    _b(RENDER, f"{T_REND}::test_the_revised_records_are_listed_whatever_the_standing[post_hoc-en]",
+       "Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux "
+       "enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en "
+       "omet un, imprime une autre valeur ou le liste ailleurs est refusée "
+       "(2025 a posteriori), rapport anglais",
+       "The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both "
+       "shown), whatever 2025's standing; a page "
+       "that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), English report"),
+    _b(RENDER, f"{T_REND}::test_the_standards_table_says_held_out_only_of_a_clean_finished_test_of_record[fr]",
+       "Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; "
+       "a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport français",
+       "The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says "
+       "it is no back-test on held-out data, French report"),
+    _b(RENDER, f"{T_REND}::test_the_standards_table_says_held_out_only_of_a_clean_finished_test_of_record[en]",
+       "Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; "
+       "a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport anglais",
+       "The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says "
+       "it is no back-test on held-out data, English report"),
+    _b(RENDER, f"{T_REND}::test_the_2025_coverage_is_given_with_its_interval_and_whether_it_holds_the_nominal[fr]",
+       "La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les "
+       "bornes imprimées, rapport français",
+       "The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds "
+       "as printed, French report"),
+    _b(RENDER, f"{T_REND}::test_the_2025_coverage_is_given_with_its_interval_and_whether_it_holds_the_nominal[en]",
+       "La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les "
+       "bornes imprimées, rapport anglais",
+       "The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds "
+       "as printed, English report"),
+    _b(RENDER, f"{T_REND}::test_the_run_reuse_paragraph_says_what_its_placements_show[fr]",
+       "La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un "
+       "seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument "
+       "n'est pas mis à l'épreuve, rapport français",
+       "The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a "
+       "finding against the two-day argument; with no placement constructible, the argument is not put to the test, "
+       "French report"),
+    _b(RENDER, f"{T_REND}::test_the_run_reuse_paragraph_says_what_its_placements_show[en]",
+       "La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un "
+       "seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument "
+       "n'est pas mis à l'épreuve, rapport anglais",
+       "The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a "
+       "finding against the two-day argument; with no placement constructible, the argument is not put to the test, "
+       "English report"),
+    _b(RENDER, f"{T_REND}::test_a_lead_of_75_hours_is_stated_against_the_two_day_argument[fr]",
+       "Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait "
+       "refuser le rapport, rapport français",
+       "A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report "
+       "refuse, French report"),
+    _b(RENDER, f"{T_REND}::test_a_lead_of_75_hours_is_stated_against_the_two_day_argument[en]",
+       "Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait "
+       "refuser le rapport, rapport anglais",
+       "A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report "
+       "refuse, English report"),
+    _b(RENDER, f"{T_REND}::test_the_data_quality_report_states_a_lead_of_75_hours",
+       "Un délai de 75 heures ou plus non énoncé à la section 4.1 du rapport de qualité des données le fait refuser, "
+       "même si « En bref » l'énonce",
+       "A lead of 75 hours or more not stated in section 4.1 of the data-quality report makes it refuse, even when "
+       "In brief states it"),
+    _b(RENDER, f"{T_REND}::test_a_2025_vintage_data_quality_report_leaves_2025_to_the_validation_report",
+       "Le rapport de qualité des données d'une exécution jusqu'à 2025 ne liste aucun jour de 2025 sans prévision, ni "
+       "l'heure de la prévision de 2025, ni un délai de 2025 de 75 heures ou plus, et dit quels comptes comprennent "
+       "2025",
+       "The data-quality report of a through-2025 run lists no 2025 day without a forecast, no 2025 hour of the "
+       "forecast and no 2025 lead of 75 hours or more, and says which counts include 2025"),
+    _b(RENDER, f"{T_REND}::test_a_report_on_the_2025_vintage_before_any_2025_start_is_refused",
+       "Avant tout départ de 2025, une exécution de qualité des données qui atteint 2025, nommée ou la plus récente, "
+       "fait refuser le rendu, qui nomme cette exécution",
+       "Before any 2025 start, a data-quality run that reaches 2025, named or the latest, makes the render refuse, "
+       "naming that run"),
+    _b(RENDER, f"{T_CLI}::test_report_refuses_a_2025_data_quality_run_named_by_id_before_any_2025_start",
+       "Par la commande, avant tout départ de 2025, le rapport sur une exécution de qualité des données jusqu'à 2025 "
+       "nommée par son identifiant est refusé, en nommant l'exécution, et le dossier du rapport reste vide",
+       "Through the command, before any 2025 start, the report on a through-2025 data-quality run named by its ID is "
+       "refused, naming the run, and the report folder stays empty"),
+    _b(RENDER, f"{T_REND}::test_a_fresh_clone_after_a_2025_entry_renders_from_the_ledger[fr]",
+       "Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la "
+       "phrase sur le magasin, le rapport est refusé, rapport français",
+       "A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, "
+       "the report refuses, French report"),
+    _b(RENDER, f"{T_REND}::test_a_fresh_clone_after_a_2025_entry_renders_from_the_ledger[en]",
+       "Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la "
+       "phrase sur le magasin, le rapport est refusé, rapport anglais",
+       "A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, "
+       "the report refuses, English report"),
+    _b(RENDER, f"{T_REND}::test_a_store_holding_the_2024_record_but_not_the_2025_one_renders_it_from_its_entry[fr]",
+       "Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont "
+       "il dérive, rapport français",
+       "Control: a store without the 2025 test of record shows it from its entry, with the stopped start it departs "
+       "from, French report", control=True),
+    _b(RENDER, f"{T_REND}::test_a_store_holding_the_2024_record_but_not_the_2025_one_renders_it_from_its_entry[en]",
+       "Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont "
+       "il dérive, rapport anglais",
+       "Control: a store without the 2025 test of record shows it from its entry, with the stopped start it departs "
+       "from, English report", control=True),
+    _b(RENDER, f"{T_REND}::test_a_report_from_the_store_renders_every_record_from_its_run[fr]",
+       "Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du "
+       "registre, rapport français",
+       "Control: with everything in the store, each record renders from its run, with no ledger label, French report",
+       control=True),
+    _b(RENDER, f"{T_REND}::test_a_report_from_the_store_renders_every_record_from_its_run[en]",
+       "Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du "
+       "registre, rapport anglais",
+       "Control: with everything in the store, each record renders from its run, with no ledger label, English "
+       "report", control=True),
+    _b(RENDER, f"{T_REND}::test_the_attribution_block_carries_noaa_and_iem[fr]",
+       "Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne "
+       "élargie de non-approbation, est refusé, rapport français",
+       "A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement "
+       "line, is refused, French report"),
+    _b(RENDER, f"{T_REND}::test_the_attribution_block_carries_noaa_and_iem[en]",
+       "Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne "
+       "élargie de non-approbation, est refusé, rapport anglais",
+       "A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement "
+       "line, is refused, English report"),
+    _b(RENDER, f"{T_REND}::test_the_attribution_lines_are_the_owner_s_ruled_wording",
+       "Des lignes d'attribution qui diffèrent du libellé que le propriétaire a fixé dans `AGENTS.md` font échouer le "
+       "test",
+       "Attribution lines that differ from the wording the owner ruled in `AGENTS.md` fail the test"),
+    _b(RENDER, f"{T_REND}::test_the_ruled_wording_test_reads_agents_md_not_the_code",
+       "Un mot changé dans `attribution.py` fait échouer la comparaison avec `AGENTS.md`",
+       "One word changed in `attribution.py` fails the comparison with `AGENTS.md`"),
+    _b(RENDER, f"{T_REND}::test_diagnostics_that_did_not_finish_are_said_so[fr]",
+       "Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport français",
+       "Control: diagnostics that did not finish are said so, in place of their measures, French report", control=True),
+    _b(RENDER, f"{T_REND}::test_diagnostics_that_did_not_finish_are_said_so[en]",
+       "Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport anglais",
+       "Control: diagnostics that did not finish are said so, in place of their measures, English report",
+       control=True),
+    _b(RENDER, f"{T_REND}::test_2025_measures_made_with_another_design_are_refused",
+       "Des mesures de 2025 faites avec une autre conception que celles de 2023 et 2024 font refuser le rapport",
+       "2025 measures made with another design than 2023's and 2024's make the report refuse"),
+    _b(RENDER, f"{T_REND}::test_the_lag_coefficients_said_positive_must_be",
+       "Un rejeu dont les coefficients des retards ne sont pas tous deux positifs fait refuser le rapport, qui les dit "
+       "positifs",
+       "A replay whose lag coefficients are not both positive makes the report, which says they are, refuse"),
+    _b(RENDER, f"{T_REND}::test_a_replay_s_longest_lead_unlike_its_data_quality_run_s_is_refused",
+       "Un plus long délai de diagnostic qui diffère de celui de l'exécution de qualité des données fait refuser le "
+       "rapport",
+       "A diagnostic longest lead unlike the data-quality run's makes the report refuse"),
+    _b(RENDER, f"{T_REND}::test_the_selection_s_values_are_checked_against_the_validation_run",
+       "Des valeurs du choix qui ne concordent pas avec l'exécution de validation font refuser le rapport",
+       "Selection values that disagree with the validation run make the report refuse"),
+    _b(RENDER, f"{T_E2E}::test_the_report_renders_what_the_replay_writes",
+       "Témoin : les deux pages, dans les deux langues, sont rendues d'après ce qu'écrivent le rejeu, ses diagnostics, "
+       "la porte de 2025 et le registre, et les lignes d'épisodes du rapport ont les clés de celles que la mesure "
+       "construit",
+       "Control: both pages, in both languages, render from what the replay, its diagnostics, the 2025 gate and the "
+       "ledger write, and the report's episode rows have the keys of the rows the measure builds", control=True),
+    _b(RENDER, f"{T_STAMP}::test_the_stamp_carries_the_standing_of_2025",
+       "Témoin : l'estampille porte la position de 2025 du test de référence, jamais celle d'un rejeu refait",
+       "Control: the stamp carries the test of record's 2025 standing, never a rerun's", control=True),
+    _b(RENDER, f"{T_SAFE}::test_the_v2_figures_and_templates_pass_the_scan",
+       "Témoin : les figures et les gabarits de v2 passent l'analyse de sécurité publique",
+       "Control: v2's figures and templates pass the public-safety scan", control=True),
 ]
 
 

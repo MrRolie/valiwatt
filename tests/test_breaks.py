@@ -52,3 +52,312 @@ def test_a_breaks_run_with_a_break_that_did_not_fire_is_marked_failed(tmp_path, 
     run = tracking.latest_run(breaks.EXPERIMENT)
     assert run.data.tags["status"] == "failed"
     assert run.data.metrics["fired"] == 0 and run.data.metrics["not_fired"] == 1
+
+
+# docs/plan-v2.md, section 12, with the gates of sections 10 and 11.3 it names: each gate, the breaks that make it
+# fire. Every node id here must be a registered break, so a break dropped from BREAKS fails the test below.
+FEAT, NBM, WEA = "tests/test_features.py::", "tests/test_nbm_source.py::", "tests/test_weather_gates.py::"
+FETCH, GRD, VAL = "tests/test_fetch_guards.py::", "tests/test_guards.py::", "tests/test_validate.py::"
+MOD, FRO, EVAL = "tests/test_model.py::", "tests/test_frozen.py::", "tests/test_evaluate.py::"
+DEC, R2, FRZ = "tests/test_decision_rule.py::", "tests/test_replay_v2.py::", "tests/test_freeze_gates.py::"
+PIPE, LED, LIN = "tests/test_pipeline_refuses.py::", "tests/test_replay_ledger.py::", "tests/test_report_lineage.py::"
+REND, CLI, DEP = "tests/test_report_render.py::", "tests/test_cli.py::", "tests/test_departure_record.py::"
+TAGS, PLAN = "tests/test_tags.py::", "tests/test_plan_record.py::"
+
+
+def both(node: str) -> tuple[str, ...]:
+    return node + "[fr]", node + "[en]"
+
+
+VERDICTS = tuple(f"{DEC}{t}[{c}]" for t in (
+    "test_a_better_contrast_whose_cold_tail_is_not_worse_is_better",
+    "test_a_better_contrast_whose_cold_tail_is_not_testable_is_better_cold_untested",
+    "test_a_contrast_not_separated_or_better_with_a_worse_cold_tail_is_not_shown_better",
+    "test_a_worse_contrast_is_worse") for c in ("shipped", "family"))
+V2_FIELDS = tuple(f"{LED}test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused[{p}]" for p in (
+    "evaluation-seen_by_developers", f"model_sha256-{'f' * 64}", "verdict-value2", f"frozen_sha256-{'0' * 64}",
+    "standing-post_hoc"))
+
+PLAN_12 = {
+    # Forecast feed
+    "a run available after the origin never used, the next-freshest is": (
+        FEAT + "test_a_run_available_after_the_origin_is_never_used",),
+    "a run lacking a bracket point gives way to the next": (
+        FEAT + "test_a_run_missing_one_bracket_point_gives_way_to_the_next",),
+    "a run with a blank point gives way to the next": (FEAT + "test_a_blank_point_does_not_cover",),
+    "a run with a point outside the bounds gives way to the next": (
+        FEAT + "test_a_point_outside_the_bounds_does_not_cover",),
+    "no covering run among twelve leaves the day without a forecast, saying why": (
+        FEAT + "test_no_covering_run_among_twelve_leaves_the_day_without_a_forecast_and_says_why",),
+    "two runs never interpolated together": (FEAT + "test_two_runs_are_never_mixed",),
+    "values linear in time inside one run, in Celsius": (
+        FEAT + "test_hourly_values_are_linear_in_time_inside_one_run_and_in_celsius",),
+    "2023-12-31 forecast from its own day's run (control)": (
+        FEAT + "test_the_eve_of_the_design_edge_keeps_its_forecast",
+        VAL + "test_the_2024_boundary_run_in_the_2023_file_is_kept_when_available_in_time"),
+    "the forecast feed by run identity on a sparse archive": (
+        R2 + "test_the_replay_and_validation_feed_the_same_run_on_a_sparse_archive",),
+    # Forecast fetch and data quality
+    "a response for another station or model refused": (
+        NBM + "test_a_response_for_another_station_or_model_is_refused",),
+    "an impossible temperature refused, a point outside the bounds failing its gate": (
+        NBM + "test_a_non_numeric_temperature_is_refused",
+        WEA + "test_an_impossible_forecast_temperature_fails_the_nbm_bounds_gate"),
+    "an empty response refused": (NBM + "test_an_empty_response_is_refused",),
+    "a forecast file that no longer matches its manifest refused": (
+        NBM + "test_a_file_that_no_longer_matches_its_manifest_is_refused",),
+    "two values for one point refuse the load": (NBM + "test_two_values_for_one_point_refuse_the_load",),
+    "identical duplicates pass and are counted (control)": (NBM + "test_identical_duplicates_are_dropped_and_counted",),
+    "a forecast coverage below 98 % fails its gate": (
+        WEA + "test_forecast_days_below_coverage_fail_the_nbm_coverage_gate",
+        WEA + "test_the_nbm_coverage_gate_passes_at_98_percent_of_days_fed_and_fails_below"),
+    "a primary station other than the airport's refuses the pairing": (
+        NBM + "test_a_primary_station_other_than_7025251_refuses_the_pairing",),
+    "every Hydro-Québec request bounded by the portal, its count under the same filter": (
+        FETCH + "test_every_hydroquebec_request_is_bounded_by_the_portal",),
+    "a response past its bound refused, nothing written": (
+        FETCH + "test_a_response_holding_a_record_past_its_bound_is_refused_and_writes_nothing",),
+    "a forced 2025 fetch of the weather files refused before any request": (
+        FETCH + "test_a_forced_2025_fetch_of_the_weather_files_is_refused",
+        CLI + "test_fetch_through_2025_goes_through_the_sources_gate"),
+    # Lookahead
+    "a row whose forecast became available after its origin refused": (
+        GRD + "test_a_row_whose_forecast_became_available_after_its_origin_is_refused",
+        GRD + "test_a_finite_forecast_without_its_availability_is_refused",
+        GRD + "test_a_row_without_its_origin_is_refused"),
+    "a design feed holding a run available after the design window refused": (
+        VAL + "test_a_forecast_run_available_after_the_design_window_is_refused",),
+    "the knot check in the fit": (MOD + "test_a_fit_whose_knots_saw_a_test_row_is_refused",
+                                  MOD + "test_a_fit_on_its_own_rows_passes_the_knot_check"),
+    "the knot check in the freeze": (
+        FRO + "test_a_freeze_whose_knots_are_not_the_rule_on_its_training_rows_is_refused",),
+    "the eve of the replayed year never calibrates a half-width, in either freeze": (
+        EVAL + "test_the_eve_of_the_replayed_year_never_calibrates_a_half_width",
+        FRO + "test_the_2024_freeze_half_width_leaves_the_eve_out"),
+    "a design temperature outside the bounds blank as in the replay": (
+        VAL + "test_a_design_temperature_outside_the_bounds_is_blank_as_in_the_replay",),
+    # Frozen models
+    "an altered knot, scale or coefficient fails the hash": (
+        FRO + "test_a_frozen_gam_with_an_altered_knot_scale_or_coefficient_is_refused",),
+    "the frozen GAM's spline settings: another one refused, each in the hash": (
+        FRO + "test_a_frozen_gam_with_another_degree_extrapolation_or_bias_is_refused",
+        *(FRO + f"test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says[{s}]"
+          for s in ("extrapolation", "degree", "include_bias", "n_knots"))),
+    "a production model with a lag coefficient not positive refused": (
+        FRO + "test_a_production_model_with_a_lag_coefficient_not_positive_is_refused",
+        FRO + "test_the_freeze_refuses_a_production_model_whose_lag_coefficient_is_not_positive"),
+    "a comparison model changed during the replay fails it": (
+        R2 + "test_a_comparator_changed_during_the_replay_fails_it",
+        FRO + "test_comparators_are_logged_and_reloaded_against_their_hashes"),
+    "the frozen GAM predicts what the ruled pipeline predicts": (
+        MOD + "test_the_gam_predicts_what_the_ruled_pipeline_predicts",
+        FRO + "test_a_frozen_gam_round_trips_through_json_and_predicts_as_fitted"),
+    # Monitors
+    "a day no run fed fails forecast_missing and yields investigate": (
+        R2 + "test_a_day_no_run_fed_is_not_predicted_and_fails_forecast_missing",
+        VAL + "test_a_day_no_run_fed_fails_forecast_missing_in_the_verdicts_validation_calibrates_on"),
+    "forecast-input drift with performance inside yields investigate": (
+        R2 + "test_forecast_input_drift_with_performance_inside_yields_investigate",),
+    "the comparison models crossing their thresholds yield nothing": (
+        R2 + "test_comparators_crossing_their_thresholds_yield_no_recommendation",),
+    "a rehearsal whose issued forecast or feeding run differs from validation's refused": (
+        R2 + "test_a_rehearsal_whose_issued_forecast_differs_from_validation_s_is_refused",
+        R2 + "test_the_2023_rehearsal_runs_end_to_end_and_refuses_an_input_validation_did_not_issue"),
+    "the reuse measure never claims two days from a run that misses one": (
+        R2 + "test_the_reuse_measure_never_claims_two_days_from_a_run_that_misses_one",),
+    # Decision rule
+    "each state": (DEC + "test_a_contrast_whose_interval_lies_below_zero_is_better",
+                   DEC + "test_a_contrast_whose_interval_lies_above_zero_is_worse",
+                   DEC + "test_a_contrast_whose_interval_holds_zero_is_not_separated"),
+    "each verdict": VERDICTS,
+    "both sides of the printed-bound rule": (DEC + "test_a_bound_printing_as_zero_is_not_separated",),
+    "the cold tail's weeks: not testable below 120 hours or 4 weeks": (
+        DEC + "test_the_cold_tail_needs_120_hours_in_at_least_4_weeks",
+        DEC + "test_the_cold_tail_is_not_testable_at_119_hours_and_testable_at_120"),
+    "a contrast scored on the common hours only": (DEC + "test_a_contrast_is_scored_on_the_common_hours_only",),
+    "the additivity of the three contrasts": (DEC + "test_the_three_contrasts_are_additive",),
+    "the busiest hours of the year, a missing forecast kept with its reason": (
+        DEC + "test_the_peak_hours_are_the_busiest_of_the_year_with_missing_forecasts_kept",),
+    "each status, the held-out ones only on a clean 2025": (DEC + "test_the_status_follows_the_test_of_record",),
+    # The 2025 gate
+    "no commit since the freeze and every condition met: clean (control), revised records too": (
+        FRZ + "test_a_clean_2025_start_with_nothing_changed_passes",),
+    "the commit walk: rule, dependency and reverted changes refuse; an empty commit passes": (
+        FRZ + "test_the_2025_gate_walks_every_commit_after_the_first_freeze_commit",),
+    "the walk from the earliest 2024 start after a first 2024 start that stopped": (
+        FRZ + "test_a_fix_after_a_failed_first_2024_start_refuses_the_2025_gate",),
+    "the walk's merge, shallow clone and off-freeze refusals": (
+        FRZ + "test_the_2025_gate_refuses_a_merge_a_shallow_clone_and_a_head_off_the_freeze_commit",),
+    "the ruling entry that applies, clean or post hoc (controls)": (
+        FRZ + "test_an_owner_s_ruling_entry_lifts_a_refusal_with_its_outcome[clean]",
+        FRZ + "test_an_owner_s_ruling_entry_lifts_a_refusal_with_its_outcome[post_hoc]"),
+    "each ruling entry that does not apply, without its evidence run or with one from a dirty tree": (
+        FRZ + "test_a_ruling_entry_that_does_not_apply_leaves_the_refusal",),
+    "the frozen artifacts' hashes": (FRZ + "test_a_2025_start_whose_frozen_artifacts_differ_is_refused",
+                                     R2 + "test_the_2025_replay_uses_the_artifacts_frozen_for_2024"),
+    "v2's first 2024 runs in the store": (FRZ + "test_a_2025_start_without_its_runs_in_the_store_is_refused",),
+    "the passing through-2025 data-quality run": (
+        FRZ + "test_a_2025_gate_refuses_a_data_quality_run_that_is_not_a_passing_through_2025_run",
+        R2 + "test_the_2025_replay_refuses_until_the_window_reaches_its_end"),
+    "the raw files' hashes with no record read, the reference read without its target": (
+        FRZ + "test_a_2025_gate_refuses_a_raw_file_the_data_quality_run_did_not_check",),
+    "the dirty tree": (R2 + "test_the_2025_replay_refuses_a_dirty_tree",),
+    "a running start": (FRZ + "test_a_2025_start_while_another_is_running_is_refused",),
+    "two simultaneous callers, of which one starts": (FRZ + "test_two_simultaneous_2025_starts_open_one_run",),
+    "a 2025 diagnostic run without its finished replay": (
+        FRZ + "test_a_2025_diagnostic_run_without_its_finished_replay_refuses_the_gate",),
+    "the v2 2024 entry": (FRZ + "test_a_2025_replay_without_a_v2_2024_ledger_entry_is_refused",),
+    "the unfinished test of record, the ruling naming the stopped start, a start the store lacks": (
+        FRZ + "test_after_an_unfinished_test_of_record_a_later_start_refuses_until_a_ruling",),
+    "once a test of record has finished, a later start is a rerun (control)": (
+        FRZ + "test_a_later_2025_start_is_tagged_seen_by_developers",),
+    "a gate's refusal opens no run": (
+        R2 + "test_a_gate_refusal_opens_no_run",
+        FRZ + "test_the_2025_gate_refuses_an_incomplete_departure_record_before_the_run_opens"),
+    # 2025 runs and diagnostics
+    "the replay reads 2025 only for its started run; a diagnostic run without its finished replay refused": (
+        R2 + "test_the_replay_function_refuses_2025_without_its_open_started_run",
+        FRZ + "test_the_replay_function_refuses_2025_on_its_own"),
+    "the started run with every tag and the step it reached; stopped by a check, no result": (
+        R2 + "test_a_2025_replay_stopped_midway_leaves_its_started_run",),
+    "the diagnostics after the replay, a failing one leaving it finished": (
+        R2 + "test_the_diagnostics_run_after_the_replay_has_finished",),
+    "the two-worker diagnostics, an unknown run ID refused in a worker": (
+        R2 + "test_two_workers_replay_2025_under_the_diagnostic_run",),
+    "the evidence run compares every hour and decides nothing": (
+        R2 + "test_the_evidence_compares_every_column_and_decides_nothing",
+        R2 + "test_the_evidence_refuses_a_data_quality_run_that_is_not_a_passing_through_2025_run"),
+    "the evidence refuses a dirty tree": (R2 + "test_the_evidence_refuses_a_dirty_tree",),
+    "the evidence's replay receives no record of 2025": (R2 + "test_the_evidence_replay_receives_no_record_of_2025",),
+    # Freeze and records
+    "a v2 replay without rules-frozen-v2": (FRZ + "test_no_tag_is_refused",),
+    "a rule file or a dependency changed after the v2 tag": (
+        FRZ + "test_an_edited_rule_file_is_refused_and_named",
+        FRZ + "test_a_dependency_changed_after_the_v2_tag_is_refused_and_named"),
+    "a moved v2 tag not recorded": (
+        FRZ + "test_a_v2_replay_under_a_moved_v2_tag_is_refused_unless_recorded",
+        FRZ + "test_a_v2_tag_moved_back_without_a_departure_entry_is_refused"),
+    "the moved-tag check scoped by freeze": (
+        FRZ + "test_a_2025_replay_run_on_its_own_sees_a_tag_moved_since_v2_s_2024_replay",
+        FRZ + "test_an_unfinished_start_counts_for_the_moved_tag_check"),
+    "v1's replays never count as a moved v2 tag (control)": (FRZ + "test_v1_replays_never_count_as_a_moved_v2_tag",),
+    "a replay stored without a freeze tag counts as v1's": (
+        FRZ + "test_a_stored_replay_without_a_freeze_tag_counts_as_v1_s",),
+    "an unlisted freeze tag": (FRZ + "test_every_freeze_tag_in_the_repository_is_listed_in_freezes",),
+    "a tag that moved from its pin": (TAGS + "test_a_pinned_tag_moved_fails",
+                                      DEP + "test_a_v2_tag_moved_without_its_pin_fails"),
+    "a real-data run without v2-first-run": (PIPE + "test_a_real_data_run_without_the_first_run_tag_is_refused",),
+    "an unrecorded rule change after v2-first-run": tuple(
+        PLAN + f"test_a_rule_change_after_the_first_run_not_named_fails[{p}]"
+        for p in ("src/valiwatt/monitor/rules.py", "pyproject.toml", "uv.lock")),
+    "an edit of the plan after plan-v2 not listed": (
+        PLAN + "test_a_plan_edit_outside_section_18_not_named_fails",
+        PLAN + "test_a_section_18_entry_rewritten_must_be_named"),
+    "a v1 ledger entry edited": (LED + "test_the_v1_entries_equal_those_of_the_ledger_at_tag_v1",),
+    "a ledger entry of another year or tag": (LED + "test_a_v2_entry_of_another_year_is_refused",
+                                              LED + "test_an_entry_of_an_unknown_freeze_tag_is_refused"),
+    "a v2 entry without its evaluation label": (LED + "test_a_v2_entry_without_its_evaluation_label_is_refused",),
+    "the evaluation label, checked against the starts, the ruling and the standing": (
+        LED + "test_a_v2_label_other_than_its_starts_give_is_refused",
+        LED + "test_a_post_hoc_test_of_record_labelled_held_out_is_refused",
+        DEC + "test_only_a_clean_test_of_record_is_labelled_held_out"),
+    "the standing in each v2 entry": (
+        LED + "test_a_2024_entry_with_a_standing_or_a_2025_entry_without_one_is_refused", V2_FIELDS[-1]),
+    "the store against the entry on each of the five v2 fields": V2_FIELDS,
+    "the shared freeze commit of v2 ledger entries": (
+        LED + "test_a_non_departure_v2_entry_under_another_freeze_commit_is_refused",),
+    "a v2 section entry neither a departure nor a ruling with its outcome": (
+        DEP + "test_a_v2_section_entry_with_another_head_fails",),
+    "the v2-scoped departure record before the v2 freeze": (DEP + "test_before_the_v2_freeze_a_v2_record_fails",),
+    "a rule or dependency commit after the v2 tag not named by its move's entry": (
+        DEP + "test_a_v2_rule_change_after_the_tag_fails",
+        DEP + "test_a_v2_dependency_change_after_the_tag_fails[pyproject.toml]",
+        DEP + "test_a_v2_dependency_change_after_the_tag_fails[uv.lock]",
+        DEP + "test_a_v2_rule_change_reverted_with_the_tag_unmoved_fails",
+        DEP + "test_a_v2_departure_missing_a_change_commit_fails",
+        DEP + "test_a_v2_move_without_its_departure_entry_fails",
+        FRZ + "test_a_v2_departure_entry_missing_a_change_commit_is_refused"),
+    "a commit a v2 departure entry names that is neither a change nor a freeze commit": (
+        DEP + "test_a_v2_departure_naming_an_unrelated_commit_fails",
+        FRZ + "test_a_v2_departure_entry_naming_an_unrelated_commit_is_refused"),
+    "a v2 departure entry naming the commits the tag moved from and to, its moves joined": (
+        DEP + "test_a_v2_departure_not_naming_its_freeze_commits_fails",
+        FRZ + "test_a_v2_departure_entry_naming_only_the_new_freeze_commit_is_refused",
+        FRZ + "test_a_v2_departure_entry_not_naming_the_commit_the_tag_moved_from_is_refused",
+        FRZ + "test_a_v2_departure_record_whose_moves_do_not_join_is_refused"),
+    "a departure naming the freeze commit it moved from, and a dependency departure, pass (controls)": (
+        DEP + "test_a_v2_departure_naming_the_freeze_commit_it_moved_from_passes",
+        DEP + "test_a_recorded_v2_dependency_departure_passes"),
+    "a 2025 fetch before the freeze, from a dirty tree or of a partial year": (
+        FETCH + "test_a_2025_fetch_before_the_freeze_is_refused",
+        FETCH + "test_a_2025_fetch_from_a_dirty_tree_is_refused",
+        FETCH + "test_a_partial_2025_export_is_refused_and_writes_nothing"),
+    "the 2025 replay outside `all`, no flag but --departure reaching it": (
+        CLI + "test_all_never_runs_the_2025_replay", CLI + "test_no_flag_but_departure_reaches_the_2025_replay"),
+    "a 2024 replay reading a record of 2025": (R2 + "test_the_2024_replay_reads_no_record_of_2025",),
+    # Render
+    "a v2 number on 2024 without its label": (
+        REND + "test_a_2024_v2_number_without_its_label_is_refused",
+        LIN + "test_a_2024_replay_tagged_with_another_evaluation_is_refused"),
+    "a better sentence without held out, or from a 2025 that is not clean": (
+        *both(REND + "test_a_better_claim_without_the_held_out_label_is_refused"),
+        *both(REND + "test_a_better_claim_from_a_2025_that_is_not_clean_is_refused")),
+    "a 2025 verdict without a 2025 replay": both(REND + "test_a_2025_verdict_without_a_2025_replay_is_refused"),
+    "the test of record: the earliest start or, after one that stopped, the start the ruling let run": (
+        LED + "test_the_earliest_started_2025_replay_is_the_test_of_record",
+        LED + "test_a_stopped_first_start_gives_way_only_to_the_start_its_ruling_names"),
+    "the stopped start listed first, its ruled test of record rendering (control)": (
+        *both(REND + "test_a_stopped_start_followed_by_a_ruled_test_of_record_renders"),
+        LED + "test_a_ruled_test_of_record_after_a_stopped_start_passes[clean-held_out]",
+        LED + "test_a_ruled_test_of_record_after_a_stopped_start_passes[post_hoc-post_hoc]"),
+    "an unfinished start not listed": both(REND + "test_an_unfinished_2025_start_not_listed_is_refused"),
+    "the status and recommendation from the test of record": (
+        *both(REND + "test_a_later_passing_rerun_never_overrides_the_test_of_record"),
+        LIN + "test_the_report_prints_the_standing_its_gate_logged"),
+    "the render of a clean 2025 that does not confirm v2": (
+        *(REND + f"test_a_clean_2025_not_confirmed_without_its_recommendation_is_refused[{s}-{lang}]"
+          for s in ("not_confirmed", "input_only") for lang in ("fr", "en")),
+        *both(REND + "test_each_status_names_its_scope_in_both_languages")),
+    "an unfinished test of record leaving no claim": both(
+        REND + "test_an_unfinished_test_of_record_renders_no_2025_claim"),
+    "the revised records listed whatever the standing": tuple(
+        REND + f"test_the_revised_records_are_listed_whatever_the_standing[{s}-{lang}]"
+        for s in ("clean", "post_hoc") for lang in ("fr", "en")),
+    "the 2025 data-quality findings from the test of record's run, a lead of 75 h or more stated": (
+        *both(REND + "test_a_2025_lead_of_75_hours_in_the_record_s_data_quality_run_must_be_stated"),
+        REND + "test_a_2025_vintage_data_quality_report_leaves_2025_to_the_validation_report",
+        LIN + "test_a_2025_record_whose_data_quality_run_does_not_reach_the_end_of_2025_is_refused"),
+    "the standing printed as the gate logged it, a 2025 record without that log refused": (
+        LIN + "test_the_report_prints_the_standing_its_gate_logged",
+        LIN + "test_a_finished_2025_replay_without_its_gate_record_is_refused"),
+    "the 2025 replay's frozen hashes against the 2024 replay of record's": (
+        LIN + "test_a_2025_replay_whose_frozen_hashes_differ_from_the_2024_record_s_is_refused",
+        LIN + "test_a_2025_rerun_whose_frozen_hashes_differ_from_the_2024_record_s_is_refused",
+        LIN + "test_an_unfinished_test_of_record_judged_by_other_frozen_artifacts_is_refused"),
+    "the clean no-change 2025 that renders (control)": both(
+        LIN + "test_a_clean_2025_with_nothing_changed_renders_beside_the_2024_replay_of_record"),
+    "the v2 departure from an unfinished start": both(
+        LIN + "test_a_v2_departure_from_an_unfinished_start_and_two_freeze_commits_renders"),
+    "the fresh clone's ledger-only render and its label": (
+        *both(REND + "test_a_fresh_clone_after_a_2025_entry_renders_from_the_ledger"),
+        *both(REND + "test_a_store_holding_the_2024_record_but_not_the_2025_one_renders_it_from_its_entry")),
+    "the report refused on the 2025 vintage before any 2025 start, the latest run or one named by its ID": (
+        REND + "test_a_report_on_the_2025_vintage_before_any_2025_start_is_refused",
+        CLI + "test_report_refuses_a_2025_data_quality_run_named_by_id_before_any_2025_start"),
+    "v1's 2024 numbers from its ledger entries only": (
+        *both(REND + "test_v1_2024_numbers_come_from_its_ledger_entries"),
+        LIN + "test_v1_history_comes_only_from_rules_frozen_entries"),
+    "the NOAA and IEM attribution, in the owner's approved wording": (
+        *both(REND + "test_the_attribution_block_carries_noaa_and_iem"),
+        REND + "test_the_attribution_lines_are_the_owner_s_ruled_wording",
+        REND + "test_the_ruled_wording_test_reads_agents_md_not_the_code"),
+}
+
+
+def test_every_new_gate_named_in_the_plan_has_a_break():
+    """Each gate of docs/plan-v2.md section 12 has at least one break, and every break listed for it is in BREAKS: a
+    gate whose break is dropped from the registry is no longer seen to fire, and this test fails."""
+    registered = {b.test for b in BREAKS}
+    assert [gate for gate, tests in PLAN_12.items() if not tests] == []
+    assert {gate: missing for gate, tests in PLAN_12.items()
+            if (missing := [t for t in tests if t not in registered])} == {}
