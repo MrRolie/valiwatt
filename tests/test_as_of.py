@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import synth_demand, synth_obs
+from conftest import synth_demand, synth_obs, synth_runs
 from valiwatt.config import DEMAND_FIRST, stations
 from valiwatt.forecast import freeze as fz
 from valiwatt.forecast import model as mdl
@@ -211,3 +211,64 @@ def test_a_half_width_fixed_at_a_fit_clock_calibrates_only_on_the_days_scored_by
         assert conformal_quantile(scores[(by_then & rows).to_numpy()]) != \
             conformal_quantile(scores[(before & rows).to_numpy()]), kwargs
         assert list(q) == [conformal_quantile(scores[(by_then & rows).to_numpy()])], kwargs
+
+
+# ---------------------------------------------------------------------------------------------- v2's forecast input
+
+ABSURD_F = 100.0  # 37.8 °C in winter: inside the bounds, so a run holding it covers its days
+
+
+@pytest.fixture(scope="module")
+def forecast_world(world):
+    """The world's NBM runs, plus a run at 04:00 UTC on every day, an hour before the day's origin, so available an
+    hour after it, every point absurd; and the tables validation and the freeze build from them."""
+    raw, obs, _, weather, _ = world
+    runs = synth_runs(FIRST - pd.Timedelta(days=3), LAST)
+    late = runs[runs["runtime"].dt.hour == 1].assign(runtime=lambda r: r["runtime"] + 3 * H, tmp_f=ABSURD_F)
+    runs = pd.concat([runs, late], ignore_index=True)
+    runs = runs[runs["runtime"] + 2 * H <= LAST].sort_values(["runtime", "ftime"]).reset_index(drop=True)
+    inputs = vd.validation_inputs(raw, obs, weather, last=LAST, runs=runs)
+    return runs, inputs
+
+
+def test_the_design_forecast_temperature_at_each_origin_uses_only_runs_available_by_then(world, forecast_world):
+    """Each design row's forecast is the one issued at its own origin: its run became available at or before it, and
+    the absurd runs, available an hour after each origin, never reach a design row, a training row or the record."""
+    runs, inputs = forecast_world
+    f = inputs["f_primary"]
+    absurd_c = (ABSURD_F - 32) * 5 / 9
+    record = inputs["forecast_record"]["forecast"]
+    fed = record[record["reason"] == ""]
+    assert len(fed) == len(record) > 0
+    assert (fed["available_utc"] <= fed["origin"]).all() and (fed["runtime"].dt.hour != 4).all()
+    assert (f["available_forecast"] <= f["origin"]).all() and f["temp_forecast"].notna().all()
+    assert not np.isclose(f["temp_forecast"], absurd_c).any()
+    for clock in (wf.folds("2019-12", "2019-12")[0].fit_clock, fz.fit_clock(2020)):
+        train = inputs["train_primary"](clock)
+        assert not np.isclose(train["temp_forecast"].dropna(), absurd_c).any(), clock
+        assert (train["available_forecast"].dropna() <= train.loc[train["available_forecast"].notna(), "origin"]).all()
+    # The control: read without the availability margin, the absurd runs would feed every day.
+    from valiwatt.forecast.features import forecast_temperature
+
+    blind = forecast_temperature(runs, record.index, lag=pd.Timedelta(0))
+    assert np.isclose(blind.hourly.dropna(), absurd_c).mean() > 0.9
+
+
+def test_the_forecast_inputs_of_design_and_fit_tables_agree(world, forecast_world):
+    """Validation's test rows, its as-of training tables and the frozen model's table carry the same forecast and the
+    same availability on every hour they share: one run rule, one cut."""
+    raw, _, _, weather, _ = world
+    runs, inputs = forecast_world
+    f = inputs["f_primary"]
+    issued = vd.forecast_inputs(runs, vd.design_days(LAST), last=LAST)["forecast"]
+    pd.testing.assert_series_equal(f["temp_forecast"], issued.hourly.reindex(f.index), check_names=False,
+                                   check_freq=False)
+    frozen = fz.frozen_table(raw, weather, 2020, last=LAST, runs=runs)
+    clock = wf.folds("2020-02", "2020-02")[0].fit_clock
+    for table in (frozen, inputs["train_primary"](clock)):
+        common = table.index.intersection(f.index)
+        assert len(common) > 24 * 300
+        for c in ("temp_forecast", "available_forecast", "hdh_forecast", "temp_forecast_late", "available_forecast_late"):
+            pd.testing.assert_series_equal(table.loc[common, c], f.loc[common, c], check_freq=False)
+    assert frozen.index.max() == fz.fit_clock(2020)
+    assert inputs["forecast_record"]["forecast"].equals(issued.record)

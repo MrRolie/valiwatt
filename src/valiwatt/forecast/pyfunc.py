@@ -1,7 +1,9 @@
 """The MLflow pyfunc wrapper of the frozen model: a feature table in, forecast and interval bounds out.
 
 Logged as MLflow "models from code": the registry stores this file, not a pickled object, so loading the model runs
-this code and nothing else. The coefficients travel as a JSON artifact checked against its own hash."""
+this code and nothing else. The model, least squares or the GAM, travels as a JSON artifact of numbers read through
+`FrozenModel.from_json`, which refuses a file that no longer matches its own hash or a GAM whose spline settings are
+not the ruled ones; the GAM's basis is rebuilt from its stored knots."""
 
 from __future__ import annotations
 
