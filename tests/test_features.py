@@ -135,6 +135,24 @@ def test_the_freshest_run_available_by_the_origin_feeds_the_day():
     assert forecast_temperature(runs_of(run(fresh), run(at, 30.0)), [DAY]).record.loc[DAY, "runtime"] == at
 
 
+def test_an_undated_run_is_refused_by_the_run_rule():
+    """A point without its run time has no availability (docs/plan-v2.md, sections 2 and 3.2): a missing run time
+    would sort as the oldest run, in view of every origin, and feed a day the dated runs leave unfed. The run rule
+    refuses the runs instead; a point without its valid time likewise."""
+    from valiwatt.forecast.guards import LookaheadError
+
+    dated = run(O + 2 * H, 30.0)  # available after the origin: alone, it leaves the day without a forecast
+    assert forecast_temperature(dated, [DAY]).record.loc[DAY, "reason"] == "no_run_available"
+    undated = run(O - 4 * H, 104.0)  # it would cover the day
+    undated["runtime"] = pd.Series(pd.NaT, index=undated.index, dtype=dated["runtime"].dtype)
+    with pytest.raises(LookaheadError, match="no run time or no valid time"):
+        forecast_temperature(runs_of(dated, undated), [DAY])
+    no_valid_time = runs_of(run(O - 4 * H, 20.0), dated)
+    no_valid_time.loc[3, "ftime"] = pd.NaT
+    with pytest.raises(LookaheadError, match="no run time or no valid time"):
+        forecast_temperature(no_valid_time, [DAY])
+
+
 def test_a_run_available_after_the_origin_is_never_used():
     late = O - 1 * H  # stamped one hour before the origin: available one hour after it
     clean = run(O - 10 * H, 30.0)

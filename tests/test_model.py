@@ -195,6 +195,15 @@ def test_a_fit_whose_knots_saw_a_test_row_is_refused(monkeypatch):
     for sign in (1, -1):
         with pytest.raises(LookaheadError, match="quantile rule"):
             check_knots(knot_rule(own) + sign * 1.1e-12, own)
+    # Every knot is checked, the two end knots (the training minimum and maximum) included: one of them alone off the
+    # rule by 1.1e-12, every other knot exact, is refused.
+    for i in (0, -1):
+        for sign in (1, -1):
+            k = knot_rule(own).copy()
+            k[i] += sign * 1.1e-12
+            assert np.count_nonzero(k != knot_rule(own)) == 1, (i, sign)
+            with pytest.raises(LookaheadError, match="quantile rule"):
+                check_knots(k, own)
 
 
 def test_a_fit_on_its_own_rows_passes_the_knot_check():

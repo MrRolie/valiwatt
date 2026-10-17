@@ -1,6 +1,7 @@
 """The NBM fetcher and loader refuse what they cannot verify: another station or model, a temperature that is neither a
-number nor blank, an empty response, a run outside the year's request, two values for one point, a primary station
-the forecast is not paired with, a file that no longer matches its manifest, and a file of a year not listed."""
+number nor blank, an empty response, a run outside the year's request, a point without its run time or its valid time,
+two values for one point, a primary station the forecast is not paired with, a file that no longer matches its
+manifest, and a file of a year not listed."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -103,6 +104,15 @@ def test_a_runtime_outside_the_requested_year_is_refused():
     first = runs.copy()
     first.loc[0, "runtime"] = pd.Timestamp("2022-01-01T00:00Z")  # the request's `sts`, included
     nbm.verify_year(iem_text(first), 2022)
+
+
+def with_field(text: str, line: int, column: str, value: str) -> str:
+    """`text` with one field of one line (1-based, the header being line 1) replaced."""
+    lines = text.split("\n")
+    fields = lines[line - 1].split(",")
+    fields[COLUMNS.index(column)] = value
+    lines[line - 1] = ",".join(fields)
+    return "\n".join(lines)
 
 
 @pytest.fixture
@@ -215,3 +225,29 @@ def test_a_refused_response_writes_nothing(store):
     with pytest.raises(FetchRefused):
         nbm.fetch_year(2022)
     assert not nbm.RAW_NBM.exists()
+
+
+def test_an_undated_point_is_refused_at_verification_and_load(store):
+    """pandas reads a blank, "NaT" or "nan" time as missing without raising, and no bound can see a missing time: a
+    point without its run time or its valid time has no availability (docs/plan-v2.md, sections 2 and 3.2), so the
+    response is refused before it is written, and a file holding one refuses the load, each naming the lines."""
+    text = iem_text(short_runs(2022))
+    nbm.verify_year(text, 2022)
+    for column in ("runtime", "ftime"):
+        for bad in ("", "NaT", "nan", "2022-13-01 00:00:00"):
+            broken = with_field(with_field(text, 5, column, bad), 9, column, bad)
+            with pytest.raises(FetchRefused, match=rf"2 rows have a {column} that is missing or does not parse "
+                                                   r".*lines \[5, 9\]"):
+                nbm.verify_year(broken, 2022)
+    store.files[2022] = with_field(text, 7, "runtime", "")
+    with pytest.raises(FetchRefused, match=r"lines \[7\]"):
+        nbm.fetch_year(2022)
+    assert not nbm.year_path(2022).exists()  # nothing written
+    write_years(store, {2022: text})
+    assert nbm.load_runs([2022])["runtime"].notna().all()  # control: the dated file loads
+    nbm.year_path(2022).write_text(with_field(text, 12, "runtime", ""))  # an undated run on disk
+    with pytest.raises(FetchRefused, match=r"1 rows have a runtime that is missing .*lines \[12\]"):
+        nbm.load_runs([2022])
+    nbm.year_path(2022).write_text(with_field(text, 4, "ftime", "NaT"))
+    with pytest.raises(FetchRefused, match=r"1 rows have a ftime that is missing .*lines \[4\]"):
+        nbm.load_runs([2022])

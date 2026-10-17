@@ -1,5 +1,6 @@
 """The lookahead guards refuse their breaks and pass clean data."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -104,8 +105,44 @@ def test_a_forecast_available_at_the_origin_passes():
     f = forecast_frame()
     at = f.copy()
     at["available_forecast"] = at["origin"]  # available exactly at the origin
-    at.loc[at.index[:30], "available_forecast_late"] = pd.NaT  # a day no run fed
+    # A day no run fed: no availability and no forecast input, as features.build leaves it.
+    at.loc[at.index[:30], ["available_forecast_late", "temp_forecast_late", "hdh_forecast_late",
+                           "cdh_forecast_late"]] = [pd.NaT, np.nan, np.nan, np.nan]
     assert fired(at) == []
     require_known_at_origin(at)
-    v1_shaped = f.drop(columns=[c for c in f.columns if c.startswith("available_")])
+    # v1's table holds no forecast scenario: neither an input nor an availability.
+    v1_shaped = f.drop(columns=[c for c in f.columns
+                                if c.startswith(("available_", "temp_forecast", "hdh_forecast", "cdh_forecast"))])
     assert fired(v1_shaped) == [] and "forecast_available_after_origin" in origin_violations(v1_shaped)
+    assert "forecast_availability_missing" in origin_violations(v1_shaped)
+    require_known_at_origin(v1_shaped)
+    # Built without forecasts, every forecast input is NaN beside a NaT availability: nothing fires.
+    first, last = pd.Timestamp("2021-02-01T06:00Z"), pd.Timestamp("2021-03-01T05:00Z")
+    require_known_at_origin(frame(first, last))
+
+
+def test_a_finite_forecast_without_its_availability_is_refused():
+    """Availability is established before use (docs/plan-v2.md, sections 2 and 3.2): a row holding a finite input of a
+    forecast scenario whose availability is NaT, or whose availability column is absent, is refused; each input of
+    the scenario (temperature, heating or cooling degrees) is enough on its own."""
+    f = forecast_frame()
+    require_known_at_origin(f)
+    t = f.index[100]
+    for s in FORECAST_LAGS:
+        broken = f.copy()
+        broken.loc[t, f"available_{s}"] = pd.NaT  # the run that fed the day, its availability lost
+        assert np.isfinite(broken.loc[t, f"temp_{s}"])
+        assert fired(broken) == ["forecast_availability_missing"]  # this term alone
+        assert origin_violations(broken)["forecast_availability_missing"].sum() == 1
+        with pytest.raises(LookaheadError, match="forecast_availability_missing"):
+            require_known_at_origin(broken)
+        for only in (f"hdh_{s}", f"cdh_{s}"):
+            one = broken.copy()
+            others = [c for c in (f"temp_{s}", f"hdh_{s}", f"cdh_{s}") if c != only]
+            one.loc[t, others] = np.nan
+            one.loc[t, only] = 3.0
+            assert fired(one) == ["forecast_availability_missing"], only
+        absent = f.drop(columns=[f"available_{s}"])
+        assert fired(absent) == ["forecast_availability_missing"], s
+        with pytest.raises(LookaheadError, match="forecast_availability_missing"):
+            require_known_at_origin(absent)

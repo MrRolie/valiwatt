@@ -333,6 +333,58 @@ def test_dq_runs_load_runs_against_its_own_manifest_hash(tmp_path, monkeypatch):
         dq.load_runs(v1)
 
 
+def test_data_quality_checks_the_rows_the_loader_returns(sandbox, monkeypatch):
+    """One reader (`quality.run.window_runs`): the runs the data-quality run checks are exactly the rows `load_runs`
+    returns for that run, blank points kept, and a run available after the window's last hour left out of both. A
+    point without its run time is never dropped silently on the way: it refuses the data-quality run (the run rule),
+    so data quality never passes on runs the loader would hand on."""
+    from valiwatt.forecast.guards import LookaheadError
+
+    tmp, raw = sandbox
+    serve(monkeypatch, raw)
+    first, last = DEMAND_FIRST.isoformat(), data_last(2024).isoformat()
+    archive = synth_runs(first, last)
+    archive.loc[archive.index[[40, 41, 5000]], "tmp_f"] = np.nan  # blank points: kept by both
+    after = pd.DataFrame({"runtime": pd.Timestamp("2025-01-01T04:00Z"),  # available at 06:00, after the window
+                          "ftime": pd.date_range("2025-01-01T06:00Z", periods=8, freq="3h"), "tmp_f": 20.0})
+    assert (after["runtime"] + dq.nbm.AVAILABILITY_LAG > data_last(2024)).all()
+    store = nbm_store(archive)
+
+    def load(years, extra=after):
+        out = pd.concat([store(years), extra], ignore_index=True)  # past the store's own cut: only the reader's left
+        out.attrs["identical_duplicates"] = 0
+        return out
+
+    monkeypatch.setattr(dq.nbm, "load_runs", load)
+    monkeypatch.setattr(dq.nbm, "manifest", lambda: nbm_manifest(2024))
+    monkeypatch.setattr(dq.nbm, "verify_files", lambda years: nbm_manifest(2024))
+    checked = {}
+    real_checks = dq.forecast_checks
+
+    def spy(runs, issued, observed, *args, **kw):
+        checked["runs"] = runs.copy()
+        return real_checks(runs, issued, observed, *args, **kw)
+
+    monkeypatch.setattr(dq, "forecast_checks", spy)
+    assert dq.run_dq() == 0
+    run = tracking.latest_run(dq.EXPERIMENT)
+    loaded = dq.load_runs(run)
+    pd.testing.assert_frame_equal(checked["runs"], loaded, check_exact=True)
+    assert len(loaded) == run.data.metrics["nbm_bounds.points"] == len(store(range(2019, 2025)))
+    assert loaded["runtime"].nunique() == run.data.metrics["nbm_runs.runs"]
+    assert int(loaded["tmp_f"].isna().sum()) == run.data.metrics["nbm_bounds.blank_points"] == 3
+    assert not loaded["runtime"].isin(after["runtime"]).any()
+
+    undated = archive.head(24).copy()
+    undated["runtime"] = pd.Series(pd.NaT, index=undated.index, dtype=archive["runtime"].dtype)
+    monkeypatch.setattr(dq.nbm, "load_runs", lambda years: load(years, extra=undated))
+    finished = len(tracking.client().search_runs([tracking.experiment_id(dq.EXPERIMENT)]))
+    with pytest.raises(LookaheadError, match="no run time or no valid time"):
+        dq.run_dq()
+    assert len(tracking.client().search_runs([tracking.experiment_id(dq.EXPERIMENT)])) == finished  # none logged
+    assert dq.load_runs(run)["runtime"].isna().sum() == len(undated)  # what the run rule refuses downstream too
+
+
 def test_a_lead_at_or_above_75_hours_is_reported_against_the_two_day_argument():
     from valiwatt.forecast.features import forecast_temperature
     from valiwatt.quality.weather import forecast_checks

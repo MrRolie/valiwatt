@@ -94,7 +94,14 @@ def forecast_temperature(runs: pd.DataFrame, days, lag: pd.Timedelta = AVAILABIL
       points inside the bounds are the data-quality refinement, not part of the ruling);
     - its nine points are interpolated linearly in time, in °F, onto D's 24 hour-ending labels (the label t takes the
       forecast valid at the instant t), then converted as (F - 32) * 5 / 9. Points of two runs are never mixed.
-    A day no candidate covers has no forecast, and its record says why (REASONS)."""
+    A day no candidate covers has no forecast, and its record says why (REASONS).
+    A point without its run time or its valid time is refused (LookaheadError): its run's availability cannot be
+    established (sections 2 and 3.2), and a missing run time would otherwise sort as the oldest run, in view of every
+    origin."""
+    undated = (runs["runtime"].isna() | runs["ftime"].isna()).to_numpy()
+    if undated.any():
+        raise LookaheadError(f"{int(undated.sum())} forecast points have no run time or no valid time, so no "
+                             f"availability: the run rule reads none of them (first at row {runs.index[undated][0]})")
     days = pd.DatetimeIndex(sorted(set(pd.to_datetime(list(days))))).normalize()
     rt_ns, ft_ns = _ns(runs["runtime"]), _ns(runs["ftime"])
     tmp = runs["tmp_f"].to_numpy(dtype=float)

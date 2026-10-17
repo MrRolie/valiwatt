@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 
+import numpy as np
 import pandas as pd
 
 from valiwatt.config import THROUGH_DEFAULT, stations
@@ -65,14 +66,11 @@ def year_bounds(year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(p["sts"]), pd.Timestamp(p["ets"])
 
 
-def verify_year(text: str, year: int) -> dict:
-    """Refuse a response that is not NBS guidance for CYUL with run times inside the year's request.
-
-    Refused: a missing required column (any of REQUIRED, found by name), no row, a row of another length than the
-    header, a station other than CYUL or a model other than NBS, a temperature that is neither a number nor blank, a
-    run or valid time that does not parse, and a run time outside the request's bounds as the archive applies them.
-    Returns the counts the manifest records."""
-    rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
+def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
+    """The one reading of a year's response: `verify_year`'s checks, then the rows they passed (runtime and ftime as
+    naive UTC, tmp_f in °F, NaN when blank, in the file's order) and the counts the manifest records. The load reads
+    these same rows, so it never holds a row the checks did not see."""
+    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff"))))
     if not rows or not any(rows):
         raise FetchRefused("empty response")
     header = rows[0]
@@ -99,18 +97,38 @@ def verify_year(text: str, year: int) -> dict:
         first = int(not_numbers.to_numpy().argmax())
         raise FetchRefused(f"{int(not_numbers.sum())} temperatures are neither a number nor blank "
                            f"(first {tmp.iloc[first]!r} at line {first + 2})")
-    try:
-        runtime = pd.to_datetime(pd.Series([r[col["runtime"]] for r in body]), format=TIME_FORMAT)
-        pd.to_datetime(pd.Series([r[col["ftime"]] for r in body]), format=TIME_FORMAT)
-    except (ValueError, TypeError) as exc:
-        raise FetchRefused(f"a run or valid time does not parse: {exc}") from exc
+    times = {}
+    for c in ("runtime", "ftime"):
+        raw = pd.Series([r[col[c]] for r in body], dtype=str)
+        # pandas reads a blank, "NaT" or "nan" as a missing time without raising, and no bound below can see one: a
+        # point without its run time or its valid time has no availability, so the file is refused, naming the rows.
+        parsed = pd.to_datetime(raw, format=TIME_FORMAT, errors="coerce")
+        undated = parsed.isna().to_numpy()
+        if undated.any():
+            lines = [int(i) + 2 for i in np.flatnonzero(undated)]
+            raise FetchRefused(f"{len(lines)} rows have a {c} that is missing or does not parse as {TIME_FORMAT!r} "
+                               f"(lines {lines[:10]}{' ...' if len(lines) > 10 else ''}; first "
+                               f"{raw[undated].iloc[0]!r})")
+        times[c] = parsed
+    runtime = times["runtime"]
     sts, ets = (t.tz_convert(None) for t in year_bounds(year))
     outside = (runtime < sts) | (runtime > ets)
     if outside.any():
         raise FetchRefused(f"{int(outside.sum())} rows have a run time outside {sts}..{ets}, the request for {year} "
                            f"(first {runtime[outside].iloc[0]})")
-    return {"rows": len(body), "runs": int(runtime.nunique()), "first_runtime": runtime.min().strftime(TIME_FORMAT),
-            "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum())}
+    counts = {"rows": len(body), "runs": int(runtime.nunique()), "first_runtime": runtime.min().strftime(TIME_FORMAT),
+              "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum())}
+    return pd.DataFrame({"runtime": runtime, "ftime": times["ftime"], "tmp_f": values.astype(float)}), counts
+
+
+def verify_year(text: str, year: int) -> dict:
+    """Refuse a response that is not NBS guidance for CYUL with run times inside the year's request.
+
+    Refused: a missing required column (any of REQUIRED, found by name), no row, a row of another length than the
+    header, a station other than CYUL or a model other than NBS, a temperature that is neither a number nor blank, a
+    run or valid time that is missing (blank, "NaT", "nan") or does not parse, naming its lines, and a run time
+    outside the request's bounds as the archive applies them. Returns the counts the manifest records."""
+    return _parse_year(text, year)[1]
 
 
 def manifest() -> dict:
@@ -201,20 +219,12 @@ def load_runs(years) -> pd.DataFrame:
     primary station is the one the forecast is paired with."""
     require_pairing()
     years = [int(y) for y in years]
-    frames = []
-    for year in years:
-        text = year_path(year).read_bytes().decode("utf-8-sig")
-        verify_year(text, year)
-        d = pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False, usecols=["runtime", "ftime", "tmp"])
-        frames.append(d)
+    frames = [_parse_year(year_path(year).read_bytes().decode("utf-8-sig"), year)[0] for year in years]
     if not frames:
         raise FetchRefused("no year listed: the forecast's years are given explicitly")
     d = pd.concat(frames, ignore_index=True)
-    out = pd.DataFrame({
-        "runtime": pd.to_datetime(d["runtime"], format=TIME_FORMAT).dt.tz_localize("UTC"),
-        "ftime": pd.to_datetime(d["ftime"], format=TIME_FORMAT).dt.tz_localize("UTC"),
-        "tmp_f": pd.to_numeric(d["tmp"].str.strip().replace("", None), errors="raise").astype(float),
-    })
+    out = pd.DataFrame({"runtime": d["runtime"].dt.tz_localize("UTC"), "ftime": d["ftime"].dt.tz_localize("UTC"),
+                        "tmp_f": d["tmp_f"].astype(float)})
     identical = out.duplicated(["runtime", "ftime", "tmp_f"])
     out = out[~identical]
     conflict = out.duplicated(["runtime", "ftime"], keep=False)

@@ -343,17 +343,19 @@ def status(test_of_record: dict | None) -> str:
     """The model card's status (plan section 8.5), from the 2025 test of record only, never a later rerun.
 
     test_of_record: None when no 2025 replay has started; otherwise {"finished": bool, "standing": one of STANDINGS,
-    "verdict": verdict() of its replay, or None when it did not finish}."""
+    "verdict": verdict() of its replay, or None when it did not finish}. Whether it finished is read first: one that
+    did not finish is unfinished whatever its standing, a start that stopped before its standing was logged included;
+    a finished one must have its standing."""
     if test_of_record is None:
         return "candidate"
-    standing = test_of_record.get("standing")
-    if standing not in STANDINGS:
-        raise ValueError(f"the test of record's standing must be one of {STANDINGS}, got {standing!r}")
     finished = test_of_record.get("finished")
     if not isinstance(finished, (bool, np.bool_)):
         raise ValueError(f"the test of record must say whether it finished, got {finished!r}")
     if not finished:
         return "unfinished"
+    standing = test_of_record.get("standing")
+    if standing not in STANDINGS:
+        raise ValueError(f"the test of record's standing must be one of {STANDINGS}, got {standing!r}")
     if standing == "post_hoc":
         return "post_hoc"
     v = test_of_record.get("verdict")

@@ -171,7 +171,9 @@ def test_the_contrasts_are_errors_hourly_ape_at_the_ruled_bootstrap():
     with its defaults, is paired_difference on the hourly APE of errors() over the common hours, at 1,000 week-block
     resamples and seed 0, exactly. The APE is over the observed demand, |y - f| / y, never over the forecast."""
     assert evaluate.N_BOOT == 1000
-    f = with_cold(year_frame(seed=4), 168, 6)
+    # The cold hours spread over 20 weeks: with few weeks the week-block bootstrap has so few distinct means that 999
+    # and 1,000 resamples give the same bounds, and a count off by one on a cold call would pass (checked below).
+    f = with_cold(year_frame(seed=4), 168, 20)
     f["hour"] = (f.index - H + LST_OFFSET).hour  # errors() reads them; the contrasts do not
     f["fold"] = f["day"].dt.to_period("M").astype(str)
     # Each pair has hours the three-way set lacks, one cold hour among them.
@@ -183,9 +185,12 @@ def test_the_contrasts_are_errors_hourly_ape_at_the_ruled_bootstrap():
     assert (len(hours), len(cold)) == (len(f) - 6, 167)
     c = contrasts(f, COLD_C)
 
-    def ruled(rows, a, b):
+    def ruled(rows, a, b, n_boot=1000):
         return paired_difference(errors(f.loc[rows], f"pred_{a}"), errors(f.loc[rows], f"pred_{b}"), "ape",
-                                 n_boot=1000, seed=0)
+                                 n_boot=n_boot, seed=0)
+
+    def bounds_of(d):
+        return d["ci95_low"], d["ci95_high"]
 
     pairs = {"shipped": ("gam_forecast", "persistence"), "family": ("gam_forecast", "forecast"),
              "input": ("forecast", "persistence")}
@@ -193,10 +198,12 @@ def test_the_contrasts_are_errors_hourly_ape_at_the_ruled_bootstrap():
         expected = ruled(hours, a, b)
         assert {key: c[k][key] for key in expected} == expected, k
         assert c[k]["state"] == state(expected), k
+        assert bounds_of(ruled(hours, a, b, n_boot=999)) != bounds_of(expected), k  # the frame tells 999 from 1,000
         if k != "input":
             expected = ruled(cold, a, b)
             assert {key: c["cold"][k][key] for key in expected} == expected, ("cold", k)
             assert c["cold"][k]["state"] == state(expected), ("cold", k)
+            assert bounds_of(ruled(cold, a, b, n_boot=999)) != bounds_of(expected), ("cold", k)
     # One week of hours at 100 MW: v2 forecasts 80, v1's form on the forecast 90, v1 as shipped 125. Over the demand
     # their APEs are 0.20, 0.10 and 0.25; over the forecast they would be 0.25, 0.11 and 0.20, and the shipped
     # contrast would change sign.
@@ -302,10 +309,11 @@ def test_the_cold_threshold_reads_inputs_only():
 
 
 def test_the_status_follows_the_test_of_record():
-    """None: no 2025 start, candidate. A test of record that did not finish is unfinished whatever its standing or any
-    verdict passed with it (a ruled next start passed as the record included, until it finishes). A finished post-hoc
-    one is post hoc whatever its verdicts. Only a finished clean one gives a held-out status: confirmed when both
-    verdicts are better, input only when the shipped one only, not confirmed otherwise. A standing outside STANDINGS is
+    """None: no 2025 start, candidate. A test of record that did not finish is unfinished whatever its standing, none
+    or one outside STANDINGS included, or any verdict passed with it (a ruled next start passed as the record included,
+    until it finishes). A finished post-hoc one is post hoc whatever its verdicts. Only a finished clean one gives a
+    held-out status: confirmed when both verdicts are better, input only when the shipped one only, not confirmed
+    otherwise. A finished one with a standing outside STANDINGS, or a record that does not say whether it finished, is
     refused."""
     B, U, N, W = VERDICTS[0], VERDICTS[1], VERDICTS[2], VERDICTS[3]
 
@@ -329,10 +337,20 @@ def test_the_status_follows_the_test_of_record():
             else:
                 assert got == "not_confirmed", (shipped, family)
     assert seen == set(STATUSES)
+    # Whether it finished is read before the standing: a start that stopped before its standing was logged is
+    # unfinished (lane E lists it so), and a finished one without a valid standing is refused.
     for bad in ("", None, "held_out", "seen_by_developers"):
-        for finished in (True, False):
-            with pytest.raises(ValueError):
-                status(rec(finished, bad, B, B))
+        assert status(rec(False, bad)) == "unfinished"
+        assert status(rec(False, bad, B, B)) == "unfinished"
+        with pytest.raises(ValueError, match="standing"):
+            status(rec(True, bad, B, B))
+    assert status({"finished": False, "standing": None, "verdict": None}) == "unfinished"
+    assert status({"finished": False}) == "unfinished"  # nothing logged but that it did not finish
+    with pytest.raises(ValueError, match="standing"):
+        status({"finished": True, "standing": None, "verdict": {"shipped": B, "family": B}})
+    for finished in (None, "no", 0):
+        with pytest.raises(ValueError, match="finished"):
+            status({"finished": finished, "standing": "clean", "verdict": None})
     with pytest.raises(ValueError):
         status(rec(True, "clean"))  # finished and clean, without its verdicts
 

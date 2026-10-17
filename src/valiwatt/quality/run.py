@@ -142,11 +142,28 @@ def window_days(through: int = THROUGH_DEFAULT) -> pd.DatetimeIndex:
     return pd.date_range(first, last, freq="D")
 
 
+def window_runs(years, through: int = THROUGH_DEFAULT) -> pd.DataFrame:
+    """The NBM runs of `years` as the data-quality run of the window through `through` checks them, and as `load_runs`
+    returns them: one reader, so data quality checks exactly the rows every later step reads. `sources.nbm.load_runs`
+    (a point without its run time or its valid time refuses the load), plus available_utc = runtime +
+    AVAILABILITY_LAG, leaving out the runs available after the window's last hour, `data_last(through)`. On files
+    that pass `nbm.verify_year` the cut drops none: a year's file ends with the next year's 01:00 UTC run, available at
+    03:00, two hours before the window's last hour. A point without an availability is never cut here: it goes on to
+    the run rule, which refuses it (`features.forecast_temperature`), as the load already does."""
+    runs = nbm.load_runs(years)
+    runs["available_utc"] = runs["runtime"] + nbm.AVAILABILITY_LAG
+    late = (runs["available_utc"] > data_last(int(through))).to_numpy()  # a missing availability compares False
+    kept = runs[~late].reset_index(drop=True)
+    kept.attrs = dict(runs.attrs)
+    return kept
+
+
 def load_runs(dq, years=None) -> pd.DataFrame:
     """The NBM runs of `years` (None: every year the data-quality run `dq` checked), refused unless they are the files
     `dq` checked: the NBM manifest of its window must hash to its `nbm_manifest_sha256`, and each listed year's file
     must match the manifest. Only the listed years' files are opened (design code lists 2019-2023, so the 2024 file is
-    never opened there). Columns of `sources.nbm.load_runs`, plus available_utc = runtime + AVAILABILITY_LAG.
+    never opened there). The rows of `window_runs` for `dq`'s window, the reader `dq` checked them with: columns of
+    `sources.nbm.load_runs`, plus available_utc = runtime + AVAILABILITY_LAG.
 
     The runs of a boundary are kept (a year's file ends with the next year's 01:00 UTC run): availability, not the run
     time's year, decides who may read them."""
@@ -164,9 +181,7 @@ def load_runs(dq, years=None) -> pd.DataFrame:
     if nbm.manifest_sha256(nbm.for_years(nbm.manifest(), checked)) != expected:
         raise LineageError(f"the NBM files differ from the ones data-quality run {dq.info.run_id} checked")
     nbm.verify_files(years)
-    runs = nbm.load_runs(years)
-    runs["available_utc"] = runs["runtime"] + nbm.AVAILABILITY_LAG
-    return runs
+    return window_runs(years, through)
 
 
 def _values(raw: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp) -> dict:
@@ -235,11 +250,9 @@ def run_dq(through: int = THROUGH_DEFAULT) -> int:
     panel = panel_temperature(frames, MIN_PANEL_STATIONS)
     checks += panel_checks(frames, panel)
 
-    # The forecast: every run available by the window's end, fed by the run rule to every day of the window.
-    runs = nbm.load_runs(range(nbm.FIRST_YEAR, through + 1))
-    duplicates = int(runs.attrs.get("identical_duplicates", 0))
-    runs = runs[runs["runtime"] + nbm.AVAILABILITY_LAG <= window_last].reset_index(drop=True)
-    runs.attrs["identical_duplicates"] = duplicates
+    # The forecast: every run available by the window's end, read as `load_runs` reads it, fed by the run rule to
+    # every day of the window.
+    runs = window_runs(range(nbm.FIRST_YEAR, through + 1), through)
     issued = forecast_temperature(runs, window_days(through))
     checks += forecast_checks(runs, issued, frames[primary.key]["temp_c"])
 
