@@ -993,3 +993,9 @@ None yet.
   - A 2025 start that stops while its gate's record is logged keeps the class of the error that stopped it.
 - 2026-10-17, the chain run again from data quality on the code with those fixes: the reproduction checks above gave
   the same outcome, number for number, and the frozen GAMs of 2023 and 2024 have the same hashes as the first chain's.
+- 2026-10-17, commit 779d7b6ca062, from the second model's check of the fixes above: every tracked run is a fresh run
+  of its own experiment in the project's store. A run is refused before it exists under an MLflow environment variable
+  other than the project's own and the store's address, with another run active, or with another experiment selected:
+  an ambient run identifier made MLflow resume an older run of another experiment, where no later 2025 gate looks, and
+  other such variables could add to a run or make it fail once created. The run is created first and then entered by
+  its identifier; should entering fail, it ends failed with the class of its error. No number changes.
