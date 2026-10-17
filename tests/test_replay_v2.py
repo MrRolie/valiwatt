@@ -343,6 +343,23 @@ def test_comparators_are_scored_on_the_inputs_recorded_at_issue(clean):
     assert on_day(r, day)["pred_forecast"].notna().all()
 
 
+def test_the_frozen_least_squares_score_the_replay_as_the_previous_formula(clean):
+    """No number of the replay moves: the comparison models' forecasts of every replayed hour, now computed from the
+    recorded temperatures with their stored base and blocks, are those of the previous formula on the degree-hours
+    the replay recorded at issue (test_frozen.ols_previous_formula), 0 MW apart, missing where it was missing, the
+    intervals with them."""
+    from test_frozen import ols_previous_formula
+
+    w = world_v2()
+    for key, m in w.comparators.items():
+        assert m.family == "ols"
+        expected = ols_previous_formula(m, clean.hourly)
+        assert expected.notna().sum() > 500, key
+        np.testing.assert_array_equal(clean.hourly[f"pred_{key}"].to_numpy(), expected.to_numpy(), err_msg=key)
+        np.testing.assert_array_equal(clean.hourly[f"upper_{key}"].to_numpy(), (expected * (1 + m.q)).to_numpy(),
+                                      err_msg=key)
+
+
 def test_comparators_crossing_their_thresholds_yield_no_recommendation(clean):
     """Comparison models whose intervals are a fifth as wide miss far more hours than the coverage threshold allows:
     they touch no monitor, so the decisions and the production model's hours are the clean replay's."""
@@ -653,6 +670,85 @@ def test_a_2025_replay_stopped_midway_leaves_its_started_run(tmp_path, monkeypat
         assert s["holds_results"] and not client.get_run(run_id).data.metrics
         with pytest.raises(mrun.FreezeError, match="and its run holds results"):
             mrun.held_out_gate(2025)
+
+
+def test_a_2025_start_stopped_while_its_gate_record_is_logged_keeps_its_error_class(chain, monkeypatch):
+    """The 2025 run opens, then its gate record is logged under the start lock: a stop there (a store or disk error)
+    leaves the run with every tag it opened with, stage opened, `error` the exception's class and no gate record, and
+    the next start's refusal names that class, never "none"."""
+    import mlflow
+
+    expected = started_tags(chain) | {"stage": "opened", "error": "OSError"}
+    real = mlflow.log_text
+
+    def full_disk(text, artifact_file, *args, **kwargs):
+        if artifact_file == mrun.GATE_RECORD:
+            raise OSError("no space left on device")
+        return real(text, artifact_file, *args, **kwargs)
+
+    monkeypatch.setattr(mlflow, "log_text", full_disk)
+    with pytest.raises(OSError, match="no space left"):
+        mrun.run_replay(2025, n_boot=20)
+    monkeypatch.setattr(mlflow, "log_text", real)
+    (run,) = rw.replay_runs(2025)
+    assert run.info.status == "FAILED"
+    assert {k: run.data.tags.get(k) for k in expected} == expected
+    assert mrun._artifact_paths(tracking.client(), run.info.run_id) == [] and not run.data.metrics
+    (s,) = mrun.replay_starts(2025)
+    assert (s["stage"], s["error"], s["holds_results"], s["finished"], s["gate"]) == ("opened", "OSError", False,
+                                                                                     False, None)
+    with pytest.raises(mrun.FreezeError, match="stopped at stage 'opened' with error 'OSError', and its run holds no "
+                                               "results"):
+        mrun.held_out_gate(2025)
+
+
+def test_a_2025_run_exists_only_with_its_tags(chain, monkeypatch):
+    """A run is created with its tags in the one call that creates it (tracking.start_run). The tags' computation
+    failing (here the git state) creates no run; a stop right after the creation call (the process killed there)
+    leaves a run that already carries kind, year, the freeze tags and the git tags, so replay_starts lists it as a
+    stopped start and the next start's gate refuses on it."""
+    import mlflow
+    from mlflow.entities import ViewType
+
+    def every_run():
+        c = tracking.client()
+        exp = c.get_experiment_by_name(mrun.EXPERIMENT)
+        return {r.info.run_id for r in c.search_runs([exp.experiment_id], "", run_view_type=ViewType.ALL)}
+
+    before = every_run()
+
+    def no_git(*args, **kwargs):
+        raise RuntimeError("git is not there")
+
+    with monkeypatch.context() as mp:
+        mp.setattr(tracking, "git_state", no_git)
+        with pytest.raises(RuntimeError, match="git is not there"):
+            mrun.run_replay(2025, n_boot=20)
+    assert every_run() == before and rw.replay_runs(2025) == []
+
+    class Killed(BaseException):
+        pass
+
+    real = mlflow.start_run
+
+    def killed_after_create(*args, **kwargs):
+        real(*args, **kwargs)
+        mlflow.end_run("KILLED")
+        raise Killed
+
+    with monkeypatch.context() as mp:
+        mp.setattr(mlflow, "start_run", killed_after_create)
+        with pytest.raises(Killed):
+            mrun.run_replay(2025, n_boot=20)
+    (run,) = rw.replay_runs(2025)
+    assert every_run() == before | {run.info.run_id}
+    expected = started_tags(chain) | {"stage": "opened"}
+    assert {k: run.data.tags.get(k) for k in expected} == expected and "code_sha256" in run.data.tags
+    (s,) = mrun.replay_starts(2025)
+    assert (s["run_id"], s["stage"], s["finished"], s["running"], s["gate"]) == (run.info.run_id, "opened", False,
+                                                                                 False, None)
+    with pytest.raises(mrun.FreezeError, match=rf"\(run {run.info.run_id}\), stopped at stage 'opened'"):
+        mrun.held_out_gate(2025)
 
 
 def test_a_gate_refusal_opens_no_run(chain, monkeypatch):

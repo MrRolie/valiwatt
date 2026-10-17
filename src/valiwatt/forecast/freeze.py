@@ -26,12 +26,12 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import DESIGN_LAST
-from valiwatt.forecast import model
+from valiwatt.forecast import features, model
 from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.evaluate import ALPHA, CALIBRATION_FOLDS, calibration_rows, conformal_quantile
 from valiwatt.forecast.features import BASE_C
 from valiwatt.forecast.guards import LookaheadError, require_design_window, require_embargo, require_known_at_origin
-from valiwatt.forecast.model import COMPARATORS, HOUR_BLOCKS, MODELS, PRODUCTION, design, usable_rows
+from valiwatt.forecast.model import COMPARATORS, MODELS, PRODUCTION, design, usable_rows
 
 EXPERIMENT = "valiwatt-frozen-model"
 MODEL_NAME = "valiwatt-demand-gam-forecast"
@@ -43,13 +43,14 @@ PARTIAL_EFFECTS_STEP_C, PARTIAL_EFFECTS_MARGIN_C = 1.0, 5.0
 
 
 def input_columns(family: str, scenario: str) -> list[str]:
-    """The feature columns a frozen model of this family reads (its MLflow input example)."""
-    if family == "gam":
-        return ["day_type", "hour", f"temp_{scenario}", "lag24", "lag168"]
-    return ["day_type", "hour", f"hdh_{scenario}", f"cdh_{scenario}", "lag24", "lag168"]
+    """The feature columns a frozen model of this family reads (its MLflow input example): both families read the
+    temperature itself, least squares computing its degree-hours with its stored base temperature."""
+    return ["day_type", "hour", f"temp_{scenario}", "lag24", "lag168"]
 
 
-INPUT_COLUMNS = input_columns("ols", SCENARIO)  # v1's model's input columns
+# The frozen least squares' input columns on v1's input (persistence): the temperature, its degree-hours computed
+# with the stored base, where v1's model read the table's hdh_persistence and cdh_persistence.
+INPUT_COLUMNS = input_columns("ols", SCENARIO)
 
 
 class FrozenModelError(RuntimeError):
@@ -57,15 +58,22 @@ class FrozenModelError(RuntimeError):
 
 
 def frozen_sha256(family: str, scenario: str, columns, knots, degree, extrapolation, include_bias, center, scale,
-                  beta, intercept, q) -> str:
+                  beta, intercept, q, hour_blocks=None, base_c=None) -> str:
     """The hash of what a frozen model's forecast and interval depend on: its family and input, the named columns, the
     spline's knots and its three settings, the scaler's means and scales, the coefficients and intercept, and the
-    half-width. A function of the values, so the hash of any setting can be computed, a refused one included."""
+    half-width; for least squares also its hour blocks (each name and its hours, in column order) and its base
+    temperature, which its degree-hours are computed with (a GAM reads neither, and its hash is as before). A
+    function of the values, so the hash of any setting can be computed, a refused one included."""
     arrays = [np.ascontiguousarray(np.asarray(a, dtype=float).ravel(), dtype="<f8")
               for a in (knots, center, scale, beta)]
     head = {"family": str(family), "scenario": str(scenario), "columns": [str(c) for c in columns],
             "degree": int(degree), "extrapolation": str(extrapolation), "include_bias": bool(include_bias),
             "lengths": [int(a.size) for a in arrays]}
+    if family == "ols":
+        if hour_blocks is None or base_c is None:
+            raise FrozenModelError("a least-squares model's hash needs its hour blocks and its base temperature")
+        head |= {"hour_blocks": [[name, list(hours)] for name, hours in model.hour_blocks(hour_blocks)],
+                 "base_c": repr(float(base_c))}
     h = hashlib.sha256()
     h.update(json.dumps(head, sort_keys=True).encode())
     for a in arrays:
@@ -78,6 +86,45 @@ def _floats(values) -> tuple:
     return tuple(float(v) for v in np.asarray(values, dtype=float).ravel())
 
 
+def _stored_blocks(raw) -> tuple:
+    """A least-squares model's hour blocks as (name, hours) pairs, in their column order, from a mapping or from
+    pairs. Refused (FrozenModelError) unless they partition the hours 0 to 23: each hour, an integer, in exactly one
+    block, each block named once and holding at least one hour."""
+    try:
+        pairs = list(raw.items()) if isinstance(raw, dict) else [tuple(p) for p in raw]
+    except TypeError as e:
+        raise FrozenModelError(f"hour blocks {raw!r} are neither a mapping nor (name, hours) pairs") from e
+    out = []
+    for p in pairs:
+        if len(p) != 2 or not isinstance(p[0], str) or not p[0] or isinstance(p[1], (str, bytes)):
+            raise FrozenModelError(f"hour block {p!r} is not a name and its hours")
+        hours = list(p[1])
+        if not hours or any(isinstance(h, bool) or not isinstance(h, (int, np.integer)) for h in hours):
+            raise FrozenModelError(f"hour block {p[0]!r} holds {hours!r}, not one or more whole hours")
+        out.append((p[0], tuple(int(h) for h in hours)))
+    names = [name for name, _ in out]
+    every = sorted(h for _, hours in out for h in hours)
+    if len(set(names)) != len(names) or every != list(range(24)):
+        raise FrozenModelError(f"hour blocks {dict(out)} do not partition the hours 0 to 23, each hour in exactly one "
+                               "block, each block named once")
+    return tuple(out)
+
+
+def _stored_base(raw) -> float:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, np.integer, np.floating)) or not np.isfinite(raw):
+        raise FrozenModelError(f"base temperature {raw!r} is not a finite number of degrees Celsius")
+    return float(raw)
+
+
+def _refuse_uncovered_day_types(f: pd.DataFrame, day_types: tuple, whose: str) -> None:
+    """A row whose day type the stored cells do not cover would get all-zero cells: refused, never forecast."""
+    stray = f["day_type"].notna() & ~f["day_type"].isin(day_types)
+    if stray.any():
+        raise FrozenModelError(
+            f"{int(stray.sum())} rows have a day type the frozen {whose} stored cells do not cover: "
+            f"{sorted(set(f.loc[stray, 'day_type'].astype(str)))}, stored {list(day_types)}")
+
+
 @dataclass(frozen=True)
 class FrozenModel:
     """A frozen model: v1's least squares ("ols", `columns` and `beta` on `model.design`'s named columns) or the GAM
@@ -87,8 +134,12 @@ class FrozenModel:
     Refused at construction (FrozenModelError): a family other than FAMILIES; a degree, extrapolation or bias setting
     other than the owner's ruling (model.DEGREE, model.EXTRAPOLATION, model.INCLUDE_BIAS), for either family; a GAM
     whose knots are not model.N_KNOTS finite increasing values; coefficients, means or scales that do not match the
-    columns. A GAM forecasts, and draws its curves, from its stored values only (`gam_spec`), whatever the module's
-    settings say once it is built."""
+    columns; least squares' hour blocks that do not partition the hours 0 to 23, or a base temperature that is not a
+    finite number; a GAM carrying either. A GAM forecasts, and draws its curves, from its stored values only
+    (`gam_spec`), whatever the module's settings say once it is built; least squares likewise from its stored day
+    types, hour blocks and base temperature (`ols_spec`), its degree-hours computed from the temperature with that
+    base. A least-squares model built without blocks or base takes the module's (model.HOUR_BLOCKS,
+    features.BASE_C) at construction, and stores and hashes them from then on."""
 
     columns: tuple
     beta: np.ndarray
@@ -107,6 +158,8 @@ class FrozenModel:
     degree: int = model.DEGREE
     extrapolation: str = model.EXTRAPOLATION
     include_bias: bool = model.INCLUDE_BIAS
+    hour_blocks: tuple | None = None  # least squares: (name, hours) pairs, in column order
+    base_c: float | None = None  # least squares: the degree-hours' base temperature, in degrees Celsius
 
     def __post_init__(self):
         beta = np.array(self.beta, dtype=float)
@@ -137,13 +190,36 @@ class FrozenModel:
             if not (len(self.center) == len(self.scale) == len(self.columns)):
                 raise FrozenModelError(f"a frozen GAM needs one mean and one scale per column: {len(self.center)} "
                                        f"and {len(self.scale)} for {len(self.columns)} columns")
+            if self.hour_blocks is not None or self.base_c is not None:
+                raise FrozenModelError("a frozen GAM stores no hour blocks and no base temperature: it reads neither")
+        else:
+            object.__setattr__(self, "hour_blocks", _stored_blocks(
+                model.HOUR_BLOCKS if self.hour_blocks is None else self.hour_blocks))
+            object.__setattr__(self, "base_c", _stored_base(
+                features.BASE_C if self.base_c is None else self.base_c))
         object.__setattr__(self, "degree", int(self.degree))
         object.__setattr__(self, "include_bias", bool(self.include_bias))
 
     def sha256(self) -> str:
         """Hash of everything the forecast and its interval depend on (`frozen_sha256`)."""
         return frozen_sha256(self.family, self.scenario, self.columns, self.knots, self.degree, self.extrapolation,
-                             self.include_bias, self.center, self.scale, self.beta, self.intercept, self.q)
+                             self.include_bias, self.center, self.scale, self.beta, self.intercept, self.q,
+                             hour_blocks=self.hour_blocks, base_c=self.base_c)
+
+    def ols_spec(self) -> dict:
+        """What a frozen least squares' design is rebuilt from, all of it stored and hashed: the day types in the order
+        of its stored cell columns, its hour blocks and its base temperature (keyword arguments of model.design).
+        Refused (FrozenModelError) unless the columns those day types and blocks generate (model.ols_columns) are its
+        stored columns, name for name and in order."""
+        day_types = tuple(dict.fromkeys(c.split(":")[1] for c in self.columns if c.startswith("cell:")))
+        generated = tuple(model.ols_columns(day_types=day_types, blocks=self.hour_blocks))
+        if generated != self.columns:
+            i = next(i for i, (a, b) in enumerate(zip(self.columns + (None,), generated + (None,))) if a != b)
+            raise FrozenModelError(
+                f"the frozen least squares' {len(self.columns)} stored columns are not the {len(generated)} columns "
+                f"its stored day types and hour blocks generate: column {i} is {self.columns[i:i + 1]} stored, "
+                f"{generated[i:i + 1]} generated")
+        return {"day_types": day_types, "blocks": self.hour_blocks, "base_c": self.base_c}
 
     def gam_spec(self) -> dict:
         """What a frozen GAM's design is rebuilt from, all of it stored and hashed: the day types in the order of its
@@ -166,21 +242,24 @@ class FrozenModel:
     def forecast(self, f: pd.DataFrame) -> pd.Series:
         """The forecast of every row whose inputs are all present; NaN otherwise (never imputed). The GAM predicts
         through model.gam_design and model.gam_predict, the path validation's fits predict through, its design rebuilt
-        from the stored knots, settings and column order (`gam_spec`, which refuses columns it cannot rebuild)."""
+        from the stored knots, settings and column order (`gam_spec`, which refuses columns it cannot rebuild). Least
+        squares predicts through model.design, the function validation's fits predict through, given its stored day
+        types, hour blocks and base temperature (`ols_spec`): its degree-hours are computed from temp_<scenario> with
+        that base, never read from the table's hdh_ and cdh_ columns. For both, a row whose day type the stored cells
+        do not cover is refused (FrozenModelError); a row with a missing day type or an hour outside 0 to 23 is a row
+        with a missing input, NaN."""
         out = pd.Series(np.nan, index=f.index)
         if self.family == "gam":
             spec = self.gam_spec()
-            stray = f["day_type"].notna() & ~f["day_type"].isin(spec["day_types"])
-            if stray.any():  # such a row's cells would all be zero: refused, never forecast
-                raise FrozenModelError(
-                    f"{int(stray.sum())} rows have a day type the frozen GAM's stored cells do not cover: "
-                    f"{sorted(set(f.loc[stray, 'day_type'].astype(str)))}, stored {list(spec['day_types'])}")
+            _refuse_uncovered_day_types(f, spec["day_types"], "GAM's")
             X = model.gam_design(f, self.scenario, np.asarray(self.knots), **spec)
             ok = np.isfinite(X).all(axis=1)
             if ok.any():
                 out[ok] = model.gam_predict(X[ok], self.center, self.scale, self.beta, self.intercept)
             return out
-        X = design(f, self.scenario)[list(self.columns)]
+        spec = self.ols_spec()
+        _refuse_uncovered_day_types(f, spec["day_types"], "least squares'")
+        X = design(f, self.scenario, **spec)[list(self.columns)]
         ok = usable_rows(X)
         out[ok] = X[ok].to_numpy() @ self.beta
         return out
@@ -202,32 +281,46 @@ class FrozenModel:
     def partial_effects(self, temps) -> pd.DataFrame:
         """Each hour's temperature effect in MW relative to its value at BASE_C, at the temperatures `temps` (columns
         hour, temp_c, effect_mw; hour major): the GAM's curve (model.gam_partial_effects, from its stored values,
-        `gam_spec`), or v1's degree-hour lines of the hour's block."""
+        `gam_spec`), or v1's degree-hour lines of the hour's stored block, about its stored base temperature
+        (`ols_spec`).
+
+        The GAM's reference temperature is this module's BASE_C, neither stored nor hashed, by design: it only says
+        where each displayed curve is zero (a constant shift of each hour's curve), and the GAM's forecast and interval
+        never read it, so its file and hash stay those of what it forecasts."""
         t = np.asarray(temps, dtype=float).ravel()
         if self.family == "gam":
             return model.gam_partial_effects(np.asarray(self.knots), self.beta, self.scale, t, ref_c=BASE_C,
                                              **self.gam_spec())
+        spec = self.ols_spec()
+        base = spec["base_c"]
         b = dict(zip(self.columns, self.beta))
         rows = []
         for h in range(24):
-            block = next(name for name, hours in HOUR_BLOCKS.items() if h in hours)
-            effect = b[f"heating:{block}"] * np.maximum(BASE_C - t, 0.0) + b[f"cooling:{block}"] * np.maximum(t - BASE_C, 0.0)
+            block = next(name for name, hours in spec["blocks"] if h in hours)
+            effect = (b[f"heating:{block}"] * np.maximum(base - t, 0.0)
+                      + b[f"cooling:{block}"] * np.maximum(t - base, 0.0))
             rows.append(pd.DataFrame({"hour": h, "temp_c": t, "effect_mw": effect}))
         return pd.concat(rows, ignore_index=True)
 
     def to_json(self) -> str:
-        """Every field, the spline's three settings included, and the hash."""
+        """Every field, the spline's three settings included, and the hash; least squares' hour blocks as a mapping of
+        each name to its hours, in column order, and its base temperature (a GAM's file holds neither, as before)."""
         d = {f.name: getattr(self, f.name) for f in fields(self)}
         d |= {"columns": list(self.columns), "beta": [float(b) for b in self.beta], "q": float(self.q),
               "calibration_folds": list(self.calibration_folds), "knots": list(self.knots),
               "center": list(self.center), "scale": list(self.scale)}
+        if self.family == "gam":
+            del d["hour_blocks"], d["base_c"]
+        else:
+            d["hour_blocks"] = {name: list(hours) for name, hours in self.hour_blocks}
         return json.dumps(d | {"sha256": self.sha256()}, indent=2)
 
     @classmethod
     def from_json(cls, text: str) -> "FrozenModel":
         """Refused (FrozenModelError): a file that no longer matches its own hash, and, at construction, a setting
         other than the ruled one. A file without the spline settings reads the ruled defaults, and its hash must still
-        match."""
+        match. A least-squares file is checked on load as its forecast checks it (`ols_spec`): its columns must be
+        those its stored day types and hour blocks generate."""
         d = json.loads(text)
         if not isinstance(d, dict) or "sha256" not in d:
             raise FrozenModelError("frozen model file holds no hash")
@@ -238,6 +331,8 @@ class FrozenModel:
             raise FrozenModelError(f"frozen model file has fields other than a frozen model's: {e}") from e
         if m.sha256() != expected:
             raise FrozenModelError("frozen model file does not match its own hash")
+        if m.family == "ols":
+            m.ols_spec()
         return m
 
 
@@ -352,7 +447,10 @@ def fit_frozen(f: pd.DataFrame, oos: pd.DataFrame, replay_year: int,
                   scenario=scenario)
 
     if family == "ols":
-        frozen = FrozenModel(columns=m.columns, beta=m.beta, **common)
+        # The blocks and base the fit's design used (model.design reads the module's; features.build computed the
+        # table's degree-hours with features.BASE_C), stored and hashed so that the forecast reads only the file.
+        frozen = FrozenModel(columns=m.columns, beta=m.beta, hour_blocks=model.hour_blocks(), base_c=features.BASE_C,
+                             **common)
         X = design(train, scenario).drop(columns=list(model.LAGS))
         ok = usable_rows(X, train["target"])
         beta_nolag, *_ = np.linalg.lstsq(X[ok].to_numpy(), train.loc[ok, "target"].to_numpy(), rcond=None)

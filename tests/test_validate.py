@@ -300,6 +300,10 @@ V1_AT_BASE = {
     ("thresholds", "2024", "drift", "temperature_high"): 0.20459005651505976,
     ("thresholds", "2024", "drift", "forecast_high"): 0.14150030092839277,
 }
+# The panel-vs-primary difference is of two MAPEs near 3.7e-3: a few units in their last place (CI's runner) are 2e-8
+# of it, so it is pinned to 1e-9 of the MAPE it is taken from, not of itself.
+V1_TOLERANCE = {("compare", "panel_vs_primary", "difference"):
+                {"rel": 0, "abs": 1e-9 * V1_AT_BASE[("performance", "persistence", "overall", "mean")]}}
 V1_KEYS = {
     (): ["cases", "compare", "config", "conformal", "coverage", "folds", "performance", "thresholds"],
     ("performance",): ["baseline", "observed", "panel_persistence", "persistence"],
@@ -329,7 +333,7 @@ def test_models_none_is_v1_validation_exactly(tables, verdicts):
     assert list(v["out"].columns) == V1_OOS
     pd.testing.assert_frame_equal(v["intervals"], ev.relative_conformal(v["out"], "pred_persistence"))
     for path, value in V1_AT_BASE.items():
-        assert at(r, path) == pytest.approx(value, rel=1e-9, abs=0), path
+        assert at(r, path) == pytest.approx(value, **V1_TOLERANCE.get(path, {"rel": 1e-9, "abs": 0})), path
     expected = vd.thresholds(ev.errors(v["out"], "pred_persistence"), v["intervals"]["covered"], fp["temp_observed"],
                              fp["day"], v["out"]["pred_persistence"], v["out"]["day"], 2023, 2023, verdicts)
     assert r["thresholds"]["2024"] == jsonable(expected)

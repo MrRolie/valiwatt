@@ -169,11 +169,15 @@ def test_raw_files_that_no_longer_match_their_manifest_are_refused(tmp_path, mon
         dq._verify_raw(2025)  # the 2025 vintage has a file and a manifest of its own
 
 
-def test_eccc_month_that_no_longer_matches_its_manifest_is_refused(tmp_path, monkeypatch):
+def eccc_station_files(tmp_path, monkeypatch, through: int = 2024):
+    """One station's raw directory in a scratch data/raw: a file for every month of the window through `through`, its
+    manifest listing each with its SHA-256, the Hydro-Québec export checked as well. Returns the station and the
+    manifest's months."""
     import json
 
+    from valiwatt.config import fetch_months
     from valiwatt.sources import eccc, hydroquebec
-    from valiwatt.sources.http import FetchRefused, sha256_file
+    from valiwatt.sources.http import sha256_file
 
     monkeypatch.setattr(dq, "require_first_run", lambda: None)  # the real repository has no v2-first-run tag yet
     csv, manifest = tmp_path / "hq.csv", tmp_path / "manifest.json"
@@ -184,20 +188,77 @@ def test_eccc_month_that_no_longer_matches_its_manifest_is_refused(tmp_path, mon
     monkeypatch.setattr(eccc, "RAW_ECCC", tmp_path / "eccc")
     st = stations()[0]
     monkeypatch.setattr(dq, "stations", lambda: [st])
+    months = {}
+    for y, m in fetch_months(through):
+        path = eccc.month_path(st, y, m)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{y}-{m}\n")
+        months[f"{y:04d}-{m:02d}"] = {"sha256": sha256_file(path)}
+    return st, months
+
+
+def write_eccc_manifest(st, months: dict) -> None:
+    import json
+
+    from valiwatt.sources import eccc
+
+    (eccc.RAW_ECCC / st.climate_id / "manifest.json").write_text(json.dumps({"months": months}))
+
+
+def test_eccc_month_that_no_longer_matches_its_manifest_is_refused(tmp_path, monkeypatch):
+    from valiwatt.sources import eccc
+    from valiwatt.sources.http import FetchRefused
+
+    st, months = eccc_station_files(tmp_path, monkeypatch)
     with pytest.raises(FetchRefused, match="no manifest"):
         dq._verify_raw()
-    month = eccc.month_path(st, 2019, 1)
-    month.parent.mkdir(parents=True)
-    month.write_text("a\n")
     later = eccc.month_path(st, 2025, 6)  # a month of a later window: not this window's, never checked by it
     later.write_text("c\n")
-    (month.parent / "manifest.json").write_text(json.dumps({"months": {"2019-01": {"sha256": sha256_file(month)},
-                                                                       "2025-06": {"sha256": "0" * 64}}}))
+    write_eccc_manifest(st, months | {"2025-06": {"sha256": "0" * 64}})
     _, stn = dq._verify_raw()
-    assert list(stn[0]["months"]) == ["2019-01"]
-    month.write_text("b\n")
-    with pytest.raises(FetchRefused, match="no longer matches"):
+    assert list(stn[0]["months"]) == list(months)
+    eccc.month_path(st, 2019, 1).write_text("b\n")
+    with pytest.raises(FetchRefused, match="2019-01 no longer matches"):
         dq._verify_raw()
+
+
+def test_a_window_month_missing_from_a_station_s_manifest_is_refused(tmp_path, monkeypatch):
+    """A fetch stopped after writing a month's file but before writing the manifest leaves a month the data-quality
+    run would read (eccc.load_station reads every month of the window) without its hash: refused, naming the station
+    and the month, before any of its files is hashed (the export is hashed first). Every month listed passes
+    (control, below)."""
+    from valiwatt.sources import eccc
+    from valiwatt.sources.http import FetchRefused
+
+    st, months = eccc_station_files(tmp_path, monkeypatch)
+    real, hashed = dq.sha256_file, []
+    monkeypatch.setattr(dq, "sha256_file", lambda p: hashed.append(p) or real(p))
+    for gone in ("2019-01", "2022-07", "2025-01"):  # the first month, one inside, the last (January 2025, UTC)
+        hashed.clear()
+        write_eccc_manifest(st, {k: v for k, v in months.items() if k != gone})
+        with pytest.raises(FetchRefused, match=rf"manifest of {st.name} lists no file for 1 month\(s\) of the "
+                                               rf"window, first \['{gone}'\]: run `valiwatt fetch`"):
+            dq._verify_raw()
+        assert hashed and not [p for p in hashed if eccc.RAW_ECCC in p.parents], gone  # the export only
+    write_eccc_manifest(st, {k: v for k, v in months.items() if not k.startswith("2023-")})
+    with pytest.raises(FetchRefused, match=r"lists no file for 12 month\(s\) of the window, first \['2023-01', "
+                                           r"'2023-02', '2023-03'\]"):
+        dq._verify_raw()
+
+
+def test_a_manifest_listing_every_window_month_passes_and_drops_the_months_outside(tmp_path, monkeypatch):
+    """The control: a manifest listing every month of the window (as every station's does after a whole fetch) passes,
+    and its entries for months outside the window (a later window's) are still dropped from what the run records."""
+    from valiwatt.sources import eccc
+
+    st, months = eccc_station_files(tmp_path, monkeypatch)
+    write_eccc_manifest(st, months)
+    _, stn = dq._verify_raw()
+    assert list(stn[0]["months"]) == list(months) and len(months) == 73
+    eccc.month_path(st, 2025, 6).write_text("c\n")
+    write_eccc_manifest(st, months | {"2025-06": {"sha256": "0" * 64}, "2018-12": {"sha256": "1" * 64}})
+    _, stn = dq._verify_raw()
+    assert list(stn[0]["months"]) == list(months)
 
 
 def test_failing_panel_gate_stops_the_chain(sandbox, monkeypatch):

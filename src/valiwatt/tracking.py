@@ -63,11 +63,14 @@ def metric_key(name: str) -> str:
 
 @contextmanager
 def start_run(experiment: str, run_name: str, tags: dict | None = None):
+    """A run created with its tags (the git state and `tags`) in the one call that creates it: the tags are computed
+    first, so a failure computing them creates no run, and a run never exists without them (a replay start the
+    store holds is always seen by `kind`). Values are stored as text, as mlflow.set_tags stores them."""
     import mlflow
 
     client()
-    with mlflow.start_run(experiment_id=experiment_id(experiment), run_name=run_name) as run:
-        mlflow.set_tags({**git_state(), **(tags or {})})
+    all_tags = {k: str(v) for k, v in {**git_state(), **(tags or {})}.items()}
+    with mlflow.start_run(experiment_id=experiment_id(experiment), run_name=run_name, tags=all_tags) as run:
         yield run
 
 

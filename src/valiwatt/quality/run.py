@@ -102,17 +102,24 @@ def _verify_hq(through: int = THROUGH_DEFAULT) -> dict:
 def _verify_raw(through: int = THROUGH_DEFAULT) -> tuple[dict, list[dict]]:
     """Raw files must still match the manifests written at fetch time. Refused first unless the head descends from
     `v2-first-run`. Each station's manifest is returned with the months of the window only, so a month fetched for a
-    later window never changes what an earlier window's run checked."""
+    later window never changes what an earlier window's run checked. Every month of the window must be listed
+    (eccc.load_station reads them all): a fetch stopped after writing a month's file but before its manifest leaves a
+    month that was never verified, and it is refused before any of that station's files is hashed."""
     require_first_run()
     hq = _verify_hq(through)
-    window = {f"{y:04d}-{m:02d}" for y, m in fetch_months(through)}
+    window = [f"{y:04d}-{m:02d}" for y, m in fetch_months(through)]
+    in_window = set(window)
     stn = []
     for st in stations():
         path = eccc.RAW_ECCC / st.climate_id / "manifest.json"
         if not path.exists():
             raise FetchRefused(f"no manifest for {st.name}: run `valiwatt fetch` first")
         m = json.loads(path.read_text(encoding="utf-8"))
-        months = {k: v for k, v in m["months"].items() if k in window}
+        unlisted = [k for k in window if k not in m["months"]]
+        if unlisted:
+            raise FetchRefused(f"the manifest of {st.name} lists no file for {len(unlisted)} month(s) of the window, "
+                               f"first {unlisted[:3]}: run `valiwatt fetch`")
+        months = {k: v for k, v in m["months"].items() if k in in_window}
         for key, month in months.items():
             y, mo = map(int, key.split("-"))
             if sha256_file(eccc.month_path(st, y, mo)) != month["sha256"]:

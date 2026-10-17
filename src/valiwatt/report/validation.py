@@ -543,7 +543,11 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
             for h in peak),
         "world": SYNTHETIC_WORLD,
         "sel": selection(v, oos),
-        "nbm": nbm,
+        # Section 2 states the years before the held-out one: the request for the last design year ends one hour into
+        # the next, so a through-2024 run lists two runs of 2025, which feed no day it checks. 2025's own findings
+        # come from the run its test of record read (held_out_findings); the lead check above reads every year.
+        "nbm": {**nbm, "longest": {y: h for y, h in nbm["longest"].items() if y < HELD_OUT},
+                "at_or_above": [y for y in nbm["at_or_above"] if y < HELD_OUT]},
     }
 
 

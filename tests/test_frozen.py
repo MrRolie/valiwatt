@@ -373,7 +373,242 @@ def test_a_frozen_ols_keeps_v1_s_forecast(world, oos):
     pd.testing.assert_frame_equal(frozen.predict(rows), expected)
     again = fz.FrozenModel.from_json(frozen.to_json())
     pd.testing.assert_frame_equal(again.predict(rows), expected)
-    assert fz.INPUT_COLUMNS == ["day_type", "hour", "hdh_persistence", "cdh_persistence", "lag24", "lag168"]
+    assert fz.INPUT_COLUMNS == ["day_type", "hour", "temp_persistence", "lag24", "lag168"]
+
+
+# --- least squares from its file alone (plan section 4.4) -----------------------------------------------------------
+
+# v1's hour blocks and base temperature, written out: what the least squares' forecast read from the module before
+# the frozen model stored them.
+V1_BLOCKS = {"night": range(0, 6), "morning": range(6, 10), "day": range(10, 16), "evening": range(16, 21),
+             "late": range(21, 24)}
+HOUR_6_AT_NIGHT = {"night": range(0, 7), "morning": range(7, 10), "day": range(10, 16), "evening": range(16, 21),
+                   "late": range(21, 24)}
+
+
+def ols_previous_formula(m, rows: pd.DataFrame) -> pd.Series:
+    """A frozen least squares' forecast as the code before this freeze's fix computed it, written out on its own: the
+    cells, the table's hdh_<s> and cdh_<s> times v1's blocks, the lags, then X @ beta on the rows with every input."""
+    s = m.scenario
+    cols = {f"cell:{dt}:{h:02d}": ((rows["day_type"] == dt) & (rows["hour"] == h)).astype(float)
+            for dt in ("weekday", "saturday", "sunday_holiday") for h in range(24)}
+    for name, hours in V1_BLOCKS.items():
+        in_block = rows["hour"].isin(list(hours)).astype(float)
+        cols[f"heating:{name}"] = rows[f"hdh_{s}"] * in_block
+        cols[f"cooling:{name}"] = rows[f"cdh_{s}"] * in_block
+    cols["lag24"], cols["lag168"] = rows["lag24"], rows["lag168"]
+    X = pd.DataFrame(cols, index=rows.index)[list(m.columns)]
+    ok = np.isfinite(X.to_numpy()).all(axis=1)
+    out = pd.Series(np.nan, index=rows.index)
+    out[ok] = X[ok].to_numpy() @ m.beta
+    return out
+
+
+@pytest.fixture(scope="module")
+def frozen_ols(world, oos):
+    """The two comparison models, least squares on the forecast and on yesterday's temperature, as the freeze fits
+    them."""
+    return {key: fz.fit_frozen(world, oos, YEAR, key=key)[0] for key in model.COMPARATORS.values()}
+
+
+def probe_row(world, hour: int = 6) -> pd.DataFrame:
+    """A weekday row at `hour`, 30 heating degree-hours (-12 C) and no cooling ones on both inputs, both lags 30,000
+    MW, its forecast known at its origin."""
+    row = world[(world["day_type"] == "weekday") & (world["hour"] == hour)].iloc[[0]].copy()
+    for s in ("persistence", "forecast"):
+        row[f"temp_{s}"], row[f"hdh_{s}"], row[f"cdh_{s}"] = -12.0, 30.0, 0.0
+    row["lag24"] = row["lag168"] = 30_000.0
+    return row
+
+
+def test_a_frozen_least_squares_predicts_as_the_previous_formula_on_the_pipeline_s_rows(world, frozen_ols):
+    """No number of the chain moves: on every row features.build produces (the design years, rows without an input
+    among them), the frozen least squares, built from its stored blocks and base and its degree-hours computed from
+    the temperature, forecasts exactly what the previous formula, reading the table's degree-hours, forecast: 0 MW
+    apart, missing where it was missing; read back from its file too."""
+    for key, m in frozen_ols.items():
+        expected = ols_previous_formula(m, world)
+        assert expected.notna().sum() > 10_000 and expected.isna().any(), key
+        for each in (m, fz.FrozenModel.from_json(m.to_json())):
+            got = each.predict(world)["forecast"]
+            np.testing.assert_array_equal(got.to_numpy(), expected.to_numpy(), err_msg=key)
+
+
+@pytest.mark.parametrize("change", ["hour_blocks", "base_c"])
+def test_a_frozen_least_squares_forecasts_from_its_file_whatever_the_module_now_says(change, world, frozen_ols,
+                                                                                    monkeypatch):
+    """Plan section 4.4: what the forecast depends on is in the file and its hash. With the module's hour blocks
+    changed after the freeze (hour 6 moved from the morning block to the night block), or its base temperature
+    (18 C to 15 C, the table's degree-hours built with it as features.build builds them), each frozen least squares
+    forecasts and draws its curves exactly as before, Astra's probe row included, and its file reads back under the
+    same hash and forecasts the same. The control: the change is live, the module's own design of the same rows is
+    no longer the frozen model's."""
+    from valiwatt.forecast import features
+
+    rows = pd.concat([world[world["day"] >= pd.Timestamp("2023-11-01")], probe_row(world)])
+    temps = np.linspace(-30.0, 30.0, 13)
+    before = {k: (m.predict(rows).to_numpy(), m.partial_effects(temps).to_numpy(), m.to_json())
+              for k, m in frozen_ols.items()}
+    designs = {k: model.design(rows, m.scenario).to_numpy() for k, m in frozen_ols.items()}
+    if change == "hour_blocks":
+        monkeypatch.setattr(model, "HOUR_BLOCKS", HOUR_6_AT_NIGHT)
+        now = rows
+    else:
+        monkeypatch.setattr(features, "BASE_C", 15.0)
+        now = rows.copy()
+        for s in ("persistence", "forecast"):
+            now[f"hdh_{s}"] = np.maximum(features.BASE_C - now[f"temp_{s}"], 0.0)
+            now[f"cdh_{s}"] = np.maximum(now[f"temp_{s}"] - features.BASE_C, 0.0)
+    for key, m in frozen_ols.items():
+        live = model.design(now, m.scenario)
+        assert list(live.columns) != list(m.columns) or not np.array_equal(live.to_numpy(), designs[key],
+                                                                           equal_nan=True), key  # the control
+        forecast, curves, text = before[key]
+        np.testing.assert_array_equal(m.predict(now).to_numpy(), forecast, err_msg=key)
+        np.testing.assert_array_equal(m.partial_effects(temps).to_numpy(), curves, err_msg=key)
+        again = fz.FrozenModel.from_json(text)
+        assert again.sha256() == m.sha256() and again.to_json() == text, key
+        np.testing.assert_array_equal(again.predict(now).to_numpy(), forecast, err_msg=key)
+
+
+def test_a_frozen_least_squares_stores_and_hashes_its_hour_blocks_and_base(world, frozen_ols, frozen_gam):
+    """The file holds the hour blocks (each name and its hours, in column order) and the base temperature, and the
+    hash covers both: Astra's probe row (weekday, hour 6, 30 heating degree-hours, both lags 30,000 MW) forecast
+    another way with hour 6 at night or another base comes with another hash, never under the same one; a file edited
+    in either is refused by its hash. A GAM's file holds neither and its hash is the one without them."""
+    m = frozen_ols["forecast"]
+    d = json.loads(m.to_json())
+    assert d["hour_blocks"] == {k: list(v) for k, v in V1_BLOCKS.items()} and list(d["hour_blocks"]) == list(V1_BLOCKS)
+    assert d["base_c"] == 18.0 and m.hour_blocks == tuple((k, tuple(v)) for k, v in V1_BLOCKS.items())
+    row = probe_row(world)
+    for other in (dataclasses.replace(m, hour_blocks=HOUR_6_AT_NIGHT), dataclasses.replace(m, base_c=15.0)):
+        assert other.sha256() != m.sha256()
+        assert other.predict(row)["forecast"].iloc[0] != m.predict(row)["forecast"].iloc[0]
+    for field, edit in (("hour_blocks", {"night": list(range(7)), "morning": [7, 8, 9]}), ("base_c", 15.0)):
+        e = json.loads(m.to_json())
+        e[field] = (e[field] | edit) if field == "hour_blocks" else edit
+        with pytest.raises(fz.FrozenModelError, match="does not match its own hash"):
+            fz.FrozenModel.from_json(json.dumps(e))
+    gam, _ = frozen_gam
+    g = json.loads(gam.to_json())
+    assert "hour_blocks" not in g and "base_c" not in g and gam.hour_blocks is None and gam.base_c is None
+    assert _hash_of(g) == g["sha256"] == gam.sha256()  # the GAM's hash is the one without them, as before
+    for field, value in (("hour_blocks", V1_BLOCKS), ("base_c", 18.0)):
+        with pytest.raises(fz.FrozenModelError, match="a frozen GAM stores no hour blocks"):
+            dataclasses.replace(gam, **{field: value})
+
+
+def test_a_frozen_least_squares_with_blocks_or_a_base_it_cannot_use_is_refused(world, frozen_ols):
+    """Hour blocks that do not partition the hours 0 to 23 (an hour in two blocks, an hour in none, an empty block,
+    an hour that is not a whole hour, a name twice) or a base temperature that is not a finite number are refused
+    when the model is built and when its file is read, a file whose hash was recomputed with them, so the refusal is
+    theirs and not the hash's. A file whose columns are not those its stored day types and blocks generate (a block
+    renamed in the blocks but not in the columns) loads no forecast: refused when read, and its forecast refused."""
+    m = frozen_ols["persistence"]
+    ruled = json.loads(m.to_json())
+
+    def rehashed(**changes):
+        e = dict(ruled) | changes
+        e.pop("sha256")
+        e["sha256"] = fz.frozen_sha256(e["family"], e["scenario"], e["columns"], e["knots"], e["degree"],
+                                       e["extrapolation"], e["include_bias"], e["center"], e["scale"], e["beta"],
+                                       e["intercept"], e["q"], hour_blocks=e["hour_blocks"].items(),
+                                       base_c=e["base_c"])
+        return json.dumps(e)
+
+    assert fz.FrozenModel.from_json(rehashed()).sha256() == m.sha256()  # the control: the recomputed hash is the hash
+    blocks = {k: list(v) for k, v in V1_BLOCKS.items()}
+    bad_blocks = {"hour twice": blocks | {"night": list(range(7))},
+                  "hour missing": blocks | {"late": [21, 22]},
+                  "empty block": blocks | {"extra": []},
+                  "not a whole hour": blocks | {"late": [21, 22, 23.0]},
+                  "outside the day": blocks | {"late": [21, 22, 23, 24]}}
+    for name, value in bad_blocks.items():
+        with pytest.raises(fz.FrozenModelError, match="hour block"):
+            dataclasses.replace(m, hour_blocks=value)
+        with pytest.raises(fz.FrozenModelError, match="hour block"):
+            fz.FrozenModel.from_json(rehashed(hour_blocks=value))
+    with pytest.raises(fz.FrozenModelError, match="do not partition"):
+        dataclasses.replace(m, hour_blocks=[("night", range(0, 6)), ("night", range(6, 24))])
+    for value in (float("nan"), float("inf"), "18", True):
+        with pytest.raises(fz.FrozenModelError, match="base temperature"):
+            dataclasses.replace(m, base_c=value)
+    with pytest.raises(fz.FrozenModelError, match="base temperature"):
+        fz.FrozenModel.from_json(rehashed(base_c="18"))
+    renamed = {("nuit" if k == "night" else k): v for k, v in blocks.items()}
+    with pytest.raises(fz.FrozenModelError, match="stored columns are not"):
+        fz.FrozenModel.from_json(rehashed(hour_blocks=renamed))
+    loose = dataclasses.replace(m, hour_blocks=renamed)
+    for draw in (lambda: loose.predict(probe_row(world)), lambda: loose.partial_effects(np.array([0.0]))):
+        with pytest.raises(fz.FrozenModelError, match="stored columns are not"):
+            draw()
+
+
+def test_a_row_whose_day_type_or_hour_is_not_known_is_never_forecast(world, frozen_ols, frozen_gam):
+    """For both families, fitted or frozen: a row with a missing day type, or an hour outside 0 to 23 (24, -1, 6.5,
+    missing), is a row with a missing input, NaN, never forecast with all-zero cells; every other row is forecast as
+    before. A day type the stored cells do not cover is refused, never forecast with all-zero cells: least squares
+    whose weekday cells were dropped, as the GAM, read back from its file too, and a row of an unknown day type."""
+    late = world[world["day"] >= pd.Timestamp("2023-11-01")]
+    rows = late[model.usable_rows(model.design(late, "forecast"))
+                & model.usable_rows(model.design(late, "persistence"))].copy()
+    bad = rows.index[[3, 4, 5, 6, 7]]
+    others = ~rows.index.isin(bad)
+    odd = rows.astype({"hour": float})
+    odd.loc[bad[0], "day_type"] = np.nan
+    for t, hour in zip(bad[1:], (24.0, -1.0, 6.5, np.nan)):
+        odd.loc[t, "hour"] = hour
+    frozen = {**frozen_ols, "gam_forecast": frozen_gam[0]}
+    train, _ = wf.split(world, wf.folds(f"{YEAR}-01", f"{YEAR}-01")[0])
+    fitted = {"ols": model.OLSForecaster("forecast").fit(train), "gam": model.GAMForecaster("forecast").fit(train)}
+    for key, m in frozen.items():
+        before, got = m.predict(rows)["forecast"], m.predict(odd)["forecast"]
+        assert before[bad].notna().all() and got[bad].isna().all(), key
+        # the same rows, one product on fewer of them: equal to the last place or so
+        np.testing.assert_allclose(got[others].to_numpy(), before[others].to_numpy(), rtol=1e-12, atol=0, err_msg=key)
+    for key, m in fitted.items():
+        before, got = m.predict(rows), m.predict(odd)
+        assert before[bad].notna().all() and got[bad].isna().all(), key
+        np.testing.assert_allclose(got[others].to_numpy(), before[others].to_numpy(), rtol=1e-12, atol=0, err_msg=key)
+
+    m = frozen_ols["forecast"]
+    cols = list(m.columns)
+    keep = [i for i, c in enumerate(cols) if not c.startswith("cell:weekday:")]
+    dropped = dataclasses.replace(m, columns=[cols[i] for i in keep], beta=[m.beta[i] for i in keep])
+    assert (rows["day_type"] == "weekday").any()
+    for each in (dropped, fz.FrozenModel.from_json(dropped.to_json())):
+        with pytest.raises(fz.FrozenModelError, match=r"day type the frozen least squares' stored cells do not "
+                                                      r"cover: \['weekday'\]"):
+            each.predict(rows)
+    unknown = rows.copy()
+    unknown.loc[bad[0], "day_type"] = "holiday_eve"
+    for key, each in frozen.items():
+        with pytest.raises(fz.FrozenModelError, match=r"stored cells do not cover: \['holiday_eve'\]"):
+            each.predict(unknown)
+
+
+def test_an_hour_given_as_text_is_forecast_as_its_number(world, frozen_ols, frozen_gam):
+    """The hour that decides whether a row is known (`model.calendar_known`) is the hour its cells, blocks and curves
+    are built from (`model.local_hour`): an hour given as text ("6") is hour 6 everywhere, for both families, fitted or
+    frozen, forecast exactly as the integer hour; never known yet forecast from its lags alone with all-zero cells.
+    Text that is not a whole hour from 0 to 23 ("6.5", "night") is a missing input, NaN."""
+    late = world[world["day"] >= pd.Timestamp("2023-11-01")]
+    rows = late[model.usable_rows(model.design(late, "forecast"))
+                & model.usable_rows(model.design(late, "persistence"))].copy()
+    text = rows.astype({"hour": str})
+    assert text["hour"].map(type).eq(str).all() and set(text["hour"]) >= {"0", "6", "23"}
+    odd = text.copy()
+    bad = rows.index[[3, 4]]
+    odd.loc[bad[0], "hour"], odd.loc[bad[1], "hour"] = "6.5", "night"
+    train, _ = wf.split(world, wf.folds(f"{YEAR}-01", f"{YEAR}-01")[0])
+    fitted = {"ols": model.OLSForecaster("forecast").fit(train), "gam": model.GAMForecaster("forecast").fit(train)}
+    for key, m in {**frozen_ols, "gam_forecast": frozen_gam[0], **fitted}.items():
+        predict = (lambda r, m=m: m.predict(r)["forecast"]) if isinstance(m, fz.FrozenModel) else m.predict
+        before = predict(rows)
+        assert before.notna().all(), key
+        pd.testing.assert_series_equal(predict(text), before, check_exact=True, obj=key)
+        got = predict(odd)
+        assert got[bad].isna().all() and got.drop(bad).notna().all(), key
 
 
 def test_the_2024_freeze_half_width_leaves_the_eve_out(world, oos):

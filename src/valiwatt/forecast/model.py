@@ -7,9 +7,9 @@ the 24-hour and 168-hour demand lags, standardized, then ridge regression. The s
 usable training rows by a fixed rule (`knot_rule`), checked by the fit (`check_knots`); every other setting is fixed
 here. Past the coldest and warmest training temperatures each curve continues as a straight line.
 
-The GAM's design functions read the ruled settings and day types when called, unless they are given others: a fit
-gives none, so it follows this module; the frozen model gives its own stored ones (freeze.FrozenModel), so what it
-forecasts depends on its file alone.
+The design functions read the ruled settings, day types and hour blocks when called, unless they are given others: a
+fit gives none, so it follows this module; the frozen models give their own stored ones (freeze.FrozenModel), least
+squares its base temperature too, so what they forecast depends on their file alone.
 """
 
 from __future__ import annotations
@@ -38,27 +38,75 @@ KNOT_TOLERANCE = 1e-12  # absolute, in degrees Celsius
 LAGS = ("lag24", "lag168")
 
 
-def block_of(hour: pd.Series) -> pd.Series:
+def hour_blocks(blocks=None) -> tuple:
+    """The hour blocks as (name, hours) pairs in their column order: those given (a mapping or pairs), else the
+    module's HOUR_BLOCKS, read when called (never at import)."""
+    blocks = HOUR_BLOCKS if blocks is None else blocks
+    pairs = blocks.items() if isinstance(blocks, dict) else blocks
+    return tuple((str(name), tuple(int(h) for h in hours)) for name, hours in pairs)
+
+
+def block_of(hour: pd.Series, blocks=None) -> pd.Series:
     out = pd.Series(index=hour.index, dtype=object)
-    for name, hours in HOUR_BLOCKS.items():
+    for name, hours in hour_blocks(blocks):
         out[hour.isin(list(hours))] = name
     return out
 
 
-def design(f: pd.DataFrame, scenario: str) -> pd.DataFrame:
-    """Named columns, one per coefficient. Rows with any missing input come out with NaN and are never imputed."""
+def local_hour(f: pd.DataFrame) -> pd.Series:
+    """The table's hour as a number (float; NaN where it is not one): the one reading of the hour that
+    `calendar_known`, `design` and `gam_design` all build from, so an hour given as text ("6") is hour 6 in its cells,
+    blocks and curves alike, never known yet all-zero."""
+    return pd.Series(pd.to_numeric(f["hour"], errors="coerce").to_numpy(dtype=float), index=f.index)
+
+
+def calendar_known(f: pd.DataFrame) -> np.ndarray:
+    """The rows whose day type is present and whose hour (`local_hour`) is one of 0 to 23. Any other row is a row with
+    a missing input: its cells would all be zero, and it is never forecast (`design` and `gam_design` give it NaN)."""
+    return f["day_type"].notna().to_numpy() & np.isin(local_hour(f).to_numpy(), np.arange(24))
+
+
+def ols_columns(*, day_types=None, blocks=None) -> list[str]:
+    """Least squares' column names, in `design`'s order: the cells of the day types (day type major, hour minor), a
+    heating and a cooling column per hour block, the lags; the day types and blocks given, else the module's."""
+    day_types = DAY_TYPES if day_types is None else tuple(day_types)
+    cells = [f"cell:{dt}:{h:02d}" for dt in day_types for h in range(24)]
+    degree_hours = [c for name, _ in hour_blocks(blocks) for c in (f"heating:{name}", f"cooling:{name}")]
+    return cells + degree_hours + list(LAGS)
+
+
+def design(f: pd.DataFrame, scenario: str, *, day_types=None, blocks=None, base_c=None) -> pd.DataFrame:
+    """Named columns, one per coefficient (`ols_columns`). Rows with any missing input, a missing day type or an hour
+    outside 0 to 23 included (`calendar_known`), come out with NaN and are never imputed.
+
+    The day types and hour blocks are the module's unless given; the degree-hours are the table's hdh_<scenario> and
+    cdh_<scenario> (features.build computes them with features.BASE_C), unless a base temperature `base_c` is given:
+    then they are computed here from temp_<scenario> with it, as features.build computes them. The frozen least
+    squares gives its stored day types, blocks and base (freeze.FrozenModel), so its forecast depends on its file
+    alone."""
+    day_types = DAY_TYPES if day_types is None else tuple(day_types)
+    if base_c is None:
+        hdh, cdh = f[f"hdh_{scenario}"], f[f"cdh_{scenario}"]
+    else:
+        temp = f[f"temp_{scenario}"]
+        hdh, cdh = np.maximum(float(base_c) - temp, 0.0), np.maximum(temp - float(base_c), 0.0)
+    hour = local_hour(f)
     cols = {}
-    for dt in DAY_TYPES:
+    for dt in day_types:
         for h in range(24):
-            cols[f"cell:{dt}:{h:02d}"] = ((f["day_type"] == dt) & (f["hour"] == h)).astype(float)
-    blk = block_of(f["hour"])
-    for name in HOUR_BLOCKS:
+            cols[f"cell:{dt}:{h:02d}"] = ((f["day_type"] == dt) & (hour == h)).astype(float)
+    blk = block_of(hour, blocks)
+    for name, _ in hour_blocks(blocks):
         in_block = (blk == name).astype(float)
-        cols[f"heating:{name}"] = f[f"hdh_{scenario}"] * in_block
-        cols[f"cooling:{name}"] = f[f"cdh_{scenario}"] * in_block
+        cols[f"heating:{name}"] = hdh * in_block
+        cols[f"cooling:{name}"] = cdh * in_block
     cols["lag24"] = f["lag24"]
     cols["lag168"] = f["lag168"]
-    return pd.DataFrame(cols, index=f.index)
+    X = pd.DataFrame(cols, index=f.index)
+    unknown = ~calendar_known(f)
+    if unknown.any():
+        X.loc[unknown] = np.nan
+    return X
 
 
 def usable_rows(X: pd.DataFrame, y: pd.Series | None = None) -> pd.Series:
@@ -190,16 +238,22 @@ def gam_design(f: pd.DataFrame, scenario: str, knots: np.ndarray, *, day_types=N
                include_bias=None) -> np.ndarray:
     """The GAM's columns, in the spike's order: the 72 cells (day type major, hour minor, as `design`), then the
     spline basis times each local-hour indicator (hour major, basis minor: each hour has its own curve), then lag24
-    and lag168. A row with a missing temperature or lag has NaN in those columns. The day types and the spline's
+    and lag168. A row with a missing temperature or lag has NaN in those columns; a row with a missing day type or an
+    hour outside 0 to 23 (`calendar_known`) is NaN throughout, never zero cells. The day types and the spline's
     settings are the ruled ones unless given (the frozen model gives its stored ones)."""
     day_types = DAY_TYPES if day_types is None else tuple(day_types)
     B = gam_basis(f[f"temp_{scenario}"].to_numpy(dtype=float), knots, degree=degree, extrapolation=extrapolation,
                   include_bias=include_bias)
-    cells = np.column_stack([((f["day_type"] == dt) & (f["hour"] == h)).to_numpy(float)
+    hour = local_hour(f)
+    cells = np.column_stack([((f["day_type"] == dt) & (hour == h)).to_numpy(float)
                              for dt in day_types for h in range(24)])
-    hours = np.column_stack([(f["hour"] == h).to_numpy(float) for h in range(24)])
+    hours = np.column_stack([(hour == h).to_numpy(float) for h in range(24)])
     tensor = (hours[:, :, None] * B[:, None, :]).reshape(len(f), -1)
-    return np.column_stack([cells, tensor, *(f[lag].to_numpy(dtype=float) for lag in LAGS)])
+    X = np.column_stack([cells, tensor, *(f[lag].to_numpy(dtype=float) for lag in LAGS)])
+    unknown = ~calendar_known(f)
+    if unknown.any():
+        X[unknown] = np.nan
+    return X
 
 
 def gam_predict(X: np.ndarray, center, scale, coef, intercept) -> np.ndarray:

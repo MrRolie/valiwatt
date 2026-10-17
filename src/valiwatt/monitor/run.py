@@ -1417,7 +1417,12 @@ def run_replay(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
             plan = _open(year, departure)
             run = opened.enter_context(start_run(EXPERIMENT, plan["kind"], tags=plan["tags"]))
             if year == HELD_OUT_YEAR:
-                mlflow.log_text(json.dumps(jsonable(plan["held_out"]), indent=2, ensure_ascii=False), GATE_RECORD)
+                try:  # the run exists: a stop while its gate record is logged keeps its error class too
+                    mlflow.log_text(json.dumps(jsonable(plan["held_out"]), indent=2, ensure_ascii=False),
+                                    GATE_RECORD)
+                except BaseException as e:
+                    _set("error", type(e).__name__)
+                    raise
         # The lock is released: the run is open, so a later caller's gate sees it RUNNING.
         try:
             inputs = _read_inputs(year, plan["freeze"], plan["located"], plan["held_out"])

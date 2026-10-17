@@ -89,6 +89,14 @@ BREAKS = [
     _b(DQ, f"{T_PIPE}::test_raw_files_that_no_longer_match_their_manifest_are_refused",
        "Des fichiers bruts qui ne correspondent plus à leur manifeste sont refusés",
        "Raw files that no longer match their manifest are refused"),
+    _b(DQ, f"{T_PIPE}::test_a_window_month_missing_from_a_station_s_manifest_is_refused",
+       "Un mois de la fenêtre absent du manifeste d'une station est refusé avant qu'aucun fichier de cette station "
+       "ne soit haché",
+       "A window month missing from a station's manifest is refused before any of that station's files is hashed"),
+    _b(DQ, f"{T_PIPE}::test_a_manifest_listing_every_window_month_passes_and_drops_the_months_outside",
+       "Témoin : un manifeste qui liste chaque mois de la fenêtre passe, et ses mois hors de la fenêtre sont écartés",
+       "Control: a manifest listing every month of the window passes, and its months outside the window are dropped",
+       control=True),
     _b(DQ, f"{T_DEM}::test_a_record_off_the_hourly_grid_fails_the_window_gate_with_its_timestamp",
        "Un enregistrement hors de la grille horaire fait échouer la porte, avec son horodatage",
        "A record off the hourly grid fails the window gate, with its timestamp"),
@@ -935,6 +943,48 @@ BREAKS = [
        "se relit sous la même empreinte et prévoit exactement la même chose",
        "The frozen GAM forecasts from its file alone: with a day type added to the module after the freeze, its file "
        "reads back under the same hash and forecasts exactly the same"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_least_squares_forecasts_from_its_file_whatever_the_module_now_says"
+               "[hour_blocks]",
+       "Les moindres carrés figés prévoient à partir de leur seul fichier : les blocs horaires du module changés après "
+       "le gel (l'heure 6 passée de la matinée à la nuit) ne changent ni leur prévision ni leurs courbes",
+       "Frozen least squares forecast from their file alone: the module's hour blocks changed after the freeze (hour 6 "
+       "moved from the morning to the night) change neither their forecast nor their curves"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_least_squares_forecasts_from_its_file_whatever_the_module_now_says[base_c]",
+       "Les moindres carrés figés prévoient à partir de leur seul fichier : la température de base du module changée "
+       "après le gel, et les degrés-heures de la table calculés avec elle, ne changent ni leur prévision ni leurs "
+       "courbes",
+       "Frozen least squares forecast from their file alone: the module's base temperature changed after the freeze, "
+       "and the table's degree-hours computed with it, change neither their forecast nor their curves"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_least_squares_stores_and_hashes_its_hour_blocks_and_base",
+       "Les blocs horaires et la température de base des moindres carrés figés sont dans leur fichier et leur "
+       "empreinte : une autre prévision vient avec une autre empreinte, et un fichier modifié est refusé",
+       "Frozen least squares' hour blocks and base temperature are in their file and their hash: another forecast "
+       "comes with another hash, and an edited file is refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_least_squares_with_blocks_or_a_base_it_cannot_use_is_refused",
+       "Des moindres carrés figés dont les blocs ne partagent pas les heures 0 à 23, dont la base n'est pas un nombre "
+       "fini, ou dont les colonnes ne sont pas celles que leurs blocs engendrent, sont refusés",
+       "Frozen least squares whose blocks do not partition the hours 0 to 23, whose base is not a finite number, or "
+       "whose columns are not those their blocks generate, are refused"),
+    _b(FREEZE, f"{T_FRO}::test_a_row_whose_day_type_or_hour_is_not_known_is_never_forecast",
+       "Une ligne sans type de jour ou d'une heure hors de 0 à 23 n'est jamais prévue, et un type de jour que les "
+       "cellules stockées ne couvrent pas est refusé, pour les deux familles",
+       "A row without a day type or with an hour outside 0 to 23 is never forecast, and a day type the stored cells do "
+       "not cover is refused, for both families"),
+    _b(FREEZE, f"{T_FRO}::test_an_hour_given_as_text_is_forecast_as_its_number",
+       "Une heure donnée en texte (« 6 ») est l'heure 6 partout : ses cellules, ses blocs et ses courbes sont ceux de "
+       "l'heure entière, jamais une ligne tenue pour connue et prévue de ses seuls retards, pour les deux familles",
+       "An hour given as text (\"6\") is hour 6 everywhere: its cells, blocks and curves are those of the whole hour, "
+       "never a row counted as known and forecast from its lags alone, for both families"),
+    _b(FREEZE, f"{T_FRO}::test_a_frozen_least_squares_predicts_as_the_previous_formula_on_the_pipeline_s_rows",
+       "Témoin : sur les lignes que produit la chaîne, les moindres carrés figés prévoient exactement ce que prévoyait "
+       "la formule précédente (0 MW d'écart)",
+       "Control: on the rows the pipeline produces, frozen least squares forecast exactly what the previous formula "
+       "forecast (0 MW apart)", control=True),
+    _b(FREEZE, f"{T_R2}::test_the_frozen_least_squares_score_the_replay_as_the_previous_formula",
+       "Témoin : les modèles de comparaison notent chaque heure rejouée exactement comme la formule précédente "
+       "(0 MW d'écart)",
+       "Control: the comparison models score every replayed hour exactly as the previous formula did (0 MW apart)",
+       control=True),
     _b(FREEZE, f"{T_FRO}::test_a_frozen_gam_reads_its_cells_in_their_stored_order_and_refuses_columns_it_cannot_"
                "rebuild",
        "Un GAM figé dont les colonnes ne sont pas celles que ses nœuds, ses réglages et ses types de jour engendrent, "
@@ -1182,6 +1232,16 @@ BREAKS = [
        "erreur ; arrêté par un contrôle, il ne tient aucune métrique ni aucun résultat",
        "A 2025 replay stopped midway leaves its started run, with the step it reached and its error's class; one "
        "stopped by a check holds no metric and no result"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_start_stopped_while_its_gate_record_is_logged_keeps_its_error_class",
+       "Un départ de 2025 arrêté pendant qu'il enregistre la fiche de sa porte garde la classe de son erreur, et le "
+       "refus du départ suivant la nomme",
+       "A 2025 start stopped while its gate record is logged keeps its error's class, and the next start's refusal "
+       "names it"),
+    _b(FREEZE, f"{T_R2}::test_a_2025_run_exists_only_with_its_tags",
+       "Une exécution de 2025 n'existe qu'avec ses étiquettes : leur calcul en échec n'en crée aucune, et un arrêt "
+       "juste après sa création laisse un départ arrêté que la porte suivante voit",
+       "A 2025 run exists only with its tags: their computation failing creates none, and a stop right after its "
+       "creation leaves a stopped start the next gate sees"),
     _b(FREEZE, f"{T_R2}::test_a_gate_refusal_opens_no_run",
        "Témoin : un refus de la porte n'ouvre aucune exécution", "Control: a gate refusal opens no run", control=True),
     _b(FREEZE, f"{T_R2}::test_the_replay_function_refuses_2025_without_its_open_started_run",

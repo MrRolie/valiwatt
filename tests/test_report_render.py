@@ -497,6 +497,24 @@ def test_a_lead_of_75_hours_is_stated_against_the_two_day_argument(lang):
 
 
 @pytest.mark.parametrize("lang", LANGS)
+def test_section_2_s_leads_stop_before_the_held_out_year(lang):
+    """A through-2024 data-quality run lists a lead for 2025 (the 2024 request ends one hour into 2025, so two runs of
+    2025-01-01 come with it; the real run's leads: 2019 to 2025). Section 2 states 2019 to 2024 only: a 2025 lead,
+    even one at the bound, is neither listed there nor stated as the finding; 2025's findings are the test of
+    record's."""
+    v, dq, p, r, b, frozen, oos, diag = payloads()
+    longest = {"2019": 66.0, "2020": 68.0, "2021": 70.0, "2022": 71.0, "2023": 71.0, "2024": 71.0, "2025": 76.0}
+    dq["checks"] = {**dq["checks"], **RP.nbm_checks(RP.Distinct(), at_or_above=(2025,), longest=longest)}
+    derived = RV.derive(v, dq, p, r, b, frozen, oos, diag)
+    ctx = RP.context(dq=dq, nbm=derived["nbm"])
+    text = RP.render(ctx, lang)  # check_rendered passes
+    two = section(text, 2)
+    assert "2024, 71 h" in two and "2019, 66 h" in two
+    assert "2025, 7" not in two and LEAD_FINDING[lang] not in two
+    assert ("Aucune année ne l'atteint." if lang == "fr" else "No year reaches it.") in two
+
+
+@pytest.mark.parametrize("lang", LANGS)
 def test_diagnostics_that_did_not_finish_are_said_so(lang):
     d = payloads()[7]
     ctx = RP.context(diag={"pseudo": d["pseudo"], "replay": None})
