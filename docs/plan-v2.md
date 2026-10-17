@@ -962,4 +962,19 @@ None yet.
 
 ### After the first v2 run
 
-None yet.
+- 2026-10-17, the reproduction checks of section 17, step 2, on v2's first chain on real data (the forecast fetched for
+  2019–2024, each year's file byte for byte the spike's): all three passed.
+  - v1's model in v2's harness: the mean absolute percentage error of v1 as shipped (4.42 %) and of its six-station
+    panel, their biases and the coverage of v1's interval equal those of v1's last validation run exactly
+    (difference 0), on the same 34,997, 35,013 and 26,221 hours.
+  - The forecast feed: on the 1,825 days of 2019–2023 other than 2023-12-31, the same feeding run and the same rank
+    as the spike's on every day, so the covering refinement changed no day; on the 35,040 hours of 2020–2023 other
+    than those of 2023-12-31, the same hourly forecast temperature (largest difference 7e-15 °C). 2023-12-31 is fed,
+    by the freshest run (its 24 hours are the ones the spike left out).
+  - The GAM: on the 35,021 hours the spike scored, its out-of-sample predictions equal the spike's to 8.3e-9 MW
+    (largest difference), none missing; no fold trains on 2023-12-31.
+  - Also checked: the frozen 2024 `persistence` comparator's 84 coefficients equal v1's frozen 2024 coefficients (70
+    of them bit for bit, the others to two units in the last place), and its half-width equals exactly the conformal
+    quantile of the 8,739 relative scores v1's 2024 freeze calibrated on less the 24 of 2023-12-31 (9.23 %, where
+    v1's was 9.26 %); the 2023 rehearsal's weather identity holds on its 8,760 hours (largest difference 0 °C, no
+    day fed otherwise).
