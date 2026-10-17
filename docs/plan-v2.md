@@ -991,3 +991,5 @@ None yet.
     refused, and for both families a row without a known day type or hour is not forecast. The comparators frozen by
     the first chain no longer match their hashes: the 2023 and 2024 freezes run again before the 2024 replay.
   - A 2025 start that stops while its gate's record is logged keeps the class of the error that stopped it.
+- 2026-10-17, the chain run again from data quality on the code with those fixes: the reproduction checks above gave
+  the same outcome, number for number, and the frozen GAMs of 2023 and 2024 have the same hashes as the first chain's.
