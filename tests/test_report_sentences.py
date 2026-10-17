@@ -581,7 +581,7 @@ def test_the_level_shift_note_sets_the_synthetic_break_against_the_real_measure(
         assert "None" not in text and "\n" not in text
         assert ("1,12, une hausse de 12\u00a0%" if lang == "fr" else "1.12, a 12% rise") in text
         if missed == 0:
-            assert ("à chaque départ (section 8)" if lang == "fr" else "at every start (section 8)") in text
+            assert ("à chaque départ (section 10)" if lang == "fr" else "at every start (section 10)") in text
             assert ("n'a pas donné" if lang == "fr" else "did not yield") not in text
         else:
             assert (f"à {missed} des 4 départs" if lang == "fr" else f"at {missed} of 4 starts") in text
@@ -608,13 +608,6 @@ def test_every_in_brief_branch_renders_a_true_sentence(lang):
         assert "None" not in text and "\n" not in text and text.endswith(".")
         return text
 
-    P = {"persistence": {"overall": {"mean": 0.0312}}, "baseline": {"overall": {"mean": 0.0531}}}
-    for separated, diff, phrase in ((True, -0.02, "elle fait mieux" if fr else "it does better"),
-                                    (True, 0.02, "elle fait moins bien" if fr else "it does worse"),
-                                    (False, -0.02, "l'écart n'est pas confirmé" if fr else "the gap is not confirmed")):
-        text = ok(str(m.brief_error(P, {"separated": separated, "difference": diff}, (2020, 2023))))
-        assert phrase in text and "2020–2023" in text and ("3,12\u00a0%" in text if fr else "3.12%" in text)
-
     none = {"under": [], "over": []}
     for overall, phrase in (({"under": ["all"], "over": []}, "moins que le nominal" if fr else "less than nominal"),
                             ({"under": [], "over": ["all"]}, "plus que le nominal" if fr else "more than nominal"),
@@ -624,8 +617,8 @@ def test_every_in_brief_branch_renders_a_true_sentence(lang):
                                                                    "decile": decile})))
             assert phrase in text and ("88,4\u00a0%" in text if fr else "88.4%" in text)
             if season["under"]:
-                assert ("l'hiver ; les déciles de charge prévue 9 et 10 (section 4)" if fr else
-                        "winter; forecast-load deciles 9 and 10 (section 4)") in text
+                assert ("l'hiver ; les déciles de charge prévue 9 et 10 (section 5)" if fr else
+                        "winter; forecast-load deciles 9 and 10 (section 5)") in text
             else:
                 assert ("Aucune saison ni aucun décile" if fr else "No season and no load decile") in text
 
@@ -642,14 +635,6 @@ def test_every_in_brief_branch_renders_a_true_sentence(lang):
         if p["covered"] == 2:
             assert ("toujours par le haut" if fr else "always above") not in text
 
-    r = {"year": 2024, "summary": {"mape": {"mean": 0.035}, "coverage": {"mean": 0.91}}}
-    for n, phrase in ((0, "n'a déclenché aucune recommandation" if fr else "triggered no recommendation"),
-                      (1, "a déclenché 1 recommandation" if fr else "triggered 1 recommendation"),
-                      (3, "a déclenché 3 recommandations" if fr else "triggered 3 recommendations")):
-        for departures in ([], [{"id": "x"}]):
-            text = ok(str(m.brief_replay(r, n, departures)))
-            assert phrase in text and ("3,50\u00a0%" in text if fr else "3.50%" in text)
-            assert (("a posteriori" if fr else "post hoc") in text) == bool(departures)
     assert [str(m.recs(n)) for n in (0, 1, 3)] == (["aucune recommandation", "1 recommandation", "3 recommandations"]
                                                    if fr else ["no recommendation", "1 recommendation",
                                                                "3 recommendations"])

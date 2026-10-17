@@ -65,10 +65,10 @@ def test_a_ledger_changed_after_the_render_fails_the_stamp(tmp_path, monkeypatch
         check_ledger(absent)
 
 
-def test_the_render_writes_its_stamp_through_make_stamp(tmp_path, monkeypatch):
-    """`render_validation` writes the stamp `make_stamp` builds, ledger hash included: the run chain, its context, the
-    data-quality render and the templates are stubbed, and everything is written under tmp_path."""
-    from types import SimpleNamespace
+def render_world(w, tmp_path, monkeypatch) -> list:
+    """`render_validation` end to end on a fake store (tests/report_store.py): the real chain, context, figures,
+    templates and checks; the data-quality render stubbed (its own tests render it); everything under tmp_path."""
+    import report_store as S
 
     import valiwatt.monitor.rules as rules
     import valiwatt.monitor.run as monitor_run
@@ -76,55 +76,71 @@ def test_the_render_writes_its_stamp_through_make_stamp(tmp_path, monkeypatch):
     from valiwatt.report import validation as RV
 
     out = tmp_path / "report"
-    out.mkdir()
+    out.mkdir(exist_ok=True)
     monkeypatch.setattr(RV, "OUT", out)
     monkeypatch.setattr(RV, "STAMP", out / "stamp.json")
     monkeypatch.setattr(RV, "REPO_ROOT", tmp_path)
     path = tmp_path / "replay-ledger.json"
+    path.write_text(ledger.dumps(w.entries), encoding="utf-8")
     monkeypatch.setattr(ledger, "LEDGER", path)
-    entry = {"run_id": "0" * 32, "year": 2024, "freeze_tag": "rules-frozen", "freeze_commit": "e" * 40,
-             "rules_sha256": "d" * 64, "code_sha256": "c" * 64, "started_utc": "2020-01-01T00:00:00.000Z",
-             "ended_utc": "2020-01-01T01:00:00.000Z", "status": "complete", "mape": 0.04, "coverage": 0.9,
-             "recommendations": [], "departure": False, "departure_from": []}
-    path.write_text(ledger.dumps([entry]), encoding="utf-8")
-
-    monkeypatch.setattr(tracking, "code_sha256", lambda: "c" * 64)
-    monkeypatch.setattr(rules, "rules_sha256", lambda: "d" * 64)
-    monkeypatch.setattr(monitor_run, "check_freeze", lambda: {"freeze_commit": "f" * 40})
-
-    def run(run_id):
-        return SimpleNamespace(info=SimpleNamespace(run_id=run_id))
-
-    chain = SimpleNamespace(dq=run("a" * 32), replay=run("0" * 32), freeze={"freeze_commit": "f" * 40})
-    monkeypatch.setattr(RV, "follow", lambda code, rules_sha, freeze: chain)
+    monkeypatch.setattr(tracking, "code_sha256", lambda: S.CODE)
+    monkeypatch.setattr(rules, "rules_sha256", lambda: S.RULES)
+    monkeypatch.setattr(monitor_run, "check_freeze", lambda: dict(S.FREEZE))
 
     def dq_render(run_id):
-        assert run_id == "a" * 32
+        assert run_id == "dq"
         (out / "dq.fr.md").write_text("dq\n", encoding="utf-8")
         return [out / "dq.fr.md"]
 
     monkeypatch.setattr(RV, "render", dq_render)
-    runs = {"dq": "a" * 32, "replay": "0" * 32}
-    ctx = {"dq": {"sources": {"eccc": [{"first_retrieved_utc": "2026-10-01T00:00:00Z"}]}},
-           "runs": {k: {"id": v, "when": "2026-10-01"} for k, v in runs.items()}}
-    monkeypatch.setattr(RV, "context", lambda chain_, code, rules_sha: ctx)
-    monkeypatch.setattr(RV, "figures", lambda ctx_, lang: {})
+    return RV.render_validation()
 
-    class Template:
-        def __init__(self, name):
-            self.name = name
 
-        def render(self, **kwargs):
-            return f"{self.name} {kwargs['lang']}\n"
+def test_the_render_writes_its_stamp_through_make_stamp(tmp_path, monkeypatch):
+    """`render_validation` writes the stamp `make_stamp` builds, ledger hash included, from the chain it followed."""
+    import report_store as S
 
-    monkeypatch.setattr(RV, "environment", lambda lang: SimpleNamespace(get_template=Template))
+    from valiwatt.report import validation as RV
 
-    written = RV.render_validation()
+    w = S.World().install(monkeypatch)
+    out = tmp_path / "report"
+    written = render_world(w, tmp_path, monkeypatch)
     assert written == [out / "dq.fr.md", out / "validation.fr.md", out / "story.fr.md", out / "validation.en.md",
                        out / "story.en.md"]
     stamp = json.loads((out / "stamp.json").read_text(encoding="utf-8"))
     assert stamp["ledger_sha256"] == ledger.digest() != ledger.ABSENT
-    assert stamp == {"code_sha256": "c" * 64, "rules_sha256": "d" * 64, "freeze_commit": "f" * 40, "runs": runs,
-                     "files": RV.file_hashes(), "ledger_sha256": ledger.digest()}
-    assert set(stamp["files"]) == {"dq.fr.md", "validation.fr.md", "validation.en.md", "story.fr.md", "story.en.md"}
+    runs = {"dq": "dq", "validation": "val", "frozen_2023": "f2023", "frozen_2024": "f2024", "pseudo_replay": "pseudo",
+            "replay": S.REPLAY, "breaks": "breaks"}
+    assert stamp == {"code_sha256": S.CODE, "rules_sha256": S.RULES, "freeze_commit": S.FREEZE["freeze_commit"],
+                     "runs": runs, "files": RV.file_hashes(), "ledger_sha256": ledger.digest(),
+                     "standing_2025": None}
+    assert {"dq.fr.md", "validation.fr.md", "validation.en.md", "story.fr.md", "story.en.md"} <= set(stamp["files"])
+    assert all(k.startswith("figures/validation/") for k in set(stamp["files"]) - {
+        "dq.fr.md", "validation.fr.md", "validation.en.md", "story.fr.md", "story.en.md"})
     check_ledger(stamp)
+
+
+def test_the_stamp_carries_the_standing_of_2025(tmp_path, monkeypatch):
+    """null before a 2025 start; then the test of record's run ID, whether it finished, and the standing its gate
+    logged: the record's, never a later rerun's."""
+    import report_store as S
+    import report_world as W
+
+    from valiwatt.report import validation as RV
+
+    def stamped(w, name):
+        render_world(w, tmp_path / name, monkeypatch)
+        return json.loads((tmp_path / name / "report" / "stamp.json").read_text(encoding="utf-8"))["standing_2025"]
+
+    (tmp_path / "a").mkdir()
+    assert stamped(S.World().install(monkeypatch), "a") is None
+    w = S.World().install(monkeypatch)
+    w.add_2025(run_id="b" * 32, standing="post_hoc", gate=W.gate("post_hoc", ["a"], W.ruling("post_hoc")))
+    w.add_2025(run_id="d" * 32, standing="clean", gate=W.gate("clean"))  # a later rerun, labelled otherwise
+    (tmp_path / "b").mkdir()
+    assert stamped(w, "b") == {"record_run_id": "b" * 32, "finished": True, "standing": "post_hoc"}
+    w = S.World().install(monkeypatch)
+    w.add_2025(finished=False)
+    (tmp_path / "c").mkdir()
+    assert stamped(w, "c") == {"record_run_id": "b" * 32, "finished": False, "standing": "clean"}
+    assert RV.standing_2025(None) is None

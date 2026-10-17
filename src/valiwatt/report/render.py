@@ -85,12 +85,120 @@ def assert_public_safe(text: str) -> None:
         raise ReportRefused(f"rendered report contains a local path: {leaks}")
 
 
+def assert_attributed(text: str, lang: str) -> None:
+    """Every public page carries the NOAA and IEM attribution and the widened no-endorsement line, in the owner's
+    approved wording (attribution.py, held to AGENTS.md by a test)."""
+    missing = [name for name, line in (("NBM", attribution.NBM[lang]), ("NO_ENDORSEMENT",
+                                                                        attribution.NO_ENDORSEMENT[lang]))
+               if line not in text]
+    if missing:
+        raise ReportRefused(f"the rendered page lacks the attribution lines {missing} (NOAA and the IEM)")
+
+
+# The words of the finding a lead of 75 hours or more makes against the two-day argument of plan section 9.2: the
+# reports must state it (they refuse to render otherwise), and this is their one home.
+LEAD_FINDING = {"fr": "constat contre l'argument des deux jours (section 9.2 du plan)",
+                "en": "finding against the two-day argument (plan section 9.2)"}
+
+
+def nbm_findings(dq: dict) -> dict:
+    """The forecast's data-quality gates and finding of a data-quality run's results (plan section 3.4): its
+    coverage, the days no run fed with why, the leads, and the years whose longest lead reaches the bound of plan
+    section 9.2's argument. A run without them (made before the forecast was checked) is refused."""
+    checks = dq.get("checks", {})
+    if any(k not in checks for k in ("nbm_bounds", "nbm_coverage", "nbm_runs")):
+        raise ReportRefused(f"data-quality run {dq.get('run_id')} holds no forecast checks; run `valiwatt dq` again")
+    runs = checks["nbm_runs"]
+    m = runs["metrics"]
+    not_fed = [x for x in runs.get("evidence", []) if "day" in x and "reason" in x]
+    return {"bounds": checks["nbm_bounds"], "coverage": checks["nbm_coverage"], "runs": m, "not_fed": not_fed,
+            "reused": [x for x in runs.get("evidence", []) if "reused_day" in x],
+            "longest": {int(y): float(h) for y, h in m["longest_lead_h"].items()},
+            "at_or_above": sorted(int(y) for y in m["leads_at_or_above_reuse_bound"])}
+
+
+def dq_context(results: dict, run) -> dict:
+    """What the data-quality report reads: the run's results, its provenance and its forecast findings. The years it
+    states are those before the held-out year: a run of the 2025 vintage leaves 2025's findings to the validation
+    report, from the run its test of record read (plan section 13)."""
+    from valiwatt.config import HELD_OUT_YEAR
+    from valiwatt.sources.nbm import MAX_RUNS_BACK
+
+    nbm = nbm_findings(results)
+    return {
+        "r": results,
+        "run_id": run.info.run_id,
+        "commit": run.data.tags.get("git_commit", "none"),
+        "dirty": run.data.tags.get("git_dirty") != "false",
+        "code_sha": run.data.tags.get("code_sha256", "unknown"),
+        "run_date": pd.Timestamp(run.info.start_time, unit="ms", tz="UTC").strftime("%Y-%m-%d %H:%M UTC"),
+        "nbm": nbm,
+        "shown_at_or_above": [y for y in nbm["at_or_above"] if y < HELD_OUT_YEAR],
+        "lead_finding": LEAD_FINDING,
+        "max_runs_back": MAX_RUNS_BACK,
+        "held_out_year": HELD_OUT_YEAR,
+        "reaches_held_out": reaches_held_out(run),
+    }
+
+
+def forecast_section(text: str) -> str:
+    """A rendered data-quality page's section 4.1, on the temperature forecast, up to the next second-level heading;
+    "" when the page has none."""
+    at = text.find("\n### 4.1 ")
+    if at < 0:
+        return ""
+    end = text.find("\n## ", at + 1)
+    return text[at:] if end < 0 else text[at:end]
+
+
+def check_dq(text: str, lang: str, context: dict) -> None:
+    """The statements a rendered data-quality page must carry: the attribution lines, and, in its section on the
+    forecast (4.1), the finding against plan section 9.2's argument for every year it states whose longest lead
+    reaches the bound: « En bref » says it too, and must not stand in for it."""
+    assert_attributed(text, lang)
+    if context["shown_at_or_above"] and LEAD_FINDING[lang] not in forecast_section(text):
+        raise ReportRefused("a lead at or above the bound of plan section 9.2 is not stated in section 4.1")
+
+
+def reaches_held_out(run) -> bool:
+    """Whether a data-quality run's window reaches past the end of 2024 (its param `window_last_utc`): a run of the
+    2025 vintage. A run without the param (made before windows had an end of their own) ends with 2024."""
+    from valiwatt.config import data_last
+
+    last = run.data.params.get("window_last_utc")
+    return bool(last) and pd.Timestamp(last) > data_last(2024)
+
+
+def refuse_held_out_vintage(c, run) -> None:
+    """Before any 2025 replay has started (docs/plan-v2.md, section 11.3.4), nothing of the 2025 vintage is rendered:
+    neither the data-quality run asked for, named or found by default, when it reaches 2025, nor any run while the
+    latest data-quality run does. The 2025 starts are read (report/ledger.py `starts`) only when such a run is in view,
+    since nothing is refused otherwise."""
+    from valiwatt.report import ledger
+
+    if not reaches_held_out(run):
+        try:
+            latest = latest_run(EXPERIMENT, "tags.kind = 'dq'")
+        except LookupError:
+            return
+        if not reaches_held_out(latest):
+            return
+        culprit = latest
+    else:
+        culprit = run
+    if ledger.starts(c, 2025):
+        return
+    raise ReportRefused(f"data-quality run {culprit.info.run_id} reaches 2025, and no 2025 replay has started: "
+                        "nothing of the 2025 vintage is rendered before the first 2025 start (plan section 11.3.4)")
+
+
 def render(run_id: str | None = None) -> list[Path]:
     c = client()
     run = c.get_run(run_id) if run_id else latest_run(
         EXPERIMENT, "tags.kind = 'dq' and tags.gates = 'passed' and attributes.status = 'FINISHED'")
     if run.data.tags.get("gates") != "passed" or run.info.status != "FINISHED":
         raise ReportRefused(f"run {run.info.run_id} did not pass its gates; no report is rendered from it")
+    refuse_held_out_vintage(c, run)
     # The provenance line names the run's code; the templates and filters render at report time. They must be the same.
     if run.data.tags.get("code_sha256") != code_sha256():
         raise ReportRefused(f"the code changed since run {run.info.run_id}; run `valiwatt dq` again before rendering")
@@ -103,20 +211,14 @@ def render(run_id: str | None = None) -> list[Path]:
                 shutil.rmtree(REPORTS / "figures" / lang)
             shutil.copytree(figs / lang, REPORTS / "figures" / lang)
 
-    context = {
-        "r": results,
-        "run_id": run.info.run_id,
-        "commit": run.data.tags.get("git_commit", "none"),
-        "dirty": run.data.tags.get("git_dirty") != "false",
-        "code_sha": run.data.tags.get("code_sha256", "unknown"),
-        "run_date": pd.Timestamp(run.info.start_time, unit="ms", tz="UTC").strftime("%Y-%m-%d %H:%M UTC"),
-    }
+    context = dq_context(results, run)
     written = []
     for lang in LANGS:
         retrieved = min(s["first_retrieved_utc"] for s in results["sources"]["eccc"])[:10]
         text = environment(lang).get_template(f"dq.{lang}.md.j2").render(
             **context, attribution=attribution.lines(lang, retrieved=retrieved), lang=lang)
         assert_public_safe(text)
+        check_dq(text, lang, context)
         out = REPORTS / f"dq.{lang}.md"
         out.write_text(text, encoding="utf-8")
         c.log_artifact(run.info.run_id, str(out), "report")

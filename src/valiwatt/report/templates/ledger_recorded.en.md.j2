@@ -1,4 +1,5 @@
-{# The replays from before a departure that the MLflow store lacks: shown from the replay ledger (report/ledger.py). #}
+{# The replays the MLflow store lacks: shown from the replay ledger (report/ledger.py), labelled. #}
+{% from 'sentences.en.md.j2' import VERDICT, LABEL, OUTCOME, recs_list %}
 {% set REC = {'retrain': 'retrain', 'recalibrate': 'recalibrate the intervals', 'investigate_data': 'investigate the data'} %}
 {% macro recorded_block(departures) %}
 {% for d in departures if d.recorded %}
@@ -6,3 +7,6 @@
 
 {% endfor %}
 {%- endmacro %}
+{# A v2 replay of record (v2's first 2024 replay, the 2025 test of record or a rerun) the store lacks: everything its
+   entry holds, and nothing else. #}
+{% macro record_block(e, say) %}**{{ say.ledger_label }}** Replay `{{ e.run_id }}` (rules of commit `{{ e.freeze_commit|short }}`, code `{{ e.code_sha256|short }}`) is not in this copy's MLflow store: what follows comes from its entry in `docs/replay-ledger.json`, written from its run. MAPE of {{ e.mape|pct(2) }}, coverage of {{ e.coverage|pct(1) }}, recommendations: {{ recs_list(e.recommendations) }}; verdicts "{{ VERDICT[e.verdict.shipped] }}" against v1 as shipped and "{{ VERDICT[e.verdict.family] }}" against v1's form; label "{{ LABEL[e.evaluation] }}"; standing {% if e.standing %}"{{ OUTCOME[e.standing] }}"{% else %}none (2024){% endif %}; hash of the artifacts that judged it `{{ e.frozen_sha256|short }}`.{% if e.departure %} It departs from {% for x in e.departure_from %}`{{ x }}`{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}{% endmacro %}

@@ -3,21 +3,25 @@ refused when a stored run disagrees with its entry or when its content fails the
 report, which shows a departed replay the store lacks from its entry, labelled as recorded and not re-run."""
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
-import jinja2
 import pandas as pd
 import pytest
+import report_payloads as RP
+import report_store as S
+import report_world as W
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST
 from test_report_lineage import CODE, FREEZE, RECORDED, RULES, clean_chain, fake_run, serve
 
-from valiwatt import tracking
+from valiwatt import config, tracking
 from valiwatt.monitor import run as monitor_run
+from valiwatt.paths import REPO_ROOT
 from valiwatt.report import ledger, lineage
 from valiwatt.report import validation as RV
-from valiwatt.report.render import environment, filters
+from valiwatt.report.render import ReportRefused, environment, filters
 
 COMMIT_A, COMMIT_B = "a" * 40, "b" * 40
 
@@ -37,16 +41,20 @@ def store(tmp_path, monkeypatch):
     import mlflow
 
     monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    W.install_lane_d(monkeypatch)
 
-    def log(year=2024, kind="replay", freeze_commit=COMMIT_A, fail=False, departure_from=(), **kw):
+    def log(year=2024, kind="replay", freeze_commit=COMMIT_A, fail=False, departure_from=(), complete=True, **kw):
         tags = {"kind": kind, "year": str(year), "rules_sha256": RULES, "freeze_commit": freeze_commit,
                 "departure": str(bool(departure_from)).lower(), "departure_from": ",".join(departure_from)}
+        if not complete:  # a run that ends without marking itself complete: MLflow FINISHED, its status `started`
+            tags["status"] = "started"
         try:
             with tracking.start_run(monitor_run.EXPERIMENT, kind, tags=tags) as run:
                 mlflow.log_text(json.dumps(results(freeze_commit=freeze_commit, **kw)), "results/replay.json")
                 if fail:
                     raise RuntimeError("the replay stopped")
-                mlflow.set_tag("status", "complete")
+                if complete:
+                    mlflow.set_tag("status", "complete")
         except RuntimeError:
             pass
         return run.info.run_id
@@ -73,6 +81,16 @@ def test_the_ledger_round_trips_every_finished_2024_replay_from_the_store(store,
     assert a["started_utc"] <= a["ended_utc"] <= b["started_utc"]
     before = path.read_bytes()
     assert ledger.sync(path, root=tmp_path) == entries and path.read_bytes() == before  # nothing new: unchanged
+
+
+def test_a_finished_replay_not_marked_complete_stays_out_of_the_ledger(store, tmp_path):
+    """A finished replay is MLflow FINISHED and tagged complete: a run MLflow calls FINISHED whose status tag still
+    says `started` (it never reached its end) enters neither the store's entries nor the ledger."""
+    done = store()
+    started = store(complete=False)
+    assert tracking.client().get_run(started).info.status == "FINISHED"
+    assert [e["run_id"] for e in ledger.from_store()] == [done]
+    assert [e["run_id"] for e in ledger.sync(tmp_path / "replay-ledger.json", root=tmp_path)] == [done]
 
 
 def test_the_ledger_is_append_only(store, tmp_path):
@@ -184,96 +202,50 @@ def earlier_entry(**kw) -> dict:
     return {**ledger.entry(run, results(recs=[("2024-03-04", "retrain")], freeze_commit="e" * 40)), **kw}
 
 
-class Unread(jinja2.ChainableUndefined):
-    """A value the test's runs leave out. It renders as nothing and survives arithmetic, comparison and iteration, so
-    the whole validation template renders around the departures, which are real."""
-    __slots__ = ()
-
-    def _same(self, *args, **kwargs):
-        return self
-
-    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = __truediv__ = __rtruediv__ = _same
-    __floordiv__ = __rfloordiv__ = __mod__ = __rmod__ = __pow__ = __rpow__ = __neg__ = __pos__ = __abs__ = _same
-    __call__ = __round__ = _same
-    __hash__ = object.__hash__
-
-    def __lt__(self, other):
-        return False
-
-    __le__ = __gt__ = __ge__ = __lt__
-
-    def __eq__(self, other):
-        return other is self
-
-    def __ne__(self, other):
-        return other is not self
-
-    def __format__(self, spec):
-        return ""
-
-    def __int__(self):
-        return 0
-
-    __index__ = __int__
-
-    def __float__(self):
-        return 0.0
-
-
-def render_report(ctx: dict, lang: str) -> str:
-    """validation.{lang}.md.j2 rendered from a context as `render_validation` renders it, in the report's own
-    environment and filters, every value the context lacks left blank."""
-    env = environment(lang)
-    env.undefined = Unread
-
-    def blank_on_unread(f):
-        def g(*args, **kwargs):
-            unread = any(isinstance(x, jinja2.Undefined) for x in (*args, *kwargs.values()))
-            return Unread() if unread else f(*args, **kwargs)
-        return g
-
-    env.filters.update({name: blank_on_unread(f) for name, f in filters(lang).items()})
-    return env.get_template(f"validation.{lang}.md.j2").render(**ctx, fig={}, lang=lang)
-
-
-def renderable(runs: dict) -> dict:
-    """The fake runs with what `validation.context` reads besides their tags: start times and parameters."""
-    for run in runs.values():
-        timed(run)
-        run.data.params = {}
-    return runs
-
-
 LABEL = {"fr": "**Consigné dans le registre, non rejoué ici.**", "en": "**Recorded in the ledger, not re-run here.**"}
+REC = {"fr": {"retrain": "réentraîner", "recalibrate": "recalibrer les intervalles",
+              "investigate_data": "examiner les données"},
+       "en": {"retrain": "retrain", "recalibrate": "recalibrate the intervals", "investigate_data": "investigate the data"}}
 
 
-def test_a_departed_replay_absent_from_the_store_renders_from_the_ledger(monkeypatch, tmp_path):
-    """A fresh clone: the store holds the departure replay but not the replay it departs from. The validation report,
-    through `context` and its template, shows that one from its ledger entry, with its MAPE, coverage and
-    recommendations, labelled as recorded and not re-run; a departed replay from the store gets no label."""
-    runs = renderable(departure_chain())
-    results_store(monkeypatch, tmp_path, runs, {run_id: {} for run_id in runs})
-    monkeypatch.setattr(RV, "derive", lambda *payloads: {})  # the sentences computed from the payloads: not read here
-    chain = lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED, entries=[earlier_entry()])
-    assert [type(d) for d in chain.departed] == [lineage.RecordedReplay]
-    ctx = RV.context(chain, CODE, RULES)
+def test_a_departed_replay_absent_from_the_store_renders_from_the_ledger(monkeypatch):
+    """A fresh clone: the store holds v2's departure replay of 2024 but not the replay it departs from, v2's first,
+    which the ledger holds. The validation report, through `context`, its templates and its own checks, shows that one
+    from its ledger entry, with its MAPE, coverage and recommendations, labelled as recorded and not re-run; a departed
+    replay from the store gets no label."""
+    w = S.World().install(monkeypatch)
+    first = w.entry(S.REPLAY)
+    w.entries.append(first)
+    for run_id in (S.REPLAY, f"diag-{S.REPLAY}"):  # this copy's store lacks v2's first 2024 replay
+        del w.runs[run_id]
+    departure = "c" * 32
+    w.add_replay(departure, w.payloads["r"], freeze_commit=W.F1, departure="true", departure_from=S.REPLAY)
+    w.add_diagnostics(departure, w.payloads["diag"]["replay"])
+    w.section = S.NONE_RECORDED.replace("None yet.\n", S.departure_entry("2026-11-20", [W.F0, W.F1]))
+    chain = lineage.follow(S.CODE, S.RULES, {"freeze_tag": S.TAG, "freeze_commit": W.F1}, recorded=w.section,
+                           entries=list(w.entries), starts=[])
+    assert chain.replay.info.run_id == departure and [type(d) for d in chain.departed] == [lineage.RecordedReplay]
+    ctx = RV.context(chain, S.CODE, S.RULES, list(w.entries), [])
     shown = ctx["departures"]
-    assert len(shown) == 1 and shown[0]["recorded"] is True and shown[0]["id"] == EARLIER
-    assert ctx["departure_record"] == {"date": RV.DEPARTURE["date"], "changes": list(RV.DEPARTURE["changes"]),
-                                       "from_commit": "e" * 40}
-    assert shown[0]["summary"] == {
-        "mape": {"mean": 0.0423}, "coverage": {"mean": 0.894}, "recommendations": {"retrain": 1}}
-    words = {"fr": ("Le rejeu `" + EARLIER + "` (règles du commit `eeeeeeeeeeee`)", "son EAMP de 4,23\u00a0%",
-                    "sa couverture de 89,4\u00a0%", "ses recommandations (semaine du 2024-03-04 : réentraîner)"),
-             "en": ("Replay `" + EARLIER + "` (rules of commit `eeeeeeeeeeee`)", "its MAPE of 4.23%",
-                    "its coverage of 89.4%", "its recommendations (week of 2024-03-04: retrain)")}
-    for lang, expected in words.items():
-        text = render_report(ctx, lang)
-        assert text.count(LABEL[lang]) == 1, (lang, text)
+    assert len(shown) == 1 and shown[0]["recorded"] is True and shown[0]["id"] == S.REPLAY
+    assert shown[0]["summary"] == {"mape": {"mean": first["mape"]}, "coverage": {"mean": first["coverage"]},
+                                   "recommendations": ledger.recommendation_counts(first["recommendations"])}
+    assert first["recommendations"] and ctx["dep_entries"][0]["to"] == W.F1[:12]
+    for lang in ("fr", "en"):
+        f = filters(lang)
+        recs = [(f"semaine du {x['week_start']} : " if lang == "fr" else f"week of {x['week_start']}: ")
+                + REC[lang][x["recommendation"]] for x in first["recommendations"]]
+        mape, coverage = f["pct"](first["mape"], 2), f["pct"](first["coverage"], 1)
+        expected = ((f"Le rejeu `{S.REPLAY}` (règles du commit `{W.F0[:12]}`)", f"son EAMP de {mape}",
+                     f"sa couverture de {coverage}") if lang == "fr" else
+                    (f"Replay `{S.REPLAY}` (rules of commit `{W.F0[:12]}`)", f"its MAPE of {mape}",
+                     f"its coverage of {coverage}"))
+        text = RP.render(ctx, lang)
+        assert text.count(LABEL[lang]) == 1, lang
         paragraph = text[text.index(LABEL[lang]):].split("\n\n")[0]
-        assert all(w in paragraph for w in expected), (lang, paragraph)
-        stored = render_report({**ctx, "departures": [{**shown[0], "recorded": False}]}, lang)
-        assert LABEL[lang] not in stored and EARLIER in stored  # a replay from the store: shown, with no label
+        assert all(x in paragraph for x in (*expected, *recs)), (lang, paragraph)
+        stored = RP.render({**ctx, "departures": [{**shown[0], "recorded": False}]}, lang)
+        assert LABEL[lang] not in stored and S.REPLAY in stored  # a replay from the store: shown, with no label
 
 
 def test_a_departed_replay_in_neither_the_store_nor_the_ledger_is_refused(monkeypatch, tmp_path):
@@ -329,3 +301,326 @@ def test_ledger_and_report_commands_sync_before_rendering(monkeypatch):
     monkeypatch.setattr(ledger, "sync", refused)
     assert cli.main(["report"]) == 1 and calls == []
     assert cli.main(["ledger"]) == 1
+
+
+# --- v2's entries (docs/plan-v2.md, section 10.5) ------------------------------------------------------------------
+
+V1_TAG, V2_TAG = "rules-frozen", "rules-frozen-v2"
+
+
+def v1_entries_at(tag: str = "v1") -> list[dict]:
+    """The v1 entries of the ledger as committed at `tag`."""
+    text = subprocess.run(["git", "show", f"{tag}:docs/replay-ledger.json"], cwd=REPO_ROOT, capture_output=True,
+                          text=True, check=True).stdout
+    return [e for e in json.loads(text)["replays"] if e["freeze_tag"] == V1_TAG]
+
+
+def v1_changes(entries: list[dict], at_v1: list[dict]) -> list[str]:
+    """How the v1 entries of `entries` differ from those at tag v1: each entry added, removed or changed."""
+    now = {e["run_id"]: e for e in entries if e["freeze_tag"] == V1_TAG}
+    then = {e["run_id"]: e for e in at_v1}
+    return ([f"added {k}" for k in now if k not in then] + [f"removed {k}" for k in then if k not in now]
+            + [f"changed {k}: {ledger.disagreement(now[k], then[k])}" for k in now if k in then and now[k] != then[k]])
+
+
+def test_the_v1_entries_equal_those_of_the_ledger_at_tag_v1():
+    """v1's entries are never touched (plan section 10.5): the ledger's `rules-frozen` entries equal those of the file
+    at tag `v1`, each with v1's fourteen fields and its year 2024. Break: one v1 entry edited."""
+    at_v1 = v1_entries_at()
+    assert at_v1 and v1_changes(ledger.read(), at_v1) == []
+    assert all(tuple(e) == ledger.FIELDS and e["year"] == 2024 for e in at_v1)
+    edited = [dict(e) for e in ledger.read()]
+    edited[0]["coverage"] = round(edited[0]["coverage"] + 0.01, 6)
+    assert v1_changes(edited, at_v1) == [f"changed {edited[0]['run_id']}: ['coverage']"]
+    assert v1_changes(edited[1:], at_v1) == [f"removed {edited[0]['run_id']}"]
+
+
+def test_every_freeze_has_one_shape_and_its_years_come_from_the_configuration():
+    assert set(ledger.SHAPES) == set(config.FREEZES)
+    assert ledger.YEARS == {t: tuple(f["years"]) for t, f in config.FREEZES.items()}
+    assert ledger.V2_FIELDS[:len(ledger.FIELDS)] == ledger.FIELDS and len(ledger.V2_FIELDS) == 19
+    assert ledger.fields_for(V1_TAG) == ledger.FIELDS and ledger.fields_for(V2_TAG) == ledger.V2_FIELDS
+
+
+def v2_run(run_id="3" * 32, year=2024, start=1_800_000_000_000, **tags):
+    base = {"kind": "replay", "year": str(year), "freeze_tag": V2_TAG, "freeze_commit": W.F0, "rules_sha256": RULES,
+            "code_sha256": CODE, "status": "complete", "departure": "false", "departure_from": "",
+            "evaluation": "seen_by_developers" if year == 2024 else "held_out", "coefficient_sha256": W.MODEL}
+    if year == 2025:
+        base["standing"] = "clean"
+    return timed(fake_run(run_id, **(base | tags)), start)
+
+
+def v2_results(verdict=("better_cold_untested", "not_shown_better"), freeze_commit=W.F0, **kw):
+    return {**results(freeze_commit=freeze_commit, **kw), "freeze_tag": V2_TAG, "frozen_sha256": W.FROZEN,
+            "verdict": {"shipped": verdict[0], "family": verdict[1], "label": "seen_by_developers"}}
+
+
+def test_a_v2_entry_holds_v2_fields_in_order(monkeypatch):
+    """v2's nineteen fields, in order: v1's fourteen, then the label copied from the run tag `evaluation`, the
+    production model's hash from `coefficient_sha256`, the two verdicts, one digest of the frozen artifacts' hashes,
+    and the standing from the run tag ("" for 2024)."""
+    W.install_lane_d(monkeypatch)
+    e = ledger.entry(v2_run(), v2_results(recs=[("2024-02-05", "retrain")]))
+    assert tuple(e) == ledger.V2_FIELDS
+    assert (e["evaluation"], e["model_sha256"], e["verdict"], e["frozen_sha256"], e["standing"]) == (
+        "seen_by_developers", W.MODEL, {"shipped": "better_cold_untested", "family": "not_shown_better"},
+        monitor_run.frozen_digest(W.FROZEN), "")
+    assert e["frozen_sha256"] == W.DIGEST
+    held = ledger.entry(v2_run("4" * 32, 2025, start=1_800_000_100_000), v2_results())
+    assert (held["evaluation"], held["standing"]) == ("held_out", "clean")
+    with pytest.raises(ledger.LedgerError, match="different freeze tags"):
+        ledger.entry(v2_run(freeze_tag=V1_TAG), v2_results())
+    with pytest.raises(ledger.LedgerError, match="frozen_sha256"):
+        ledger.entry(v2_run(), {**v2_results(), "frozen_sha256": None})
+
+
+def test_a_v2_entry_of_another_year_is_refused():
+    """Each freeze's entries are of the years it replays (config.FREEZES): v2's 2024 and 2025, v1's 2024 only."""
+    for year in (2024, 2025):
+        ledger.check_entry(W.v2_entry("5" * 32, year))
+    for year in (2023, 2026):
+        with pytest.raises(ledger.LedgerError, match="year"):
+            ledger.check_entry({**W.v2_entry("5" * 32), "year": year})
+    v1 = W.v2_entry("5" * 32)
+    v1 = {k: v1[k] for k in ledger.FIELDS} | {"freeze_tag": V1_TAG}
+    ledger.check_entry(v1)
+    with pytest.raises(ledger.LedgerError, match="year"):
+        ledger.check_entry({**v1, "year": 2025})
+
+
+def test_an_entry_of_an_unknown_freeze_tag_is_refused():
+    for tag in ("rules-frozen-v3", "", None):
+        with pytest.raises(ledger.LedgerError, match="freeze tag"):
+            ledger.fields_for(tag)
+        with pytest.raises(ledger.LedgerError, match="freeze tag"):
+            ledger.check_entry({**W.v2_entry("5" * 32), "freeze_tag": tag})
+    with pytest.raises(ledger.LedgerError, match="object"):
+        ledger.check_entry(["not", "an", "entry"])
+
+
+def test_a_v1_entry_with_v2_fields_is_refused():
+    with pytest.raises(ledger.LedgerError, match="exactly"):
+        ledger.check_entry({**W.v2_entry("5" * 32), "freeze_tag": V1_TAG})
+    v2 = W.v2_entry("5" * 32)
+    with pytest.raises(ledger.LedgerError, match="exactly"):  # and a v2 entry with v1's fields only
+        ledger.check_entry({k: v2[k] for k in ledger.FIELDS})
+
+
+def test_a_v2_entry_without_its_evaluation_label_is_refused():
+    e = W.v2_entry("5" * 32)
+    with pytest.raises(ledger.LedgerError, match="exactly"):
+        ledger.check_entry({k: v for k, v in e.items() if k != "evaluation"})
+    for label in ("", None, "in_sample_for_choice", "rehearsal"):
+        with pytest.raises(ledger.LedgerError, match="evaluation"):
+            ledger.check_entry({**e, "evaluation": label})
+
+
+def test_a_v2_entry_holds_only_hashes_and_verdict_words():
+    e = W.v2_entry("5" * 32)
+    for field, value in (("model_sha256", "x" * 64), ("frozen_sha256", "abc"), ("verdict", {"shipped": "better"}),
+                         ("verdict", {"shipped": "better", "family": "fine"}),
+                         ("verdict", {"family": "better", "shipped": "better"})):
+        with pytest.raises(ledger.LedgerError, match=field):
+            ledger.check_entry({**e, field: value})
+
+
+def first_2024(**kw):
+    return W.v2_entry("a" * 32, 2024, W.utc(0), **kw)
+
+
+def test_a_v2_label_other_than_its_starts_give_is_refused():
+    """`check` with the starts, one case each: a 2024 entry labelled held_out; a second 2025 entry labelled held_out
+    after a finished one; a held_out entry after a stopped earlier start whose gate's record holds no ruling naming
+    it."""
+    held = {**first_2024(), "evaluation": "held_out"}
+    with pytest.raises(ledger.LedgerError, match="evaluation"):
+        ledger.check([held], [])
+    one = W.v2_entry("b" * 32, 2025, W.utc(10))
+    two = W.v2_entry("c" * 32, 2025, W.utc(11))  # labelled held_out, after a finished start
+    starts = [W.start(one["run_id"], one["started_utc"], True, W.gate()),
+              W.start(two["run_id"], two["started_utc"], True, W.gate())]
+    ledger.check_entry(two)  # well formed on its own: only its starts refuse it
+    for s in (starts, None):
+        with pytest.raises(ledger.LedgerError, match="give 'seen_by_developers'"):
+            ledger.check([first_2024(), one, two], s)
+    stopped = W.start("d" * 32, W.utc(9), False, W.gate(), stage="inputs_read", error="KeyError")
+    record = W.start(one["run_id"], one["started_utc"], True, W.gate())  # no ruling naming the stopped start
+    with pytest.raises(ledger.LedgerError, match="needs the owner's ruling naming it"):
+        ledger.check([first_2024(), one], [stopped, record])
+    ledger.check([first_2024(), one], None)  # the ledger alone cannot see the stopped start: only the store can
+
+
+def test_a_post_hoc_test_of_record_labelled_held_out_is_refused():
+    """By `check_entry`, and by `check` with the starts and with None; a clean test of record labelled `post_hoc`
+    too. Control: a first start ruled post hoc on (a), labelled `post_hoc`, passes."""
+    lie = W.v2_entry("b" * 32, 2025, W.utc(10), evaluation="held_out", standing="post_hoc")
+    with pytest.raises(ledger.LedgerError, match="evaluation"):
+        ledger.check_entry(lie)
+    post = W.gate("post_hoc", ["a"], W.ruling("post_hoc"))
+    for s in ([W.start(lie["run_id"], lie["started_utc"], True, post)], None):
+        with pytest.raises(ledger.LedgerError, match="evaluation"):
+            ledger.check([first_2024(), lie], s)
+    with pytest.raises(ledger.LedgerError, match="evaluation"):
+        ledger.check_entry(W.v2_entry("b" * 32, 2025, W.utc(10), evaluation="post_hoc", standing="clean"))
+    ok = W.v2_entry("b" * 32, 2025, W.utc(10), standing="post_hoc")
+    assert ok["evaluation"] == "post_hoc"
+    ledger.check_entry(ok)
+    for s in ([W.start(ok["run_id"], ok["started_utc"], True, post)], None):
+        assert ledger.check([first_2024(), ok], s) == [first_2024(), ok]
+    with pytest.raises(ledger.LedgerError, match="standing"):  # a gate that logged another standing than the entry's
+        ledger.check([first_2024(), ok], [W.start(ok["run_id"], ok["started_utc"], True, W.gate("clean"))])
+
+
+@pytest.mark.parametrize("outcome, label", [("clean", "held_out"), ("post_hoc", "post_hoc")])
+def test_a_ruled_test_of_record_after_a_stopped_start_passes(outcome, label):
+    """Control: the stopped start, then a start whose gate's record holds the owner's ruling naming it: the ruled start
+    is the test of record, `held_out` under a clean ruling and `post_hoc` under a post-hoc one, the standing in the
+    entry."""
+    stopped = W.start("d" * 32, W.utc(9), False, W.gate(), stage="replayed", error="ValueError")
+    g = W.gate(outcome, ["f"], W.ruling(outcome, start=stopped["started_utc"]))
+    e = W.v2_entry("b" * 32, 2025, W.utc(10), standing=outcome)
+    assert (e["evaluation"], e["standing"]) == (label, outcome)
+    assert ledger.check([first_2024(), e], [stopped, W.start(e["run_id"], e["started_utc"], True, g)])
+    wrong = W.gate(outcome, ["f"], W.ruling(outcome, start=W.utc(8)))  # a ruling naming another start
+    with pytest.raises(ledger.LedgerError, match="ruling naming it"):
+        ledger.check([first_2024(), e], [stopped, W.start(e["run_id"], e["started_utc"], True, wrong)])
+
+
+def test_a_later_2025_entry_labelled_seen_by_developers_passes():
+    one = W.v2_entry("b" * 32, 2025, W.utc(10))
+    rerun = W.v2_entry("c" * 32, 2025, W.utc(11), evaluation="seen_by_developers", standing="clean")
+    starts = [W.start(one["run_id"], one["started_utc"], True, W.gate()),
+              W.start(rerun["run_id"], rerun["started_utc"], True, W.gate())]
+    for s in (starts, None):
+        assert ledger.check([first_2024(), one, rerun], s)
+    stopped_rerun = W.start("e" * 32, W.utc(12), False, W.gate())  # a later start that stopped changes nothing
+    assert ledger.check([first_2024(), one, rerun], starts + [stopped_rerun])
+
+
+def test_a_2024_entry_with_a_standing_or_a_2025_entry_without_one_is_refused():
+    for standing in ("clean", "post_hoc"):
+        with pytest.raises(ledger.LedgerError, match="standing"):
+            ledger.check_entry({**first_2024(), "standing": standing})
+    for standing in ("", "unknown", None):
+        with pytest.raises(ledger.LedgerError, match="standing"):
+            ledger.check_entry({**W.v2_entry("b" * 32, 2025), "standing": standing})
+
+
+def test_a_non_departure_v2_entry_under_another_freeze_commit_is_refused():
+    later = W.v2_entry("b" * 32, 2024, W.utc(1), freeze_commit=W.F1)
+    with pytest.raises(ledger.LedgerError, match="not a departure, yet its freeze commit"):
+        ledger.check([first_2024(), later])
+    held = W.v2_entry("c" * 32, 2025, W.utc(10), freeze_commit=W.F1)
+    with pytest.raises(ledger.LedgerError, match="not a departure, yet its freeze commit"):
+        ledger.check([first_2024(), held])
+    departed = W.v2_entry("b" * 32, 2024, W.utc(1), freeze_commit=W.F1, departure_from=["a" * 32])
+    assert ledger.check([first_2024(), departed])  # control: a departure moves the freeze commit
+    v1 = {k: v for k, v in first_2024().items() if k in ledger.FIELDS} | {
+        "freeze_tag": V1_TAG, "run_id": "9" * 32, "started_utc": W.utc(5), "ended_utc": W.end(W.utc(5)),
+        "freeze_commit": W.F2}
+    assert ledger.check([first_2024(), v1])  # v1's entries never count for v2's commit
+
+
+def test_a_v2_2025_entry_before_any_v2_2024_entry_is_refused():
+    held = W.v2_entry("b" * 32, 2025, W.utc(10))
+    with pytest.raises(ledger.LedgerError, match="starts before any rules-frozen-v2 replay of 2024"):
+        ledger.check([held])
+    early = W.v2_entry("b" * 32, 2025, W.utc(0, month=10))
+    with pytest.raises(ledger.LedgerError, match="starts before any rules-frozen-v2 replay of 2024"):
+        ledger.check([early, first_2024()])
+    assert ledger.check([first_2024(), held])
+
+
+@pytest.mark.parametrize("field, value", [("evaluation", "seen_by_developers"), ("model_sha256", "f" * 64),
+                                          ("verdict", {"shipped": "worse", "family": "better"}),
+                                          ("frozen_sha256", "0" * 64), ("standing", "post_hoc")])
+def test_a_store_run_differing_from_its_v2_entry_in_one_v2_field_is_refused(field, value):
+    recorded = W.v2_entry("b" * 32, 2025, W.utc(10))
+    stored = {**recorded, field: value}
+    assert ledger.disagreement(stored, recorded) == [field]
+    with pytest.raises(ledger.LedgerError, match=rf"disagrees with its ledger entry on \['{field}'\]"):
+        ledger.merge([first_2024(), recorded], [stored])
+    assert ledger.merge([first_2024(), recorded], [recorded]) == [first_2024(), recorded]  # control
+
+
+def test_the_earliest_started_2025_replay_is_the_test_of_record():
+    """Break: after a finished first start, a later finished start offered as the record. The walk keeps the first;
+    the later one is a rerun, and a ledger labelling it held out is refused."""
+    one = W.v2_entry("b" * 32, 2025, W.utc(10))
+    two = W.v2_entry("c" * 32, 2025, W.utc(11), evaluation="seen_by_developers")
+    starts = [W.start(two["run_id"], two["started_utc"], True, W.gate()),  # out of order: the walk sorts them
+              W.start(one["run_id"], one["started_utc"], True, W.gate())]
+    entries = [first_2024(), one, two]
+    rec = ledger.of_record(entries, starts)
+    assert rec["record"]["run_id"] == one["run_id"] and rec["entry"] == one
+    assert rec["reruns"] == [two] and rec["stopped"] == [] and rec["unfinished"] == []
+    with pytest.raises(ledger.LedgerError, match="give 'seen_by_developers'"):
+        ledger.check([first_2024(), one, {**two, "evaluation": "held_out"}], starts)
+    assert ledger.of_record(entries, []) is None
+    with pytest.raises(ReportRefused, match="no entry"):  # a finished start the ledger lacks
+        ledger.of_record([first_2024(), two], starts)
+
+
+def test_a_stopped_first_start_gives_way_only_to_the_start_its_ruling_names():
+    stopped = W.start("d" * 32, W.utc(9), False, W.gate(), stage="replayed", error="KeyError")
+    g = W.gate("clean", ["f"], W.ruling("clean", start=stopped["started_utc"]))
+    e = W.v2_entry("b" * 32, 2025, W.utc(10))
+    second = W.start(e["run_id"], e["started_utc"], True, g)
+    rec = ledger.of_record([first_2024(), e], [stopped, second])
+    assert rec["record"] == second and rec["entry"] == e
+    assert rec["stopped"] == [{**stopped, "ruling": g["ruling"]}]
+    assert [s["run_id"] for s in rec["unfinished"]] == [stopped["run_id"]]
+    assert (rec["stopped"][0]["stage"], rec["stopped"][0]["error"]) == ("replayed", "KeyError")
+    running = {**second, "finished": False, "stage": "inputs_read"}
+    rec = ledger.of_record([first_2024()], [stopped, running])
+    assert rec["record"] == running and rec["entry"] is None and rec["stopped"][0]["run_id"] == stopped["run_id"]
+    assert [s["run_id"] for s in rec["unfinished"]] == [stopped["run_id"], running["run_id"]]
+    rec = ledger.of_record([first_2024()], [stopped])  # nothing after it yet: the stopped start is the record
+    assert rec["record"] == stopped and rec["entry"] is None and rec["stopped"] == []
+    for bad in (W.gate("clean"), W.gate("clean", ["f"], W.ruling("clean", start=W.utc(8))),
+                W.gate("clean", ["a"], W.ruling("clean", start=stopped["started_utc"]))):
+        with pytest.raises(ReportRefused, match="no owner's ruling naming that start"):
+            ledger.of_record([first_2024(), e], [stopped, {**second, "gate": bad}])
+
+
+def test_a_finished_v2_replay_in_the_store_round_trips_with_its_starts(store, tmp_path, monkeypatch):
+    """A real store: v2's first 2024 replay and the 2025 test of record, its gate's record logged when it opened. The
+    sync writes both v2 entries, the 2025 label checked against the store's starts; in another store, a start that
+    stopped before the record, which then ran with no ruling naming it, refuses the write."""
+    import mlflow
+
+    def log_v2(year, standing=None, gate_record=None, finish=True):
+        tags = {"kind": "replay", "year": str(year), "rules_sha256": RULES, "freeze_tag": V2_TAG,
+                "freeze_commit": W.F0, "departure": "false", "departure_from": "", "coefficient_sha256": W.MODEL,
+                "evaluation": "seen_by_developers" if year == 2024 else "held_out", "status": "started"}
+        if standing:
+            tags["standing"] = standing
+        try:
+            with tracking.start_run(monitor_run.EXPERIMENT, "replay", tags=tags) as run:
+                if gate_record is not None:
+                    mlflow.log_text(json.dumps(gate_record), "results/held_out_gate.json")
+                if not finish:
+                    raise RuntimeError("stopped")
+                mlflow.log_text(json.dumps(v2_results()), "results/replay.json")
+                mlflow.set_tag("status", "complete")
+        except RuntimeError:
+            pass
+        return run.info.run_id
+
+    path = tmp_path / "replay-ledger.json"
+    first = log_v2(2024)
+    held = log_v2(2025, "clean", W.gate())
+    entries = ledger.sync(path, root=tmp_path)
+    assert [(e["run_id"], e["evaluation"], e["standing"]) for e in entries] == [
+        (first, "seen_by_developers", ""), (held, "held_out", "clean")]
+    assert ledger.read(path) == entries and all(tuple(e) == ledger.V2_FIELDS for e in entries)
+    assert ledger.of_record(entries, ledger.starts(ledger={"replays": entries}))["entry"]["run_id"] == held
+    path.unlink()
+    monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "other" / "mlruns")
+    log_v2(2024)
+    log_v2(2025, "clean", W.gate(), finish=False)
+    log_v2(2025, "clean", W.gate())
+    with pytest.raises(ledger.LedgerError, match="ruling naming it"):
+        ledger.sync(path, root=tmp_path)
+    assert not path.exists()

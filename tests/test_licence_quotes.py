@@ -32,6 +32,12 @@ def test_doc_has_quotes_for_every_source_section():
     assert any("hydroquebec" in u for u in urls) and any("by-nc/4.0/legalcode" in u for u in urls)
     assert any("FAQ_e" in u for u in urls) and any("FAQ_f" in u for u in urls)
     assert any("canada.ca/en/transparency/terms" in u for u in urls)
+    assert "https://registry.opendata.aws/noaa-nbm/" in urls  # NOAA's terms for the NBM forecast
+    assert "https://mesonet.agron.iastate.edu/disclaimer.php" in urls  # the IEM's terms, warranty paragraph included
+    iem = " ".join(q.text for q in quotes if "mesonet" in q.url)
+    assert "public domain" in iem and "without any warranty of accuracy" in iem
+    noaa = " ".join(q.text for q in quotes if "noaa-nbm" in q.url)
+    assert "not permissible to state or imply endorsement" in noaa and "original, unaltered NOAA data" in noaa
 
 
 @pytest.mark.network

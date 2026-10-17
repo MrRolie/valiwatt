@@ -362,3 +362,26 @@ def test_cli_refuses_without_private_patterns(monkeypatch):
 
     monkeypatch.setattr(sf, "private_patterns", lambda root=None: {})
     assert main() == 2
+
+
+def test_the_v2_figures_and_templates_pass_the_scan(repo, monkeypatch):
+    """Every validation figure v2 renders (the partial-effects figure is new), drawn from the synthetic payloads into a
+    scratch repository's docs/report/figures/, passes the staged scan as a well-formed figure; every report template
+    passes the text scan."""
+    import report_payloads as RP
+
+    from valiwatt.report import validation as RV
+    from valiwatt.report.render import TEMPLATES
+
+    root, git = repo
+    monkeypatch.setattr(RV, "OUT", root / "docs" / "report")
+    ctx = RP.context()
+    for lang in ("fr", "en"):
+        RV.figures(ctx, lang)
+    drawn = sorted((root / "docs" / "report" / "figures" / "validation").glob("*.png"))
+    assert len(drawn) == 14 and any("partial-effects" in p.name for p in drawn)
+    assert all(png_text(p.read_bytes()) is not None for p in drawn)
+    git("add", "-f", "docs/report/figures")
+    assert scan_index(root) == []
+    for path in sorted(TEMPLATES.glob("*.j2")):
+        assert scan_text(path.name, path.read_text(encoding="utf-8")) == [], path.name

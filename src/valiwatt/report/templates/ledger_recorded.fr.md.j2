@@ -1,4 +1,5 @@
-{# Les rejeux d'avant une dérogation absents du magasin MLflow : montrés d'après le registre des rejeux (report/ledger.py). #}
+{# Les rejeux absents du magasin MLflow : montrés d'après le registre des rejeux (report/ledger.py), étiquetés. #}
+{% from 'sentences.fr.md.j2' import VERDICT, LABEL, OUTCOME, recs_list %}
 {% set REC = {'retrain': 'réentraîner', 'recalibrate': 'recalibrer les intervalles', 'investigate_data': 'examiner les données'} %}
 {% macro recorded_block(departures) %}
 {% for d in departures if d.recorded %}
@@ -6,3 +7,6 @@
 
 {% endfor %}
 {%- endmacro %}
+{# Un rejeu de v2 de référence (le premier rejeu de 2024 de v2, le test de référence de 2025 ou un rejeu refait) absent
+   du magasin : tout ce que son entrée porte, et rien d'autre. #}
+{% macro record_block(e, say) %}**{{ say.ledger_label }}** Le rejeu `{{ e.run_id }}` (règles du commit `{{ e.freeze_commit|short }}`, code `{{ e.code_sha256|short }}`) n'est pas dans le magasin MLflow de cette copie : ce qui suit vient de son entrée dans `docs/replay-ledger.json`, écrite d'après son exécution. EAMP de {{ e.mape|pct(2) }}, couverture de {{ e.coverage|pct(1) }}, recommandations : {{ recs_list(e.recommendations) }} ; verdicts « {{ VERDICT[e.verdict.shipped] }} » contre v1 tel que livré et « {{ VERDICT[e.verdict.family] }} » contre la forme de v1 ; étiquette « {{ LABEL[e.evaluation] }} » ; position {% if e.standing %}« {{ OUTCOME[e.standing] }} »{% else %}aucune (2024){% endif %} ; empreinte des artefacts qui l'ont jugé `{{ e.frozen_sha256|short }}`.{% if e.departure %} Il s'écarte de {% for x in e.departure_from %}`{{ x }}`{% if not loop.last %}, {% endif %}{% endfor %}.{% endif %}{% endmacro %}

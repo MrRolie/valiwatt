@@ -40,6 +40,7 @@ _Rapport généré à partir de l'exécution MLflow `{{ run_id }}` ({{ run_date 
 - **{{ dm.missing_value_hours + dm.missing_record_hours }} heures** sont vides à la source, en {{ dm.runs }} plages (la plus longue : {{ dm.longest_run_hours }} heures). Elles restent vides.
 {% endif %}
 - Les {{ r.sources.eccc|length }} stations météo ont chacune une température pour au moins {{ cov|min|pct(1) }} des heures.
+- La prévision de température de v2 a alimenté **{{ nbm.coverage.metrics.share|pct(2) }}** des {{ nbm.coverage.metrics.days|num }} jours de la fenêtre{% if reaches_held_out %} ({{ held_out_year }} compris){% endif %} ; {% if shown_at_or_above %}les années {{ shown_at_or_above|join(', ') }} ont un point de prévision à {{ nbm.runs.reuse_lead_h|num(0) }} heures ou plus de son émission : {{ lead_finding[lang] }} (section 4.1).{% else %}aucun de ses points n'est à {{ nbm.runs.reuse_lead_h|num(0) }} heures ou plus de son émission (section 4.1).{% endif +%}
 - Sur {{ years }}, les degrés-jours de {{ primary.centre }} et le jour de la semaine reproduisent **{{ mtl.r2|pct(1) }}** de la variation de la demande journalière ; avec la moyenne des {{ r.sources.eccc|length }} stations, **{{ pan.r2|pct(1) }}**.
 - L'heure la plus chargée de {{ years }} est l'heure finissant à {{ top.hour_ending_lst|lst }} : **{{ top.mw|num(0) }} MW**, par {{ top.temp_c_primary|num(1) }} °C à {{ primary.centre }}.
 
@@ -165,6 +166,44 @@ Aucune heure signalée.
 
 Les pics de température sont signalés avec la même règle que la demande (score au-delà de {{ c['weather_gaps[' ~ primary.key ~ ']'].metrics.spike_threshold_z|num }}, échelle estimée sur {{ years }}). Ils ne sont pas retirés : aucun contrôle ici ne sépare une erreur de capteur d'un vrai changement de temps.
 
+{% set nb = nbm.bounds.metrics %}
+{% set nc = nbm.coverage.metrics %}
+{% set nr = nbm.runs %}
+{% set REASON = {'no_run_available': 'aucune prévision disponible avant l’origine', 'no_covering_run': 'aucune des ' ~ max_runs_back ~ ' prévisions disponibles les plus fraîches ne couvre le jour'} %}
+### 4.1 La prévision de température
+
+La prévision de température que v2 utilise est la guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), archivée par l'Iowa Environmental Mesonet : {{ nr.runs|num }} prévisions, {{ nr.points|num }} points toutes les trois heures, en degrés Fahrenheit, convertis en degrés Celsius. {{ nr.identical_duplicates|num }} points identiques en double, à la jonction des fichiers annuels, sont écartés ; deux valeurs différentes pour une même prévision et une même heure feraient refuser le chargement. Chaque jour est alimenté par la plus fraîche des prévisions dont les propres points encadrent ses 24 heures, parmi les {{ max_runs_back }} plus fraîches disponibles à l'origine du jour ; la règle complète est dans le rapport de validation (section 2).
+{% if reaches_held_out %}
+
+Cette exécution lit aussi {{ held_out_year }}. Les comptes de cette section portent sur toute la fenêtre, {{ held_out_year }} compris : les prévisions, les points et leurs doublons, les bornes, les jours alimentés, les jours alimentés par la même prévision que la veille, les rangs et les âges de la prévision, et la figure. Les jours sans prévision, l'heure de la prévision par année et les délais s'arrêtent à {{ held_out_year - 1 }}, et l'erreur contre l'observation au {{ nr.error_last_utc|day }}. Les constats de {{ held_out_year }} sur la prévision sont dans le rapport de validation (section 9), d'après l'exécution de qualité des données que le test de référence a lue.
+{% endif %}
+
+| Contrôle | Résultat | Mesure |
+|---|---|---|
+| Bornes, toute la fenêtre ({{ nb.low_c|num }} à {{ nb.high_c|num }} °C) | {{ nbm.bounds.passed|verdict }} | {{ nb.violations|num }} points hors bornes sur {{ nb.points|num }} ; de {{ nb.min_c|num(1) }} à {{ nb.max_c|num(1) }} °C ; {{ nb.blank_points|num }} points vides |
+| Jours alimentés, toute la fenêtre (seuil {{ nc.threshold|pct(0) }}) | {{ nbm.coverage.passed|verdict }} | {{ nc.fed_days|num }} jours sur {{ nc.days|num }} ({{ nc.share|pct(2) }}) |
+
+**Les jours qu'aucune prévision n'a alimentés** : {% for d in nbm.not_fed if (d.day|string)[:4]|int < held_out_year %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% else %}aucun{% endfor %}. Un tel jour échoue au contrôle de qualité du jour dans le rejeu (« examiner les données »). {{ nr.days_fed_by_the_previous_days_run|num }} jours ont été alimentés par la même prévision que la veille.
+
+**Rangs de la prévision utilisée** (0 : la plus fraîche) : {% for k, n in nr.rank_counts.items() %}rang {{ k }}, {{ n|num }} jours{% if not loop.last %} ; {% endif %}{% endfor %}. **Âge de la prévision à l'origine du jour** : {% for k, n in nr.lead_counts.items() %}{{ k|float|num(0) }} h, {{ n|num }} jours{% if not loop.last %} ; {% endif %}{% endfor %}. **Heure de la prévision utilisée, par année** : {% for y, hours in nr.run_hour_by_year.items() if y|int < held_out_year %}{{ y }} : {% for h, n in hours.items() %}{{ h }} h UTC ({{ n|num }} jours){% if not loop.last %}, {% endif %}{% endfor %}{% if not loop.last %} ; {% endif %}{% endfor %}.
+
+**Les délais.** Le plus long délai d'un point de prévision, de son émission à l'heure qu'il vise, par année d'émission : {% for y, h in nbm.longest|dictsort if y < held_out_year %}{{ y }}, {{ h|num(0) }} h{% if not loop.last %} ; {% endif %}{% endfor %}. L'argument de la section 9.2 du plan (une mauvaise prévision gâte au plus deux jours consécutifs) tient tant qu'aucun point n'atteint {{ nr.reuse_lead_h|num(0) }} heures. {% if shown_at_or_above %}**Les années {{ shown_at_or_above|join(', ') }} l'atteignent : {{ lead_finding[lang] }}, et le déclencheur d'une entrée de la section 18 du plan.**{% else %}Aucune année ne l'atteint.{% endif +%}
+
+**L'erreur de la prévision contre l'observation** (prévision moins température observée à {{ primary.centre }} à l'heure visée, jusqu'au {{ nr.error_last_utc|day }}) :
+
+| Année | Saison | Écart moyen | Écart absolu moyen | Heures |
+|---|---|---|---|---|
+{% set SAISON = {'winter': 'hiver', 'spring': 'printemps', 'summer': 'été', 'fall': 'automne'} %}
+{% for y, seasons_ in nr.error_vs_observed.items() %}
+{% for s, e in seasons_.items() %}
+| {{ y }} | {{ SAISON[s] }} | {{ e.mean_c|signed(2) }} °C | {{ e.mae_c|num(2) }} °C | {{ e.hours|num }} |
+{% endfor %}
+{% endfor %}
+
+![Jours alimentés par une prévision](figures/fr/nbm_feeding.png)
+
+_Jours alimentés par une prévision, par mois, et l'heure de la prévision utilisée, sur toute la fenêtre._
+
 ## 5. Représentativité des stations ({{ years }} seulement)
 
 **Pourquoi seulement {{ years }}.** L'année suivante est rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de {{ rep.design_last_year }} (rapport de validation). Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
@@ -200,7 +239,7 @@ _La demande journalière selon la température moyenne du jour à {{ primary.cen
 {{ when }}, {{ primary.centre }} seule fait mieux que la moyenne des stations, et l'intervalle exclut zéro.
 {% endif %}
 {% endfor %}
-La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. La source de température du modèle de prévision est fixée dans le plan (section 2) : la station de {{ primary.centre }}, la moyenne des stations n'y étant qu'une analyse de sensibilité. Le plan l'a fixée après cette comparaison, faite sur des années qui couvrent celles de la validation.
+La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. La source de température de v1 était fixée dans son plan : la station de {{ primary.centre }}, la moyenne des stations n'y étant qu'une analyse de sensibilité ; le plan l'a fixée après cette comparaison, faite sur des années qui couvrent celles de la validation. v2 prévoit à partir de la prévision de la section 4.1 ; la station de {{ primary.centre }} sert au contrôle de qualité, au modèle de v1 tel que livré et à la borne optimiste.
 
 ## 6. Repères à confirmer en validation
 
@@ -246,7 +285,7 @@ Un écart persistant dit que la demande a bougé pour des raisons que ce modèle
 
 ## 7. Ce que ce rapport ne montre pas
 
-- Il ne mesure la qualité d'aucune prévision : c'est le rapport de validation qui la mesure.
+- Il ne mesure la qualité d'aucune prévision de la demande : c'est le rapport de validation qui la mesure. De la prévision de température, il ne mesure que l'écart à l'observation (section 4.1).
 - Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'a qu'une météo prévue ; le rapport de validation le dit de ses résultats.
 - Les intervalles de la section 5 portent sur l'ajustement des modèles aux années étudiées, pas sur une erreur de prévision.
 - Il ne dit pas pourquoi la demande s'écarte du modèle de {{ rb.fit_year }}.

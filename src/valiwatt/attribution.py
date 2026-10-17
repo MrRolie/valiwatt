@@ -37,9 +37,30 @@ ECCC_REFERENCE = {
            "( https://climate.weather.gc.ca/index_e.html ) on {date}"),
 }
 
+# NOAA's National Blend of Models forecast, via the Iowa Environmental Mesonet: the owner approved this exact wording
+# on 2026-10-16. Its home is AGENTS.md ("The NOAA and IEM attribution"); tests/test_report_render.py holds these lines
+# to it, word for word.
+NBM = {
+    "fr": ("Prévisions météorologiques : guidance NBS du National Blend of Models de la NOAA pour la station CYUL "
+           "(Montréal-Trudeau), téléchargée des archives de l'Iowa Environmental Mesonet de l'Université d'État de "
+           "l'Iowa (https://mesonet.agron.iastate.edu/). Ce projet a interpolé à l'heure ces prévisions trihoraires et "
+           "les a converties en degrés Celsius : les valeurs qu'il utilise sont modifiées et ne sont pas des données "
+           "originales de la NOAA."),
+    "en": ("Weather forecasts: NOAA National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), "
+           "downloaded from the Iowa Environmental Mesonet archive of Iowa State University "
+           "(https://mesonet.agron.iastate.edu/). This project interpolated these three-hourly forecasts to hourly "
+           "values and converted them to degrees Celsius: the values it uses are modified and are not original NOAA "
+           "data."),
+}
+
+# Widened to NOAA and the IEM, with the project affiliated with neither (the same ruling and home as NBM).
 NO_ENDORSEMENT = {
-    "fr": "Ni Hydro-Québec ni Environnement et Changement climatique Canada n'ont produit, revu ou approuvé ce travail.",
-    "en": "Neither Hydro-Québec nor Environment and Climate Change Canada produced, reviewed or endorsed this work.",
+    "fr": ("Ni Hydro-Québec, ni Environnement et Changement climatique Canada, ni la NOAA, ni l'Iowa Environmental "
+           "Mesonet n'ont produit, revu ou approuvé ce travail, et ce projet n'est affilié ni à la NOAA ni à l'Iowa "
+           "Environmental Mesonet."),
+    "en": ("Neither Hydro-Québec, Environment and Climate Change Canada, NOAA nor the Iowa Environmental Mesonet "
+           "produced, reviewed or endorsed this work, and the project is affiliated with neither NOAA nor the Iowa "
+           "Environmental Mesonet."),
 }
 
 AUTHORSHIP = {
@@ -49,7 +70,9 @@ AUTHORSHIP = {
 
 
 def lines(lang: str, retrieved: str | None = None) -> list[str]:
+    """Every attribution line of a public surface, in order: Hydro-Québec, ECCC (with its reference when the
+    retrieval date is given), NOAA's forecast via the IEM, the no-endorsement line, the authorship."""
     out = [HQ[lang], ECCC[lang]]
     if retrieved:
         out.append(ECCC_REFERENCE[lang].format(date=retrieved) + ".")
-    return out + [NO_ENDORSEMENT[lang], AUTHORSHIP[lang]]
+    return out + [NBM[lang], NO_ENDORSEMENT[lang], AUTHORSHIP[lang]]

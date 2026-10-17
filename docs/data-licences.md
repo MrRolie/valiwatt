@@ -220,6 +220,43 @@ Source: <https://www.canada.ca/en/transparency/terms.html>
 > Unless otherwise specified, you may not reproduce materials on this site, in whole or in part, for the purposes of
 > commercial redistribution without prior written permission from the copyright administrator.
 
+## NOAA and the Iowa Environmental Mesonet: the temperature forecast
+
+v2 forecasts from NOAA's National Blend of Models (NBM) NBS guidance for station CYUL (Montréal-Trudeau), downloaded
+from the archive of the Iowa Environmental Mesonet (IEM) of Iowa State University. These quotations were read on
+2026-10-16 and checked again on 2026-10-17.
+
+### 1. NOAA's terms for data disseminated through its Open Data Dissemination program
+
+Source: <https://registry.opendata.aws/noaa-nbm/>
+
+> NOAA data disseminated through NODD are open to the public and can be used as desired.
+
+> NOAA requests attribution for the use or dissemination of unaltered NOAA data. However, it is not permissible to
+> state or imply endorsement by or affiliation with NOAA. If you modify NOAA data, you may not state or imply that it
+> is original, unaltered NOAA data.
+
+### 2. The IEM's terms
+
+Source: <https://mesonet.agron.iastate.edu/disclaimer.php>
+
+> The materials found on this website are in the public domain and may be used freely by anyone for any lawful
+> purpose. Attributing the Iowa Environmental Mesonet of Iowa State University would be appreciated.
+
+> While we use care to provide accurate weather/climatic information, errors may occur because of equipment or other
+> failure. We therefore provide this information without any warranty of accuracy. Users of this weather/climate data
+> do so at their own risk, and are advised to use independent judgement as to whether to verify the data presented.
+
+### 3. What this project does with the forecast
+
+- Scripts download the forecast files into `data/`, which git ignores; they are never committed and never
+  redistributed.
+- The values the project uses are interpolated from the three-hourly points to hours and converted from degrees
+  Fahrenheit to degrees Celsius: they are modified NOAA data, and no surface presents them as original or unaltered.
+- The reports quote no forecast value beyond a few, as evidence.
+- Every public surface carries the NOAA and IEM attribution line and the no-endorsement line, which names NOAA and the
+  IEM and says the project is affiliated with neither (`src/valiwatt/attribution.py`).
+
 ## The owner's rulings (2026-10-13)
 
 - **ECCC: the Open Government Licence – Canada.** No page read here says which text governs `bulk_data_e.html`: the
@@ -232,3 +269,12 @@ Source: <https://www.canada.ca/en/transparency/terms.html>
 - **Hydro-Québec: NonCommercial.** The owner rules that this project's use is NonCommercial under CC BY-NC 4.0: it
   sells nothing and offers no paid service. The data is attributed as the licence asks (section on CC BY-NC 4.0) and
   is never redistributed; reports quote a few hourly values as evidence.
+
+## The owner's rulings on the forecast (2026-10-15 and 2026-10-16)
+
+- **NOAA and the IEM: accepted (2026-10-15).** The owner accepted these terms when he ruled v2's weather input:
+  NOAA's NBM forecast for Montréal-Trudeau from the IEM archive, fetched by script, never committed, attributed on
+  every public surface (`AGENTS.md`, "The owner's rulings on the brief's open decisions").
+- **The attribution's wording (2026-10-16).** The owner approved verbatim the NOAA and IEM attribution line and the
+  widened no-endorsement line, French the reference with its English. Their record is `AGENTS.md` ("The NOAA and IEM
+  attribution"); `src/valiwatt/attribution.py` holds the same lines, and a test holds them to that record.
