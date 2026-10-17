@@ -978,3 +978,16 @@ None yet.
     quantile of the 8,739 relative scores v1's 2024 freeze calibrated on less the 24 of 2023-12-31 (9.23 %, where
     v1's was 9.26 %); the 2023 rehearsal's weather identity holds on its 8,760 hours (largest difference 0 °C, no
     day fed otherwise).
+- 2026-10-17, commit eeec2ce6e80ca840c3eadd01140738f75304d716, from the review of section 10.6 (another AI model, then
+  a second review, of the rule-file change since `v1`), after the first chain's runs above. Four rule changes, none of
+  which changes a number of that chain:
+  - Data quality refuses a station whose fetch manifest does not list every month of the window, before any of its
+    files is checked: a fetch stopped between writing a month and recording it left a month that data quality read
+    and the 2025 gate never verified. A data-quality run through 2025 is refused until the 2025 vintage is fetched.
+  - Every tracked run is created with its tags in one step, so a replay start never exists without its kind, year and
+    freeze tags: a stop in between would have left a 2025 start no later gate could see (section 11.3.5).
+  - The frozen least-squares comparators store and hash their hour blocks and base temperature and forecast from their
+    file alone (section 4.4), computing their degree-hours from the temperature; a day type their cells do not cover is
+    refused, and for both families a row without a known day type or hour is not forecast. The comparators frozen by
+    the first chain no longer match their hashes: the 2023 and 2024 freezes run again before the 2024 replay.
+  - A 2025 start that stops while its gate's record is logged keeps the class of the error that stopped it.
