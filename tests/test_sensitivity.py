@@ -110,3 +110,51 @@ def test_the_echo_exclusion_only_ever_removes_or_delays_retrain(clean):
     for x in out["runs"]:
         if x["weeks_with"] is not None:
             assert x["weeks_without"] is not None and x["weeks_without"] <= x["weeks_with"]
+
+
+def test_the_v2_measures_run_with_the_forecast_feed(tmp_path, monkeypatch):
+    """v2 (plan sections 9.2 and 11.3.5): inside a diagnostic run of their own, the measures replay world_v2() with its
+    NBM runs, the temperature-drift reference the replay started from (never rebuilt per replay) and the diagnostic
+    run's ID, on the production model only; a level shift is still found and nothing where there is nothing. measure()
+    hands the three on to every measure; without the reference the v2 measures refuse."""
+    from replay_world import world_v2
+    from valiwatt import tracking
+    from valiwatt.monitor.run import EXPERIMENT
+
+    w = world_v2()
+    r = rp.replay(w.raw, w.obs, w.model, w.thresholds, w.reference, START, END, LAST, runs=w.runs,
+                  comparators=w.comparators)
+    seen = []
+    real = S.replay
+
+    def spy(*a, **kw):
+        seen.append(kw)
+        return real(*a, **kw)
+
+    def rebuilt(*a, **kw):
+        raise AssertionError("the temperature-drift reference rebuilt by a measure's replay")
+
+    monkeypatch.setattr(S, "replay", spy)
+    monkeypatch.setattr(rp, "issued_reference", rebuilt)
+    monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    args = (w.raw, w.obs, w.model, w.thresholds, w.reference, r, LAST)
+    with tracking.start_run(EXPERIMENT, "diagnostic", tags={"kind": "diagnostic", "year": "2022",
+                                                            "status": "started"}) as diag:
+        kw = dict(runs=w.runs, forecast_reference=r.temperature_reference, run_id=diag.info.run_id, workers=1)
+        shifts = S.level_shifts(*args, factors=(1.0, 1.12), starts=["2022-01-10"], **kw)
+        eps = S.episodes(*args, days=(1,), factors=(1.35,), starts=["2022-01-15"], **kw)
+    weeks = {round(x["shift"], 2): x["weeks"] for x in shifts}
+    assert weeks[0.0] is None and weeks[0.12] is not None and weeks[0.12] <= 3
+    assert all(row["retrain"] == 0 for row in eps["rows"])
+    assert len(seen) == 3 and all(k["runs"] is w.runs and k["forecast_reference"] is r.temperature_reference
+                                  and k["run_id"] == diag.info.run_id for k in seen)
+    with pytest.raises(ValueError, match="temperature-drift reference"):
+        S.level_shifts(*args, factors=(1.0,), starts=["2022-01-10"], runs=w.runs, workers=1)
+
+    handed = []
+    for name in ("episodes", "level_shifts"):
+        monkeypatch.setattr(S, name, lambda *a, **k: handed.append(k))
+    monkeypatch.setattr(S, "echo_exclusion_cost", lambda *a, **k: None)
+    S.measure(*args, workers=1, runs=w.runs, forecast_reference=r.temperature_reference, run_id="diag")
+    assert [(k["runs"] is w.runs, k["forecast_reference"] is r.temperature_reference, k["run_id"]) for k in handed] \
+        == [(True, True, "diag")] * 2

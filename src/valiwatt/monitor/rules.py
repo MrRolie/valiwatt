@@ -1,8 +1,9 @@
 """The monitoring rules: what the replay's monitors compute each day and week, and the ordered decision table.
 
-These rules are frozen in a named commit (the `rules-frozen` tag) before the 2024 replay runs; the replay refuses to
-run when any rule file differs from that commit. The thresholds themselves are not set here: they are quantiles of
-validation weeks, computed and logged by the validation run (`valiwatt validate`).
+These rules are frozen in a named commit, the tag `config.FREEZE_TAG` (v2's `rules-frozen-v2`; v1's was
+`rules-frozen`), before the replays of the years that freeze gates; such a replay refuses to run when any rule file or
+dependency differs from that commit. The thresholds themselves are not set here: they are quantiles of validation
+weeks, computed and logged by the validation run (`valiwatt validate`).
 
 A performance rule fires on the SAME failure two weeks running (MAPE high both weeks, or bias beyond the same side
 of its band both weeks, or coverage low both weeks), and each of those weeks must be out of band broadly, not through
@@ -40,6 +41,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 
+from valiwatt.config import FREEZE_TAG  # noqa: F401 - the freeze the gates check, read from here by them and the tests
 from valiwatt.forecast.evaluate import SEASONS
 from valiwatt.paths import REPO_ROOT
 from valiwatt.quality.demand import BOUNDS_MW, STATUS_MASKED_DST
@@ -73,7 +75,6 @@ FAILURES = {"mape_high": ("mape", "mape_high", +1), "bias_high": ("rel_bias", "b
 RULE_ROOTS = ("src/valiwatt", "config")
 NOT_RULES = ("src/valiwatt/report/", "src/valiwatt/breaks.py", "src/valiwatt/cli.py", "src/valiwatt/safety.py",
              "src/valiwatt/licences.py", "src/valiwatt/attribution.py", "src/valiwatt/quality/figures.py")
-FREEZE_TAG = "rules-frozen"
 
 
 def _is_rule(path: str) -> bool:
@@ -107,12 +108,16 @@ def rules_sha256(commit: str | None = None) -> str:
 
 
 def day_problems(hours: pd.DatetimeIndex, raw: pd.DataFrame, raw_t: pd.DataFrame, status: pd.Series,
-                 temperature: pd.Series) -> list[dict]:
+                 temperature: pd.Series, forecast_record: dict | None = None) -> list[dict]:
     """Day-level data quality of one day: the problems that fail it (none: the day passes). Pure.
 
     hours: the day's 24 hour-ending UTC labels; raw, raw_t: the raw demand and primary-station temperature records
     stamped after the day's origin (hours[0] - 1 h) and up to its last hour; status: the canonical demand status on
     `hours`; temperature: the canonical temperature on `hours` (duplicates and out-of-bounds values blank).
+    forecast_record (v2): the day's row of the issued forecast's record (features.IssuedForecast.record) as a dict.
+    When its reason is not "", no compliant covering run was in view at the day's origin and the day fails
+    `forecast_missing`, with that reason (docs/plan-v2.md, section 9.3); a forecast point outside the bounds is no
+    criterion of its own, since such a run does not cover. None: v1's criteria exactly.
 
     The replay calls it when it scores a day, on the canonical series rebuilt from the raw cut at that clock; the
     validation calls it on every day of the years that calibrate the thresholds (monitor/replay.py, day_verdicts), so a
@@ -141,6 +146,8 @@ def day_problems(hours: pd.DatetimeIndex, raw: pd.DataFrame, raw_t: pd.DataFrame
     silent = int(temperature.reindex(hours).isna().sum())
     if silent > MAX_SILENT_TEMPERATURE_HOURS:
         problems.append({"kind": "temperature_silent", "hours": silent, "limit": MAX_SILENT_TEMPERATURE_HOURS})
+    if forecast_record is not None and forecast_record.get("reason", ""):
+        problems.append({"kind": "forecast_missing", "reason": str(forecast_record["reason"])})
     return problems
 
 

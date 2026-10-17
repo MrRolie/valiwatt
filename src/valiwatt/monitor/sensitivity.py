@@ -15,6 +15,13 @@ year, each of those replays passes the freeze gate (monitor/replay.py).
 - What the echo exclusion costs. From the first full week of each season, the forecast takes a random error that is
   the same for every hour of a day (a degraded forecast whose weekly bias can change sides), and the rules are run
   with and without the exclusion: runs where the exclusion suppresses or delays *retrain*.
+
+v2 (docs/plan-v2.md, sections 9.2 and 11.3.5): the measures run after each replay has finished, in a diagnostic run
+of their own, on the production model only, with the replay's NBM runs and the temperature-drift reference it started
+from (passed in, never rebuilt per replay); every replay of 2025 passes the diagnostic run's ID, so each worker process
+authorizes itself from the run store and never terminates or changes that run. One more measure, `forecast_run_reuse`:
+one feeding run corrupted inside the bounds and made to feed two consecutive days, inside one week and across a week
+boundary, in each season, as section 9.2 argues the most a bad forecast run can spoil.
 """
 
 from __future__ import annotations
@@ -28,8 +35,11 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.forecast.evaluate import SEASONS
-from valiwatt.monitor.replay import ReplayResult, lst_day, replay
-from valiwatt.monitor.rules import FAILURES, RECALIBRATE, RETRAIN, decide
+from valiwatt.forecast.features import forecast_temperature
+from valiwatt.monitor.replay import RUN_POINTS, ReplayResult, lst_day, origin, replay
+from valiwatt.monitor.rules import FAILURES, MIN_DAY_HOURS, RECALIBRATE, RETRAIN, decide, period_stats
+from valiwatt.quality.weather import BOUNDS_C
+from valiwatt.sources.nbm import AVAILABILITY_LAG, REUSE_LEAD_H
 
 EPISODE_DAYS = (1, 3, 5, 7)
 EPISODE_FACTORS = (0.7, 0.85, 1.15, 1.3)
@@ -97,12 +107,20 @@ def _changed(raw: pd.DataFrame, first_day: pd.Timestamp, end_day: pd.Timestamp, 
     return raw.assign(mw=raw["mw"] * np.where((day >= first_day) & (day < end_day), factor, 1.0))
 
 
-def _replay_window(raw: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp, before: int, after: int):
+def _replay_window(raw: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp, before: int, after: int,
+                   runs: pd.DataFrame | None = None):
+    """The replay of the weeks around [first, last], with the measure's demand `raw` and, for v2, its NBM runs (`runs`,
+    else the replay's), the precomputed temperature-drift reference and the diagnostic run's ID."""
     i = _INPUTS
     lo = max(first - pd.Timedelta(days=first.dayofweek) - pd.Timedelta(weeks=before), i["first_day"])
     hi = min(last + pd.Timedelta(days=6 - last.dayofweek) + pd.Timedelta(weeks=after), i["last_day"])
+    if i.get("runs") is None:  # v1's replay exactly
+        return replay(raw, i["raw_temperature"], i["model"], i["thresholds"], i["reference"], str(lo.date()),
+                      str(hi.date()), i["data_end"], departure=i["departure"])
     return replay(raw, i["raw_temperature"], i["model"], i["thresholds"], i["reference"], str(lo.date()),
-                  str(hi.date()), i["data_end"], departure=i["departure"])
+                  str(hi.date()), i["data_end"], departure=i["departure"],
+                  runs=i["runs"] if runs is None else runs, forecast_reference=i["forecast_reference"],
+                  run_id=i["run_id"])
 
 
 def _episode(job: tuple) -> dict:
@@ -126,10 +144,20 @@ def _level_shift(job: tuple) -> dict:
 
 
 def _inputs(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-            departure: bool = False) -> dict:
-    return {"raw_demand": raw_demand, "raw_temperature": raw_temperature, "model": model, "thresholds": thresholds,
-            "reference": reference, "data_end": data_end, "baseline": baseline(r),
-            "first_day": r.days[0]["day"], "last_day": r.days[-1]["day"], "departure": departure}
+            departure: bool = False, runs: pd.DataFrame | None = None, forecast_reference: pd.Series | None = None,
+            run_id: str | None = None) -> dict:
+    """What each worker receives: the replay's inputs and, for v2, its runs, the temperature-drift reference it
+    started from and the diagnostic run's ID (each replay of 2025 passes it, so a worker authorizes itself from the
+    store)."""
+    out = {"raw_demand": raw_demand, "raw_temperature": raw_temperature, "model": model, "thresholds": thresholds,
+           "reference": reference, "data_end": data_end, "baseline": baseline(r),
+           "first_day": r.days[0]["day"], "last_day": r.days[-1]["day"], "departure": departure}
+    if runs is not None:
+        if forecast_reference is None:
+            raise ValueError("the v2 measures replay with the temperature-drift reference the replay started from: "
+                             "pass it (ReplayResult.temperature_reference), never rebuilt per replay")
+        out |= {"runs": runs, "forecast_reference": forecast_reference, "run_id": run_id}
+    return out
 
 
 def _judged_span(r: ReplayResult) -> tuple[pd.Timestamp, pd.Timestamp]:
@@ -139,7 +167,8 @@ def _judged_span(r: ReplayResult) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 def episodes(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
              days=EPISODE_DAYS, factors=EPISODE_FACTORS, starts=None, workers: int | None = None,
-             departure: bool = False) -> dict:
+             departure: bool = False, runs: pd.DataFrame | None = None, forecast_reference: pd.Series | None = None,
+             run_id: str | None = None) -> dict:
     """False alarms from short episodes, from every start day whose episode and echo fall in judged weeks."""
     first, last = _judged_span(r)
     jobs = []
@@ -148,7 +177,7 @@ def episodes(raw_demand, raw_temperature, model, thresholds, reference, r: Repla
             first, last - pd.Timedelta(days=n - 1 + ECHO_MARGIN_DAYS), freq="D")
         jobs += [(pd.Timestamp(s), n, f) for s in days_from for f in factors]
     out = _map(_episode, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end,
-                                       departure), workers)
+                                       departure, runs, forecast_reference, run_id), workers)
     rows = []
     for (n, f), group in groupby(sorted(out, key=lambda j: (j["days"], j["factor"])),
                                  key=lambda j: (j["days"], j["factor"])):
@@ -175,11 +204,13 @@ def _season_starts(r: ReplayResult) -> list[pd.Timestamp]:
 
 
 def level_shifts(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-                 factors=STEP_FACTORS, starts=None, workers: int | None = None, departure: bool = False) -> list[dict]:
+                 factors=STEP_FACTORS, starts=None, workers: int | None = None, departure: bool = False,
+                 runs: pd.DataFrame | None = None, forecast_reference: pd.Series | None = None,
+                 run_id: str | None = None) -> list[dict]:
     """Weeks until *retrain* when demand shifts by a factor from the first full week of each season on."""
     jobs = [(pd.Timestamp(s), f) for s in (starts if starts is not None else _season_starts(r)) for f in factors]
     return _map(_level_shift, jobs, _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end,
-                                            departure), workers)
+                                            departure, runs, forecast_reference, run_id), workers)
 
 
 def _first_retrain(decisions: list[dict], start: pd.Timestamp, horizon: int) -> int | None:
@@ -227,8 +258,161 @@ def echo_exclusion_cost(r: ReplayResult, thresholds: dict, sds=NOISE_SDS, seeds:
 
 
 def measure(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
-            workers: int | None = None, departure: bool = False) -> dict:
+            workers: int | None = None, departure: bool = False, runs: pd.DataFrame | None = None,
+            forecast_reference: pd.Series | None = None, run_id: str | None = None) -> dict:
+    """The false-alarm and blind-spot measures on the replay's own year. v2: their replays read the replay's NBM runs,
+    the temperature-drift reference it started from, and pass the diagnostic run's ID (`run_id`)."""
     args = (raw_demand, raw_temperature, model, thresholds, reference, r, data_end)
-    return {"episodes": episodes(*args, workers=workers, departure=departure),
-            "level_shifts": level_shifts(*args, workers=workers, departure=departure),
+    kw = {"workers": workers, "departure": departure}
+    if runs is not None:
+        kw |= {"runs": runs, "forecast_reference": forecast_reference, "run_id": run_id}
+    return {"episodes": episodes(*args, **kw),
+            "level_shifts": level_shifts(*args, **kw),
             "echo_exclusion_cost": echo_exclusion_cost(r, thresholds)}
+
+
+# ---------------------------------------------------------------------- one run fed to two days (plan section 9.2)
+
+REUSE_OFFSETS_C = (5.0, -5.0)
+# Where the pair of days (D, D+1) lies: inside one Monday-to-Sunday week (D a Monday to a Saturday), or across a
+# week boundary (D a Sunday).
+REUSE_PLACEMENTS = ("within_week", "across_weeks")
+SEASON_ORDER = ("winter", "spring", "summer", "fall")
+
+
+def _on_side(day: pd.Timestamp, placement: str) -> bool:
+    return day.dayofweek <= 5 if placement == "within_week" else day.dayofweek == 6
+
+
+def covers_next_day(runs: pd.DataFrame, runtime: pd.Timestamp, next_day: pd.Timestamp) -> bool:
+    """Whether the run of `runtime`, on its own points alone, feeds `next_day` by the run rule
+    (features.forecast_temperature): its nine bracket points for that day finite and inside the bounds."""
+    points = runs.loc[runs["runtime"] == runtime, list(RUN_POINTS)].reset_index(drop=True)
+    if points.empty:
+        return False
+    row = forecast_temperature(points, [next_day]).record.iloc[0]
+    return row["reason"] == "" and row["runtime"] == runtime
+
+
+def reuse_pair(r: ReplayResult, runs: pd.DataFrame, start: pd.Timestamp, placement: str):
+    """The placement's pair: the first day D from `start` (the season's first full week) on, with D and D+1 both
+    replayed and in the season and D on the placement's side of a week boundary, whose feeding run R (the replay's
+    forecast record) is proven to cover D+1 by itself (`covers_next_day`). Returns (D, R), or None when the season
+    holds no such pair."""
+    season = SEASONS[(pd.Timestamp(start) + pd.Timedelta(days=3)).month]
+    record = r.forecast_record
+    d = pd.Timestamp(start)
+    one = pd.Timedelta(days=1)
+    while d in record.index and d + one in record.index and SEASONS[d.month] == season == SEASONS[(d + one).month]:
+        runtime = record.loc[d, "runtime"]
+        if _on_side(d, placement) and pd.notna(runtime) and covers_next_day(runs, runtime, d + one):
+            return d, runtime
+        d += one
+    return None
+
+
+def corrupted_runs(runs: pd.DataFrame, runtime: pd.Timestamp, until: pd.Timestamp, offset_c: float) -> pd.DataFrame:
+    """The runs with every point of the run of `runtime` moved by `offset_c` °C, clipped so that every point stays
+    inside the bounds (so the run still covers what it covered), and every run issued after it and available by
+    `until` (the next day's origin) withheld, so that the run feeds both days."""
+    available = runs["available_utc"] if "available_utc" in runs else runs["runtime"] + AVAILABILITY_LAG
+    lo_f, hi_f = BOUNDS_C[0] * 9 / 5 + 32, BOUNDS_C[1] * 9 / 5 + 32
+    out = runs.copy()
+    hit = (out["runtime"] == runtime).to_numpy()
+    out.loc[hit, "tmp_f"] = (out.loc[hit, "tmp_f"] + offset_c * 9 / 5).clip(lo_f, hi_f)
+    withheld = ((runs["runtime"] > runtime) & (available <= until)).to_numpy()
+    return out[~withheld].reset_index(drop=True)
+
+
+def _week_effect(r: ReplayResult, week_start: pd.Timestamp, spoiled: list) -> dict:
+    """One affected week: its trimmed statistics beside the mean of its untouched days (the days the corrupted run
+    did not feed, with at least MIN_DAY_HOURS scored hours), and the failures whose trimmed statistic lies further out
+    than that mean (plan section 9.2 argues none ever does)."""
+    w = next(x for x in r.weeks if x["week_start"] == week_start)
+    day = r.hourly["day"]
+    part = r.hourly[(day >= week_start) & (day < week_start + pd.Timedelta(days=7))].dropna(subset=["ape", "covered"])
+    daily = pd.DataFrame([period_stats(g) for d, g in part.groupby("day")
+                          if d not in spoiled and len(g) >= MIN_DAY_HOURS])
+    untouched = {stat: float(daily[stat].mean()) if len(daily) else float("nan")
+                 for stat in ("mape", "rel_bias", "covered")}
+    beyond = []
+    if w["evaluated"]:
+        for k, (stat, _, side) in FAILURES.items():
+            t = w["trimmed"][k]
+            if np.isfinite(t) and np.isfinite(untouched[stat]) and side * (t - untouched[stat]) > 1e-12:
+                beyond.append(k)
+    return {"week_start": week_start, "evaluated": w["evaluated"], "trimmed": w["trimmed"],
+            "untouched_mean": untouched, "untouched_days": int(len(daily)), "beyond_untouched": beyond}
+
+
+def _reuse(job: tuple) -> dict:
+    """One placement and offset: the replay with the run corrupted and made to feed D and D+1."""
+    d, runtime, offset = job
+    i = _INPUTS
+    nxt = d + pd.Timedelta(days=1)
+    runs = corrupted_runs(i["runs"], runtime, origin(nxt), offset)
+    r = _replay_window(i["raw_demand"], d, nxt, WEEKS_BEFORE, WEEKS_AFTER, runs=runs)
+    fed = [x for x in r.forecast_record.index if r.forecast_record.loc[x, "runtime"] == runtime]
+    out = {"offset_c": offset, "days_fed": fed, "shown": fed == [d, nxt]}
+    if not out["shown"]:
+        return out
+    weeks = sorted({x - pd.Timedelta(days=x.dayofweek) for x in (d, nxt)})
+    base = i["baseline"]
+    out |= {"weeks": [_week_effect(r, ws, [d, nxt]) for ws in weeks],
+            "decisions_changed": [{"week_start": x["week_start"], "was": base[x["week_start"]]["recommendation"],
+                                   "now": x["recommendation"]} for x in r.decisions
+                                  if base[x["week_start"]]["recommendation"] != x["recommendation"]],
+            "rule4_fired": any(f["rule"] == 4 for x in r.decisions for f in x["fired"])}
+    out["beyond_untouched"] = sum(len(w["beyond_untouched"]) for w in out["weeks"])
+    return out
+
+
+def forecast_run_reuse(raw_demand, raw_temperature, model, thresholds, reference, r: ReplayResult, data_end,
+                       runs: pd.DataFrame, forecast_reference: pd.Series, longest_lead_h: float | None = None,
+                       workers: int | None = None, departure: bool = False, run_id: str | None = None,
+                       offsets=REUSE_OFFSETS_C) -> dict:
+    """Plan section 9.2's measure, labelled and never choosing: in each season of the replayed year, two placements
+    (`REUSE_PLACEMENTS`), each the first pair of days (D, D+1) from the season's first full week on whose feeding run R
+    of D is proven to cover D+1 by itself (`reuse_pair`). R is corrupted by each offset, clipped inside the bounds, and
+    the runs issued after it up to D+1's origin are withheld, so that R feeds both days (`corrupted_runs`); the
+    replay's forecast record must show R feeding exactly D and D+1, else the placement is not constructible and no
+    result of it is reported. A placement with no such pair is recorded not constructible with its reason. Reported:
+    the days the run fed, each affected week's trimmed statistics against the mean of its untouched days (any count
+    above zero is a finding against the section's argument), the weeks whose decision changes, whether rule 4 fired,
+    and the replayed year's longest lead (`longest_lead_h`, from the data-quality run) beside REUSE_LEAD_H. No
+    three-day variant: a lead of REUSE_LEAD_H hours or more is a data-quality finding and a section 18 trigger."""
+    if r.forecast_record is None:
+        raise ValueError("the reuse measure reads a v2 replay's forecast record: replay with the runs")
+    starts = {SEASONS[(s + pd.Timedelta(days=3)).month]: s for s in _season_starts(r)}
+    placements, jobs = [], []
+    for season in SEASON_ORDER:
+        for placement in REUSE_PLACEMENTS:
+            p = {"season": season, "placement": placement}
+            if season not in starts:
+                placements.append(p | {"constructible": False, "reason": "no_full_week_of_the_season_replayed"})
+                continue
+            pair = reuse_pair(r, runs, starts[season], placement)
+            if pair is None:
+                placements.append(p | {"constructible": False,
+                                       "reason": "no_feeding_run_proven_to_cover_the_next_day"})
+                continue
+            d, runtime = pair
+            placements.append(p | {"days": [d, d + pd.Timedelta(days=1)], "runtime": runtime})
+            jobs += [(d, runtime, float(o)) for o in offsets]
+    inputs = _inputs(raw_demand, raw_temperature, model, thresholds, reference, r, data_end, departure, runs,
+                     forecast_reference, run_id)
+    results = {(j[0], j[2]): x for j, x in zip(jobs, _map(_reuse, jobs, inputs, workers), strict=True)}
+    for p in placements:
+        if "days" not in p:
+            continue
+        mine = [results[(p["days"][0], float(o))] for o in offsets]
+        if all(x["shown"] for x in mine):
+            p |= {"constructible": True, "offsets": mine}
+        else:
+            p |= {"constructible": False, "reason": "the_replay_did_not_show_the_run_feeding_both_days",
+                  "days_fed": {str(x["offset_c"]): x["days_fed"] for x in mine}}
+    made = [p for p in placements if p.get("constructible")]
+    return {"label": "sensitivity_never_chooses", "placements": placements, "offsets_c": list(offsets),
+            "constructible": len(made),
+            "beyond_untouched": sum(x["beyond_untouched"] for p in made for x in p["offsets"]),
+            "longest_lead_h": longest_lead_h, "reuse_lead_h": REUSE_LEAD_H}
