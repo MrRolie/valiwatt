@@ -98,8 +98,8 @@ class WeatherIdentityError(RuntimeError):
     """The rehearsal issued another forecast temperature, or fed a day from another run, than validation did."""
 
 
-def _git(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+def _git(*args, root: Path | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=root or REPO_ROOT, capture_output=True, text=True, check=False)
 
 
 def _git_bytes(*args) -> subprocess.CompletedProcess:
@@ -292,26 +292,114 @@ def _replay_runs(client=None, kind: str = "replay", view: str = "ALL") -> list:
                          max_results=50_000)
 
 
-def _moved_to(section: str, commit: str) -> bool:
-    """Whether a departure entry of a v2 section (its bold head ending "a departure") records the move TO `commit`:
-    the entry names it, and every other commit it names that this history holds is an ancestor of it. So a tag moved
-    back to an earlier freeze commit, or onto a change commit the entry names, is no recorded move."""
+# A departure entry of a v2 section: its bold head ends "a departure" (AGENTS.md, v2 departures section).
+DEPARTURE_HEAD = re.compile(r".*\ba departure")
+
+
+def _is_change(path: str) -> bool:
+    """A path whose change after the freeze is a departure: a rule file (rules._is_rule) or a dependency."""
+    return _is_rule(path) or path in DEPENDENCIES
+
+
+def departure_record(section: str, freezes: list[str] | None = None, *, resolve=None, is_ancestor=None,
+                     changes=None) -> tuple[list[dict], list[str]]:
+    """v2's departure record read and checked by its one rule (docs/plan-v2.md, section 10.3): the moved-tag check of
+    every v2 replay and the 2025 gate (`check_tag_not_moved`), the report (report/lineage.py `check_recorded`) and the
+    history test (tests/test_departure_record.py `v2_record_problems`) read the section here.
+
+    Each departure entry (its bold head ending "a departure"), in section order, records one move of the tag: it names,
+    by at least 12 characters each, the commit the tag moved from, the commit it moved to, and every commit between
+    them (from..to, the second included) that touches a rule file or a dependency, read commit by commit, and no
+    other commit. Without `freezes`, an entry's move is read from the commits it names: from, the one every other
+    descends from; to, the one that descends from every other; and each entry's move starts where the one before it
+    ended. freezes: the tag's successive commits F0 .. Fn, when the caller knows them (the history test reads them from
+    the tag's pins): entry i then records the move from F(i-1) to Fi, and every move has its entry.
+
+    resolve(prefix) -> the full commit or None, is_ancestor(a, b), changes(a, b) -> {commit: paths} of a..b: the
+    history read (this repository's by default; the report and the tests pass their own).
+
+    Returns (moves, problems): each departure entry's {"head", "text", "named" (the full commits, in the order
+    named), "from", "to"} ("from" and "to" None when it records no move), and what is wrong with the record, each a
+    sentence; none: every move is recorded completely."""
+    resolve, is_ancestor, changes = resolve or _resolve, is_ancestor or _is_ancestor, changes or _changes
+    moves, problems = [], []
     for head, text in section_entries(section):
-        if head is None or not head.endswith("a departure"):
+        if head is None or not DEPARTURE_HEAD.fullmatch(head):
             continue
-        named = {c for run in HEX_RUN.findall(text) if len(run) >= 12 and (c := _resolve(run))}
-        if commit in named and all(_is_ancestor(c, commit) for c in named - {commit}):
-            return True
-    return False
+        named: list[str] = []
+        for run in HEX_RUN.findall(text):
+            full = resolve(run) if 12 <= len(run) <= 40 else None
+            if full is None:
+                problems.append(f"the departure entry {head!r} names {run}, which is not a commit of this history by "
+                                "at least 12 characters")
+            elif full not in named:
+                named.append(full)
+        moves.append({"head": head, "text": text, "named": named, "from": None, "to": None})
+
+    if freezes is not None:
+        pairs = list(zip(freezes, freezes[1:]))
+        for i in range(max(len(pairs), len(moves))):
+            if i >= len(moves):
+                problems.append(f"the tag moved from {pairs[i][0][:12]} to {pairs[i][1][:12]}, but no departure "
+                                "entry records it")
+            elif i >= len(pairs):
+                problems.append(f"the departure entry {moves[i]['head']!r} records no move of the tag")
+            else:
+                moves[i]["from"], moves[i]["to"] = pairs[i]
+                problems += _move_problems(moves[i], changes, check_ends=True)
+        return moves, problems
+
+    before = None
+    for m in moves:
+        n = m["named"]
+        if len(n) < 2:
+            problems.append(f"the departure entry {m['head']!r} names fewer than two commits: it must name the commit "
+                            "the tag moved from and the one it moved to")
+            before = None
+            continue
+        first = [c for c in n if all(is_ancestor(c, o) for o in n)]
+        last = [c for c in n if all(is_ancestor(o, c) for o in n)]
+        if len(first) != 1 or len(last) != 1:
+            problems.append(f"the departure entry {m['head']!r} names no single commit before all the others and one "
+                            "after them: it does not say which commit the tag moved from and to")
+            before = None
+            continue
+        m["from"], m["to"] = first[0], last[0]
+        if before is not None and m["from"] != before:
+            problems.append(f"the departure entry {m['head']!r} moves the tag from {m['from'][:12]}, not from "
+                            f"{before[:12]}, the commit the departure entry before it moved the tag to")
+        problems += _move_problems(m, changes, check_ends=False)
+        before = m["to"]
+    return moves, problems
+
+
+def _move_problems(m: dict, changes, check_ends: bool) -> list[str]:
+    """One departure entry against its move: the two freeze commits named (`check_ends`: when the move was given, not
+    read from the entry), every rule or dependency commit of from..to named, and nothing else."""
+    out, named, frm, to = [], set(m["named"]), m["from"], m["to"]
+    if check_ends:
+        for what, c in (("moved from", frm), ("moved to", to)):
+            if c not in named:
+                out.append(f"the departure entry {m['head']!r} does not name the commit the tag {what}, {c[:12]}")
+    made = {c for c, paths in changes(frm, to).items() if any(_is_change(x) for x in paths)}
+    for c in sorted(made - named):
+        out.append(f"the departure entry {m['head']!r} does not name {c[:12]}, which changed a rule file or a "
+                   "dependency in its move")
+    for c in sorted(named - made - {frm, to}):
+        out.append(f"the departure entry {m['head']!r} names {c[:12]}, neither a change of its move nor a commit the "
+                   "tag moved from or to")
+    return out
 
 
 def check_tag_not_moved(freeze: dict, earlier: dict[str, list[str]], departure: bool,
                         recorded: str | None = None, ledger: dict | None = None) -> list[str]:
     """An earlier replay under the freeze's tag (freeze["freeze_tag"]), of any year that freeze replays, ran under
     another freeze commit: the tag moved, which is a departure. It runs only with `departure` AND the move recorded in
-    the freeze's departures section of AGENTS.md: for v1, the new freeze commit named in it; for v2, named as the commit
-    the tag moved to by a departure entry (`_moved_to`; a ruling entry naming it does not record the move). Returns the
-    earlier run IDs.
+    the freeze's departures section of AGENTS.md: for v1, the new freeze commit named in it; for v2, the complete record
+    of every move (`departure_record`: each departure entry names the commit the tag moved from, the one it moved to
+    and every rule or dependency commit between them), its last move to the new freeze commit, and every earlier
+    replay's freeze commit one the record moved the tag from or to (a ruling entry naming a commit records no move).
+    Returns the earlier run IDs.
 
     earlier: the freeze commits of the replays in the MLflow store (earlier_freeze_commits of that tag); the committed
     ledger's are added to them (ledger_freeze_commits; `ledger` None reads the file)."""
@@ -331,10 +419,21 @@ def check_tag_not_moved(freeze: dict, earlier: dict[str, list[str]], departure: 
         if freeze["freeze_commit"][:12] not in section:
             raise FreezeError(f"--departure given, but AGENTS.md's departures section does not name commit "
                               f"{freeze['freeze_commit'][:12]}")
-    elif not _moved_to(section, freeze["freeze_commit"]):
-        raise FreezeError(f"--departure given, but AGENTS.md's `{tag}` departures section does not name commit "
-                          f"{freeze['freeze_commit'][:12]} as the commit the tag moved to, in an entry whose bold head "
-                          "ends \"a departure\"")
+    else:
+        moves, problems = departure_record(section)
+        if problems:
+            raise FreezeError(f"--departure given, but AGENTS.md's `{tag}` departures section is not a complete record "
+                              "of the tag's moves: " + "; ".join(problems))
+        if not moves or moves[-1]["to"] != freeze["freeze_commit"]:
+            raise FreezeError(f"--departure given, but AGENTS.md's `{tag}` departures section does not name commit "
+                              f"{freeze['freeze_commit'][:12]} as the commit the tag moved to, in its last entry whose "
+                              "bold head ends \"a departure\"")
+        recorded_freezes = {moves[0]["from"], *(m["to"] for m in moves)}
+        unrecorded = sorted(c for c in moved if c not in recorded_freezes)
+        if unrecorded:
+            raise FreezeError(f"--departure given, but earlier replays under `{tag}` ran under freeze commits "
+                              f"{[c[:12] or '(none)' for c in unrecorded]}, which no departure entry of AGENTS.md's "
+                              f"`{tag}` section names as a commit the tag moved from or to")
     return sorted({i for ids in moved.values() for i in ids})
 
 
@@ -575,6 +674,28 @@ def _check_dq_2025(c):
     return dq
 
 
+def _commits(a: str, b: str, root: Path | None = None) -> list[tuple[str, list[str], list[str]]]:
+    """Each commit of a..b, newest first: the commit, its parents and the paths it touched, a rename read as a
+    deletion and an addition (`git log --no-renames --name-only`), commit by commit, so a change since reverted is
+    seen. root: the repository (REPO_ROOT by default)."""
+    out = _git("log", "--no-renames", "--format=C %H %P", "--name-only", f"{a}..{b}", root=root)
+    if out.returncode != 0:
+        raise FreezeError(f"the history since {a[:12]} cannot be read: {out.stderr.strip()}")
+    commits: list[tuple[str, list[str], list[str]]] = []
+    for line in out.stdout.splitlines():
+        if line.startswith("C "):
+            parts = line[2:].split()
+            commits.append((parts[0], parts[1:], []))
+        elif line.strip():
+            commits[-1][2].append(line.strip())
+    return commits
+
+
+def _changes(a: str, b: str, root: Path | None = None) -> dict[str, list[str]]:
+    """Each commit of a..b with the paths it touched (`_commits`)."""
+    return {c: files for c, _, files in _commits(a, b, root)}
+
+
 def _rule_commits(freeze_commit: str) -> list[dict]:
     """Every commit after `freeze_commit` up to HEAD that touches a rule file (rules._is_rule) or a dependency, with
     those paths, oldest first, read commit by commit as tests/test_departure_record.py changes() reads them, so a
@@ -585,22 +706,13 @@ def _rule_commits(freeze_commit: str) -> list[dict]:
     if not _is_ancestor(freeze_commit, "HEAD"):
         raise FreezeError(f"HEAD ({_head()[:12]}) does not descend from the freeze commit {freeze_commit[:12]} of v2's "
                           "earliest 2024 start")
-    out = _git("log", "--no-renames", "--format=C %H %P", "--name-only", f"{freeze_commit}..HEAD")
-    if out.returncode != 0:
-        raise FreezeError(f"the history since {freeze_commit[:12]} cannot be read: {out.stderr.strip()}")
-    commits: list[tuple[str, list[str], list[str]]] = []
-    for line in out.stdout.splitlines():
-        if line.startswith("C "):
-            parts = line[2:].split()
-            commits.append((parts[0], parts[1:], []))
-        elif line.strip():
-            commits[-1][2].append(line.strip())
+    commits = _commits(freeze_commit, "HEAD")
     merges = [c for c, parents, _ in commits if len(parents) > 1]
     if merges:
         raise FreezeError(f"merge commits {[c[:12] for c in merges]} lie after the freeze commit {freeze_commit[:12]}: "
                           "the changes are read one commit at a time")
     return [{"commit": c, "paths": hit} for c, _, files in reversed(commits)
-            if (hit := sorted(p for p in files if _is_rule(p) or p in DEPENDENCIES))]
+            if (hit := sorted(p for p in files if _is_change(p)))]
 
 
 def _rulings(section: str) -> list[dict]:

@@ -67,8 +67,24 @@ def filters(lang: str) -> dict:
     def short(sha):
         return sha[:12]
 
+    def holds(interval, x, d=1):
+        """Whether a 95 % interval ({"ci95_low", "ci95_high"}) holds x, judged on the bounds as pct(d) prints them, so
+        the sentence never contradicts its numbers."""
+        def shown(v):
+            return float(f"{100 * v:.{d}f}")
+        return shown(interval["ci95_low"]) <= shown(x) <= shown(interval["ci95_high"])
+
+    def mw(values, present=True, d=1):
+        """A revised record's raw values as the data-quality run lists them (quality/run.py `revised_records`: a
+        label's values joined by ";", a blank record empty), each formatted on its own, a blank record named; no
+        record at the label (`present` false): —."""
+        if not present:
+            return "\u2014"
+        blank, sep = {"fr": ("vide", " ; "), "en": ("blank", "; ")}[lang]
+        return sep.join(fmt_num(float(v), d, lang) if v.strip() else blank for v in str(values).split(";"))
+
     return {"num": num, "pct": pct, "signed": signed, "utc": utc, "lst": lst, "day": day, "verdict": verdict,
-            "short": short, "reason": reason}
+            "short": short, "reason": reason, "holds": holds, "mw": mw}
 
 
 def environment(lang: str) -> jinja2.Environment:

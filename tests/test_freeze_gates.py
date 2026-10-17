@@ -124,11 +124,14 @@ def v2_departure(*commits):
 def test_a_ledger_naming_an_earlier_freeze_commit_is_a_moved_tag_even_with_an_empty_store(repo, monkeypatch):
     """A fresh clone has no MLflow store, but the committed ledger lists the replays that ran: one under another
     freeze commit means the tag moved. The replay runs only with --departure and the move recorded."""
+    f0 = git(repo, "rev-parse", "HEAD").strip()
+    (repo / RULE_FILE).write_text("MIN = 3\n")
+    git(repo, "commit", "-qam", "the fix")
     git(repo, "tag", rules.FREEZE_TAG)
     freeze = mrun.check_freeze()
     head = freeze["freeze_commit"]
-    agents = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n{v2_departure(head)}\n## Other\n"
-    earlier = ledger_of(("r0", 2024, "a" * 40))
+    agents = f"# x\n\n{mrun.DEPARTURES_HEADING}\n\n{v2_departure(f0, head)}\n## Other\n"
+    earlier = ledger_of(("r0", 2024, f0))
     with pytest.raises(mrun.FreezeError, match="moving the tag is a departure"):
         mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=earlier)
     with pytest.raises(mrun.FreezeError, match="does not name commit"):  # the flag alone is not a record
@@ -138,7 +141,7 @@ def test_a_ledger_naming_an_earlier_freeze_commit_is_a_moved_tag_even_with_an_em
     # The controls: the ledger's replays under the tagged commit, or of a year the freeze does not replay, are no
     # departure.
     assert mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=ledger_of(("r1", 2024, head))) == []
-    assert mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=ledger_of(("r2", 2023, "a" * 40))) == []
+    assert mrun.check_tag_not_moved(freeze, {}, departure=False, ledger=ledger_of(("r2", 2023, f0))) == []
 
     # The same through the gate itself, reading the committed file, with an empty store.
     monkeypatch.setattr(mrun, "earlier_freeze_commits", no_earlier)
@@ -491,6 +494,104 @@ def test_a_v2_replay_under_a_moved_v2_tag_is_refused_unless_recorded(repo):
         check(v2_departure(f0, c1, f1), commit=f0, before={f1: ["r1"]})
     with pytest.raises(mrun.FreezeError, match="does not name commit"):  # the tag moved onto a named change commit
         check(v2_departure(f0, c1, f1), commit=c1)
+
+
+def moved_tag(repo, *files: str) -> list[str]:
+    """In the scratch repository: one commit per path of `files` (a rule file, or another), the tag moved to the
+    last; returns [F0, each commit]."""
+    out = [git(repo, "rev-parse", "HEAD").strip()]
+    for i, path in enumerate(files):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(f"MIN = {10 + i}\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", f"change {i}")
+        out.append(git(repo, "rev-parse", "HEAD").strip())
+    git(repo, "tag", "-f", rules.FREEZE_TAG)
+    assert mrun.check_freeze()["freeze_commit"] == out[-1]
+    return out
+
+
+def moved_check(section, commit, before):
+    return mrun.check_tag_not_moved({"freeze_tag": V2_TAG, "freeze_commit": commit}, before, departure=True,
+                                    recorded=section, ledger=NO_LEDGER)
+
+
+def test_a_v2_departure_entry_naming_only_the_new_freeze_commit_is_refused(repo):
+    """The entry names the commit the tag moved to and nothing else: neither the commit it moved from nor the rule
+    change between is recorded (wave 3, Astra's first finding), and the gate refuses; the complete entry passes
+    (control)."""
+    f0, c1, f1 = moved_tag(repo, RULE_FILE, RULE_FILE)
+    with pytest.raises(mrun.FreezeError, match="not a complete record of the tag's moves: .*names fewer than two"):
+        moved_check(v2_departure(f1), f1, {f0: ["r0"]})
+    assert moved_check(v2_departure(f0, c1, f1), f1, {f0: ["r0"]}) == ["r0"]
+
+
+def test_a_v2_departure_entry_not_naming_the_commit_the_tag_moved_from_is_refused(repo):
+    """The entry names the rule change and the new freeze commit, not the freeze commit the earlier replay ran under:
+    that commit is no commit the record moved the tag from or to, and the gate refuses."""
+    f0, c1, f1 = moved_tag(repo, RULE_FILE, RULE_FILE)
+    with pytest.raises(mrun.FreezeError, match=rf"ran under freeze commits \['{f0[:12]}'\], which no departure "
+                                               "entry .* names as a commit the tag moved from or to"):
+        moved_check(v2_departure(c1, f1), f1, {f0: ["r0"]})
+
+
+def test_a_v2_departure_entry_missing_a_change_commit_is_refused(repo):
+    """The entry names both freeze commits but not the rule change between them, read commit by commit: refused, the
+    change named."""
+    f0, c1, f1 = moved_tag(repo, RULE_FILE, RULE_FILE)
+    with pytest.raises(mrun.FreezeError, match=f"does not name {c1[:12]}, which changed a rule file or a dependency"):
+        moved_check(v2_departure(f0, f1), f1, {f0: ["r0"]})
+
+
+def test_a_v2_departure_entry_naming_an_unrelated_commit_is_refused(repo):
+    """The entry also names a commit of its move that touches no rule file or dependency: it is neither a change nor
+    a freeze commit, and the gate refuses."""
+    f0, readme, f1 = moved_tag(repo, "README.md", RULE_FILE)
+    assert moved_check(v2_departure(f0, f1), f1, {f0: ["r0"]}) == ["r0"]  # control: the README commit is no change
+    with pytest.raises(mrun.FreezeError, match=f"names {readme[:12]}, neither a change of its move nor a commit"):
+        moved_check(v2_departure(f0, readme, f1), f1, {f0: ["r0"]})
+
+
+def test_a_v2_departure_record_whose_moves_do_not_join_is_refused(repo):
+    """Two moves, F0 to F1 then F1 to F2: the second entry starts at a commit after F1, so the change commit between
+    is in no move: refused. The joined record passes (control)."""
+    f0, f1, between, f2 = moved_tag(repo, RULE_FILE, RULE_FILE, RULE_FILE)
+    first = rw.departure_entry(f0, f1, head="2026-10-17, a fix to the gate: a departure")
+    joined = first + rw.departure_entry(f1, between, f2, head="2026-10-18, a second fix: a departure")
+    assert moved_check(joined, f2, {f0: ["r0"], f1: ["r1"]}) == ["r0", "r1"]
+    gap = first + rw.departure_entry(between, f2, head="2026-10-18, a second fix: a departure")
+    with pytest.raises(mrun.FreezeError, match=f"moves the tag from {between[:12]}, not from {f1[:12]}"):
+        moved_check(gap, f2, {f0: ["r0"], f1: ["r1"]})
+
+
+def test_a_v2_tag_moved_back_without_a_departure_entry_is_refused(repo):
+    """The record holds two moves, F0 to F1 then F1 to F2, and the tag is now back on F1 with no entry recording that
+    move: F1 is the commit an entry moved the tag to, but not the last one, and the gate refuses. The same record with
+    the tag on F2 passes (control)."""
+    f0, f1, between, f2 = moved_tag(repo, RULE_FILE, RULE_FILE, RULE_FILE)
+    first = rw.departure_entry(f0, f1, head="2026-10-17, a fix to the gate: a departure")
+    joined = first + rw.departure_entry(f1, between, f2, head="2026-10-18, a second fix: a departure")
+    assert mrun.departure_record(joined)[1] == []  # the record itself is complete
+    assert moved_check(joined, f2, {f0: ["r0"], f1: ["r1"]}) == ["r0", "r1"]
+    with pytest.raises(mrun.FreezeError, match=f"does not name commit {f1[:12]} as the commit the tag moved to, in "
+                                               "its last entry"):
+        moved_check(joined, f1, {f0: ["r0"], f2: ["r2"]})
+
+
+def test_the_2025_gate_refuses_an_incomplete_departure_record_before_the_run_opens(chain):
+    """v2's 2024 replay ran under F0; a rule fix moved the tag to F1, and the departure entry names F1 alone. The 2025
+    start with --departure is refused before its run opens, naming the incomplete record; with the move recorded
+    completely the moved-tag check passes and the gate goes on to its walk, which names the fix (cause a)."""
+    f1 = rw.commit(chain.repo, {RULE_FILE: "MIN = 5\n"}, "the fix")
+    git(chain.repo, "tag", "-f", "-a", "-m", "moved", V2_TAG, f1)
+    rw.commit(chain.repo, {"AGENTS.md": rw.agents(v2_departure(f1))}, "record the departure")
+    rw.log_dq(2025, hq_revised_records=1)
+    with pytest.raises(mrun.FreezeError, match="not a complete record of the tag's moves"):
+        mrun.run_replay(2025, n_boot=20, departure=True)
+    assert rw.replay_runs(2025) == []  # nothing opened
+    rw.commit(chain.repo, {"AGENTS.md": rw.agents(v2_departure(chain.f0, f1))}, "record it completely")
+    with pytest.raises(mrun.FreezeError, match=r"\(a\).*" + f1[:12]):
+        mrun.held_out_gate(2025, departure=True)
 
 
 def test_a_2025_replay_run_on_its_own_sees_a_tag_moved_since_v2_s_2024_replay(chain, tmp_path, monkeypatch):

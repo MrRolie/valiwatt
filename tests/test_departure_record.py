@@ -29,6 +29,7 @@ from pathlib import Path
 
 import pytest
 
+from valiwatt.monitor import run as mrun
 from valiwatt.monitor.rules import _is_rule
 from valiwatt.paths import REPO_ROOT
 from valiwatt.report import ledger
@@ -394,9 +395,11 @@ def v2_record_problems(root: Path, section: str, head: str = "HEAD") -> list[str
         problems.append(f"a merge commit lies after the freeze commit {freezes[0][:12]}: the record is read one "
                         "commit at a time")
 
-    # The section: ruling entries set aside, departure entries in order, any other entry naming a commit refused.
-    departures: list[tuple[str, set[str]]] = []
+    # The section: ruling entries set aside, departure entries read by the one rule (below), any other entry naming a
+    # commit refused.
     for entry_head, text in entries_of(section):
+        if entry_head is not None and mrun.DEPARTURE_HEAD.fullmatch(entry_head):
+            continue
         named = set()
         for run in HEX_RUN.findall(text):
             full = commit_of(root, run) if len(run) <= 40 else None
@@ -412,46 +415,22 @@ def v2_record_problems(root: Path, section: str, head: str = "HEAD") -> list[str
                 if not is_ancestor(root, c, head):
                     problems.append(f"the ruling entry {entry_head!r} names {c[:12]}, which is not in the history "
                                     f"of {head}")
-        elif entry_head is not None and entry_head.endswith("a departure"):
-            departures.append((entry_head, named))
         elif HEX_RUN.findall(text):
             problems.append(f"an entry names a commit but is neither a departure nor the owner's ruling on 2025: "
                             f"{entry_head or text.strip()[:60]!r}")
 
-    # The walk: each rule or dependency commit after F0 belongs to the move whose new commit it precedes.
-    moves = list(zip(freezes, freezes[1:]))
-    move_changes: list[set[str]] = [set() for _ in moves]
-    for c, paths in changes(root, freezes[0], head).items():
+    # The walk after the tag's current commit: a rule or dependency change there is a departure nothing records.
+    for c, paths in changes(root, freezes[-1], head).items():
         hit = sorted(p for p in paths if _is_rule(p) or p in DEPENDENCIES)
-        if not hit:
-            continue
-        i = next((i for i, (_, to) in enumerate(moves) if is_ancestor(root, c, to)), None)
-        if i is None:
+        if hit:
             problems.append(f"commit {c[:12]} changed {hit} after the tag's commit {freezes[-1][:12]}: a departure "
                             "the tag and the section do not record")
-        else:
-            move_changes[i].add(c)
-    for i in range(max(len(moves), len(departures))):
-        if i >= len(departures):
-            frm, to = moves[i]
-            problems.append(f"the tag moved from {frm[:12]} to {to[:12]}, but no departure entry records it")
-            continue
-        entry_head, named = departures[i]
-        if i >= len(moves):
-            problems.append(f"the departure entry {entry_head!r} records no move of the tag")
-            continue
-        frm, to = moves[i]
-        for what, c in (("moved from", frm), ("moved to", to)):
-            if c not in named:
-                problems.append(f"the departure entry {entry_head!r} does not name the commit the tag {what}, "
-                                f"{c[:12]}")
-        for c in sorted(move_changes[i] - named):
-            problems.append(f"the departure entry {entry_head!r} does not name {c[:12]}, which changed a rule file "
-                            "or a dependency in its move")
-        for c in sorted(named - move_changes[i] - {frm, to}):
-            problems.append(f"the departure entry {entry_head!r} names {c[:12]}, neither a change of its move nor a "
-                            "commit the tag moved from or to")
-    return problems
+    # Each move of the tag, F(i-1) to Fi, against departure entry i: the one rule the replay gate and the report
+    # read (monitor/run.py departure_record), on this clone's history.
+    _, recorded = mrun.departure_record(section, freezes, resolve=lambda run: commit_of(root, run),
+                                        is_ancestor=lambda a, b: is_ancestor(root, a, b),
+                                        changes=lambda a, b: changes(root, a, b))
+    return problems + recorded
 
 
 def test_the_v2_record_agrees_with_the_history():

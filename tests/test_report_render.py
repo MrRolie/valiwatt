@@ -409,6 +409,9 @@ def test_2025_s_days_not_fed_are_2025_s_alone():
 @pytest.mark.parametrize("lang", LANGS)
 @pytest.mark.parametrize("standing", ["clean", "post_hoc"])
 def test_the_revised_records_are_listed_whatever_the_standing(standing, lang):
+    """Each revised record of 2019-2024 is listed in section 9, with its values: a label that held two records shows
+    both, each formatted (never one number read from the joined text), a label without a record shows none. A page
+    that drops a record, prints another value for it, or lists it outside section 9 is refused."""
     held = RP.stopped_then_record(outcome=standing)
     ctx = RP.context(held_view=held, rec24=RP.rec24_view())
     text = RP.render(ctx, lang)
@@ -418,8 +421,14 @@ def test_the_revised_records_are_listed_whatever_the_standing(standing, lang):
     utc = environment(lang).filters["utc"]
     for x in rows:
         assert f"| {utc(x['utc'])} |" in nine
-    cut = "\n".join(line for line in text.splitlines() if utc(rows[0]["utc"]) not in line)
+    both = {"fr": "| 20\u202f000,0 ; 21\u202f000,0 | 20\u202f100,0 |", "en": "| 20,000.0; 21,000.0 | 20,100.0 |"}[lang]
+    assert rows[0]["old_mw"] == "20000.0;21000.0" and both in nine  # two records, then one
+    assert {"fr": "| ajouté | — | 21\u202f100,0 |", "en": "| added | — | 21,100.0 |"}[lang] in nine
     status = RV.status_sentence(environment(lang), ctx, lang)
+    other = text.replace(both, both.replace("21", "22", 1))
+    with pytest.raises(ReportRefused, match="each with its values"):  # the record listed, another value printed
+        RV.check_rendered(other, lang, ctx, "validation", status)
+    cut = "\n".join(line for line in text.splitlines() if utc(rows[0]["utc"]) not in line)
     with pytest.raises(ReportRefused, match="revised records"):
         RV.check_rendered(cut, lang, ctx, "validation", status)
     row = next(line for line in text.splitlines() if utc(rows[0]["utc"]) in line)
@@ -429,6 +438,42 @@ def test_the_revised_records_are_listed_whatever_the_standing(standing, lang):
     with pytest.raises(ReportRefused, match="counts 3 revised records, its artifact lists 2"):
         r, frame = RP.dq_2025()
         RV.held_out_findings(r, frame.iloc[:2])
+
+
+OUTCOMES_ROW = {"fr": "| SR 11-7, analyse des résultats", "en": "| SR 11-7, outcomes analysis"}
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_standards_table_says_held_out_only_of_a_clean_finished_test_of_record(lang):
+    """Section 12's back-testing row calls 2025 held-out data done only when its test of record finished clean,
+    labelled held out (from its run or its ledger entry); a post-hoc test of record is said to be no back-test on
+    held-out data, never "held-out data: done, standing post hoc"; before any start, pending; while the test of
+    record has not finished, no claim."""
+    words = {"fr": ("données réservées : fait", "ce n'est pas un contrôle a posteriori sur des données réservées",
+                    "données réservées : en attente", "a commencé et n'a pas fini"),
+             "en": ("held-out data: done", "it is not a back-test on held-out data", "held-out data: pending",
+                    "started and did not finish")}[lang]
+    for name, want in (("confirmed", 0), ("recorded", 0), ("post_hoc", 1), ("none", 2), ("unfinished", 3)):
+        twelve = section(RP.render(RP.state(name), lang), 12)
+        (row,) = [line for line in twelve.splitlines() if line.startswith(OUTCOMES_ROW[lang])]
+        assert [i for i, w in enumerate(words) if w in row] == [want], name
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_2025_coverage_is_given_with_its_interval_and_whether_it_holds_the_nominal(lang):
+    """Plan section 8.3: beside the 2025 verdicts, the production model's coverage, its bootstrap interval and whether
+    that interval holds the 90 % nominal, judged on the bounds as printed: an interval wholly below says it does not
+    (break); one around the nominal says it does (control), and so does a lower bound above 90 % that prints as
+    90.0 %."""
+    pct = environment(lang).filters["pct"]
+    n = pct(0.9, 0)
+    said = {"fr": (f"qui contient le nominal de {n}", f"qui ne contient pas le nominal de {n}"),
+            "en": (f"which holds the {n} nominal", f"which does not hold the {n} nominal")}[lang]
+    for cov, want in (((0.884, 0.901, 0.917), 0), ((0.801, 0.84, 0.88), 1), ((0.90004, 0.92, 0.95), 0)):
+        held = RP.clean_record(coverage=cov)
+        nine = section(RP.render(RP.context(held_view=held, rec24=RP.rec24_view()), lang), 9)
+        assert all(pct(x, 1) in nine for x in cov), cov
+        assert [i for i, w in enumerate(said) if w in nine] == [want], cov
 
 
 # --- the leads, the diagnostics, the peak hours, the figure ----------------------------------------------------------
@@ -1207,8 +1252,9 @@ def test_a_replay_s_longest_lead_unlike_its_data_quality_run_s_is_refused():
 
 @pytest.mark.parametrize("lang", LANGS)
 def test_the_run_reuse_paragraph_says_what_its_placements_show(lang):
-    """Every placement constructible and no week past its untouched days: the argument holds; one week past: a finding
-    against it; no placement constructible: the argument is not put to the test."""
+    """Every placement constructible and no week past its untouched days: the argument holds; one week past, at one
+    offset: a finding against it; no placement constructible: the argument is not put to the test. The diagnostics
+    in monitor/sensitivity.py `forecast_run_reuse`'s shape: each placement's offsets."""
     import copy
 
     words = {"fr": ("comme l'argument le dit", "constat contre l'argument des deux jours", "n'est pas mis à l'épreuve"),
@@ -1222,5 +1268,5 @@ def test_the_run_reuse_paragraph_says_what_its_placements_show(lang):
         return [i for i, w in enumerate(words) if w in eight]
 
     assert said(lambda xs: None) == [0]
-    assert said(lambda xs: xs[0].update(passed=1)) == [1]
+    assert said(lambda xs: xs[0]["offsets"][1].update(beyond_untouched=1)) == [1]
     assert said(lambda xs: [x.update(constructible=False, reason="no run") for x in xs]) == [2]

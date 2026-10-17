@@ -5,7 +5,8 @@ artifacts the v2 payloads of report_payloads, so that `lineage.follow` and `vali
 (with their comparators' hashes), the 2023 rehearsal and the 2024 replay (each with its diagnostic run), the breaks;
 the replay ledger holding v1's two entries. `add_2025()` adds a through-2025 data-quality run and a finished 2025 test
 of record on the 2024 replay's frozen artifacts, with its gate's record and its diagnostics. Each test spoils one
-thing of it. Commits are fakes: `lineage.resolve` and `lineage.is_ancestor` read them from `History`.
+thing of it. Commits are fakes: `lineage.resolve`, `lineage.is_ancestor` and `lineage.changes` read them from
+`History`.
 """
 
 from __future__ import annotations
@@ -61,6 +62,11 @@ class History:
 
     def is_ancestor(self, a, b):
         return a in self.order and b in self.order and self.order.index(a) <= self.order.index(b)
+
+    def changes(self, a, b):
+        """The commits of a..b, each a rule change (every fake commit after the first is one)."""
+        i, j = self.order.index(a), self.order.index(b)
+        return {c: ["src/valiwatt/monitor/rules.py"] for c in self.order[i + 1:j + 1]}
 
 
 def _plain(x):
@@ -251,6 +257,7 @@ class World:
         monkeypatch.setattr(ledger, "read", lambda path=None: list(self.entries))
         monkeypatch.setattr(lineage, "resolve", self.history.resolve)
         monkeypatch.setattr(lineage, "is_ancestor", self.history.is_ancestor)
+        monkeypatch.setattr(lineage, "changes", self.history.changes)
         W.install_lane_d(monkeypatch, starts=self.starts)
         return self
 

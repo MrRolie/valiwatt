@@ -349,7 +349,23 @@ Verdicts ({{ label(p.verdict.label) }}) : « {{ VERDICT[p.verdict.shipped] }} »
 {% macro several_days() %}Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès {{ K.trim_days + 1 }} jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.{% endmacro %}
 {% macro reuse(D, year) %}
 {% set RU = D.reuse_sensitivity %}
-**Une prévision qui alimente deux jours** (section 9.2 du plan ; étiquetée, ne choisit rien). Une prévision dont les propres points couvrent deux jours consécutifs, décalée dans les bornes, alimente les deux, dans une même semaine et à cheval sur deux semaines : {% for x in RU.placements %}{{ SEASON[x.season] }}, {{ 'dans une semaine' if x.placement == 'inside' else 'à cheval sur deux semaines' }} : {% if x.constructible %}jours {{ x.days|map('day')|join(' et ') }}, {{ x.passed }} semaine{{ 's' if x.passed > 1 }} touchée{{ 's' if x.passed > 1 }} au-delà de la moyenne de ses jours intacts, {{ x.decisions_changed }} décision{{ 's' if x.decisions_changed > 1 }} changée{{ 's' if x.decisions_changed > 1 }}{% if x.rule4_fired %}, règle 4 déclenchée{% endif %}{% else %}impossible à construire (raison consignée par l'exécution : « {{ x.reason }} »){% endif %}{% if not loop.last %} ; {% endif %}{% endfor %}. {% if not RU.placements|selectattr('constructible')|list %}Aucune disposition n'a pu être construite : l'argument n'est pas mis à l'épreuve sur {{ year }}.{% elif RU.placements|selectattr('constructible')|selectattr('passed')|list %}Un compte au-dessus de zéro est un constat contre l'argument des deux jours.{% else %}Aucune semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit.{% endif %} Plus long délai d'un point de prévision en {{ year }} : {{ RU.longest_lead_h|num(0) }} h.
+{% set WHERE = {'within_week': 'dans une semaine', 'across_weeks': 'à cheval sur deux semaines'} %}
+
+**Une prévision qui alimente deux jours** (section 9.2 du plan ; étiquetée, ne choisit rien). Dans chaque saison, une prévision dont les propres points couvrent deux jours consécutifs est décalée dans les bornes et amenée à alimenter les deux, dans une même semaine et à cheval sur deux semaines. Les statistiques de chaque semaine touchée, ses {{ K.trim_days }} jours les plus extrêmes écartés, sont mises face à la moyenne de ses jours intacts ; l'argument dit qu'aucune ne la dépasse (compté par semaine et par défaillance : EAMP haute, biais haut ou bas, couverture basse).
+
+| Saison | Disposition | Jours | Décalage | Statistiques au-delà de la moyenne des jours intacts | Décisions changées | Règle 4 |
+|---|---|---|---|---|---|---|
+{% for x in RU.placements %}
+{% if x.constructible %}
+{% for o in x.offsets %}
+| {{ SEASON[x.season] }} | {{ WHERE[x.placement] }} | {{ x.days|map('day')|join(' et ') }} | {{ o.offset_c|signed(0) }} °C | {{ o.beyond_untouched|num }} | {{ o.decisions_changed|length|num }} | {{ 'déclenchée' if o.rule4_fired else 'non déclenchée' }} |
+{% endfor %}
+{% else %}
+| {{ SEASON[x.season] }} | {{ WHERE[x.placement] }} | impossible à construire (raison consignée par l'exécution : « {{ x.reason }} ») | — | — | — | — |
+{% endif %}
+{% endfor %}
+
+{% set MADE = RU.placements|selectattr('constructible')|list %}{% set BEYOND = MADE|map(attribute='offsets')|sum(start=[])|sum(attribute='beyond_untouched') %}{% if not MADE %}Aucune disposition n'a pu être construite : l'argument n'est pas mis à l'épreuve sur {{ year }}.{% elif BEYOND %}Un compte au-dessus de zéro est un constat contre l'argument des deux jours.{% else %}Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit.{% endif %} Plus long délai d'un point de prévision en {{ year }} : {{ RU.longest_lead_h|num(0) }} h.
 {% endmacro %}
 **Fausses alertes, changements de niveau et coût de l'écho sur {{ p.year }}**, mesurés dans l'exécution de diagnostic du rejeu, après lui. {% if S is none %}{{ say.diag_unfinished }}{% else %}{{ episode_intro(S) }}
 
@@ -410,7 +426,7 @@ Verdicts ({{ label(r.verdict.label) }}) : v2 contre v1 tel que livré, « {{ VER
 
 {{ peak_table(r.contrasts.peak, r.contrasts.label) }}
 
-**L'erreur de la prévision de température en {{ r.year }}** (prévision moins observation aux heures notées ; {{ label(r.contrasts.label) }}), par saison : {% for s, e in r.forecast_error.season|dictsort %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C en moyenne et {{ e.mae_c|num(2) }} °C en absolu ({{ e.hours|num }} heures){% if not loop.last %} ; {% endif %}{% endfor %}. Une preuve jointe au rejeu, sans seuil.
+**L'erreur de la prévision de température en {{ r.year }}** (prévision moins observation aux heures notées ; {{ label(r.contrasts.label) }}), par saison : {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C en moyenne et {{ e.mae_c|num(2) }} °C en absolu ({{ e.hours|num }} heures){% if not loop.last %} ; {% endif %}{% endfor %}. Une preuve jointe au rejeu, sans seuil.
 
 L'horloge avance d'heure en heure du {{ r.days[0].day|day }} au {{ r.days[-1].day|day }} ; chaque lecture, prévisions de température comprises, passe par un accès qui refuse toute donnée postérieure à l'horloge, chaque prévision n'étant visible qu'à partir de sa disponibilité. Le modèle et les deux modèles de comparaison sont vérifiés par empreinte avant et après, inchangées : v2 `{{ r.frozen_sha256.production|short }}`, la forme de v1 sur la prévision `{{ r.frozen_sha256.comparators[fam]|short }}`, v1 tel que livré `{{ r.frozen_sha256.comparators[ship]|short }}`.
 
@@ -484,7 +500,8 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 **Le test de référence** est `{{ R.run_id }}`, commencé le {{ R.started_utc }} (code `{{ R.code_sha256|short }}`, règles `{{ R.rules_sha256|short }}`, gel `{{ R.freeze_commit|short }}`), {{ label(R.evaluation) }}. {% if R.recorded %}{{ record_block(R, say) }}{% else %}Sa position, telle que sa barrière l'a consignée à son départ : **{{ OUTCOME[R.standing] }}**{% if R.gate.causes %} (refus levé sur {% for k in R.gate.causes %}la condition ({{ k }}){% if not loop.last %} et {% endif %}{% endfor %}){% endif %}{% if R.ruling %} ; la décision du propriétaire que la barrière a lue : « {{ R.ruling.head }} », commit `{{ R.ruling.commit|short }}`, issue {{ OUTCOME[R.ruling.outcome] }}{% if R.ruling.start %}, qui nomme le départ arrêté du {{ R.ruling.start }}{% endif %}, avec son exécution de preuves `{{ R.ruling.evidence_run_id }}`{% else %} ; aucune décision du propriétaire n'était nécessaire{% endif %}. Le rapport imprime cette position ; il ne la recalcule jamais.{% endif %}{% if R.predecessors %} Il s'écarte de : {% for d in R.predecessors %}{{ predecessor(d, say) }}{% if not loop.last %} ; {% endif %}{% endfor %}.{% endif +%}
 
 {% if not R.recorded %}
-{{ HY }} ({{ label(R.evaluation) }}) : EAMP de {{ R.mape|pct(2) }}, couverture de {{ R.coverage|pct(1) }}, {{ recs(R.recommendations|length) }} ; verdicts : v2 contre v1 tel que livré, « {{ VERDICT[R.verdict.shipped] }} » ; v2 contre la forme de v1, « {{ VERDICT[R.verdict.family] }} ».
+{% set RC = R.results.summary.coverage %}
+{{ HY }} ({{ label(R.evaluation) }}) : EAMP de {{ R.mape|pct(2) }}, couverture de {{ R.coverage|pct(1) }} (intervalle à 95 % {{ ci(RC.ci95_low, RC.ci95_high, 1) }}, qui {{ 'contient' if RC|holds(nominal) else 'ne contient pas' }} le nominal de {{ nominal|pct(0) }} ; montrée, jamais jugée), {{ recs(R.recommendations|length) }} ; verdicts : v2 contre v1 tel que livré, « {{ VERDICT[R.verdict.shipped] }} » ; v2 contre la forme de v1, « {{ VERDICT[R.verdict.family] }} ».
 {% endif %}
 
 {% if R.results %}
@@ -527,7 +544,7 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 | Heure finissant à (UTC) | Changement | Ancienne valeur (MW) | Nouvelle valeur (MW) |
 |---|---|---|---|
 {% for x in f.revised.rows %}
-| {{ x.utc|utc }} | {{ {'added': 'ajouté', 'removed': 'retiré', 'changed': 'changé'}[x.kind] }} | {% if x.old_mw|string %}{{ x.old_mw|float|num(1) }}{% else %}—{% endif %} | {% if x.new_mw|string %}{{ x.new_mw|float|num(1) }}{% else %}—{% endif %} |
+| {{ x.utc|utc }} | {{ {'added': 'ajouté', 'removed': 'retiré', 'changed': 'changé'}[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
 {% endfor %}
 {% else %}
 L'export de {{ HY }} ne révise aucun enregistrement de {{ K.design_years[0] }} à {{ r.year }}.
@@ -585,7 +602,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | SR 11-7, données et modèles de tiers : l'entrée de prévision de la NOAA | Couverts : ses portes de qualité, sa règle de disponibilité, son erreur contre les observations, sa dérive et la sensibilité à la disponibilité. Non couverts : la solidité et la gestion des changements du modèle de la NOAA lui-même. | Sections 2 et 8 ; rapport de qualité des données |
 | SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures, prévisions comprises ; empreintes des trois modèles vérifiées avant et après ; le rejeu refuse de tourner si les règles ou les dépendances diffèrent de l'étiquette `{{ freeze.freeze_tag }}`{% if departures %} ; l'étiquette a été déplacée par une dérogation consignée dans `AGENTS.md` (section 8){% endif %}. Chaque garde a son bris. | Section 11 |
 | SR 11-7, surveillance continue : étalonnage comparatif | Deux modèles de comparaison (v1 tel que livré et la forme de v1 sur la même prévision), référence naïve, borne de la météo observée ; modèle figé contre plis réajustés sur {{ p.year }}. | Sections 3, 7 et 8 |
-| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles de forme conforme dont la couverture est mesurée. Le contrôle a posteriori au sens de SR 11-7 est {{ HY }}, données réservées : {% if not held %}en attente{% elif not R.finished %}commencé, son test de référence n'ayant pas fini{% else %}fait, position « {{ OUTCOME[R.standing] }} »{% endif %}. {{ span(vy) }} a servi au choix, {{ r.year }} a été vue par les développeurs. | Sections 3, 5, 8 et 9 |
+| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles de forme conforme dont la couverture est mesurée. {% if not held %}Le contrôle a posteriori au sens de SR 11-7 est {{ HY }}, données réservées : en attente.{% elif not R.finished %}Le contrôle a posteriori au sens de SR 11-7 sera {{ HY }} : son test de référence a commencé et n'a pas fini, donc aucune affirmation sur des données réservées.{% elif R.evaluation == 'held_out' and R.standing == 'clean' %}Le contrôle a posteriori au sens de SR 11-7 est {{ HY }}, données réservées : fait, son test de référence propre.{% else %}Le test de référence de {{ HY }} a fini, étiqueté {{ label(R.evaluation) }}, position « {{ OUTCOME[R.standing] }} » : ce n'est pas un contrôle a posteriori sur des données réservées.{% endif %} {{ span(vy) }} a servi au choix, {{ r.year }} a été vue par les développeurs. | Sections 3, 5, 8 et 9 |
 | SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée, avec preuves ; règle de décision de v2 contre v1 fixée d'avance ; recommande sans agir. | Sections 1, 6, 8 et 9 |
 | SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
 | NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |

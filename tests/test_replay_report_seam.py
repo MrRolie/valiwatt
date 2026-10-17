@@ -5,6 +5,10 @@ then read its runs as `valiwatt ledger` and `valiwatt report` read them: the run
 gate's record, the starts, the evaluation label, the hash of what judged each replay, the diagnostics, and a
 departure's record. The rest of each side is tested on its own; these tests hold the two to one another."""
 
+import ast
+import re
+from pathlib import Path
+
 import replay_world as rw
 from test_freeze_gates import RULE_FILE, V2_TAG, evidence, git, stop_start, v2_departure
 from valiwatt import tracking
@@ -12,6 +16,7 @@ from valiwatt.config import FREEZE_TAG
 from valiwatt.monitor import run as mrun
 from valiwatt.report import ledger, lineage
 from valiwatt.report import validation as RV
+from valiwatt.report.render import environment
 
 # The fields of the owner's ruling the gate read, as section 9 of the validation report prints them.
 RULING_FIELDS = {"commit", "outcome", "head", "start", "evidence_run_id"}
@@ -100,10 +105,69 @@ def test_the_report_reads_the_departure_the_replay_records(tmp_path, monkeypatch
     assert (e["departure"], e["departure_from"], e["freeze_commit"]) == (True, [c.first_2024], fix)
     section = mrun.recorded_departures(tag=FREEZE_TAG)
     (dep,) = lineage.check_recorded(departed, section, FREEZE_TAG)
-    assert lineage.moved_to(dep) == fix and mrun._moved_to(section, fix)
+    (move,), problems = mrun.departure_record(section)  # the gate's reading, the one rule
+    assert problems == [] and (dep["from"], dep["to"]) == (move["from"], move["to"]) == (c.f0, fix)
     (pred,) = lineage._predecessors(client, e["departure_from"], entries, FREEZE_TAG, False)
     assert isinstance(pred, lineage.Unfinished) and pred.run_id == c.first_2024
     assert lineage._freeze_commit_of(pred) == c.f0
     lineage.check_named([pred], [dep], f"replay {departed.info.run_id}")
     shown = RV.departure(client, pred)
     assert (shown["unfinished"], shown["freeze_commit"], shown["year"]) == (True, c.f0, "2024")
+
+
+def written_stages() -> set[str]:
+    """Every stage monitor/run.py records on a replay's run, read from its source: the tag "stage" its run opens with
+    and every `_set("stage", ...)` after; a stage the source computes instead of spelling it is refused."""
+    stages = set()
+    for node in ast.walk(ast.parse(Path(mrun.__file__).read_text(encoding="utf-8"))):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_set" and node.args and \
+                isinstance(node.args[0], ast.Constant) and node.args[0].value == "stage":
+            assert isinstance(node.args[1], ast.Constant), f"a stage the test cannot read, line {node.lineno}"
+            stages.add(node.args[1].value)
+        if isinstance(node, ast.Dict):
+            stages |= {v.value for k, v in zip(node.keys, node.values) if isinstance(k, ast.Constant)
+                       and k.value == "stage" and isinstance(v, ast.Constant)}
+    return stages
+
+
+def test_the_stages_and_standings_the_replay_writes_are_the_ones_the_report_names():
+    """The stages a start records (the run opened, then each step it reaches) and the standings its gate logs (clean,
+    or the outcome of the owner's ruling it applies, read by the gate's own parser) are exactly the keys the report's
+    sentences name, in both languages: STAGE (with "" for a start the ledger alone holds) and OUTCOME. A stage or an
+    outcome added on one side only fails here, not in a render."""
+    stages = written_stages()
+    assert {"opened", "inputs_read", "replayed", "checked", "logged"} <= stages
+    head = mrun._head()
+    words = re.fullmatch(r".*\((.+)\)", mrun.RULING.pattern).group(1).split("|")
+    rulings = "".join(f"- **2026-12-01, the owner's ruling on 2025: {w}.** It applies to `{head[:12]}`.\n"
+                      for w in words)
+    standings = {"clean"} | {e["outcome"] for e in mrun._rulings(rulings)}
+    assert standings == {"clean", "post_hoc"}
+    for lang in ("fr", "en"):
+        module = environment(lang).get_template(f"sentences.{lang}.md.j2").make_module({"say": RV.SAY[lang]})
+        assert set(module.STAGE) == stages | {""}, lang
+        assert set(module.OUTCOME) == standings, lang
+
+
+def test_the_starts_hold_a_2025_ledger_entry_the_store_lacks(tmp_path, monkeypatch):
+    """A fresh clone: the run store lacks the finished 2025 replay its committed ledger holds. ledger.starts (through
+    monitor/run.py replay_starts, the one reader) lists it from its entry: finished, no gate's record, its code commit
+    unknown. A 2024 entry is no 2025 start, and a run the store holds is listed once, from the store (controls)."""
+    import report_world as W
+
+    monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    c = tracking.client()
+    first, held = W.v2_entry("a" * 32, 2024, W.utc(0)), W.v2_entry("b" * 32, 2025, W.utc(10))
+    (s,) = ledger.starts(c, 2025, FREEZE_TAG, ledger={"replays": [first, held]})
+    assert s == {"run_id": held["run_id"], "started_utc": held["started_utc"], "freeze_commit": held["freeze_commit"],
+                 "git_commit": "", "standing": "clean", "finished": True, "running": False, "stage": "", "error": "",
+                 "gate": None, "holds_results": True}
+    assert ledger.starts(c, 2025, FREEZE_TAG, ledger={"replays": [first]}) == []
+    run = c.create_run(tracking.experiment_id(mrun.EXPERIMENT), tags={
+        "kind": "replay", "year": "2025", "freeze_tag": FREEZE_TAG, "freeze_commit": held["freeze_commit"],
+        "git_commit": "1" * 40, "status": "complete", "standing": "clean", "stage": "logged"})
+    c.set_terminated(run.info.run_id, "FINISHED")
+    stored = W.v2_entry(run.info.run_id, 2025, W.utc(11))
+    both = ledger.starts(c, 2025, FREEZE_TAG, ledger={"replays": [first, held, stored]})
+    assert sorted((x["run_id"], x["git_commit"]) for x in both) == sorted([(held["run_id"], ""),
+                                                                           (run.info.run_id, "1" * 40)])

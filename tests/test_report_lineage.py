@@ -408,6 +408,7 @@ def test_check_recorded_reads_the_v2_section(monkeypatch):
     history = S.History(W.F0, W.F1, W.F2)
     monkeypatch.setattr(lineage, "resolve", history.resolve)
     monkeypatch.setattr(lineage, "is_ancestor", history.is_ancestor)
+    monkeypatch.setattr(lineage, "changes", history.changes)
 
     def replay(commit, departure):
         return S.fake_run("a" * 32, freeze_commit=commit, departure="true" if departure else "false")
@@ -433,6 +434,50 @@ def test_check_recorded_reads_the_v2_section(monkeypatch):
     with pytest.raises(lineage.ChainBroken, match="not a commit of this history"):
         lineage.check_recorded(replay(W.F1, True), recorded(S.departure_entry("2026-11-20", [W.F0, "9" * 40])),
                                S.TAG)
+
+
+def test_check_recorded_refuses_an_incomplete_v2_departure_record(monkeypatch):
+    """The report reads v2's departure record by the replay gate's one rule (monitor/run.py departure_record): an
+    entry that names only the commit the tag moved to, or skips a rule change of its move, is refused, and so is a
+    second move that does not start where the first ended; the complete record passes (control)."""
+    history = S.History(W.F0, W.F1, W.F2)  # every fake commit after F0 a rule change
+    monkeypatch.setattr(lineage, "resolve", history.resolve)
+    monkeypatch.setattr(lineage, "is_ancestor", history.is_ancestor)
+    monkeypatch.setattr(lineage, "changes", history.changes)
+    replay = S.fake_run("a" * 32, freeze_commit=W.F2, departure="true")
+
+    def recorded(*entries):
+        return S.NONE_RECORDED.replace("None yet.\n", "".join(entries))
+
+    (e,) = lineage.check_recorded(replay, recorded(S.departure_entry("2026-11-20", [W.F0, W.F1, W.F2])), S.TAG)
+    assert (e["from"], e["to"]) == (W.F0, W.F2)
+    with pytest.raises(lineage.ChainBroken, match="names fewer than two commits"):
+        lineage.check_recorded(replay, recorded(S.departure_entry("2026-11-20", [W.F2])), S.TAG)
+    with pytest.raises(lineage.ChainBroken, match=f"does not name {W.F1[:12]}, which changed a rule file"):
+        lineage.check_recorded(replay, recorded(S.departure_entry("2026-11-20", [W.F0, W.F2])), S.TAG)
+    two = S.departure_entry("2026-11-20", [W.F0, W.F1]) + S.departure_entry("2026-11-27", [W.F1, W.F2])
+    assert [x["to"] for x in lineage.check_recorded(replay, recorded(two), S.TAG)] == [W.F1, W.F2]
+    apart = S.departure_entry("2026-11-20", [W.F0, W.F1]) + S.departure_entry("2026-11-27", [W.F0, W.F1, W.F2])
+    with pytest.raises(lineage.ChainBroken, match=f"moves the tag from {W.F0[:12]}, not from {W.F1[:12]}"):
+        lineage.check_recorded(replay, recorded(apart), S.TAG)
+
+
+def test_check_named_refuses_a_predecessor_under_a_change_commit_the_entry_names(monkeypatch):
+    """The entry names F0, a change commit F1 and F2: it moved the tag from F0 to F2. A predecessor that ran under F1
+    ran under no commit the tag moved from or to, and is refused, although the entry names F1; predecessors under F0
+    and F2 pass (controls)."""
+    history = S.History(W.F0, W.F1, W.F2)  # every fake commit after F0 a rule change
+    monkeypatch.setattr(lineage, "resolve", history.resolve)
+    monkeypatch.setattr(lineage, "is_ancestor", history.is_ancestor)
+    monkeypatch.setattr(lineage, "changes", history.changes)
+    replay = S.fake_run("a" * 32, freeze_commit=W.F2, departure="true")
+    section = S.NONE_RECORDED.replace("None yet.\n", S.departure_entry("2026-11-20", [W.F0, W.F1, W.F2]))
+    (e,) = lineage.check_recorded(replay, section, S.TAG)
+    assert (e["from"], e["to"]) == (W.F0, W.F2) and W.F1[:12] in [c[:12] for c in e["named"]]
+    for ok in (W.F0, W.F2):
+        lineage.check_named([S.fake_run("p" * 32, freeze_commit=ok)], [e], "replay a")
+    with pytest.raises(lineage.ChainBroken, match=f"freeze commit {W.F1[:12]}, which no departure entry"):
+        lineage.check_named([S.fake_run("p" * 32, freeze_commit=W.F1)], [e], "replay a")
 
 
 # --- the standing of 2025: the one its gate logged ------------------------------------------------------------------

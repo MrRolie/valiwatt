@@ -125,24 +125,61 @@ def sensitivity(g, year, base):
             up_missed = f == 0.1 and i < (3 if year == P_YEAR else 1)
             down_missed = f == -0.1 and i == 0 and year == P_YEAR
             shifts.append({"start": s, "season": SEASONS[i], "shift": f,
-                           "weeks": None if up_missed or down_missed else int(g(1, 10))})
+                           "weeks": None if up_missed or down_missed else int(g(1, 10)),
+                           "weekly_bias": [0.001 * (i + 1), -0.001 * (i + 1)]})
     echo = [{"sd": sd, "runs": 2 * base + 100 * i, "retrain_with": base // 2 + 10 * i,
-             "retrain_without": base // 2 + 10 * i + 7 + i, "suppressed": 7 + i, "delayed": 3 + i}
+             "retrain_without": base // 2 + 10 * i + 7 + i, "suppressed": 7 + i, "delayed": 3 + i,
+             "weeks_delayed": 5 + i}
             for i, sd in enumerate((0.06, 0.10, 0.15))]
-    return {"episodes": {"rows": rows, "first_start": f"{year}-01-0{3 if year == P_YEAR else 8}"},
-            "level_shifts": shifts, "echo_exclusion_cost": {"rows": echo, "horizon_weeks": 8}}
+    trials = [{"start": seasons[0], "season": "winter", "sd": 0.06, "seed": 0, "weeks_with": 3, "weeks_without": 2}]
+    # The measures' own shape (monitor/sensitivity.py `measure`), the keys the report does not read included.
+    return {"episodes": {"rows": rows, "first_start": f"{year}-01-0{3 if year == P_YEAR else 8}",
+                         "jobs_with_alarms": []},
+            "level_shifts": shifts, "echo_exclusion_cost": {"rows": echo, "horizon_weeks": 8, "runs": trials}}
+
+
+REUSE_OFFSETS = (5.0, -5.0)
+
+
+def reuse_offset(days: list[str], offset: float, changed: int, rule4: bool) -> dict:
+    """One offset of a constructible placement, as monitor/sensitivity.py `_reuse` writes it: the corrupted run fed
+    both days, each affected week's statistics (its two most extreme days set aside) against its untouched days' mean,
+    none beyond it."""
+    first = pd.Timestamp(days[0])
+    week = (first - pd.Timedelta(days=first.dayofweek)).strftime("%Y-%m-%d")
+    stats = {"mape": 0.02, "rel_bias": 0.004 * offset / abs(offset), "covered": 0.9}
+    return {"offset_c": offset, "days_fed": [f"{d}T00:00:00" for d in days], "shown": True,
+            "weeks": [{"week_start": f"{week}T00:00:00", "evaluated": True,
+                       "trimmed": {"mape_high": stats["mape"], "bias_high": stats["rel_bias"],
+                                   "bias_low": stats["rel_bias"], "coverage_low": stats["covered"]},
+                       "untouched_mean": {k: v + 0.01 for k, v in stats.items()}, "untouched_days": 5,
+                       "beyond_untouched": []}],
+            "decisions_changed": [{"week_start": f"{week}T00:00:00", "was": "", "now": "investigate"}] * changed,
+            "rule4_fired": rule4, "beyond_untouched": 0}
 
 
 def diagnostics(g, year, base):
-    """A replay's diagnostics.json (its diagnostic run's results, lane D): the measures and the run-reuse measure."""
-    placements = [{"season": s, "placement": where, "constructible": not (s == "summer" and where == "across"),
-                   "days": [f"{year}-{1 + 3 * i:02d}-0{3 + j}", f"{year}-{1 + 3 * i:02d}-0{4 + j}"],
-                   "passed": 0, "decisions_changed": int(g(0, 3)), "rule4_fired": where == "inside" and i == 0,
-                   "reason": "no run whose own points cover both days" if (s == "summer" and where == "across")
-                   else ""}
-                  for i, s in enumerate(SEASONS) for j, where in enumerate(("inside", "across"))]
-    return {"sensitivity": sensitivity(g, year, base), "sensitivity_seconds": g(100, 900),
-            "reuse_sensitivity": {"placements": placements, "longest_lead_h": 71.0},  # as the data-quality runs state
+    """A replay's diagnostics.json (its diagnostic run's results, lane D): the measures and the run-reuse measure, in
+    monitor/sensitivity.py `forecast_run_reuse`'s shape (summer across two weeks not constructible)."""
+    placements = []
+    for i, s in enumerate(SEASONS):
+        for j, where in enumerate(("within_week", "across_weeks")):
+            p = {"season": s, "placement": where}
+            changed = int(g(0, 3))
+            if s == "summer" and where == "across_weeks":
+                placements.append(p | {"constructible": False, "reason": "no_feeding_run_proven_to_cover_the_next_day"})
+                continue
+            days = [f"{year}-{1 + 3 * i:02d}-0{3 + j}", f"{year}-{1 + 3 * i:02d}-0{4 + j}"]
+            placements.append(p | {"days": [f"{d}T00:00:00" for d in days],
+                                   "runtime": f"{days[0]}T03:00:00+00:00", "constructible": True,
+                                   "offsets": [reuse_offset(days, o, changed, where == "within_week" and i == 0)
+                                               for o in REUSE_OFFSETS]})
+    made = [p for p in placements if p["constructible"]]
+    reuse = {"label": "sensitivity_never_chooses", "placements": placements, "offsets_c": list(REUSE_OFFSETS),
+             "constructible": len(made), "beyond_untouched": sum(o["beyond_untouched"] for p in made
+                                                                   for o in p["offsets"]),
+             "longest_lead_h": 71.0, "reuse_lead_h": 75}  # the longest lead as the data-quality runs state it
+    return {"sensitivity": sensitivity(g, year, base), "sensitivity_seconds": g(100, 900), "reuse_sensitivity": reuse,
             "run_id": f"{base:032x}"}
 
 
@@ -246,10 +283,11 @@ def replay(g, year, base, decisions, near, label):
         "comparators": {k: {"mape": ci(g, 0.03, 0.06), "coverage": ci(g, 0.85, 0.93), "hours": int(g(8000, 8700))}
                         for k in (FAM, SHIP)},
         "contrasts": c, "verdict": evaluate.verdict(c) | {"label": label},
-        "forecast_error": {"season": {s: {"mean_c": g(-1, 1), "mae_c": g(1, 3), "hours": int(g(2000, 2200))}
-                                      for s in SEASONS},
-                           "month": {f"{year}-{m:02d}": {"mean_c": g(-1, 1), "mae_c": g(1, 3),
-                                                         "hours": int(g(600, 744))} for m in range(1, 13)}},
+        # monitor/run.py `forecast_error`'s shape.
+        "forecast_error": {"by_month": {f"{year}-{m:02d}": {"mean_c": g(-1, 1), "mae_c": g(1, 3),
+                                                            "hours": int(g(600, 744))} for m in range(1, 13)},
+                           "by_season": {s: {"mean_c": g(-1, 1), "mae_c": g(1, 3), "hours": int(g(2000, 2200))}
+                                         for s in SEASONS}},
     }
 
 
@@ -421,8 +459,10 @@ def dq_2025(g=None, revised=3, at_or_above=(), unfed=(("2025-02-03", "no_coverin
     longest = {str(y): 71.0 for y in range(2019, 2026)}
     for y in at_or_above:
         longest[str(y)] = 76.0
+    # As quality/run.py revised_records writes them; the first, a label that held two records and now holds one.
     rows = pd.DataFrame([{"utc": f"2024-0{i + 1}-0{i + 2}T1{i}:00:00+00:00", "kind": ("changed", "added", "removed")[i % 3],
-                          "old_mw": "" if i % 3 == 1 else f"2{i}000.0", "new_mw": "" if i % 3 == 2 else f"2{i}100.0"}
+                          "old_mw": "" if i % 3 == 1 else f"2{i}000.0" + (";21000.0" if i == 0 else ""),
+                          "new_mw": "" if i % 3 == 2 else f"2{i}100.0"}
                          for i in range(revised)], columns=["utc", "kind", "old_mw", "new_mw"])
     kinds = {k: int((rows["kind"] == k).sum()) for k in ("added", "removed", "changed")}
     results = {"run_id": "5" * 32, "checks": nbm_checks(g, at_or_above, unfed, longest),
@@ -438,19 +478,23 @@ FIRST_2024 = W.v2_entry("a" * 32, 2024, W.utc(0))
 
 def record(run_id: str, started: str, verdict=("better", "better"), standing: str = "clean",
            evaluation: str | None = None, recorded: bool = False, gate: dict | None = None, diag_finished=True,
-           departure_from=(), predecessors=()) -> dict:
+           departure_from=(), predecessors=(), coverage=(0.884, 0.901, 0.917)) -> dict:
     """A finished 2025 replay as the report shows it (`validation.record_view`): its entry's fields and, from its run,
-    its results and its gate's record."""
+    its results and its gate's record. coverage: the production model's coverage, its 95 % interval's bounds around
+    its mean (low, mean, high)."""
     e = W.v2_entry(run_id, H_YEAR, started, evaluation=evaluation, standing=standing, verdict=verdict,
-                   departure_from=departure_from)
+                   departure_from=departure_from, coverage=coverage[1])
     label = e["evaluation"]
     g = gate if gate is not None else W.gate(standing, ["a"] if standing == "post_hoc" else [],
                                              W.ruling("post_hoc") if standing == "post_hoc" else None)
     out = {**e, "recorded": recorded, "finished": True, "predecessors": list(predecessors)}
     if recorded:
         return out | {"results": None, "gate": None, "diag": None, "diag_finished": None}
+    summary = {"mape": {"mean": e["mape"], "ci95_low": e["mape"] - 0.002, "ci95_high": e["mape"] + 0.002},
+               "coverage": {"mean": coverage[1], "ci95_low": coverage[0], "ci95_high": coverage[2]}}
     return out | {"results": {"contrasts": contrasts_for(verdict, label), "verdict": dict(zip(("shipped", "family"),
-                                                                                           verdict)) | {"label": label}},
+                                                                                           verdict)) | {"label": label},
+                              "summary": summary},
                   "gate": g, "diag": {**diagnostics(Distinct(), H_YEAR, 703), "run_id": "4" * 32} if diag_finished else None, "diag_finished": diag_finished,
                   "git_commit": "1" * 40}
 

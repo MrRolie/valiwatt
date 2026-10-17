@@ -12,12 +12,13 @@ logged it was judged by (`frozen_sha256`).
 A replay run after a recorded departure brings the earlier replays it departs from, so the report can label it post
 hoc and show them beside it. The departures section of the replay's freeze in `AGENTS.md` is read at render time too:
 when a departure entry of it names a commit, the replay must be a departure, and a departure replay must have its
-freeze commit recorded there (v1: anywhere in its section; v2: as the commit a departure entry moved the tag to, the
-one of its named commits that descends from all the others, and every earlier freeze commit named by a departure
-entry). v2's section also holds the owner's rulings on 2025, which name commits and are no departures. A store
-without the earlier replays (a fresh clone) then shows them from the replay ledger, or refuses the report instead of
-dropping the post hoc label. Under v2 a departure's predecessor may be a start that never finished: read from the
-store, shown as unfinished, never as a result.
+freeze commit recorded there (v1: anywhere in its section; v2: the record complete by the replay gate's own rule,
+monitor/run.py `departure_record`, every move named from its freeze commit to the next with every rule or dependency
+commit between them, the replay's freeze commit one a move ended at, and every earlier freeze commit one a move
+started or ended at). v2's section also holds the owner's rulings on 2025, which name commits and are no departures. A
+store without the earlier replays (a fresh clone) then shows them from the replay ledger, or refuses the report
+instead of dropping the post hoc label. Under v2 a departure's predecessor may be a start that never finished: read
+from the store, shown as unfinished, never as a result.
 
 The replay ledger (`docs/replay-ledger.json`, report/ledger.py) stands in for a replay the store does not hold: the
 report shows it from its entry, labelled as recorded in the ledger and not re-run here. A replay that both the store
@@ -43,10 +44,6 @@ from valiwatt.paths import REPO_ROOT
 # A commit as `check_tag_not_moved` looks for it: at least its 12-character prefix. No English or French word is 12 hex letters long.
 COMMIT = re.compile(r"\b[0-9a-f]{12,40}\b")
 SHORT_COMMIT = re.compile(r"\b(?=[0-9a-f]*[0-9])[0-9a-f]{7,11}\b")  # a commit named too briefly to be checked
-# The two kinds of entry of v2's departures section (AGENTS.md): a departure, whose bold head ends "a departure";
-# and the owner's ruling on a refused 2025 start, which names a commit too and is no departure.
-DEPARTURE_HEAD = re.compile(r".*\ba departure")
-RULING_HEAD = re.compile(r"\d{4}-\d{2}-\d{2}, the owner's ruling on 2025: (clean|post hoc)")
 DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})\b")
 V1_TAG = "rules-frozen"
 
@@ -150,26 +147,6 @@ def _link(run, tag: str, expected: str, what: str) -> None:
         raise ChainBroken(f"{what} run {run.info.run_id}: {tag} is {got!r}, expected {expected!r}")
 
 
-def section_entries(section: str) -> list[dict]:
-    """The departures section cut at each top-level bullet: its bold head (without a final full stop, or None), its
-    kind ("departure", "ruling" or None), its date and the commits it names (12 characters or more)."""
-    out = []
-    for part in re.split(r"(?m)^(?=- )", section):
-        if not part.strip():
-            continue
-        m = re.match(r"- \*\*(.+?)\*\*", part, re.S)
-        head = " ".join(m.group(1).split()).removesuffix(".") if m else None
-        kind = None
-        if head is not None and RULING_HEAD.fullmatch(head):
-            kind = "ruling"
-        elif head is not None and DEPARTURE_HEAD.fullmatch(head):
-            kind = "departure"
-        date = DATE.match(head) if head else None
-        out.append({"head": head, "kind": kind, "date": date.group(1) if date else None, "text": part,
-                    "named": list(dict.fromkeys(COMMIT.findall(part)))})
-    return out
-
-
 def resolve(prefix: str) -> str | None:
     """The full commit a prefix names in this repository's history, or None."""
     out = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{prefix}^{{commit}}"], cwd=REPO_ROOT,
@@ -183,25 +160,29 @@ def is_ancestor(a: str, b: str) -> bool:
                           check=False).returncode == 0
 
 
-def moved_to(entry: dict) -> str:
-    """The commit a departure entry moved the tag to: of the commits it names (the one the tag moved from, the one it
-    moved to, every rule or dependency change between them), the one every other is an ancestor of. An entry naming a
-    commit this history does not hold, or whose commits have no such last one, is refused."""
-    full = []
-    for prefix in entry["named"]:
-        c = resolve(prefix)
-        if c is None:
-            raise ChainBroken(f"the departure entry {entry['head']!r} names {prefix}, which is not a commit of this "
-                              "history")
-        full.append(c)
-    if len(set(full)) < 2:
-        raise ChainBroken(f"the departure entry {entry['head']!r} names fewer than two commits: it must name the commit "
-                          "the tag moved from and the one it moved to")
-    last = [c for c in full if all(is_ancestor(o, c) for o in full)]
-    if len(set(last)) != 1:
-        raise ChainBroken(f"the departure entry {entry['head']!r} names no single commit after all the others it "
-                          "names: it does not say which commit the tag moved to")
-    return last[0]
+def changes(a: str, b: str) -> dict[str, list[str]]:
+    """Each commit of a..b in this repository's history with the paths it touched (monitor/run.py `_changes`)."""
+    from valiwatt.monitor.run import _changes
+
+    return _changes(a, b, root=REPO_ROOT)
+
+
+def departure_entries(recorded: str) -> list[dict]:
+    """v2's departure entries as the report reads them, each checked by the replay gate's one rule (monitor/run.py
+    `departure_record`, on this repository's history): its head and date, the commits it names (their first 12
+    characters), and the commits its move started and ended at. An incomplete record is refused."""
+    from valiwatt.monitor.run import departure_record
+
+    moves, problems = departure_record(recorded, resolve=resolve, is_ancestor=is_ancestor, changes=changes)
+    if problems:
+        raise ChainBroken("AGENTS.md's v2 departures section is not a complete record of the tag's moves: "
+                          + "; ".join(problems))
+    out = []
+    for m in moves:
+        date = DATE.match(m["head"])
+        out.append({"head": m["head"], "kind": "departure", "date": date.group(1) if date else None,
+                    "text": m["text"], "named": [c[:12] for c in m["named"]], "from": m["from"], "to": m["to"]})
+    return out
 
 
 def check_recorded(replay, recorded: str, tag: str = V1_TAG) -> list[dict]:
@@ -221,7 +202,7 @@ def check_recorded(replay, recorded: str, tag: str = V1_TAG) -> list[dict]:
         named = COMMIT.findall(recorded)
         entries = []
     else:
-        entries = [e for e in section_entries(recorded) if e["kind"] == "departure"]
+        entries = departure_entries(recorded)
         named = [c for e in entries for c in e["named"]]
     if named and not departure:
         raise ChainBroken(f"AGENTS.md records a departure (commits {[c[:12] for c in named]}), but replay "
@@ -232,7 +213,7 @@ def check_recorded(replay, recorded: str, tag: str = V1_TAG) -> list[dict]:
             raise ChainBroken(f"replay {replay.info.run_id} is a departure, but AGENTS.md's departures section does "
                               f"not name its freeze commit {commit[:12] or '(none)'}")
         return []
-    if departure and not any(commit and moved_to(e) == commit for e in entries):
+    if departure and not any(commit and e["to"] == commit for e in entries):
         raise ChainBroken(f"replay {replay.info.run_id} is a departure, but no departure entry of AGENTS.md's "
                           f"{tag} section moved the tag to its freeze commit {commit[:12] or '(none)'}")
     return entries
@@ -358,14 +339,14 @@ def _freeze_commit_of(p) -> str:
 
 
 def check_named(predecessors: list, departures: list[dict], what: str) -> None:
-    """Every earlier freeze commit a departure's predecessors ran under must be named by a departure entry of the
-    section (successive departures each have theirs)."""
-    named = {c[:12] for e in departures for c in e["named"]}
+    """Every earlier freeze commit a departure's predecessors ran under must be one a departure entry of the section
+    moved the tag from or to (successive departures each have theirs), as the replay gate requires."""
+    freezes = {c[:12] for e in departures for c in (e["from"], e["to"])}
     for p in predecessors:
         commit = _freeze_commit_of(p)
-        if commit and commit[:12] not in named:
+        if commit and commit[:12] not in freezes:
             raise ChainBroken(f"{what} departs from a replay under freeze commit {commit[:12]}, which no departure "
-                              "entry of AGENTS.md names")
+                              "entry of AGENTS.md names as a commit the tag moved from or to")
 
 
 def _departure_ids(run) -> list[str]:

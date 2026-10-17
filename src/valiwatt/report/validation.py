@@ -60,10 +60,11 @@ def _json(c, run, path: str) -> dict:
         return json.loads(Path(c.download_artifacts(run.info.run_id, path, tmp)).read_text(encoding="utf-8"))
 
 
-def _frame(c, run, path: str) -> pd.DataFrame:
+def _frame(c, run, path: str, **csv) -> pd.DataFrame:
+    """A run's frame artifact: parquet, or CSV read with `csv` (pandas.read_csv's arguments)."""
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(c.download_artifacts(run.info.run_id, path, tmp))
-        return pd.read_parquet(p) if p.suffix == ".parquet" else pd.read_csv(p)
+        return pd.read_parquet(p) if p.suffix == ".parquet" else pd.read_csv(p, **csv)
 
 
 def _when(run) -> str:
@@ -617,11 +618,9 @@ def departure_record(departures: list[dict]) -> dict | None:
 
 
 def v2_departures(entries: list[dict]) -> list[dict]:
-    """v2's departures as the report describes them, each from its entry of AGENTS.md's v2 section: its date and its
-    head, the commits it names, and the commit it moved the tag to (lineage.moved_to)."""
-    from valiwatt.report.lineage import moved_to
-
-    return [{"date": e["date"], "head": e["head"], "named": [c[:12] for c in e["named"]], "to": moved_to(e)[:12]}
+    """v2's departures as the report describes them, each from its entry of AGENTS.md's v2 section
+    (lineage.departure_entries): its date and its head, the commits it names, and the commit it moved the tag to."""
+    return [{"date": e["date"], "head": e["head"], "named": [c[:12] for c in e["named"]], "to": e["to"][:12]}
             for e in entries]
 
 
@@ -763,7 +762,9 @@ def held_view(c, chain: Chain, entries: list[dict], starts: list[dict]) -> dict 
         dq = _json(c, dq_run, "results/dq_results.json")
         revisions = None
         if int((dq.get("revisions") or {}).get("hydroquebec", {}).get("records", 0)):
-            revisions = _frame(c, dq_run, dq["revisions"]["hydroquebec"]["artifact"])
+            # As written: a label's values joined by ";", a blank record empty (quality/run.py revised_records).
+            revisions = _frame(c, dq_run, dq["revisions"]["hydroquebec"]["artifact"], dtype=str,
+                               keep_default_na=False)
         findings = held_out_findings(dq | {"run_id": dq_run.info.run_id}, revisions)
     elif not rec["recorded"] and h.run is not None:
         raise ReportRefused(f"the 2025 test of record {rec['run_id']} names no data-quality run in the store")
@@ -896,7 +897,10 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
     }
 
 
-def figures(ctx: dict, lang: str) -> dict:
+def figures(ctx: dict, lang: str, folder: Path | None = None) -> dict:
+    """Each figure of the validation report in `lang`, drawn from the context into `folder` (docs/report/figures/
+    validation by default), by the name the templates read."""
+    folder = OUT / "figures" / "validation" if folder is None else folder
     out = {}
     v, p, r = ctx["v"], ctx["p"], ctx["r"]
     jobs = {
@@ -911,7 +915,7 @@ def figures(ctx: dict, lang: str) -> dict:
         "replay-2024-drift": lambda path: F.replay_drift(r["weeks"], lang, path),
     }
     for name, job in jobs.items():
-        path = OUT / "figures" / "validation" / f"{name}.{lang}.png"
+        path = folder / f"{name}.{lang}.png"
         job(path)
         out[name.replace("-", "_")] = f"figures/validation/{path.name}"
     return out
@@ -1017,11 +1021,17 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
                 raise ReportRefused(f"the unfinished 2025 start {s['run_id']} is not listed")
         f = held.get("findings")
         if f is not None:
-            shown = filters(lang)["utc"]
-            if f["revised"]["records"] and (say["revised"] not in nine or any(
-                    f"| {shown(x['utc'])} |" not in nine for x in f["revised"]["rows"])):
+            shown, mw = filters(lang)["utc"], filters(lang)["mw"]
+            lines = nine.splitlines()
+
+            def listed(x) -> bool:
+                values = f"| {mw(x['old_mw'], x['kind'] != 'added')} | {mw(x['new_mw'], x['kind'] != 'removed')} |"
+                return any(line.startswith(f"| {shown(x['utc'])} |") and line.endswith(values) for line in lines)
+
+            if f["revised"]["records"] and (say["revised"] not in nine or not all(
+                    listed(x) for x in f["revised"]["rows"])):
                 raise ReportRefused("the revised records the test of record's data-quality run lists are not all "
-                                    "listed")
+                                    "listed, each with its values")
             if f["at_or_above"] and say["lead_75"] not in nine:
                 raise ReportRefused("a 2025 lead at or above the bound of plan section 9.2 is not stated in section 9")
     nbm = ctx.get("nbm") or {}
@@ -1085,29 +1095,40 @@ def render_validation(dq_run_id: str | None = None) -> list[Path]:
     ctx = context(chain, code_sha, rules_sha, entries, starts)
     if (OUT / "figures" / "validation").exists():  # no figure from an earlier render survives into the stamp
         shutil.rmtree(OUT / "figures" / "validation")
-    retrieved = min(s["first_retrieved_utc"] for s in ctx["dq"]["sources"]["eccc"])[:10]
-    for lang in LANGS:
-        figs = figures(ctx, lang)
-        env = environment(lang)
-        status_line = status_sentence(env, ctx, lang)
-        links = {}
-        for doc in ("validation", "story"):  # the story, read first, is rendered from the same context and figures
-            text = env.get_template(f"{doc}.{lang}.md.j2").render(
-                **ctx, fig=figs, lang=lang, say=SAY[lang], attribution=attribution.lines(lang, retrieved=retrieved),
-                anchors=links)
-            if doc == "validation":
-                links = anchors(text)  # the story links to the headings just rendered
-            assert_public_safe(text)
-            check_rendered(text, lang, ctx, doc, status_line)
-            out = OUT / f"{doc}.{lang}.md"
-            out.write_text(text, encoding="utf-8")
-            written.append(out)
+    pages = render_pages(ctx, {lang: figures(ctx, lang) for lang in LANGS})
+    for (doc, lang), text in pages.items():
+        out = OUT / f"{doc}.{lang}.md"
+        out.write_text(text, encoding="utf-8")
+        written.append(out)
     stamp = make_stamp(code_sha, rules_sha, chain.freeze["freeze_commit"], {k: x["id"] for k, x in ctx["runs"].items()},
                        standing_2025(ctx["held"]))
     STAMP.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print("rendered " + ", ".join(p.relative_to(REPO_ROOT).as_posix() for p in written)
           + f" from replay run {chain.replay.info.run_id}")
     return written
+
+
+def render_pages(ctx: dict, figs: dict) -> dict:
+    """The validation report and the story, in each language, rendered from one context and checked as published
+    pages are (`assert_public_safe`, `check_rendered`): {(doc, lang): text}, French first. figs: each language's
+    figures, by the names the templates read (`figures`). The story, read first, is rendered from the same context and
+    figures, and links to the headings of the validation report just rendered."""
+    retrieved = min(s["first_retrieved_utc"] for s in ctx["dq"]["sources"]["eccc"])[:10]
+    pages = {}
+    for lang in LANGS:
+        env = environment(lang)
+        status_line = status_sentence(env, ctx, lang)
+        links = {}
+        for doc in ("validation", "story"):
+            text = env.get_template(f"{doc}.{lang}.md.j2").render(
+                **ctx, fig=figs[lang], lang=lang, say=SAY[lang],
+                attribution=attribution.lines(lang, retrieved=retrieved), anchors=links)
+            if doc == "validation":
+                links = anchors(text)
+            assert_public_safe(text)
+            check_rendered(text, lang, ctx, doc, status_line)
+            pages[(doc, lang)] = text
+    return pages
 
 
 def status_sentence(env, ctx: dict, lang: str) -> str:

@@ -350,7 +350,23 @@ Verdicts ({{ label(p.verdict.label) }}): "{{ VERDICT[p.verdict.shipped] }}" agai
 {% macro several_days() %}An episode of several days does more: through the one-day lag it spoils one day more than its length, and through the one-week lag as many days the next week; from {{ K.trim_days + 1 }} days on, both weeks can be broadly beyond their threshold, on the same failure, without a single failing day of their own. When the bias of one of the two stays inside its band (a band wide on that side, or a week that also holds days of the episode, as when it straddles a Monday), the echo exclusion does not apply. The weekly statistics do not tell such an episode from two weeks of model failure; the rules stay as they are, and these tables give the price.{% endmacro %}
 {% macro reuse(D, year) %}
 {% set RU = D.reuse_sensitivity %}
-**One forecast feeding two days** (plan section 9.2; labelled, it chooses nothing). A forecast whose own points cover two consecutive days, shifted inside the bounds, feeds both, inside one week and across a week boundary: {% for x in RU.placements %}{{ SEASON[x.season] }}, {{ 'inside one week' if x.placement == 'inside' else 'across two weeks' }}: {% if x.constructible %}days {{ x.days|map('day')|join(' and ') }}, {{ x.passed }} week{{ 's' if x.passed != 1 }} touched beyond the mean of {{ 'its' if x.passed == 1 else 'their' }} untouched days, {{ x.decisions_changed }} decision{{ 's' if x.decisions_changed != 1 }} changed{% if x.rule4_fired %}, rule 4 fired{% endif %}{% else %}not constructible (reason recorded by the run: "{{ x.reason }}"){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}. {% if not RU.placements|selectattr('constructible')|list %}No placement could be constructed: the argument is not put to the test on {{ year }}.{% elif RU.placements|selectattr('constructible')|selectattr('passed')|list %}A count above zero is a finding against the two-day argument.{% else %}No touched week passes the mean of its untouched days, as the argument says.{% endif %} The longest lead of a forecast point in {{ year }}: {{ RU.longest_lead_h|num(0) }} h.
+{% set WHERE = {'within_week': 'inside one week', 'across_weeks': 'across two weeks'} %}
+
+**One forecast feeding two days** (plan section 9.2; labelled, it chooses nothing). In each season, a forecast whose own points cover two consecutive days is shifted inside the bounds and made to feed both, inside one week and across a week boundary. Each affected week's statistics, its {{ K.trim_days }} most extreme days set aside, are set against the mean of its untouched days; the argument says none lies beyond it (counted by week and by failure: MAPE high, bias high or low, coverage low).
+
+| Season | Placement | Days | Shift | Statistics beyond the untouched days' mean | Decisions changed | Rule 4 |
+|---|---|---|---|---|---|---|
+{% for x in RU.placements %}
+{% if x.constructible %}
+{% for o in x.offsets %}
+| {{ SEASON[x.season] }} | {{ WHERE[x.placement] }} | {{ x.days|map('day')|join(' and ') }} | {{ o.offset_c|signed(0) }} °C | {{ o.beyond_untouched|num }} | {{ o.decisions_changed|length|num }} | {{ 'fired' if o.rule4_fired else 'did not fire' }} |
+{% endfor %}
+{% else %}
+| {{ SEASON[x.season] }} | {{ WHERE[x.placement] }} | not constructible (reason recorded by the run: "{{ x.reason }}") | — | — | — | — |
+{% endif %}
+{% endfor %}
+
+{% set MADE = RU.placements|selectattr('constructible')|list %}{% set BEYOND = MADE|map(attribute='offsets')|sum(start=[])|sum(attribute='beyond_untouched') %}{% if not MADE %}No placement could be constructed: the argument is not put to the test on {{ year }}.{% elif BEYOND %}A count above zero is a finding against the two-day argument.{% else %}No statistic of a touched week lies beyond the mean of its untouched days, as the argument says.{% endif %} The longest lead of a forecast point in {{ year }}: {{ RU.longest_lead_h|num(0) }} h.
 {% endmacro %}
 **False alarms, level shifts and the echo's cost on {{ p.year }}**, measured in the replay's diagnostic run, after it. {% if S is none %}{{ say.diag_unfinished }}{% else %}{{ episode_intro(S) }}
 
@@ -411,7 +427,7 @@ Verdicts ({{ label(r.verdict.label) }}): v2 against v1 as shipped, "{{ VERDICT[r
 
 {{ peak_table(r.contrasts.peak, r.contrasts.label) }}
 
-**The temperature forecast's error in {{ r.year }}** (forecast minus observation at the scored hours; {{ label(r.contrasts.label) }}), by season: {% for s, e in r.forecast_error.season|dictsort %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C on average and {{ e.mae_c|num(2) }} °C in absolute terms ({{ e.hours|num }} hours){% if not loop.last %}; {% endif %}{% endfor %}. Evidence attached to the replay, without a threshold.
+**The temperature forecast's error in {{ r.year }}** (forecast minus observation at the scored hours; {{ label(r.contrasts.label) }}), by season: {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C on average and {{ e.mae_c|num(2) }} °C in absolute terms ({{ e.hours|num }} hours){% if not loop.last %}; {% endif %}{% endfor %}. Evidence attached to the replay, without a threshold.
 
 The clock steps hour by hour from {{ r.days[0].day|day }} to {{ r.days[-1].day|day }}; every read, temperature forecasts included, goes through an accessor that refuses any data past the clock, each forecast visible only from its availability on. The model and the two comparison models are checked by hash before and after, unchanged: v2 `{{ r.frozen_sha256.production|short }}`, v1's form on the forecast `{{ r.frozen_sha256.comparators[fam]|short }}`, v1 as shipped `{{ r.frozen_sha256.comparators[ship]|short }}`.
 
@@ -485,7 +501,8 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 **The test of record** is `{{ R.run_id }}`, started on {{ R.started_utc }} (code `{{ R.code_sha256|short }}`, rules `{{ R.rules_sha256|short }}`, freeze `{{ R.freeze_commit|short }}`), {{ label(R.evaluation) }}. {% if R.recorded %}{{ record_block(R, say) }}{% else %}Its standing, as its gate logged it at its start: **{{ OUTCOME[R.standing] }}**{% if R.gate.causes %} (a refusal lifted on {% for k in R.gate.causes %}condition ({{ k }}){% if not loop.last %} and {% endif %}{% endfor %}){% endif %}{% if R.ruling %}; the owner's ruling the gate read: "{{ R.ruling.head }}", commit `{{ R.ruling.commit|short }}`, outcome {{ OUTCOME[R.ruling.outcome] }}{% if R.ruling.start %}, which names the stopped start of {{ R.ruling.start }}{% endif %}, with its evidence run `{{ R.ruling.evidence_run_id }}`{% else %}; no ruling of the owner was needed{% endif %}. The report prints this standing; it never computes it again.{% endif %}{% if R.predecessors %} It departs from: {% for d in R.predecessors %}{{ predecessor(d, say) }}{% if not loop.last %}; {% endif %}{% endfor %}.{% endif +%}
 
 {% if not R.recorded %}
-{{ HY }} ({{ label(R.evaluation) }}): MAPE {{ R.mape|pct(2) }}, coverage {{ R.coverage|pct(1) }}, {{ recs(R.recommendations|length) }}; verdicts: v2 against v1 as shipped, "{{ VERDICT[R.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[R.verdict.family] }}".
+{% set RC = R.results.summary.coverage %}
+{{ HY }} ({{ label(R.evaluation) }}): MAPE {{ R.mape|pct(2) }}, coverage {{ R.coverage|pct(1) }} (95% interval {{ ci(RC.ci95_low, RC.ci95_high, 1) }}, which {{ 'holds' if RC|holds(nominal) else 'does not hold' }} the {{ nominal|pct(0) }} nominal; reported, never judged), {{ recs(R.recommendations|length) }}; verdicts: v2 against v1 as shipped, "{{ VERDICT[R.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[R.verdict.family] }}".
 {% endif %}
 
 {% if R.results %}
@@ -528,7 +545,7 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 | Hour ending (UTC) | Change | Old value (MW) | New value (MW) |
 |---|---|---|---|
 {% for x in f.revised.rows %}
-| {{ x.utc|utc }} | {{ {'added': 'added', 'removed': 'removed', 'changed': 'changed'}[x.kind] }} | {% if x.old_mw|string %}{{ x.old_mw|float|num(1) }}{% else %}—{% endif %} | {% if x.new_mw|string %}{{ x.new_mw|float|num(1) }}{% else %}—{% endif %} |
+| {{ x.utc|utc }} | {{ {'added': 'added', 'removed': 'removed', 'changed': 'changed'}[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
 {% endfor %}
 {% else %}
 The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year }}.
@@ -586,7 +603,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | SR 11-7, third-party data and models: NOAA's forecast input | Covered: its quality gates, its availability rule, its error against the observations, its drift and the sensitivity to availability. Not covered: the soundness and change management of NOAA's model itself. | Sections 2 and 8; data-quality report |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards; a clock that refuses later data, forecasts included; the three models' hashes checked before and after; the replay refuses to run if the rules or the dependencies differ from tag `{{ freeze.freeze_tag }}`{% if departures %}; the tag was moved by a departure recorded in `AGENTS.md` (section 8){% endif %}. Each guard has its break. | Section 11 |
 | SR 11-7, ongoing monitoring: benchmarking | Two comparison models (v1 as shipped and v1's form on the same forecast), a naive baseline, the observed-weather bound; frozen model against refitted folds on {{ p.year }}. | Sections 3, 7 and 8 |
-| SR 11-7, outcomes analysis and back-testing, with intervals | Monthly folds with an embargo; intervals of conformal form whose coverage is measured. The back-test in SR 11-7's sense is {{ HY }}, held-out data: {% if not held %}pending{% elif not R.finished %}started, its test of record not finished{% else %}done, standing "{{ OUTCOME[R.standing] }}"{% endif %}. {{ span(vy) }} served the choice, {{ r.year }} was seen by the developers. | Sections 3, 5, 8 and 9 |
+| SR 11-7, outcomes analysis and back-testing, with intervals | Monthly folds with an embargo; intervals of conformal form whose coverage is measured. {% if not held %}The back-test in SR 11-7's sense is {{ HY }}, held-out data: pending.{% elif not R.finished %}The back-test in SR 11-7's sense is to be {{ HY }}: its test of record started and did not finish, so there is no claim on held-out data.{% elif R.evaluation == 'held_out' and R.standing == 'clean' %}The back-test in SR 11-7's sense is {{ HY }}, held-out data: done, its test of record clean.{% else %}{{ HY }}'s test of record finished, labelled {{ label(R.evaluation) }}, standing "{{ OUTCOME[R.standing] }}": it is not a back-test on held-out data.{% endif %} {{ span(vy) }} served the choice, {{ r.year }} was seen by the developers. | Sections 3, 5, 8 and 9 |
 | SR 11-7, acceptability thresholds, then recalibration or redevelopment | Seasonal thresholds drawn from earlier weeks; an ordered decision table, with evidence; v2's decision rule against v1 fixed in advance; recommends without acting. | Sections 1, 6, 8 and 9 |
 | SR 11-7, documentation and validation reports | This report and its model card, generated from the runs and stamped with their identifiers and the code hash. | This report |
 | NIST MAP 2.2, 2.3 | Intended use, out of scope, weather caveat, limitations; validation plan and data-quality findings documented. | Model card; plan |
