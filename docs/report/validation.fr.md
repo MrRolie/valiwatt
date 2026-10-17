@@ -1,6 +1,6 @@
-# Validation et surveillance d'une prévision de la demande d'électricité au Québec
+# Validation et surveillance d'une prévision de la demande d'électricité au Québec, v2
 
-_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 11), code `3a67ac3d2e3f`, empreinte du code `d21f1f49cd46`, règles de surveillance gelées au commit `affe089f6ed0` (étiquette `rules-frozen`), **après une dérogation aux règles gelées d'abord : le rejeu de 2024 est a posteriori (section 7)**. Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception (embargo, rééchantillonnages, quantiles, horizons, facteurs, années) des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Restent écrits dans le texte : les numéros de section, de règle et des normes citées, les unités du calendrier (24 heures, semaines du lundi au dimanche), le niveau de 95 % des intervalles de confiance, les formules, les décomptes d'un raisonnement (un jour et son écho) et la description des bris de la section 9. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 8), code `c778e08fc0b5`, empreinte du code `521febded2db`, règles gelées au commit `825b7bd134a8` (étiquette `rules-frozen-v2`). Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Chaque résultat porte son étiquette d'évaluation, lue des exécutions : _dans l'échantillon du choix de la famille et de l'entrée_ pour 2020–2023, _répétition sur une année de conception_ pour 2023, _vu par les développeurs_ pour 2024, et pour 2025 _données réservées_ seulement quand son test de référence est propre. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -8,283 +8,517 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 >
 > Données extraites du site Web « Données climatiques historiques » d’Environnement et Changement climatique Canada ( https://climat.meteo.gc.ca/index_f.html ) le 2026-10-14.
 >
-> Ni Hydro-Québec ni Environnement et Changement climatique Canada n'ont produit, revu ou approuvé ce travail.
+> Prévisions météorologiques : guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), téléchargée des archives de l'Iowa Environmental Mesonet de l'Université d'État de l'Iowa (https://mesonet.agron.iastate.edu/). Ce projet a interpolé à l'heure ces prévisions trihoraires et les a converties en degrés Celsius : les valeurs qu'il utilise sont modifiées et ne sont pas des données originales de la NOAA.
+>
+> Ni Hydro-Québec, ni Environnement et Changement climatique Canada, ni la NOAA, ni l'Iowa Environmental Mesonet n'ont produit, revu ou approuvé ce travail, et ce projet n'est affilié ni à la NOAA ni à l'Iowa Environmental Mesonet.
 >
 > Construit avec Claude Code sous la direction du propriétaire du dépôt.
 
 ## En bref
 
-- Sur 2020–2023, la prévision s'écarte en moyenne de 4,42 % de la demande horaire, contre 7,81 % pour une prévision naïve (la même heure, une semaine avant) : elle fait mieux, et l'écart est confirmé.
-- Ses intervalles à 90 % ont contenu la demande 90,6 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10 (section 4).
-- Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 5 fois sur 5, toujours par le haut.
-- Rejouée comme en production, avec le modèle et les règles gelés, l'année 2024 n'a déclenché aucune recommandation (EAMP 4,23 %, couverture 89,4 %), **a posteriori**, après une dérogation aux règles gelées.
-- Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 0 des 4 départs, et sur 2024 (hors échantillon, mesure ajoutée après les résultats), à 1 des 4 ; sur 2024, un écart soutenu de ±2 % entre la demande et la prévision l'a donné en 8 semaines à 1 des 8 cas (sections 6 à 8).
+- **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente.
+- Sur les 34 997 heures communes de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), l'erreur absolue moyenne est de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la même prévision et 4,42 % pour v1 tel que livré. Ces années ont servi à choisir la famille et l'entrée : l'avantage de v2 y est biaisé vers le haut par ce choix, et il ne prouve pas que v2 est meilleur (section 3).
+- Ses intervalles à 90 % ont contenu la demande 90,3 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
+- Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 3 fois sur 5, toujours par le haut. Rapporté, jamais jugé.
+- 2024 (_vu par les développeurs_) : EAMP de 2,58 %, couverture de 92,2 %, aucune recommandation ; verdicts : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Un succès sur une année déjà vue est une preuve faible : il ne soutient aucune affirmation ; v2 va à 2025 tel que gelé (section 8).
+- 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2` (section 9).
+- Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 4 des 4 départs, et sur 2024 (vu par les développeurs), à 4 des 4 ; sur 2024, un écart soutenu de ±2 % entre la demande et la prévision l'a donné en 8 semaines à 4 des 8 cas (sections 7, 8 et 10).
 
 ## Fiche du modèle
 
 | | |
 |---|---|
+| **Statut** | **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente. Couverture des intervalles et heures les plus chargées : à côté du statut (sections 5 et 9), jamais dedans. |
 | **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à la fin du jour J−1 (heure normale de l'Est), avec un intervalle de prévision à 90 %. |
 | **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
 | **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
-| **Données** | Demande horaire de Hydro-Québec ; température horaire d'une station principale, Montréal (ECCC), la seule que le modèle utilise, et de 5 autres (Québec, Gatineau, Sherbrooke, Saguenay et Trois-Rivières) pour une analyse de sensibilité seulement. Conception sur 2019–2023 ; 2024 rejouée comme en production. |
-| **Modèle** | Moindres carrés ordinaires sur des variables nommées : une constante par heure et type de jour, le chauffage et la climatisation (degrés-heures, base 18 °C) par bloc horaire, la demande de la veille et de la semaine précédente. Figé sur les données jusqu'au 2023-12-24 ; empreinte de ses coefficients et de sa demi-largeur `c8e1725aad77` (modèle enregistré `valiwatt-demand-persistence`, alias `replay-2024`). |
-| **Intervalle** | Prévision × (1 ± 9,26 %). La demi-largeur est un quantile des 8 739 erreurs relatives hors échantillon de 2023-01 à 2023-12, faites par les 12 modèles réajustés chaque mois de la validation et déjà notées quand le modèle figé est ajusté (section 8), puis appliqué à ce modèle : la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini (section 1). La couverture mesurée en est la preuve (sections 4 et 7). |
-| **Erreur en validation** | EAMP de 4,42 % [4,14 % ; 4,68 %] sur 2020–2023, contre 7,81 % pour la référence naïve. |
-| **Rejeu de 2024** | EAMP de 4,23 %, couverture de 89,4 % ; aucune recommandation (section 7) ; **a posteriori** : rejoué à nouveau après une dérogation aux règles gelées, décidée après que les résultats de 2024 eurent été vus et consignée dans `AGENTS.md` (section « Departures from the frozen monitoring rules », qui en donne la liste) ; le rejeu d'avant est montré à côté (section 7). Sur 2024, un écart soutenu de ±6 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 0 des 4 départs, et de −2 %, à 1 des 4. Sur 2024, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus. |
-| **Cas tests** | Mars à juin 2020 : biais de −1,86 % contre −0,60 % les mêmes mois des autres années ; écart non confirmé par des intervalles disjoints ; l'intervalle de la différence, ajouté après les résultats, confirme l'écart (section 3). Pointe de froid de 2023-02 : 0 des 5 heures les plus chargées dans l'intervalle. Aucun des deux cas n'avait de critère d'acceptation qui pouvait échouer. |
-| **Mise en garde météo** | La production utilise la température de la veille, seule connue à l'émission. La température observée de l'heure visée, qui tient lieu d'une température de Montréal parfaitement prévue, n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
-| **Limites** | Section 8. |
+| **Données** | Demande horaire de Hydro-Québec ; prévision de température NBM de la NOAA pour la station CYUL, l'aéroport de Montréal, archivée par l'Iowa Environmental Mesonet (section 2) ; température horaire observée de Montréal (ECCC) pour la qualité des données, v1 tel que livré et la borne optimiste, et de 5 autres stations (Québec, Gatineau, Sherbrooke, Saguenay et Trois-Rivières) pour une analyse de sensibilité seulement. Conception sur 2019–2023. |
+| **Modèle** | Un modèle additif de la famille des GAM, ajusté par moindres carrés pénalisés : une courbe de température par heure locale (splines, 10 nœuds aux quantiles des lignes d'entraînement, degré 3, prolongée en ligne droite hors de la plage d'entraînement), les 72 constantes de v1 par heure et type de jour, la demande de la veille et de la semaine précédente ; normalisation puis crête, alpha 1,0. Figé sur les données jusqu'au 2023-12-24 ; empreinte `7aadbc5866c6`, celle du modèle figé de cette chaîne, d'où viennent cette date, l'intervalle ci-dessous et les courbes de la section 3. Comparé à v1 tel que livré et à la forme de v1 sur la même prévision, qui ne recommandent jamais rien. |
+| **Intervalle** | Prévision × (1 ± 6,22 %). La demi-largeur est un quantile des 8 729 erreurs relatives hors échantillon de 2023-01 à 2023-12 déjà notées quand le modèle figé est ajusté : la forme d'un intervalle conforme « split », sans sa garantie en échantillon fini. La couverture mesurée en est la preuve (sections 5 et 8). |
+| **Erreur en validation** | EAMP de 2,83 % [2,69 % ; 2,95 %] sur ses heures de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), contre 7,81 % pour la référence naïve (section 3). |
+| **Rejeu de 2024** | _vu par les développeurs_ : EAMP de 2,58 %, couverture de 92,2 % ; aucune recommandation ; verdicts « meilleur » contre v1 tel que livré et « meilleur » contre la forme de v1 (section 8). |
+| **2025** | En attente (section 9). |
+| **Mise en garde météo** | La prévision de température est disponible, par hypothèse, 2 heures après son heure d'émission ; tout résultat qui en dépend repose sur cette hypothèse (section 2). La température observée de l'heure visée n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
+| **Limites** | Section 10. |
 | **Auteur** | Construit avec Claude Code sous la direction du propriétaire du dépôt. |
 
 ## 1. Les méthodes, en mots simples
 
-- **Validation progressive.** Chaque mois de 2020 à 2023 est prévu par un modèle réajusté sur les heures qui le précèdent seulement, moins les 7 derniers jours (l'embargo). Aucune information du mois testé ne sert à l'ajuster.
+- **Validation progressive.** Chaque mois de 2020 à 2023 est prévu par des modèles réajustés sur les heures qui le précèdent seulement, moins les 7 derniers jours (l'embargo). Les trois modèles comparés y sont ajustés aux mêmes plis : v2, la forme de v1 sur la même prévision et v1 tel que livré, refait dans le harnais de v2.
 - **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) : en moyenne, de combien la prévision s'écarte de la demande réelle. Le biais signé dit dans quel sens : biais = (demande − prévision) / demande, positif quand la prévision est trop basse.
-- **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne. « A bat B » n'est écrit que si l'intervalle de la différence exclut zéro.
-- **L'intervalle de prévision.** Sa demi-largeur est un quantile des erreurs relatives |demande − prévision| / prévision. Pour chaque mois de validation, c'est le quantile de rang ⌈(n + 1) × 0,90⌉ des n erreurs hors échantillon des 12 mois précédents déjà notées quand le modèle du mois est ajusté (section 8), chacun de ces mois prévu par son propre modèle réajusté ; pour le modèle figé, le même quantile sur les erreurs des 12 mois qui précèdent l'année rejouée, déjà notées quand il est ajusté, appliqué à un modèle qui n'a produit aucune de ces erreurs. C'est la forme d'un intervalle conforme « split », mais sa garantie de couverture en échantillon fini ne tient pas ici : elle suppose des erreurs échangeables, et ces erreurs horaires sont autocorrélées et viennent d'autres modèles. La seule preuve est la couverture mesurée hors échantillon (sections 4, 6 et 7).
-- **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec l'empreinte de ses coefficients, puis rejoué heure par heure.
-- **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation : EAMP au-dessus du 95ᵉ centile, biais hors de l'intervalle 2,5ᵉ–97,5ᵉ centile, couverture sous le 5ᵉ centile.
-- **La dérive.** Chaque semaine, la distribution des températures et celle des prévisions sont comparées aux mêmes semaines (± 2) des années précédentes, avec la distance de Wasserstein normée d'Evidently. Le niveau d'alarme est le 95ᵉ centile de cette distance sur les semaines de validation.
-- **La table de décision.** Chaque semaine, au plus une recommandation, avec ses preuves : (1) un échec de qualité des données → examiner les données ; (2) la même défaillance 2 semaines de suite (EAMP au-dessus du seuil, ou biais du même côté de sa bande), étendue à toute la semaine, ou le biais du même côté de sa bande 3 semaines de suite → réentraîner ; (3) couverture sous le seuil 2 semaines de suite, étendue, biais dans sa bande → recalibrer les intervalles ; (4) la même entrée en dérive 2 semaines de suite, performance dans ses seuils → examiner les données. « Étendue » : la semaine reste hors seuil quand on écarte ses 2 jours les plus extrêmes. Un seul mauvais jour ne touche jamais plus de deux jours d'une semaine (lui-même et, par les retards de 24 h et de 168 h, le lendemain ou le même jour la semaine suivante) : il ne peut donc déclencher une recommandation que si les semaines contenaient déjà des jours en échec. Une mauvaise semaine du lundi au dimanche revient la semaine suivante, par le retard d'une semaine, avec le signe opposé : ce n'est pas la même défaillance deux fois et, si les semaines voisines restent dans leurs bandes, elle ne déclenche rien non plus. Un épisode de 3 jours ou plus peut, lui, déclencher « réentraîner » à lui seul ; la section 6 mesure à quelle fréquence. Le moniteur recommande ; il n'agit jamais.
+- **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne.
+- **La règle de décision, fixée avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le 5ᵉ centile de celles de 2019–2023 (−12,0 °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de 120 heures froides ou moins de 4 semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
+- **À côté, jamais jugés.** Les 5 heures les plus chargées de chaque année jugée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses 90 % (section 5).
+- **L'intervalle de prévision.** Sa demi-largeur est un quantile des erreurs relatives |demande − prévision| / prévision. Pour chaque mois de validation, c'est le quantile de rang ⌈(n + 1) × 0,90⌉ des n erreurs hors échantillon des 12 mois précédents déjà notées quand le modèle du mois est ajusté ; pour le modèle figé, le même quantile sur les erreurs des 12 mois qui précèdent l'année rejouée, déjà notées quand il est ajusté. C'est la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini : ces erreurs horaires sont autocorrélées et viennent d'autres modèles. La seule preuve est la couverture mesurée hors échantillon.
+- **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec son empreinte, puis rejoué heure par heure.
+- **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation de v2 : EAMP au-dessus du 95ᵉ centile, biais hors de l'intervalle 2,5ᵉ–97,5ᵉ centile, couverture sous le 5ᵉ centile.
+- **La dérive.** Chaque semaine, la distribution des prévisions de température émises et celle des prévisions de demande de v2 sont comparées aux mêmes semaines (± 2) des années précédentes, avec la distance de Wasserstein normée d'Evidently. Le niveau d'alarme est le 95ᵉ centile de cette distance sur les semaines de validation.
+- **La table de décision.** Chaque semaine, au plus une recommandation, avec ses preuves : (1) un échec de qualité des données, y compris un jour qu'aucune prévision de température n'a alimenté → examiner les données ; (2) la même défaillance 2 semaines de suite, étendue à toute la semaine, ou le biais du même côté de sa bande 3 semaines de suite → réentraîner ; (3) couverture sous le seuil 2 semaines de suite, étendue, biais dans sa bande → recalibrer les intervalles ; (4) la même entrée en dérive 2 semaines de suite, performance dans ses seuils → examiner les données. « Étendue » : la semaine reste hors seuil quand on écarte ses 2 jours les plus extrêmes. Un mauvais jour de demande ne gâte, par les retards de 24 h et de 168 h, que lui-même, le lendemain et le même jour la semaine suivante ; une mauvaise prévision de température gâte au plus deux jours consécutifs (section 2). Le moniteur recommande ; il n'agit jamais.
 
-## 2. Validation sur 2020–2023
+## 2. L'entrée de prévision
 
-48 plis mensuels, de 2020-01 à 2023-12, embargo de 7 jours.
+**La source.** La température est celle du National Blend of Models (NBM) de la NOAA, son produit NBS pour la station CYUL (Montréal-Trudeau, l'aéroport de la station principale de v1), tel que l'archive l'Iowa Environmental Mesonet : des points toutes les trois heures, en degrés Fahrenheit, que ce projet interpole à l'heure et convertit en degrés Celsius. Les fichiers sont téléchargés par script, jamais versés au dépôt.
 
-| Prévision | EAMP | IC 95 % | Biais signé | Heures |
+**La règle d'alimentation.** Une prévision est **disponible** 2 heures après son heure d'émission : c'est une **hypothèse**, car l'archive ne consigne aucune heure d'arrivée, et tout résultat qui dépend de la prévision repose sur elle. Pour le jour J, parmi les 12 prévisions les plus fraîches disponibles à l'origine de J (J 05:00 UTC), on prend la plus fraîche dont les propres points encadrent chacune des 24 heures de J, chacun de ces points étant fini et dans les bornes du contrôle de qualité. On interpole linéairement dans le temps, à l'intérieur d'une seule prévision ; deux prévisions ne sont jamais mélangées. Chaque jour d'entraînement porte la prévision émise pour lui par la même règle, jamais une observation.
+
+**Sur 2019–2023.** 1 826 jours sur 1 826 alimentés ; aucun jour n'est resté sans prévision. Rangs de la prévision utilisée (0 : la plus fraîche) : rang 0, 1 826 jours. Heure de la prévision utilisée, par année : 2019 : 0 h UTC (364 jours), 12 h UTC (1 jours) ; 2020 : 0 h UTC (55 jours), 1 h UTC (310 jours), 7 h UTC (1 jours) ; 2021 : 1 h UTC (364 jours), 19 h UTC (1 jours) ; 2022 : 1 h UTC (365 jours) ; 2023 : 1 h UTC (365 jours).
+
+**L'erreur de la prévision contre l'observation** (prévision moins température observée de Montréal à l'heure visée, par année et saison) :
+
+| Année | Saison | Écart moyen | Écart absolu moyen | Heures |
 |---|---|---|---|---|
-| météo de la veille (production) | 4,42 % | [4,14 % ; 4,68 %] | +0,22 % | 34 997 |
-| météo observée (borne optimiste) | 3,40 % | [3,29 % ; 3,51 %] | +1,22 % | 34 997 |
-| même heure, une semaine avant | 7,81 % | [7,14 % ; 8,44 %] | −0,60 % | 35 046 |
-| météo de la veille, moyenne des 6 stations | 4,45 % | [4,17 % ; 4,73 %] | −0,01 % | 35 013 |
+| 2019 | automne | +0,09 °C | 0,95 °C | 2 184 |
+| 2019 | printemps | +0,15 °C | 1,26 °C | 2 208 |
+| 2019 | été | +0,07 °C | 0,92 °C | 2 207 |
+| 2019 | hiver | +0,04 °C | 1,40 °C | 2 160 |
+| 2020 | automne | +0,16 °C | 1,08 °C | 2 184 |
+| 2020 | printemps | +0,02 °C | 1,15 °C | 2 208 |
+| 2020 | été | +0,30 °C | 0,94 °C | 2 206 |
+| 2020 | hiver | −0,18 °C | 1,26 °C | 2 184 |
+| 2021 | automne | +0,22 °C | 0,86 °C | 2 184 |
+| 2021 | printemps | −0,08 °C | 1,18 °C | 2 208 |
+| 2021 | été | +0,16 °C | 0,84 °C | 2 208 |
+| 2021 | hiver | −0,12 °C | 1,18 °C | 2 160 |
+| 2022 | automne | +0,13 °C | 0,95 °C | 2 183 |
+| 2022 | printemps | −0,23 °C | 1,13 °C | 2 187 |
+| 2022 | été | +0,06 °C | 0,86 °C | 2 208 |
+| 2022 | hiver | −0,01 °C | 1,29 °C | 2 159 |
+| 2023 | automne | +0,10 °C | 0,78 °C | 2 178 |
+| 2023 | printemps | +0,05 °C | 1,19 °C | 2 206 |
+| 2023 | été | +0,14 °C | 0,91 °C | 2 203 |
+| 2023 | hiver | −0,09 °C | 1,35 °C | 2 159 |
 
-Les différences d'EAMP sont en points de pourcentage (pt).
+**La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles 6 heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de +0,02 pt [+0,01 pt ; +0,02 pt] (6 heures moins 2, sur 35 036 heures) : c'est ce que vaut, au plus, l'hypothèse de disponibilité. Cette variante est étiquetée et ne choisit rien.
 
-- Météo de la veille contre la référence naïve : −3,40 pt d'EAMP [−3,92 pt ; −2,91 pt], écart confirmé.
-- Météo observée contre météo de la veille : −1,01 pt [−1,27 pt ; −0,73 pt] ; c'est au plus ce qu'apporterait, dans ce modèle, une température de Montréal parfaitement prévue.
-- Moyenne des 6 stations contre la station principale (analyse de sensibilité, jamais utilisée pour choisir ; le plan a fixé la station de Montréal après que le rapport de qualité des données eut comparé les deux sources sur 2019–2023, des années qui couvrent celles de la validation) : +0,04 pt [+0,01 pt ; +0,07 pt].
+**Le 31 décembre 2023.** Ses deux dernières heures demandent le point du 1ᵉʳ janvier 2024 06:00 UTC d'une prévision émise le 31 décembre et disponible avant l'origine de ce jour : l'information est celle de 2023, et ce jour est prévu comme les autres. L'essai préliminaire qui a servi au choix coupait sur l'heure de validité et laissait ce jour de côté : les heures de v2 sur 2020–2023 en ont 24 de plus que les siennes.
+
+**Les délais de prévision.** Le plus long délai d'un point de prévision, par année d'émission : 2019, 66 h ; 2020, 72 h ; 2021, 71 h ; 2022, 71 h ; 2023, 71 h ; 2024, 71 h. L'argument de la section 9.2 du plan (une mauvaise prévision gâte au plus deux jours consécutifs) tient tant qu'aucun point n'atteint 75 heures. Aucune année ne l'atteint. Les changements de modèle du NBM au fil des années ne sont pas suivis : la série de prévisions n'est pas homogène, et le moniteur de dérive la surveille.
+
+## 3. Validation sur 2020–2023, _dans l'échantillon du choix de la famille et de l'entrée_
+
+**Le choix, dit simplement.** La famille et l'entrée de v2 ont été choisies par le propriétaire le 2026-10-15, sur un essai préliminaire hors des exécutions suivies, mené sur les plis mensuels de 2020–2023 : six familles de modèles, chacune avec trois entrées de température. Le GAM n'avait pas l'erreur globale la plus basse sur la prévision ; il a été choisi pour son écart plus petit aux heures les plus chargées et les plus froides, et parce qu'il reste explicable, une courbe de température par heure. Cet essai n'est pas une exécution suivie : ses chiffres ne sont pas repris ici. Les valeurs suivies ci-dessous viennent de l'exécution de validation, que chacun peut refaire ; elles sont mesurées sur les années qui ont servi au choix, parmi dix-huit paires famille-entrée : l'avantage de v2 y est biaisé vers le haut par ce choix, et il ne prouve pas que v2 est meilleur. Elles sont montrées, étiquetées, et ne servent jamais à dire que v2 est meilleur.
+
+48 plis mensuels, de 2020-01 à 2023-12, embargo de 7 jours. Chaque modèle sur ses propres heures :
+
+| Prévision (_dans l'échantillon du choix de la famille et de l'entrée_) | EAMP | IC 95 % | Biais signé | Heures |
+|---|---|---|---|---|
+| v2, le GAM sur la prévision (production) | 2,83 % | [2,69 % ; 2,95 %] | +1,17 % | 35 036 |
+| la forme de v1 sur la prévision | 3,48 % | [3,36 % ; 3,59 %] | +1,17 % | 35 036 |
+| v1 tel que livré (météo de la veille) | 4,42 % | [4,14 % ; 4,68 %] | +0,22 % | 34 997 |
+| le GAM sur la météo observée (borne optimiste) | 2,70 % | [2,59 % ; 2,81 %] | +1,22 % | 34 997 |
+| la forme de v1 sur la météo observée (borne optimiste) | 3,40 % | [3,29 % ; 3,51 %] | +1,22 % | 34 997 |
+| même heure, une semaine avant (référence naïve) | 7,81 % | [7,14 % ; 8,44 %] | −0,60 % | 35 046 |
+| v1 tel que livré, moyenne des 6 stations (sensibilité) | 4,45 % | [4,17 % ; 4,73 %] | −0,01 % | 35 013 |
+
+**Les valeurs suivies du choix**, sur les 34 997 heures communes (209 semaines ; _dans l'échantillon du choix de la famille et de l'entrée_) : EAMP de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la prévision, 4,42 % pour v1 tel que livré. Erreur signée aux 5 heures les plus chargées de ces heures (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : v2, le GAM sur la prévision (production), +5,7 % en moyenne ; la forme de v1 sur la prévision, +12,8 % en moyenne ; v1 tel que livré (météo de la veille), +27,0 % en moyenne. Les heures que chaque modèle n'a pas, par raison : v2, le GAM sur la prévision (production) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; la forme de v1 sur la prévision : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; v1 tel que livré (météo de la veille) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10), température de la veille absente (39) ; sans demande utilisable : 9.
+
+| Comparaison (_dans l'échantillon du choix de la famille et de l'entrée_) | Différence d'EAMP | IC 95 % | État |
+|---|---|---|---|
+| v2 contre v1 tel que livré | −1,59 pt | [−1,78 pt ; −1,41 pt] | meilleur |
+| v2 contre la forme de v1 sur la même prévision | −0,65 pt | [−0,76 pt ; −0,55 pt] | meilleur |
+| la forme de v1 sur la prévision contre v1 tel que livré (rapportée, jamais jugée) | −0,94 pt | [−1,17 pt ; −0,69 pt] | meilleur |
+
+Sur un même ensemble d'heures, les trois comparaisons s'additionnent : v2 contre v1 tel que livré = v2 contre la forme de v1 + l'entrée. Verdicts (_dans l'échantillon du choix de la famille et de l'entrée_) : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Ils sont dans l'échantillon du choix : ils ne décident rien.
+
+Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1 468 heures communes sous le seuil de −12,0 °C, réparties sur 37 semaines du lundi au dimanche ; elle est testable (au moins 120 heures et 4 semaines) : v2 contre v1 tel que livré, −5,32 pt [−6,38 pt ; −4,43 pt] (meilleur) ; v2 contre la forme de v1, −0,77 pt [−1,14 pt ; −0,42 pt] (meilleur).
+
+| Heure finissant à (UTC) (_dans l'échantillon du choix de la famille et de l'entrée_) | Demande | Prévision de température | v2 | Forme de v1 sur la prévision | v1 tel que livré |
+|---|---|---|---|---|---|
+| 2023-02-03 23:00 UTC | 42 473 MW | −25,2 °C | +4,4 % | +13,4 % | +27,0 % | 
+| 2023-02-04 00:00 UTC | 42 254 MW | −25,6 °C | +6,5 % | +12,9 % | +26,7 % | 
+| 2023-02-04 01:00 UTC | 41 799 MW | −25,7 °C | +8,2 % | +12,9 % | +27,2 % | 
+| 2023-02-04 02:00 UTC | 41 141 MW | −25,9 °C | +9,3 % | +13,1 % | +27,9 % | 
+| 2023-02-03 22:00 UTC | 40 585 MW | −24,8 °C | +0,4 % | +11,8 % | +26,3 % | 
+
+
+- Moyenne des 6 stations contre la station principale, sur le modèle de v1 tel que livré (analyse de sensibilité, jamais utilisée pour choisir) : +0,04 pt [+0,01 pt ; +0,07 pt].
 
 ![EAMP mensuelle](figures/validation/validation-monthly-mape.fr.png)
 
-**Par saison et par année** (météo de la veille) :
+**v2 par saison et par année** (_dans l'échantillon du choix de la famille et de l'entrée_) :
 
 | Groupe | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
-| automne | 3,83 % | [3,40 % ; 4,27 %] | +0,38 % | [−0,09 % ; +0,90 %] |
-| printemps | 5,15 % | [4,69 % ; 5,62 %] | −1,42 % | [−1,97 % ; −0,86 %] |
-| été | 2,61 % | [2,42 % ; 2,79 %] | +0,83 % | [+0,50 % ; +1,10 %] |
-| hiver | 6,11 % | [5,61 % ; 6,61 %] | +1,12 % | [+0,40 % ; +1,72 %] |
-| 2020 | 4,72 % | [4,14 % ; 5,29 %] | −0,31 % | [−0,99 % ; +0,38 %] |
-| 2021 | 4,30 % | [3,81 % ; 4,91 %] | +0,45 % | [−0,05 % ; +0,95 %] |
-| 2022 | 4,45 % | [3,92 % ; 5,02 %] | +0,49 % | [−0,06 % ; +1,04 %] |
-| 2023 | 4,19 % | [3,68 % ; 4,75 %] | +0,27 % | [−0,31 % ; +0,84 %] |
+| automne | 2,42 % | [2,21 % ; 2,63 %] | +1,18 % | [+0,90 % ; +1,48 %] |
+| printemps | 3,21 % | [2,97 % ; 3,43 %] | +0,69 % | [+0,17 % ; +1,15 %] |
+| été | 2,13 % | [1,98 % ; 2,28 %] | +1,33 % | [+0,99 % ; +1,62 %] |
+| hiver | 3,56 % | [3,31 % ; 3,80 %] | +1,47 % | [+1,03 % ; +1,88 %] |
+| 2020 | 2,87 % | [2,57 % ; 3,17 %] | +0,10 % | [−0,34 % ; +0,57 %] |
+| 2021 | 2,80 % | [2,58 % ; 3,07 %] | +1,46 % | [+1,08 % ; +1,81 %] |
+| 2022 | 2,91 % | [2,66 % ; 3,14 %] | +1,75 % | [+1,45 % ; +2,06 %] |
+| 2023 | 2,72 % | [2,44 % ; 3,04 %] | +1,35 % | [+1,06 % ; +1,67 %] |
 
-**Par décile de charge prévue** (les déciles sont pris sur la prévision, jamais sur la demande réelle) :
+**Par décile de charge prévue par v2** (les déciles sont pris sur la prévision, jamais sur la demande réelle) :
 
 | Décile | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
-| 1 | 2,59 % | [2,40 % ; 2,81 %] | +1,09 % | [+0,77 % ; +1,41 %] |
-| 2 | 3,29 % | [3,04 % ; 3,56 %] | 0,00 % | [−0,35 % ; +0,37 %] |
-| 3 | 3,12 % | [2,88 % ; 3,41 %] | +0,53 % | [+0,19 % ; +0,87 %] |
-| 4 | 3,16 % | [2,91 % ; 3,44 %] | +0,33 % | [−0,03 % ; +0,65 %] |
-| 5 | 3,55 % | [3,25 % ; 3,93 %] | −0,23 % | [−0,58 % ; +0,15 %] |
-| 6 | 4,91 % | [4,51 % ; 5,34 %] | −0,64 % | [−1,25 % ; −0,02 %] |
-| 7 | 5,93 % | [5,53 % ; 6,35 %] | +0,77 % | [+0,03 % ; +1,58 %] |
-| 8 | 5,90 % | [5,49 % ; 6,40 %] | +0,60 % | [−0,16 % ; +1,41 %] |
-| 9 | 5,75 % | [5,29 % ; 6,21 %] | +0,40 % | [−0,29 % ; +1,10 %] |
-| 10 | 5,98 % | [5,37 % ; 6,55 %] | −0,60 % | [−1,50 % ; +0,31 %] |
+| 1 | 1,98 % | [1,82 % ; 2,15 %] | +1,23 % | [+0,88 % ; +1,55 %] |
+| 2 | 2,16 % | [2,03 % ; 2,30 %] | +1,07 % | [+0,79 % ; +1,34 %] |
+| 3 | 2,21 % | [2,09 % ; 2,34 %] | +1,06 % | [+0,82 % ; +1,32 %] |
+| 4 | 2,23 % | [2,11 % ; 2,37 %] | +1,12 % | [+0,89 % ; +1,35 %] |
+| 5 | 2,45 % | [2,29 % ; 2,64 %] | +1,13 % | [+0,88 % ; +1,40 %] |
+| 6 | 3,03 % | [2,79 % ; 3,29 %] | +1,24 % | [+0,77 % ; +1,65 %] |
+| 7 | 3,54 % | [3,33 % ; 3,75 %] | +1,37 % | [+0,86 % ; +1,88 %] |
+| 8 | 3,62 % | [3,39 % ; 3,85 %] | +1,15 % | [+0,70 % ; +1,54 %] |
+| 9 | 3,72 % | [3,46 % ; 4,01 %] | +1,35 % | [+0,90 % ; +1,83 %] |
+| 10 | 3,32 % | [3,00 % ; 3,63 %] | +0,94 % | [+0,44 % ; +1,42 %] |
 
 **Par heure de la journée** (heure locale où commence l'heure de demande) :
 
 | Heure | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
-| 0 h | 4,58 % | [4,24 % ; 4,91 %] | +0,29 % | [−0,08 % ; +0,65 %] |
-| 1 h | 4,74 % | [4,39 % ; 5,09 %] | +0,24 % | [−0,14 % ; +0,62 %] |
-| 2 h | 4,90 % | [4,54 % ; 5,26 %] | +0,19 % | [−0,22 % ; +0,58 %] |
-| 3 h | 5,02 % | [4,64 % ; 5,40 %] | +0,13 % | [−0,28 % ; +0,53 %] |
-| 4 h | 5,10 % | [4,71 % ; 5,48 %] | +0,04 % | [−0,36 % ; +0,44 %] |
-| 5 h | 5,12 % | [4,73 % ; 5,49 %] | −0,09 % | [−0,51 % ; +0,31 %] |
-| 6 h | 5,17 % | [4,81 % ; 5,52 %] | −0,04 % | [−0,45 % ; +0,33 %] |
-| 7 h | 4,95 % | [4,63 % ; 5,27 %] | +0,03 % | [−0,33 % ; +0,38 %] |
-| 8 h | 4,38 % | [4,08 % ; 4,68 %] | +0,21 % | [−0,11 % ; +0,52 %] |
-| 9 h | 4,04 % | [3,77 % ; 4,33 %] | +0,33 % | [+0,04 % ; +0,60 %] |
-| 10 h | 3,93 % | [3,66 % ; 4,20 %] | +0,25 % | [−0,03 % ; +0,51 %] |
-| 11 h | 4,00 % | [3,73 % ; 4,25 %] | +0,30 % | [+0,03 % ; +0,55 %] |
-| 12 h | 4,09 % | [3,80 % ; 4,35 %] | +0,36 % | [+0,09 % ; +0,60 %] |
-| 13 h | 4,25 % | [3,96 % ; 4,51 %] | +0,36 % | [+0,07 % ; +0,62 %] |
-| 14 h | 4,34 % | [4,06 % ; 4,60 %] | +0,33 % | [+0,04 % ; +0,59 %] |
-| 15 h | 4,36 % | [4,07 % ; 4,62 %] | +0,27 % | [−0,03 % ; +0,56 %] |
-| 16 h | 4,31 % | [4,03 % ; 4,57 %] | +0,33 % | [+0,03 % ; +0,61 %] |
-| 17 h | 4,13 % | [3,87 % ; 4,38 %] | +0,25 % | [−0,04 % ; +0,51 %] |
-| 18 h | 3,99 % | [3,74 % ; 4,24 %] | +0,28 % | [0,00 % ; +0,54 %] |
-| 19 h | 3,99 % | [3,74 % ; 4,24 %] | +0,29 % | [+0,01 % ; +0,56 %] |
-| 20 h | 4,05 % | [3,79 % ; 4,30 %] | +0,31 % | [+0,01 % ; +0,58 %] |
-| 21 h | 4,06 % | [3,78 % ; 4,33 %] | +0,19 % | [−0,12 % ; +0,47 %] |
-| 22 h | 4,16 % | [3,87 % ; 4,44 %] | +0,25 % | [−0,06 % ; +0,55 %] |
-| 23 h | 4,36 % | [4,06 % ; 4,67 %] | +0,29 % | [−0,04 % ; +0,61 %] |
+| 0 h | 2,61 % | [2,46 % ; 2,76 %] | +1,27 % | [+1,04 % ; +1,49 %] |
+| 1 h | 2,61 % | [2,46 % ; 2,75 %] | +1,28 % | [+1,04 % ; +1,50 %] |
+| 2 h | 2,63 % | [2,48 % ; 2,77 %] | +1,30 % | [+1,06 % ; +1,53 %] |
+| 3 h | 2,64 % | [2,49 % ; 2,78 %] | +1,31 % | [+1,07 % ; +1,53 %] |
+| 4 h | 2,68 % | [2,52 % ; 2,82 %] | +1,30 % | [+1,05 % ; +1,53 %] |
+| 5 h | 2,66 % | [2,52 % ; 2,80 %] | +1,27 % | [+1,04 % ; +1,51 %] |
+| 6 h | 2,78 % | [2,65 % ; 2,90 %] | +1,13 % | [+0,87 % ; +1,39 %] |
+| 7 h | 2,79 % | [2,66 % ; 2,92 %] | +1,14 % | [+0,88 % ; +1,40 %] |
+| 8 h | 2,70 % | [2,56 % ; 2,84 %] | +1,15 % | [+0,90 % ; +1,39 %] |
+| 9 h | 2,72 % | [2,55 % ; 2,89 %] | +1,09 % | [+0,87 % ; +1,31 %] |
+| 10 h | 2,84 % | [2,65 % ; 3,04 %] | +1,06 % | [+0,84 % ; +1,27 %] |
+| 11 h | 2,99 % | [2,78 % ; 3,20 %] | +1,07 % | [+0,85 % ; +1,28 %] |
+| 12 h | 3,14 % | [2,91 % ; 3,37 %] | +1,15 % | [+0,94 % ; +1,36 %] |
+| 13 h | 3,26 % | [3,03 % ; 3,50 %] | +1,13 % | [+0,89 % ; +1,34 %] |
+| 14 h | 3,35 % | [3,11 % ; 3,58 %] | +1,13 % | [+0,90 % ; +1,36 %] |
+| 15 h | 3,35 % | [3,12 % ; 3,57 %] | +1,16 % | [+0,91 % ; +1,41 %] |
+| 16 h | 3,25 % | [3,05 % ; 3,45 %] | +1,20 % | [+0,94 % ; +1,46 %] |
+| 17 h | 3,06 % | [2,89 % ; 3,22 %] | +1,25 % | [+1,02 % ; +1,48 %] |
+| 18 h | 2,88 % | [2,73 % ; 3,02 %] | +1,21 % | [+1,00 % ; +1,42 %] |
+| 19 h | 2,75 % | [2,62 % ; 2,89 %] | +1,11 % | [+0,91 % ; +1,32 %] |
+| 20 h | 2,62 % | [2,50 % ; 2,75 %] | +1,01 % | [+0,80 % ; +1,23 %] |
+| 21 h | 2,54 % | [2,41 % ; 2,67 %] | +0,97 % | [+0,75 % ; +1,20 %] |
+| 22 h | 2,48 % | [2,34 % ; 2,62 %] | +1,06 % | [+0,84 % ; +1,29 %] |
+| 23 h | 2,51 % | [2,36 % ; 2,65 %] | +1,22 % | [+1,00 % ; +1,43 %] |
 
-**Coefficients du modèle figé pour 2024.** Chaque coefficient dit ce qu'une variable ajoute *compte tenu* de la demande de la veille et de la semaine précédente ; l'ajustement sans retards, montré à côté pour l'interprétation seulement, donne l'effet total de la météo. Les 72 constantes (une par heure et type de jour) ne sont pas montrées. Aucune erreur type des moindres carrés n'est donnée : les erreurs sont autocorrélées.
+**Hors de la plage d'entraînement.** Au-delà des températures d'entraînement de chaque pli, chaque courbe continue en ligne droite. Sur les 48 plis, 88 heures prévues par v2 avaient une prévision de température hors de la plage de leur pli (73 en dessous, 15 au-dessus).
 
-| Variable | Modèle figé | Sans retards |
+**Les courbes du GAM figé pour 2024**, celui de cette chaîne (empreinte `7aadbc5866c6`). Chaque courbe dit ce que la prévision de température ajoute à son heure *compte tenu* de la demande de la veille et de la semaine précédente, relativement à sa valeur à 18 °C : en trait plein sur la plage d'entraînement, en tirets là où elle est extrapolée. À côté, les mêmes courbes d'un GAM ajusté sans les retards, pour l'interprétation seulement. Ces courbes remplacent le tableau des coefficients de v1. Les deux coefficients des retards, en MW par MW, du modèle du rejeu de 2024 dont la section 8 montre les chiffres : demande de la veille 0,389, demande de la semaine précédente 0,065 ; tous deux sont positifs, ce que la règle de l'écho suppose et que le gel vérifie. Aucune erreur type n'est donnée : les erreurs sont autocorrélées et l'ajustement est pénalisé.
+
+![Courbes du GAM](figures/validation/validation-partial-effects.fr.png)
+
+| Heure | Température d'entraînement la plus froide | Effet (modèle figé) | Effet (sans les retards) |
+|---|---|---|---|
+| 0 h | −28 °C | +16 191 MW | +23 578 MW |
+| 1 h | −28 °C | +15 989 MW | +23 736 MW |
+| 2 h | −28 °C | +15 716 MW | +23 693 MW |
+| 3 h | −28 °C | +15 468 MW | +23 590 MW |
+| 4 h | −28 °C | +15 072 MW | +23 263 MW |
+| 5 h | −28 °C | +15 027 MW | +23 286 MW |
+| 6 h | −28 °C | +14 954 MW | +23 359 MW |
+| 7 h | −28 °C | +15 523 MW | +24 039 MW |
+| 8 h | −28 °C | +15 365 MW | +23 600 MW |
+| 9 h | −28 °C | +14 746 MW | +22 240 MW |
+| 10 h | −28 °C | +14 980 MW | +21 787 MW |
+| 11 h | −28 °C | +15 840 MW | +21 924 MW |
+| 12 h | −28 °C | +17 212 MW | +22 675 MW |
+| 13 h | −28 °C | +19 205 MW | +24 143 MW |
+| 14 h | −28 °C | +20 887 MW | +25 564 MW |
+| 15 h | −28 °C | +21 690 MW | +25 852 MW |
+| 16 h | −28 °C | +21 416 MW | +26 068 MW |
+| 17 h | −28 °C | +21 464 MW | +26 725 MW |
+| 18 h | −28 °C | +19 978 MW | +25 849 MW |
+| 19 h | −28 °C | +18 996 MW | +25 089 MW |
+| 20 h | −28 °C | +18 048 MW | +24 381 MW |
+| 21 h | −28 °C | +17 029 MW | +23 803 MW |
+| 22 h | −28 °C | +16 237 MW | +23 214 MW |
+| 23 h | −28 °C | +16 137 MW | +23 318 MW |
+
+## 4. Cas tests
+
+Aucun des deux cas tests n'a de critère d'acceptation qui pourrait échouer : ce sont des mesures, sur des années qui ont servi au choix (_dans l'échantillon du choix de la famille et de l'entrée_).
+
+**Printemps 2020.** Mois de mars, avril, mai et juin, pour v2 : biais de −1,16 % [−1,79 % ; −0,43 %] en 2020, contre +1,53 % [+1,20 % ; +1,84 %] les autres années ; écart confirmé par des intervalles disjoints ; l'intervalle de la différence confirme l'écart. L'intervalle de la différence donne −2,68 pt [−3,41 pt ; −1,89 pt] : selon la règle de la section 1, l'écart est confirmé (400 000 tirages par côté, en 20 lots indépendants de 20 000 ; erreur type de Monte-Carlo des bornes, mesurée par leur dispersion d'un lot à l'autre : 0,0015 pt et 0,0015 pt ; bornes à cette précision : −3,4126 pt et −1,8868 pt, chacune à plus de 3 de ses erreurs types de zéro). Pour v1 tel que livré : −1,86 % [−3,06 % ; −0,71 %] contre −0,60 % [−1,12 % ; −0,11 %] ; différence −1,27 pt [−2,51 pt ; −0,02 pt] : selon la règle de la section 1, l'écart est confirmé (400 000 tirages par côté, en 20 lots indépendants de 20 000 ; erreur type de Monte-Carlo des bornes, mesurée par leur dispersion d'un lot à l'autre : 0,0026 pt et 0,0032 pt ; bornes à cette précision : −2,5092 pt et −0,0188 pt, chacune à plus de 3 de ses erreurs types de zéro). Avec la météo observée (forme de v1) : −1,39 % contre +1,28 % ; différence −2,66 pt [−3,71 pt ; −1,59 pt] : selon la règle de la section 1, l'écart est confirmé (400 000 tirages par côté, en 20 lots indépendants de 20 000 ; erreur type de Monte-Carlo des bornes, mesurée par leur dispersion d'un lot à l'autre : 0,0020 pt et 0,0025 pt ; bornes à cette précision : −3,7121 pt et −1,5938 pt, chacune à plus de 3 de ses erreurs types de zéro). Les intervalles de prévision ne couvrent pas 2020 : ils demandent 12 mois de calibration.
+
+| Mois (v2) | EAMP | Biais |
 |---|---|---|
-| chauffage, nuit (0–5 h) (MW par degré-heure)  | 109,9 | 489,3 |
-| climatisation, nuit (0–5 h) (MW par degré-heure)  | 109,6 | 517,2 |
-| chauffage, matin (6–9 h) (MW par degré-heure)  | 117,1 | 516,3 |
-| climatisation, matin (6–9 h) (MW par degré-heure)  | 64,5 | 315,4 |
-| chauffage, jour (10–15 h) (MW par degré-heure)  | 103,5 | 439,4 |
-| climatisation, jour (10–15 h) (MW par degré-heure)  | 49,0 | 192,6 |
-| chauffage, soir (16–20 h) (MW par degré-heure)  | 114,5 | 494,1 |
-| climatisation, soir (16–20 h) (MW par degré-heure)  | 52,6 | 210,0 |
-| chauffage, fin de soirée (21–23 h) (MW par degré-heure)  | 106,3 | 462,1 |
-| climatisation, fin de soirée (21–23 h) (MW par degré-heure)  | 91,6 | 404,9 |
-| demande de la veille (part)  | 0,599 | — |
-| demande de la semaine précédente (part)  | 0,169 | — |
+| 2020-03 | 4,17 % | +0,02 % |
+| 2020-04 | 3,71 % | −2,31 % |
+| 2020-05 | 2,64 % | −1,73 % |
+| 2020-06 | 2,00 % | −0,63 % |
+| 2021-03 | 3,97 % | +0,85 % |
+| 2021-04 | 2,88 % | +1,40 % |
+| 2021-05 | 2,31 % | +1,76 % |
+| 2021-06 | 2,84 % | +2,55 % |
+| 2022-03 | 4,07 % | +1,45 % |
+| 2022-04 | 3,00 % | +1,74 % |
+| 2022-05 | 2,47 % | +1,85 % |
+| 2022-06 | 2,69 % | +2,59 % |
+| 2023-03 | 3,42 % | +0,50 % |
+| 2023-04 | 3,59 % | +1,45 % |
+| 2023-05 | 2,23 % | +1,23 % |
+| 2023-06 | 1,99 % | +0,98 % |
 
-## 3. Cas tests
-
-Aucun des deux cas tests n'avait de critère d'acceptation qui pouvait échouer : le plan fixait ce que chacun mesurerait, pas un résultat qui compterait comme un échec. Ce sont des mesures.
-
-**Printemps 2020.** Mois de mars, avril, mai et juin : biais de −1,86 % [−3,06 % ; −0,71 %] en 2020, contre −0,60 % [−1,12 % ; −0,11 %] les autres années. Le critère retenu, des intervalles disjoints, ne confirme pas l'écart ; ce n'est pas la règle de la section 1, qui juge l'intervalle de la différence. *Ajouté après les résultats :* l'intervalle de la différence, calculé au rendu avec le même rééchantillonnage par semaines entières que les exécutions, mais avec plus de tirages (chaque côté sur ses propres semaines et avec sa propre graine, car ils ne partagent aucune heure), donne −1,27 pt [−2,51 pt ; −0,02 pt] : selon la règle de la section 1, l'écart est confirmé (400 000 tirages par côté, en 20 lots indépendants de 20 000 ; erreur type de Monte-Carlo des bornes, mesurée par leur dispersion d'un lot à l'autre : 0,0026 pt et 0,0032 pt ; bornes à cette précision : −2,5092 pt et −0,0188 pt, chacune à plus de 3 de ses erreurs types de zéro). Avec la météo observée, le même cas donne −1,39 % [−2,30 % ; −0,44 %] en 2020 contre +1,28 % [+0,78 % ; +1,75 %] : intervalles disjoints ; différence −2,66 pt [−3,71 pt ; −1,59 pt], ajoutée après les résultats par le même calcul : selon la règle de la section 1, l'écart est confirmé (400 000 tirages par côté, en 20 lots indépendants de 20 000 ; erreur type de Monte-Carlo des bornes, mesurée par leur dispersion d'un lot à l'autre : 0,0020 pt et 0,0025 pt ; bornes à cette précision : −3,7121 pt et −1,5938 pt, chacune à plus de 3 de ses erreurs types de zéro). Les intervalles de prévision ne couvrent pas 2020 : ils demandent 12 mois de calibration.
-
-| Mois | EAMP | Biais |
-|---|---|---|
-| 2020-03 | 5,41 % | −1,50 % |
-| 2020-04 | 5,52 % | −3,03 % |
-| 2020-05 | 4,72 % | −2,48 % |
-| 2020-06 | 3,04 % | −0,43 % |
-| 2021-03 | 7,76 % | −0,96 % |
-| 2021-04 | 6,85 % | −1,54 % |
-| 2021-05 | 3,48 % | −0,73 % |
-| 2021-06 | 3,06 % | +1,55 % |
-| 2022-03 | 5,40 % | −0,75 % |
-| 2022-04 | 4,86 % | −1,41 % |
-| 2022-05 | 3,01 % | −0,50 % |
-| 2022-06 | 2,22 % | +1,24 % |
-| 2023-03 | 4,31 % | −0,94 % |
-| 2023-04 | 6,42 % | −2,20 % |
-| 2023-05 | 4,10 % | −1,07 % |
-| 2023-06 | 2,28 % | +0,15 % |
-
-**Pointe de froid de 2023-02.** Les 5 heures les plus chargées de 2019–2023 tombent toutes en 2023-02. 0 sur 5 sont dans l'intervalle à 90 %. Même avec la température observée de l'heure visée, la prévision reste de 10,8 % à 12,7 % sous la demande : le retard de la température n'explique pas tout l'écart. La cause n'est pas testée : aucun ajustement sans les retards, ni avec une autre réponse à la température, n'a été fait sur cette pointe. Ce que montrent les coefficients du modèle figé pour 2023, ajusté jusqu'au 2022-12-24, avant la pointe (les plis de validation qui l'ont prévue sont des réajustements de même forme, dont les coefficients ne sont pas conservés) : la prévision reprend la demande de la veille avec un poids de 0,586, et un degré-heure de chauffage de plus lui ajoute 107 à 119 MW selon le bloc horaire, contre 439 à 514 MW dans l'ajustement sans retards. Une prévision ainsi adossée à la veille ne suit, le jour même, qu'une partie d'un écart de température ; c'est une lecture des coefficients, pas une cause mesurée. Une seule pointe est étudiée ici.
+**Pointe de froid de 2023-02.** Les 5 heures les plus chargées de 2019–2023 tombent toutes en 2023-02. 2 sur 5 sont dans l'intervalle à 90 % de v2. Une seule pointe est étudiée ici.
 
 ![Pointe de froid](figures/validation/validation-peak-hours.fr.png)
 
-| Heure finissant à (UTC) | Demande | Température | Météo de la veille | Intervalle | Météo observée |
-|---|---|---|---|---|---|
-| 2023-02-03 23:00 UTC | 42 473 MW | −26,1 °C | 31 016 MW | 28 051–33 981 | 37 062 MW |
-| 2023-02-04 00:00 UTC | 42 254 MW | −26,2 °C | 30 964 MW | 28 004–33 924 | 37 033 MW |
-| 2023-02-04 01:00 UTC | 41 799 MW | −26,3 °C | 30 435 MW | 27 526–33 344 | 36 591 MW |
-| 2023-02-04 02:00 UTC | 41 141 MW | −26,4 °C | 29 650 MW | 26 816–32 484 | 35 940 MW |
-| 2023-02-03 22:00 UTC | 40 585 MW | −26,1 °C | 29 910 MW | 27 051–32 769 | 36 190 MW |
+| Heure finissant à (UTC) | Demande | Prévision de température | v2 | Intervalle de v2 | Forme de v1 sur la prévision | v1 tel que livré |
+|---|---|---|---|---|---|---|
+| 2023-02-03 23:00 UTC | 42 473 MW | −25,2 °C | 40 618 MW | 38 003–43 234 | 36 761 MW | 31 016 MW |
+| 2023-02-04 00:00 UTC | 42 254 MW | −25,6 °C | 39 505 MW | 36 961–42 049 | 36 807 MW | 30 964 MW |
+| 2023-02-04 01:00 UTC | 41 799 MW | −25,7 °C | 38 388 MW | 35 916–40 860 | 36 392 MW | 30 435 MW |
+| 2023-02-04 02:00 UTC | 41 141 MW | −25,9 °C | 37 328 MW | 34 924–39 732 | 35 760 MW | 29 650 MW |
+| 2023-02-03 22:00 UTC | 40 585 MW | −24,8 °C | 40 409 MW | 37 806–43 011 | 35 788 MW | 29 910 MW |
 
-## 4. Intervalles de prévision
+— : pas de prévision pour cette heure.
 
-Nominal 90 %, de 2021-01 à 2023-12.
+## 5. Intervalles de prévision
+
+Nominal 90 %, de 2021-01 à 2023-12 (_dans l'échantillon du choix de la famille et de l'entrée_). Les intervalles de v2 seuls alimentent le moniteur ; ceux de v1 tel que livré sont montrés pour comparaison.
 
 | Forme | Couverture | IC 95 % | Demi-largeur moyenne |
 |---|---|---|---|
-| relative, un quantile (production) | 90,6 % | [88,7 % ; 92,5 %] | 9,99 % |
-| relative, un quantile par saison (sensibilité) | 90,1 % | [88,6 % ; 91,7 %] | 9,65 % |
-| absolue (sensibilité) | 90,1 % | [87,9 % ; 92,4 %] | 11,93 % |
-| relative, météo observée | 90,2 % | [89,0 % ; 91,4 %] | 7,60 % |
+| v2, relative, un quantile (production) | 90,3 % | [88,6 % ; 92,0 %] | 6,35 % |
+| v2, relative, un quantile par saison (sensibilité) | 89,7 % | [88,2 % ; 91,2 %] | 6,19 % |
+| v2, absolue (sensibilité) | 90,2 % | [88,1 % ; 92,3 %] | 7,49 % |
+| v1 tel que livré, relative | 90,6 % | [88,7 % ; 92,5 %] | 9,99 % |
 
-L'IC 95 % de la couverture globale contient le nominal. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés, pour l'intervalle de production. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les blocs horaires jour (10–15 h) et soir (16–20 h) ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC. Le tableau des déciles montre ce que le quantile par saison laisse aux fortes charges. La forme de production reste celle fixée avant la validation ; en changer après avoir vu les résultats rendrait ceux-ci non indépendants du choix.
+L'IC 95 % de la couverture globale de v2 contient le nominal de 90 %. La couverture est rapportée, jamais jugée par la règle de décision. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les blocs horaires nuit (0–5 h) et fin de soirée (21–23 h) ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC.
 
 ![Couverture par saison](figures/validation/validation-coverage-by-season.fr.png)
 
 | Saison | Un quantile | IC 95 % | Un quantile par saison | IC 95 % |
 |---|---|---|---|---|
-| hiver | 80,0 % | [75,8 % ; 83,9 %] | 89,2 % | [86,0 % ; 92,0 %] |
-| printemps | 87,9 % | [84,4 % ; 91,6 %] | 88,9 % | [85,8 % ; 92,3 %] |
-| été | 99,4 % | [99,0 % ; 99,8 %] | 90,9 % | [88,3 % ; 93,4 %] |
-| automne | 94,8 % | [92,2 % ; 97,1 %] | 91,5 % | [88,0 % ; 94,3 %] |
+| hiver | 81,7 % | [78,3 % ; 84,8 %] | 88,9 % | [86,0 % ; 91,4 %] |
+| printemps | 87,5 % | [83,8 % ; 90,4 %] | 89,6 % | [86,2 % ; 92,2 %] |
+| été | 97,4 % | [96,4 % ; 98,3 %] | 89,6 % | [87,0 % ; 91,9 %] |
+| automne | 94,6 % | [92,1 % ; 96,7 %] | 90,8 % | [87,1 % ; 93,8 %] |
 
 | Bloc horaire | Couverture (un quantile) | IC 95 % |
 |---|---|---|
-| nuit (0–5 h) | 87,5 % | [84,8 % ; 90,2 %] |
-| matin (6–9 h) | 89,5 % | [87,3 % ; 91,7 %] |
-| jour (10–15 h) | 92,0 % | [90,2 % ; 93,8 %] |
-| soir (16–20 h) | 92,8 % | [91,1 % ; 94,4 %] |
-| fin de soirée (21–23 h) | 91,6 % | [89,7 % ; 93,6 %] |
+| nuit (0–5 h) | 92,5 % | [90,5 % ; 94,3 %] |
+| matin (6–9 h) | 90,4 % | [88,7 % ; 92,1 %] |
+| jour (10–15 h) | 86,9 % | [84,4 % ; 89,5 %] |
+| soir (16–20 h) | 90,3 % | [88,5 % ; 92,1 %] |
+| fin de soirée (21–23 h) | 92,9 % | [91,0 % ; 94,5 %] |
 
 | Décile de charge prévue | Couverture (un quantile) | IC 95 % | Un quantile par saison | IC 95 % |
 |---|---|---|---|---|
-| 1 | 98,5 % | [97,4 % ; 99,5 %] | 95,1 % | [93,0 % ; 96,8 %] |
-| 2 | 96,7 % | [95,0 % ; 98,1 %] | 92,5 % | [90,3 % ; 94,5 %] |
-| 3 | 96,7 % | [95,1 % ; 98,0 %] | 92,3 % | [90,1 % ; 94,3 %] |
-| 4 | 97,2 % | [95,9 % ; 98,4 %] | 91,6 % | [89,1 % ; 93,8 %] |
-| 5 | 96,0 % | [94,0 % ; 97,7 %] | 90,9 % | [88,4 % ; 93,4 %] |
-| 6 | 90,9 % | [87,7 % ; 93,8 %] | 87,6 % | [83,9 % ; 90,7 %] |
-| 7 | 82,1 % | [77,6 % ; 85,8 %] | 84,0 % | [79,5 % ; 87,6 %] |
-| 8 | 81,4 % | [77,4 % ; 85,0 %] | 85,7 % | [82,1 % ; 89,2 %] |
-| 9 | 84,2 % | [79,8 % ; 87,7 %] | 90,5 % | [87,1 % ; 93,6 %] |
-| 10 | 82,5 % | [78,1 % ; 87,4 %] | 90,7 % | [87,7 % ; 93,7 %] |
+| 1 | 98,6 % | [97,7 % ; 99,4 %] | 95,6 % | [93,8 % ; 97,2 %] |
+| 2 | 96,5 % | [95,0 % ; 97,7 %] | 94,1 % | [92,2 % ; 95,5 %] |
+| 3 | 96,5 % | [95,3 % ; 97,7 %] | 93,2 % | [91,3 % ; 95,0 %] |
+| 4 | 97,3 % | [96,1 % ; 98,3 %] | 92,4 % | [90,4 % ; 94,4 %] |
+| 5 | 94,2 % | [92,0 % ; 96,2 %] | 89,4 % | [86,6 % ; 92,0 %] |
+| 6 | 88,4 % | [84,5 % ; 91,8 %] | 85,5 % | [81,5 % ; 88,8 %] |
+| 7 | 83,1 % | [79,8 % ; 86,5 %] | 84,0 % | [80,8 % ; 87,3 %] |
+| 8 | 83,2 % | [79,7 % ; 86,6 %] | 86,0 % | [82,1 % ; 89,7 %] |
+| 9 | 81,1 % | [76,9 % ; 85,0 %] | 86,5 % | [83,0 % ; 89,6 %] |
+| 10 | 84,6 % | [80,8 % ; 88,1 %] | 90,2 % | [87,4 % ; 92,8 %] |
 
-## 5. Seuils de surveillance
+## 6. Seuils de surveillance
 
-Tirés des semaines de validation 2021–2023 (le rejeu de 2023 n'utilise que 2021–2022). Saisons : hiver de décembre à février, printemps de mars à mai, été de juin à août, automne de septembre à novembre. Semaines de lundi à dimanche, heure normale. Une semaine n'est jugée par le rejeu, et n'entre dans les seuils, que si ses 7 jours sont tous dans la période (l'année rejouée, ou les années dont les seuils sont tirés), qu'aucun n'échoue au contrôle de qualité des données du jour du rejeu et qu'elle compte au moins 120 heures notées : les deux appliquent le même test. Pour ces raisons, 4 semaines de 2021–2023 ont été écartées (4 de 2021–2022 pour le rejeu de 2023) ; l'exécution de validation consigne chacune avec sa raison.
-
-| Saison | EAMP au-dessus de | Biais hors de | Couverture sous | Semaines |
-|---|---|---|---|---|
-| hiver | 8,35 % | −3,10 % à +5,47 % | 61,2 % | 36 |
-| printemps | 8,33 % | −5,20 % à +2,13 % | 64,9 % | 38 |
-| été | 3,75 % | −0,49 % à +2,60 % | 96,4 % | 40 |
-| automne | 6,00 % | −1,45 % à +4,10 % | 82,0 % | 39 |
-
-Dérive : alarme au-dessus de 1,252 pour la température et de 1,015 pour la prévision.
-
-**Seuils du rejeu de 2023**, tirés des semaines 2021–2022 ; les mesures de la section 6 sur 2023 les utilisent, celles sur 2024 les seuils du tableau précédent :
+Tirés des semaines de validation de v2, 2021–2023 (le rejeu de 2023 n'utilise que 2021–2022). Saisons : hiver de décembre à février, printemps de mars à mai, été de juin à août, automne de septembre à novembre. Semaines de lundi à dimanche, heure normale. Une semaine n'est jugée par le rejeu, et n'entre dans les seuils, que si ses 7 jours sont tous dans la période, qu'aucun n'échoue au contrôle de qualité des données du jour du rejeu et qu'elle compte au moins 120 heures notées : les deux appliquent le même test. Pour ces raisons, 4 semaines de 2021–2023 ont été écartées (4 de 2021–2022 pour le rejeu de 2023) ; l'exécution de validation consigne chacune avec sa raison.
 
 | Saison | EAMP au-dessus de | Biais hors de | Couverture sous | Semaines |
 |---|---|---|---|---|
-| hiver | 8,19 % | −2,33 % à +5,22 % | 58,0 % | 24 |
-| printemps | 8,38 % | −3,83 % à +2,60 % | 62,5 % | 25 |
-| été | 3,95 % | −0,49 % à +2,74 % | 95,5 % | 26 |
-| automne | 6,02 % | −1,76 % à +4,81 % | 77,4 % | 26 |
+| hiver | 4,75 % | −1,03 % à +4,01 % | 66,1 % | 36 |
+| printemps | 4,70 % | −0,79 % à +3,37 % | 69,9 % | 38 |
+| été | 3,01 % | +0,19 % à +2,87 % | 91,0 % | 40 |
+| automne | 3,77 % | −0,19 % à +3,44 % | 76,6 % | 39 |
 
-Chaque seuil est un quantile extrême des semaines d'une saison (colonne « Semaines ») : avec si peu de semaines, il tient à quelques semaines extrêmes et il bouge quand on ajoute une année, comme le montrent les deux tableaux. La fréquence réelle des semaines signalées à tort est donc incertaine.
+Dérive : alarme au-dessus de 1,280 pour la prévision de température et de 1,071 pour la prévision de demande.
 
-## 6. Le modèle figé, répété sur 2023
+**Seuils du rejeu de 2023**, tirés des semaines 2021–2022 :
 
-Avant de rejouer 2024, la même procédure est répétée sur les années de conception : modèle figé sur les données jusqu'au 2022-12-24, seuils tirés de 2021–2022, 2023 rejouée heure par heure. Les mesures de cette section portent d'abord sur 2023, l'année sur laquelle les règles de surveillance ont été conçues et revues avant le gel : la règle 2 a été réécrite avant le gel, et sa première formulation dit « réentraîner » sur cette année (plus bas) ; sur 2023, leurs taux de fausses alertes et d'angles morts ne sont donc pas mesurés sur une année que les règles n'avaient pas vue. Les fausses alertes des épisodes courts, le changement de niveau et le coût de l'exclusion de l'écho sont aussi mesurés sur 2024, hors échantillon, et montrés à côté de 2023 : cette mesure sur 2024 a été ajoutée après les résultats de 2024. La puissance des règles sur 2024 est en section 7.
+| Saison | EAMP au-dessus de | Biais hors de | Couverture sous | Semaines |
+|---|---|---|---|---|
+| hiver | 4,90 % | −1,15 % à +3,90 % | 64,6 % | 24 |
+| printemps | 4,30 % | −0,88 % à +3,48 % | 74,5 % | 25 |
+| été | 3,06 % | +0,60 % à +2,92 % | 89,7 % | 26 |
+| automne | 3,63 % | −0,48 % à +3,29 % | 82,4 % | 26 |
+
+Chaque seuil est un quantile extrême des semaines d'une saison (colonne « Semaines ») : avec si peu de semaines, il tient à quelques semaines extrêmes et il bouge quand on ajoute une année. La fréquence réelle des semaines signalées à tort est donc incertaine.
+
+## 7. Le modèle figé, répété sur 2023 (_répétition sur une année de conception_)
+
+Avant de rejouer 2024, la même procédure est répétée sur les années de conception : modèle figé sur les données jusqu'au 2022-12-24, seuils tirés de 2021–2022, 2023 rejouée heure par heure. 2023 est une année de validation : rien de cette répétition ne compte pour le choix. Les prévisions de température émises par le rejeu égalent celles de la validation à chacune des 8 760 heures (écart maximal 0,0 °C), et chacun des 365 jours a été alimenté par la même prévision ou laissé sans prévision pour la même raison (0 différence) : la conception et le rejeu lisent la même entrée.
 
 | | Modèle figé | Plis réajustés chaque mois |
 |---|---|---|
-| EAMP | 4,18 % | 4,19 % |
-| Biais | +0,34 % | +0,27 % |
-| Couverture | 92,3 % | 90,4 % |
-| Semaines EAMP hors seuil | 1 | 1 |
-| Semaines biais au-dessus de sa bande | 1 | 1 |
-| Semaines biais au-dessous de sa bande | 3 | 3 |
-| Semaines couverture basse | 0 | 0 |
+| EAMP | 2,76 % | 2,72 % |
+| Biais | +1,48 % | +1,35 % |
+| Couverture | 90,5 % | 90,6 % |
+| Semaines EAMP hors seuil | 4 | 3 |
+| Semaines biais au-dessus de sa bande | 2 | 2 |
+| Semaines biais au-dessous de sa bande | 5 | 6 |
+| Semaines couverture basse | 4 | 4 |
 | Recommandations | 0 | 0 |
 
-Différence d'EAMP (figé moins réajusté), sur les mêmes 8 739 heures : −0,01 pt [−0,02 pt ; 0,00 pt] : aucun écart confirmé ; figer le modèle un an ne coûte pas de précision mesurable sur 2023.
+Différence d'EAMP (figé moins réajusté), sur les mêmes 8 753 heures : +0,04 pt [+0,03 pt ; +0,06 pt], écart confirmé.
 
-**Pourquoi « la même défaillance, étendue ».** La première formulation de la règle 2 (EAMP ou biais hors seuil 2 semaines de suite, dans n'importe quelle combinaison) dit « réentraîner » la semaine du 2023-02-06 (la semaine d'avant : EAMP 8,69 % hors seuil, biais +4,93 % ; celle-ci : EAMP 7,95 %, biais −5,47 % hors bande), puis la semaine du 2023-02-27 (la semaine d'avant : EAMP 7,99 %, biais +5,93 % hors bande ; celle-ci : EAMP 5,58 %, biais −3,93 % hors bande). Chaque fois, le biais change de signe d'une semaine à l'autre : c'est le profil d'un écart passager que les retards de 24 h et de 168 h reportent sur les jours suivants ; un modèle dégradé garderait plutôt une erreur de même signe. Semaine du 2023-02-06 : les deux semaines ne montrent pas la même défaillance, et la règle retenue n'y voit rien. Semaine du 2023-02-27 : les deux semaines ne montrent pas la même défaillance, et la règle retenue n'y voit rien. La règle retenue exige la même défaillance 2 semaines de suite, étendue à chaque semaine : un jour isolé ne suffit pas si les semaines ne contenaient pas déjà des jours en échec ; un épisode de plusieurs jours peut suffire, et la fréquence en est mesurée plus bas.
+| Comparaison (_répétition sur une année de conception_) | Différence d'EAMP | IC 95 % | État |
+|---|---|---|---|
+| v2 contre v1 tel que livré | −1,41 pt | [−1,73 pt ; −1,12 pt] | meilleur |
+| v2 contre la forme de v1 sur la même prévision | −0,59 pt | [−0,82 pt ; −0,36 pt] | meilleur |
+| la forme de v1 sur la prévision contre v1 tel que livré (rapportée, jamais jugée) | −0,83 pt | [−1,27 pt ; −0,40 pt] | meilleur |
 
-**Puissance des règles sur 2023.** À partir de la première semaine jugée de janvier, avril, juillet et octobre, on impose un changement soutenu et on rejoue les règles hebdomadaires sur les heures de 2023 : un écart entre la demande et la prévision (de ±2 % à ±8 %), compté en semaines avant « réentraîner », ou des intervalles rétrécis (demi-largeur × 0,9 à × 0,5), comptés en semaines avant « recalibrer » (— : rien en 8 semaines). Une mesure, jamais une recommandation.
+Verdicts (_répétition sur une année de conception_) : « meilleur » contre v1 tel que livré, « meilleur » contre la forme de v1 ; ils ne décident rien.
+
+**La règle 2 sur 2023.** Sa première formulation (EAMP ou biais hors seuil 2 semaines de suite, dans n'importe quelle combinaison) dit « réentraîner » la semaine du 2023-06-26 (la semaine d'avant : EAMP 2,52 %, biais +0,41 % hors bande ; celle-ci : EAMP 1,83 %, biais +0,52 % hors bande), puis la semaine du 2023-07-31 (la semaine d'avant : EAMP 1,34 %, biais −0,07 % hors bande ; celle-ci : EAMP 1,40 %, biais +0,31 % hors bande). Semaine du 2023-06-26 : le biais, côté bas est au-delà de son seuil les deux semaines, mais, sans les 2 jours les plus extrêmes de chaque semaine, vaut +1,84 % puis +1,43 % pour un seuil de +0,60 % : aucune des deux semaines n'est hors seuil, étendue ; la règle retenue n'y voit donc rien. Semaine du 2023-07-31 : le biais, côté bas est au-delà de son seuil les deux semaines, mais, sans les 2 jours les plus extrêmes de chaque semaine, vaut +0,34 % puis +0,82 % pour un seuil de +0,60 % : l'une des deux semaines n'est pas hors seuil, étendue ; la règle retenue n'y voit donc rien.
+
+**Puissance des règles sur 2023.** À partir de la première semaine jugée de janvier, avril, juillet et octobre, on impose un changement soutenu et on rejoue les règles hebdomadaires : un écart entre la demande et la prévision (de ±2 % à ±8 %), compté en semaines avant « réentraîner », ou des intervalles rétrécis (demi-largeur × 0,9 à × 0,5), comptés en semaines avant « recalibrer » (— : rien en 8 semaines). Une mesure, jamais une recommandation.
 
 | Début | −8 % | −6 % | −4 % | −2 % | +2 % | +4 % | +6 % | +8 % | 
 |---|---|---|---|---|---|---|---|---|
-| 2023-01-02 (hiver) | 3 | 4 | — | — | — | — | 2 | 2 | 
-| 2023-04-03 (printemps) | 2 | 2 | 5 | — | — | — | 5 | 4 | 
-| 2023-07-03 (été) | 2 | 2 | 3 | 3 | — | 3 | 2 | 2 | 
-| 2023-10-02 (automne) | 2 | 2 | 2 | — | — | 6 | 2 | 2 | 
+| 2023-01-02 (hiver) | 2 | 3 | 4 | — | — | 2 | 2 | 2 | 
+| 2023-04-03 (printemps) | 2 | 2 | 2 | — | 5 | 3 | 2 | 2 | 
+| 2023-07-03 (été) | 1 | 1 | 1 | 1 | — | 2 | 2 | 2 | 
+| 2023-10-02 (automne) | 2 | 2 | 2 | 2 | 6 | 2 | 2 | 2 | 
 
 | Début | × 0,9 | × 0,8 | × 0,7 | × 0,6 | × 0,5 | 
 |---|---|---|---|---|---|
-| 2023-01-02 (hiver) | — | — | — | — | — | 
-| 2023-04-03 (printemps) | — | — | — | — | 4 | 
+| 2023-01-02 (hiver) | — | — | — | — | 8 | 
+| 2023-04-03 (printemps) | — | — | — | — | — | 
 | 2023-07-03 (été) | — | — | — | — | — | 
-| 2023-10-02 (automne) | — | — | — | — | 6 | 
+| 2023-10-02 (automne) | — | — | 7 | 6 | 5 | 
 
-Sur 2023, un écart soutenu de ±6 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 0 des 4 départs, et de −2 %, à 1 des 4. Sur 2023, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 2 des 4 départs ; aucune réduction moindre (jusqu'à × 0,9) ne l'a donné.
+Sur 2023, un écart soutenu de ±4 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 2 des 4 départs, et de −2 %, à 2 des 4. Sur 2023, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 2 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus.
 
-**Fausses alertes des épisodes courts.** Un épisode n'est pas une défaillance du modèle. On multiplie la demande par un facteur pendant 1, 3, 5 ou 7 jours, à partir de chaque jour de l'année rejouée (dès le 2023-01-02 en 2023 et le 2024-01-01 en 2024, tant que l'épisode finit au moins 14 jours avant le dernier jour jugé de l'année, pour que son écho soit jugé), et chaque cas est rejoué heure par heure par le vrai moniteur. Toute recommandation « réentraîner » ou « recalibrer » qui en sort est une fausse alerte ; elle est *sans aide* quand aucune des semaines sur lesquelles elle s'appuie n'avait déjà dépassé l'un de ses seuils de performance dans l'année telle quelle. La dernière colonne compte les départs que l'exclusion de l'écho garde de « réentraîner ».
+**Fausses alertes, changements de niveau et coût de l'écho sur 2023**, mesurés dans l'exécution de diagnostic du rejeu, après lui. Un épisode n'est pas une défaillance du modèle : on multiplie la demande par un facteur pendant 1, 3, 5 ou 7 jours, à partir de chaque jour de l'année (dès le 2023-01-02, tant que l'épisode finit au moins 14 jours avant le dernier jour jugé de l'année, pour que son écho soit jugé), et chaque cas est rejoué heure par heure par le vrai moniteur. Toute recommandation « réentraîner » ou « recalibrer » qui en sort est une fausse alerte ; elle est *sans aide* quand aucune des semaines sur lesquelles elle s'appuie n'avait déjà dépassé l'un de ses seuils de performance dans l'année telle quelle. La dernière colonne compte les départs que l'exclusion de l'écho garde de « réentraîner ». Les changements de niveau multiplient la demande pendant 10 semaines ; l'exclusion de l'écho est mesurée par une erreur aléatoire quotidienne.
 
-**2023** (l'année de conception des règles) :
+| Durée | Facteur | Départs | « Réentraîner » | dont sans aide | « Recalibrer » | Gardés par l'exclusion de l'écho |
+|---|---|---|---|---|---|---|
+| 1 j | × 0,70 | 350 | 20 (5,7 %) | 0 | 0 | 0 |
+| 1 j | × 0,85 | 350 | 20 (5,7 %) | 0 | 0 | 0 |
+| 1 j | × 1,15 | 350 | 1 (0,3 %) | 0 | 0 | 0 |
+| 1 j | × 1,30 | 350 | 2 (0,6 %) | 0 | 0 | 0 |
+| 3 j | × 0,70 | 348 | 31 (8,9 %) | 2 | 0 | 8 |
+| 3 j | × 0,85 | 348 | 30 (8,6 %) | 0 | 0 | 4 |
+| 3 j | × 1,15 | 348 | 2 (0,6 %) | 0 | 0 | 1 |
+| 3 j | × 1,30 | 348 | 10 (2,9 %) | 0 | 0 | 3 |
+| 5 j | × 0,70 | 346 | 102 (29,5 %) | 46 | 0 | 18 |
+| 5 j | × 0,85 | 346 | 48 (13,9 %) | 9 | 0 | 7 |
+| 5 j | × 1,15 | 346 | 17 (4,9 %) | 2 | 0 | 2 |
+| 5 j | × 1,30 | 346 | 47 (13,6 %) | 14 | 0 | 5 |
+| 7 j | × 0,70 | 344 | 195 (56,7 %) | 110 | 0 | 18 |
+| 7 j | × 0,85 | 344 | 120 (34,9 %) | 57 | 0 | 6 |
+| 7 j | × 1,15 | 344 | 81 (23,5 %) | 32 | 0 | 1 |
+| 7 j | × 1,30 | 344 | 153 (44,5 %) | 83 | 0 | 5 |
+
+**Alertes des chocs d'un seul jour** : sur 2023, 43 « réentraîner » (dont 0 sans aide) et 0 « recalibrer », sur 1 400 cas (départs × facteurs). Un mauvais jour ne peut en donner qu'en complétant des jours en échec que les semaines contenaient déjà et que la coupe écartait jusque-là ; la part sans aide n'est mesurée que pour « réentraîner », et les semaines en cause sont dans l'exécution. Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès 3 jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
+
+**Changement de niveau de la demande**, à partir de la première semaine jugée de janvier, avril, juillet et octobre, pendant 10 semaines (semaines avant « réentraîner » ; — : rien en 10 semaines). La prévision suit la demande par ses retards : un changement de niveau ne laisse entre la prévision et la demande qu'un écart bien plus petit que lui-même. Le tableau de puissance mesure cet écart ; celui-ci mesure le changement de niveau.
+
+| Début | −10 % | −5 % | +5 % | +10 % | 
+|---|---|---|---|---|
+| 2023-01-02 (hiver) | 3 | 10 | — | 2 | 
+| 2023-04-03 (printemps) | 2 | 7 | 5 | 2 | 
+| 2023-07-03 (été) | 1 | 1 | 3 | 2 | 
+| 2023-10-02 (automne) | 2 | 2 | 5 | 2 | 
+
+**Ce que coûte l'exclusion de l'écho** (une erreur aléatoire quotidienne sur 8 semaines) :
+
+| Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
+|---|---|---|---|---|---|
+| 6 % | 80 | 53 | 57 | 4 | 3 |
+| 10 % | 80 | 78 | 79 | 1 | 11 |
+| 15 % | 80 | 80 | 80 | 0 | 18 |
+
+
+**Une prévision qui alimente deux jours** (section 9.2 du plan ; étiquetée, ne choisit rien). Dans chaque saison, une prévision dont les propres points couvrent deux jours consécutifs est décalée dans les bornes et amenée à alimenter les deux, dans une même semaine et à cheval sur deux semaines. Les statistiques de chaque semaine touchée, ses 2 jours les plus extrêmes écartés, sont mises face à la moyenne de ses jours intacts ; l'argument dit qu'aucune ne la dépasse (compté par semaine et par défaillance : EAMP haute, biais haut ou bas, couverture basse).
+
+| Saison | Disposition | Jours | Décalage | Statistiques au-delà de la moyenne des jours intacts | Décisions changées | Règle 4 |
+|---|---|---|---|---|---|---|
+| hiver | dans une semaine | 2023-01-02 et 2023-01-03 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | dans une semaine | 2023-01-02 et 2023-01-03 | −5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2023-01-08 et 2023-01-09 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2023-01-08 et 2023-01-09 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2023-04-03 et 2023-04-04 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2023-04-03 et 2023-04-04 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2023-04-09 et 2023-04-10 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2023-04-09 et 2023-04-10 | −5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2023-07-03 et 2023-07-04 | +5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2023-07-03 et 2023-07-04 | −5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2023-07-09 et 2023-07-10 | +5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2023-07-09 et 2023-07-10 | −5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2023-10-02 et 2023-10-03 | +5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2023-10-02 et 2023-10-03 | −5 °C | 0 | 0 | non déclenchée |
+| automne | à cheval sur deux semaines | 2023-10-08 et 2023-10-09 | +5 °C | 0 | 0 | non déclenchée |
+| automne | à cheval sur deux semaines | 2023-10-08 et 2023-10-09 | −5 °C | 0 | 0 | non déclenchée |
+
+Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit. Plus long délai d'un point de prévision en 2023 : 71 h.
+
+![Rejeu de 2023](figures/validation/pseudo-replay-2023-weekly.fr.png)
+
+## 8. 2024 rejouée, _vu par les développeurs_
+
+_Chaque nombre de cette section est de 2024, vu par les développeurs : vue à travers v1 et sa dérogation avant le choix de v2, elle ne prouve rien. Un succès y est une preuve faible ; un verdict qui n'est pas « meilleur » y est un constat contre v2. Quoi qu'elle montre, v2 va à 2025 tel que gelé._
+
+**2024 côte à côte.** Les rejeux de v1 viennent de leurs entrées du registre des rejeux : consignés, non rejoués ici.
+
+| Rejeu | Étiquette | EAMP | Couverture | Recommandations |
+|---|---|---|---|---|
+| v1, `91f7e3faecee4a899381edd47b4ffc3f` (gelé d’abord), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
+| v1, `9f87c124e34344a8a65e4a7679c3c458` (après sa dérogation), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
+| v2, `18daf1fc40a24300aeaba5e4f14d4107` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+
+**Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `9f87c124e34344a8a65e4a7679c3c458` : EAMP de 4,23 % contre 4,23 % (écart relatif 0,0e+00), couverture de 89,4 % contre 89,4 %, que la correction de la veille de l'année rejouée déplace (section 6.3 du plan).
+
+| Modèle (_vu par les développeurs_) | EAMP | IC 95 % | Couverture | Heures |
+|---|---|---|---|---|
+| v2, le GAM sur la prévision (production) | 2,58 % | [2,33 % ; 2,85 %] | 92,2 % | 8 778 |
+| la forme de v1 sur la prévision (comparaison, n'émet rien) | 3,19 % | [3,02 % ; 3,38 %] | 91,1 % | 8 778 |
+| v1 tel que livré (météo de la veille) (comparaison, n'émet rien) | 4,23 % | [3,70 % ; 4,84 %] | 89,4 % | 8 758 |
+
+| Comparaison (_vu par les développeurs_) | Différence d'EAMP | IC 95 % | État |
+|---|---|---|---|
+| v2 contre v1 tel que livré | −1,65 pt | [−2,13 pt ; −1,22 pt] | meilleur |
+| v2 contre la forme de v1 sur la même prévision | −0,61 pt | [−0,83 pt ; −0,40 pt] | meilleur |
+| la forme de v1 sur la prévision contre v1 tel que livré (rapportée, jamais jugée) | −1,04 pt | [−1,59 pt ; −0,52 pt] | meilleur |
+
+Verdicts (_vu par les développeurs_) : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Queue froide (_vu par les développeurs_) : 139 heures communes sous le seuil de −12,0 °C, réparties sur 5 semaines du lundi au dimanche ; elle est testable (au moins 120 heures et 4 semaines) : v2 contre v1 tel que livré, −4,10 pt [−5,63 pt ; −3,51 pt] (meilleur) ; v2 contre la forme de v1, −0,68 pt [−1,20 pt ; −0,38 pt] (meilleur).
+
+| Heure finissant à (UTC) (_vu par les développeurs_) | Demande | Prévision de température | v2 | Forme de v1 sur la prévision | v1 tel que livré |
+|---|---|---|---|---|---|
+| 2024-01-19 13:00 UTC | 36 348 MW | −17,8 °C | −0,5 % | +1,5 % | +7,7 % | 
+| 2024-01-19 14:00 UTC | 35 967 MW | −17,2 °C | +0,3 % | +1,2 % | +7,6 % | 
+| 2024-01-19 23:00 UTC | 35 717 MW | −14,6 °C | +2,1 % | +3,3 % | +8,2 % | 
+| 2024-12-23 14:00 UTC | 35 711 MW | −12,6 °C | +3,1 % | +3,5 % | +3,6 % | 
+| 2024-01-20 00:00 UTC | 35 668 MW | −15,0 °C | +2,3 % | +3,2 % | +8,7 % | 
+
+
+**L'erreur de la prévision de température en 2024** (prévision moins observation aux heures notées ; _vu par les développeurs_), par saison : hiver, −0,02 °C en moyenne et 1,19 °C en absolu (2 178 heures) ; printemps, +0,07 °C en moyenne et 1,06 °C en absolu (2 202 heures) ; été, +0,13 °C en moyenne et 0,87 °C en absolu (2 201 heures) ; automne, +0,11 °C en moyenne et 0,82 °C en absolu (2 183 heures). Une preuve jointe au rejeu, sans seuil.
+
+L'horloge avance d'heure en heure du 2024-01-01 au 2024-12-31 ; chaque lecture, prévisions de température comprises, passe par un accès qui refuse toute donnée postérieure à l'horloge, chaque prévision n'étant visible qu'à partir de sa disponibilité. Le modèle et les deux modèles de comparaison sont vérifiés par empreinte avant et après, inchangées : v2 `7aadbc5866c6`, la forme de v1 sur la prévision `4e9433077a9a`, v1 tel que livré `7469cd232977`.
+
+| | |
+|---|---|
+| EAMP | 2,58 % [2,33 % ; 2,85 %] |
+| Biais | +1,50 % [+1,20 % ; +1,82 %] |
+| Couverture (nominale 90 %) | 92,2 % [89,8 % ; 94,3 %] |
+| Heures de l'année / prévues / notées | 8 784 / 8 780 / 8 778 |
+| Jours en échec de qualité | 0 sur 366 |
+| Semaines jugées | 52 sur 53 |
+
+Heures non prévues, par donnée absente (une heure peut en manquer plusieurs) : demande de la semaine précédente indisponible (2), demande de la veille indisponible (2).
+
+**Recommandations.**
+
+Aucune semaine de 2024 n'a déclenché de recommandation.
+
+**Avec la première formulation de la règle 2.** Aucune recommandation de plus.
+
+**Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner », puis avant « recalibrer » ; — : rien en 8 semaines) :
+
+| Début | −8 % | −6 % | −4 % | −2 % | +2 % | +4 % | +6 % | +8 % | 
+|---|---|---|---|---|---|---|---|---|
+| 2024-01-01 (hiver) | 2 | 3 | 4 | — | 3 | 2 | 2 | 2 | 
+| 2024-04-01 (printemps) | 2 | 2 | 2 | — | — | 2 | 2 | 2 | 
+| 2024-07-01 (été) | 2 | 2 | 2 | 4 | 2 | 2 | 2 | 2 | 
+| 2024-10-07 (automne) | 2 | 2 | 2 | 2 | — | 4 | 2 | 2 | 
+
+| Début | × 0,9 | × 0,8 | × 0,7 | × 0,6 | × 0,5 | 
+|---|---|---|---|---|---|
+| 2024-01-01 (hiver) | — | — | — | — | 7 | 
+| 2024-04-01 (printemps) | — | — | — | — | 5 | 
+| 2024-07-01 (été) | — | — | — | — | — | 
+| 2024-10-07 (automne) | — | — | — | 7 | 5 | 
+
+Sur 2024, un écart soutenu de ±4 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 2 des 4 départs, et de −2 %, à 2 des 4. Sur 2024, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus.
+
+**Fausses alertes, changements de niveau et coût de l'écho sur 2024**, de l'exécution de diagnostic du rejeu, après lui. Mêmes épisodes et mêmes changements qu'en section 7.
 
 | Durée | Facteur | Départs | « Réentraîner » | dont sans aide | « Recalibrer » | Gardés par l'exclusion de l'écho |
 |---|---|---|---|---|---|---|
@@ -292,148 +526,57 @@ Sur 2023, un écart soutenu de ±6 % ou plus entre la demande et la prévision 
 | 1 j | × 0,85 | 350 | 0 (0,0 %) | 0 | 0 | 0 |
 | 1 j | × 1,15 | 350 | 0 (0,0 %) | 0 | 0 | 0 |
 | 1 j | × 1,30 | 350 | 0 (0,0 %) | 0 | 0 | 0 |
-| 3 j | × 0,70 | 348 | 2 (0,6 %) | 1 | 0 | 2 |
-| 3 j | × 0,85 | 348 | 0 (0,0 %) | 0 | 0 | 0 |
-| 3 j | × 1,15 | 348 | 0 (0,0 %) | 0 | 0 | 0 |
-| 3 j | × 1,30 | 348 | 1 (0,3 %) | 0 | 0 | 0 |
-| 5 j | × 0,70 | 346 | 37 (10,7 %) | 19 | 0 | 44 |
-| 5 j | × 0,85 | 346 | 0 (0,0 %) | 0 | 0 | 0 |
-| 5 j | × 1,15 | 346 | 0 (0,0 %) | 0 | 0 | 0 |
-| 5 j | × 1,30 | 346 | 3 (0,9 %) | 2 | 0 | 35 |
-| 7 j | × 0,70 | 344 | 118 (34,3 %) | 87 | 0 | 54 |
-| 7 j | × 0,85 | 344 | 8 (2,3 %) | 5 | 0 | 2 |
-| 7 j | × 1,15 | 344 | 1 (0,3 %) | 1 | 0 | 5 |
-| 7 j | × 1,30 | 344 | 19 (5,5 %) | 16 | 0 | 75 |
+| 3 j | × 0,70 | 348 | 9 (2,6 %) | 0 | 0 | 9 |
+| 3 j | × 0,85 | 348 | 8 (2,3 %) | 0 | 0 | 0 |
+| 3 j | × 1,15 | 348 | 1 (0,3 %) | 0 | 0 | 0 |
+| 3 j | × 1,30 | 348 | 3 (0,9 %) | 0 | 0 | 0 |
+| 5 j | × 0,70 | 346 | 72 (20,8 %) | 50 | 0 | 18 |
+| 5 j | × 0,85 | 346 | 19 (5,5 %) | 3 | 0 | 2 |
+| 5 j | × 1,15 | 346 | 6 (1,7 %) | 0 | 0 | 0 |
+| 5 j | × 1,30 | 346 | 26 (7,5 %) | 14 | 0 | 0 |
+| 7 j | × 0,70 | 344 | 176 (51,2 %) | 136 | 0 | 23 |
+| 7 j | × 0,85 | 344 | 96 (27,9 %) | 67 | 0 | 4 |
+| 7 j | × 1,15 | 344 | 55 (16,0 %) | 31 | 0 | 0 |
+| 7 j | × 1,30 | 344 | 136 (39,5 %) | 99 | 0 | 0 |
 
-**2024** (hors échantillon, mesure ajoutée après les résultats) :
+Aucun choc d'un seul jour n'a donné d'alerte sur 2024 : un mauvais jour gâte au plus deux jours d'une semaine, que la coupe écarte ; il ne peut que compléter des jours en échec que les semaines contenaient déjà.
 
-| Durée | Facteur | Départs | « Réentraîner » | dont sans aide | « Recalibrer » | Gardés par l'exclusion de l'écho |
+| Début | −10 % | −5 % | +5 % | +10 % | 
+|---|---|---|---|---|
+| 2024-01-01 (hiver) | 3 | 6 | 3 | 2 | 
+| 2024-04-01 (printemps) | 2 | 5 | 3 | 2 | 
+| 2024-07-01 (été) | 2 | 2 | 2 | 2 | 
+| 2024-10-07 (automne) | 2 | 2 | 8 | 2 | 
+
+| Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
+|---|---|---|---|---|---|
+| 6 % | 80 | 48 | 50 | 2 | 2 |
+| 10 % | 80 | 74 | 76 | 2 | 11 |
+| 15 % | 80 | 80 | 80 | 0 | 17 |
+
+
+**Une prévision qui alimente deux jours** (section 9.2 du plan ; étiquetée, ne choisit rien). Dans chaque saison, une prévision dont les propres points couvrent deux jours consécutifs est décalée dans les bornes et amenée à alimenter les deux, dans une même semaine et à cheval sur deux semaines. Les statistiques de chaque semaine touchée, ses 2 jours les plus extrêmes écartés, sont mises face à la moyenne de ses jours intacts ; l'argument dit qu'aucune ne la dépasse (compté par semaine et par défaillance : EAMP haute, biais haut ou bas, couverture basse).
+
+| Saison | Disposition | Jours | Décalage | Statistiques au-delà de la moyenne des jours intacts | Décisions changées | Règle 4 |
 |---|---|---|---|---|---|---|
-| 1 j | × 0,70 | 350 | 1 (0,3 %) | 0 | 0 | 0 |
-| 1 j | × 0,85 | 350 | 1 (0,3 %) | 0 | 0 | 0 |
-| 1 j | × 1,15 | 350 | 0 (0,0 %) | 0 | 5 | 0 |
-| 1 j | × 1,30 | 350 | 1 (0,3 %) | 0 | 9 | 0 |
-| 3 j | × 0,70 | 348 | 18 (5,2 %) | 0 | 1 | 8 |
-| 3 j | × 0,85 | 348 | 6 (1,7 %) | 0 | 0 | 1 |
-| 3 j | × 1,15 | 348 | 2 (0,6 %) | 0 | 6 | 0 |
-| 3 j | × 1,30 | 348 | 10 (2,9 %) | 0 | 6 | 2 |
-| 5 j | × 0,70 | 346 | 52 (15,0 %) | 9 | 3 | 34 |
-| 5 j | × 0,85 | 346 | 13 (3,8 %) | 0 | 0 | 6 |
-| 5 j | × 1,15 | 346 | 2 (0,6 %) | 0 | 6 | 0 |
-| 5 j | × 1,30 | 346 | 17 (4,9 %) | 1 | 3 | 40 |
-| 7 j | × 0,70 | 344 | 113 (32,8 %) | 49 | 2 | 49 |
-| 7 j | × 0,85 | 344 | 30 (8,7 %) | 7 | 1 | 6 |
-| 7 j | × 1,15 | 344 | 7 (2,0 %) | 0 | 6 | 5 |
-| 7 j | × 1,30 | 344 | 38 (11,0 %) | 12 | 3 | 59 |
+| hiver | dans une semaine | 2024-01-01 et 2024-01-02 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | dans une semaine | 2024-01-01 et 2024-01-02 | −5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2024-01-07 et 2024-01-08 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2024-01-07 et 2024-01-08 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2024-04-01 et 2024-04-02 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2024-04-01 et 2024-04-02 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2024-04-07 et 2024-04-08 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2024-04-07 et 2024-04-08 | −5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2024-07-01 et 2024-07-02 | +5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2024-07-01 et 2024-07-02 | −5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2024-07-07 et 2024-07-08 | +5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2024-07-07 et 2024-07-08 | −5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2024-10-07 et 2024-10-08 | +5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2024-10-07 et 2024-10-08 | −5 °C | 0 | 0 | non déclenchée |
+| automne | à cheval sur deux semaines | 2024-10-13 et 2024-10-14 | +5 °C | 0 | 0 | non déclenchée |
+| automne | à cheval sur deux semaines | 2024-10-13 et 2024-10-14 | −5 °C | 0 | 0 | non déclenchée |
 
-**Alertes des chocs d'un seul jour** : sur 2023, 0 « réentraîner » (dont 0 sans aide) et 0 « recalibrer », sur 1 400 cas (départs × facteurs) ; sur 2024, 3 « réentraîner » (dont 0 sans aide) et 14 « recalibrer », sur 1 400 cas (départs × facteurs). Un mauvais jour ne peut en donner qu'en complétant des jours en échec que les semaines contenaient déjà et que la coupe écartait jusque-là ; la part sans aide n'est mesurée que pour « réentraîner », et les semaines en cause sont dans l'exécution. Un épisode de plusieurs jours en fait plus : par le retard d'un jour, il gâte un jour de plus que sa durée, et par le retard d'une semaine autant de jours la semaine suivante ; dès 3 jours, les deux semaines peuvent être hors seuil, étendues, sur la même défaillance, sans aucun jour en échec à elles. Quand le biais de l'une des deux reste dans sa bande (une bande large de ce côté, ou une semaine qui contient aussi des jours de l'épisode, comme lorsqu'il chevauche un lundi), l'exclusion de l'écho ne joue pas. Les statistiques hebdomadaires ne distinguent pas un tel épisode de deux semaines de défaillance du modèle ; les règles restent telles quelles, et ces tableaux en donnent le prix.
-
-**Changement de niveau de la demande.** La demande est multipliée par un facteur à partir de la première semaine jugée de janvier, avril, juillet et octobre, pendant 10 semaines (semaines avant « réentraîner » ; — : rien en 10 semaines). La prévision par persistance suit la demande par ses retards : un changement de niveau ne laisse entre la prévision et la demande qu'un écart bien plus petit que lui-même. Le tableau de puissance mesure cet écart ; les deux tableaux qui suivent mesurent le changement de niveau.
-
-**2023** (l'année de conception des règles) :
-
-| Début | −10 % | −5 % | +5 % | +10 % | 
-|---|---|---|---|---|
-| 2023-01-02 (hiver) | — | — | — | — | 
-| 2023-04-03 (printemps) | 2 | — | — | — | 
-| 2023-07-03 (été) | 2 | 4 | — | — | 
-| 2023-10-02 (automne) | 2 | — | — | — | 
-
-**2024** (hors échantillon, mesure ajoutée après les résultats) :
-
-| Début | −10 % | −5 % | +5 % | +10 % | 
-|---|---|---|---|---|
-| 2024-01-01 (hiver) | — | — | — | — | 
-| 2024-04-01 (printemps) | — | — | — | 10 | 
-| 2024-07-01 (été) | 3 | — | — | — | 
-| 2024-10-07 (automne) | 2 | — | — | — | 
-
-**Ce que coûte l'exclusion de l'écho.** À partir de la première semaine jugée de janvier, avril, juillet et octobre, pendant 8 semaines, la prévision reçoit une erreur aléatoire, tirée chaque jour selon une loi normale : c'est un modèle dégradé dont le biais hebdomadaire peut changer de côté. Les règles sont appliquées avec et sans l'exclusion.
-
-**2023** (l'année de conception des règles) :
-
-| Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
-|---|---|---|---|---|---|
-| 6 % | 80 | 19 | 21 | 2 | 0 |
-| 10 % | 80 | 44 | 44 | 0 | 8 |
-| 15 % | 80 | 74 | 76 | 2 | 13 |
-
-**2024** (hors échantillon, mesure ajoutée après les résultats) :
-
-| Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
-|---|---|---|---|---|---|
-| 6 % | 80 | 15 | 16 | 1 | 1 |
-| 10 % | 80 | 42 | 46 | 4 | 7 |
-| 15 % | 80 | 71 | 74 | 3 | 13 |
-
-
-![Rejeu de 2023](figures/validation/pseudo-replay-2023-weekly.fr.png)
-
-## 7. 2024 rejouée comme en production
-
-**A posteriori.** Le rejeu de 2024 a tourné à nouveau, après une dérogation aux règles gelées : les règles ont été changées après que les résultats de 2024 eurent été vus. La dérogation est consignée dans `AGENTS.md`, à la section « Departures from the frozen monitoring rules », qui en donne la liste ; les règles gelées d'abord sont celles du commit `7ad8b71088fd`, les règles après la dérogation celles du commit `affe089f6ed0`. Les résultats de cette section sont ceux du rejeu après la dérogation ; le rejeu d'avant est à côté.
-
-| | Rejeu d'avant, règles du commit `7ad8b71088fd` (exécution `91f7e3faecee4a899381edd47b4ffc3f`) | Rejeu après la dérogation, règles du commit `affe089f6ed0` |
-|---|---|---|
-| EAMP | 4,23 % | 4,23 % |
-| Couverture | 89,4 % | 89,4 % |
-| Recommandations | aucune | aucune |
-| Modèle figé (empreinte) | `c8e1725aad77` | `c8e1725aad77` |
-| Semaines EAMP hors seuil | 5 | 5 |
-| Semaines biais au-dessus de sa bande | 1 | 1 |
-| Semaines biais au-dessous de sa bande | 2 | 3 |
-| Semaines couverture basse | 6 | 6 |
-
-Les rejeux de ce tableau ont appliqué le même modèle figé, à la même empreinte : la dérogation n'a changé ni le modèle ni ses intervalles. Chaque rejeu juge ses semaines contre ses propres seuils.
-
-La dérogation du 2026-10-14 porte sur ces points :
-
-- Une valeur mal placée n'est replacée que si sa destination est sans ambiguïté : la destination suivante en coût doit coûter au moins le rapport minimal fois la destination choisie (rapport de qualité des données, section 3.2).
-- Une valeur en double hors des bornes physiques ne peut servir à aucune réparation, et aucune heure dont la valeur sort de ces bornes n'est rendue utilisable.
-- Le code de conception (plis de validation, seuils, modèles figés) voit chaque moment de décision comme le rejeu voit son horloge, et la demi-largeur d'un intervalle n'est calibrée que sur les jours déjà notés quand son modèle est ajusté (section 8).
-- La garde contre l'information future perd son terme de 168 heures, qui ne pouvait jamais se déclencher seul.
-- Les seuils sont calibrés sur les semaines que le rejeu juge : une semaine qui contient un jour en échec de qualité, ou dont les jours ne sont pas tous dans la période, n'y entre plus (section 5).
-- La porte du gel s'applique dans le rejeu lui-même, si bien qu'aucun point d'entrée ne rejoue 2024 sans elle.
-- La vérification de l'étiquette déplacée lit aussi le registre des rejeux du dépôt (`docs/replay-ledger.json`), si bien qu'une copie neuve du dépôt voit une dérogation.
-- Les fausses alertes et les angles morts des règles sont aussi mesurés sur 2024, hors échantillon (section 6).
-
-
-L'horloge avance d'heure en heure du 2024-01-01 au 2024-12-31 ; chaque lecture passe par un accès qui refuse toute donnée postérieure à l'horloge. Le modèle et ses intervalles sont vérifiés par empreinte avant et après : `c8e1725aad77`, inchangée.
-
-| | |
-|---|---|
-| EAMP | 4,23 % [3,70 % ; 4,84 %] |
-| Biais | +0,31 % [−0,28 % ; +0,91 %] |
-| Couverture (nominale 90 %) | 89,4 % [85,1 % ; 92,9 %] |
-| Heures de l'année / prévues / notées | 8 784 / 8 760 / 8 758 |
-| Jours en échec de qualité | 0 sur 366 |
-| Semaines jugées | 52 sur 53 |
-
-Heures non prévues, par donnée absente (une heure peut en manquer plusieurs) : demande de la semaine précédente indisponible (2), demande de la veille indisponible (2), température de la veille absente (20).
-
-**Recommandations.**
-
-Aucune semaine de 2024 n'a déclenché de recommandation.
-
-**Avec la première formulation de la règle 2.** Elle dit « réentraîner » la semaine du 2024-11-04 (la semaine d'avant : EAMP 6,30 % hors seuil, biais +0,75 % ; celle-ci : EAMP 6,36 % hors seuil, biais −0,86 %). Semaine du 2024-11-04 : l'EAMP est au-delà de son seuil les deux semaines, mais, sans les 2 jours les plus extrêmes de chaque semaine, vaut 4,71 % puis 4,64 % pour un seuil de 6,00 % : aucune des deux semaines n'est hors seuil, étendue ; la règle retenue n'y voit donc rien. Le biais change de signe d'une semaine à l'autre, mais reste dans sa bande les deux semaines : ce n'est pas l'exclusion de l'écho qui joue.
-
-**Puissance des règles sur 2024**, mesurée de la même façon (semaines avant « réentraîner », puis avant « recalibrer » ; — : rien en 8 semaines) :
-
-| Début | −8 % | −6 % | −4 % | −2 % | +2 % | +4 % | +6 % | +8 % | 
-|---|---|---|---|---|---|---|---|---|
-| 2024-01-01 (hiver) | 3 | 6 | — | — | — | — | 3 | 2 | 
-| 2024-04-01 (printemps) | 2 | 2 | 6 | — | — | 8 | 3 | 2 | 
-| 2024-07-01 (été) | 2 | 2 | 2 | — | — | 2 | 2 | 2 | 
-| 2024-10-07 (automne) | 2 | 2 | 2 | 3 | — | — | 3 | 2 | 
-
-| Début | × 0,9 | × 0,8 | × 0,7 | × 0,6 | × 0,5 | 
-|---|---|---|---|---|---|
-| 2024-01-01 (hiver) | — | — | — | — | 3 | 
-| 2024-04-01 (printemps) | — | — | — | — | 2 | 
-| 2024-07-01 (été) | — | — | — | — | — | 
-| 2024-10-07 (automne) | 5 | 5 | 5 | 3 | 3 | 
-
-Sur 2024, un écart soutenu de ±6 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 0 des 4 départs, et de −2 %, à 1 des 4. Sur 2024, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus.
+Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit. Plus long délai d'un point de prévision en 2024 : 71 h.
 
 ![Rejeu de 2024](figures/validation/replay-2024-weekly.fr.png)
 
@@ -441,23 +584,28 @@ Sur 2024, un écart soutenu de ±6 % ou plus entre la demande et la prévision 
 
 Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dans l'exécution, et la valeur d'Evidently est comparée à celle du moniteur : 4 comparaisons, toutes égales.
 
-## 8. Limites
+## 9. 2025, le test de référence
 
-- **Couverture conditionnelle.** L'intervalle de production sous-couvre l'hiver ; les déciles de charge prévue 7, 8, 9 et 10 (section 4). Les seuils de couverture de l'hiver sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation. À l'inverse, le seuil de couverture de l'été (96,4 %) dépasse le nominal de 90 % : une semaine couverte au-delà du nominal peut y être signalée basse. Les seuils mesurent l'écart à la couverture de chaque saison en validation, pas au nominal.
-- **Froids extrêmes.** La pointe de 2023-02 n'est pas couverte (0 des 5 heures les plus chargées) ; même avec la météo observée, le modèle la sous-estime, et la cause n'est pas testée. Une seule pointe est étudiée ; les vagues de froid ne sont pas mesurées comme catégorie.
-- **Épisodes de plusieurs jours** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Un épisode de plusieurs jours peut donner une fausse alerte sans que le modèle soit en cause : sur 2023, « réentraîner » jusqu'à 34,3 % des départs (7 jours à × 0,70) et au plus 2,3 % pour un épisode de ±15 %, aucun « recalibrer » ; sur 2024, « réentraîner » jusqu'à 32,8 % des départs (7 jours à × 0,70) et au plus 8,7 % pour un épisode de ±15 %, « recalibrer » jusqu'à 1,7 % des départs (7 jours à × 1,15) (section 6).
-- **Changement de niveau** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Sur 2023, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 4 départs sur 4 (départs de janvier, avril, juillet et octobre), et une baisse de 10 % l'a donné à 3 sur 4. Sur 2024, une hausse soutenue de 10 % de la demande n'a pas donné « réentraîner » en 10 semaines à 3 départs sur 4 (départs de janvier, juillet et octobre), et une baisse de 10 % l'a donné à 2 sur 4. La persistance absorbe l'essentiel d'une hausse par ses retards. Sur 2023 et 2024, une baisse a donné « réentraîner » plus souvent qu'une hausse : elle laisse un écart relatif plus grand qu'une hausse de même taille, car le biais se mesure contre la demande plus basse ; la position du biais hebdomadaire de l'année dans la bande de chaque saison fait le reste. Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
-- **Exclusion de l'écho** (mesuré sur 2023, l'année de conception des règles, et sur 2024, hors échantillon, mesure ajoutée après les résultats). Sur un modèle dégradé dont le biais change de côté, elle supprime « réentraîner » sur 2023 dans 4 essais sur 240 et le retarde dans 21, et sur 2024 dans 8 essais sur 240 et le retarde dans 21 (section 6) ; c'est le prix d'éviter les fausses alertes d'un épisode suivi de son écho.
-- **Puissance de « recalibrer ».** Des intervalles réduits à × 0,5 de leur demi-largeur n'ont pas donné « recalibrer » en 8 semaines à 2 des 4 départs de 2023, et à × 0,5 à 1 des 4 départs de 2024 (sections 6 et 7) : la règle 3 demande une couverture sous le seuil de la saison, étendue, 2 semaines de suite, avec un biais dans sa bande.
-- **Fausses alertes de dérive en 2024.** Les niveaux d'alarme sont le 95ᵉ centile des semaines de validation 2021–2023, dont les références couvraient de 2 à 4 années antérieures pour la température et de 1 à 3 pour la prévision ; en 2024, elles en couvrent 5 et 4. Le taux de fausses alertes de dérive en 2024 n'est pas mesuré.
-- **Règle 4 et un vrai changement de température.** Un écart de température réel et soutenu, auquel la demande répond et que le modèle suit, performance dans ses seuils, peut donner « examiner les données » : la règle ne distingue pas un vrai changement de la météo d'une erreur de données (bris « Une dérive de température, performance dans les seuils : examiner les données », section 9). La règle reste telle quelle.
-- **Qualité des données en 2024.** Le rejeu juge chaque jour sur les enregistrements bruts coupés à l'horloge, mais il ne tourne que si toute la fenêtre, 2024 comprise, a passé les portes du rapport de qualité. Les valeurs hors bornes, les enregistrements hors grille et les températures en double ne pouvaient donc pas apparaître dans le rejeu ; le moniteur quotidien y jugeait encore les heures manquantes, les valeurs vides, les doublons de demande et le silence de la station principale.
-- **Données en temps réel.** Les valeurs sont celles téléchargées le 2026-10-14 (demande) et à partir du 2026-10-14 (météo) ; ni délai de publication ni révision ne sont modélisés. La conception voit chaque moment de décision comme le rejeu voit son horloge : la série de demande y est reconstruite à partir des seuls enregistrements bruts datés de ce moment ou d'avant (pour l'ajustement d'un modèle, l'origine de son premier jour testé ; pour les retards, l'origine de chaque jour ; pour la cible, le moment où le jour est noté). La réparation qui comble l'heure manquante du 2022-01-01 05:00 UTC avec un enregistrement daté du 2023-01-01 05:00 UTC n'entre donc dans la conception qu'après l'arrivée de cet enregistrement, au même moment que dans les rejeux. La demi-largeur d'un intervalle, fixée à l'ajustement de son modèle, n'est calibrée que sur les jours déjà notés à ce moment (un jour est noté une heure après sa dernière heure, ou à la fin des données de conception) : la veille du premier jour testé d'un mois de validation en reste exclue.
+**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
+
+## 10. Limites
+
+- **Le choix et 2024.** La famille et l'entrée de v2 ont été choisies sur 2020–2023 ; 2024 avait été vue à travers v1. Ni l'une ni l'autre ne prouve que v2 est meilleur : seul un test de référence propre de 2025 le peut (section 9).
+- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée (2 heures après l'émission), et la sensibilité de 6 heures borne ce qu'elle vaut (section 2). Le modèle du NBM change au fil des années sans être suivi.
+- **Une seule prévision pour une province.** Un seul point de prévision tient lieu de la météo du Québec, comme une seule station en v1.
+- **Couverture conditionnelle.** L'intervalle de v2 sous-couvre l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Les seuils de couverture de l'hiver sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation. À l'inverse, le seuil de couverture de l'été (91,0 %) dépasse le nominal de 90 % : une semaine couverte au-delà du nominal peut y être signalée basse.
+- **Extrapolation.** Sous la plage d'entraînement, les courbes sont des droites ; la queue froide de la règle de décision et le décompte des heures hors plage de la section 3 mesurent ce que cela coûte.
+- **Épisodes de plusieurs jours** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Un épisode de plusieurs jours peut donner une fausse alerte sans que le modèle soit en cause : sur 2023, « réentraîner » jusqu'à 56,7 % des départs (7 jours à × 0,70) et au plus 34,9 % pour un épisode de ±15 %, aucun « recalibrer » ; sur 2024, « réentraîner » jusqu'à 51,2 % des départs (7 jours à × 0,70) et au plus 27,9 % pour un épisode de ±15 %, aucun « recalibrer » (sections 7 et 8).
+- **Changement de niveau** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à chaque départ. Sur 2024, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à chaque départ. Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
+- **Exclusion de l'écho** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Sur un modèle dégradé dont le biais change de côté, elle supprime « réentraîner » sur 2023 dans 5 essais sur 240 et le retarde dans 32, et sur 2024 dans 4 essais sur 240 et le retarde dans 30 ; c'est le prix d'éviter les fausses alertes d'un épisode suivi de son écho.
+- **Fausses alertes de dérive en 2024.** Les niveaux d'alarme sont le 95ᵉ centile des semaines de validation 2021–2023, dont les références couvraient de 2 à 4 années antérieures pour la prévision de température et de 1 à 3 pour la prévision de demande ; en 2024, elles en couvrent 5 et 4. Le taux de fausses alertes de dérive en 2024 n'est pas mesuré.
+- **Règle 4 et un vrai changement de température.** Une dérive réelle et soutenue de la prévision de température, que le modèle suit, performance dans ses seuils, peut donner « examiner les données » : la règle ne distingue pas un vrai changement de la météo d'une erreur de données. La règle reste telle quelle.
+- **Données en temps réel.** Les valeurs sont celles téléchargées le 2026-10-14 (demande) et à partir du 2026-10-14 (météo observée) ; aucune révision n'est modélisée, et l'arrivée d'une prévision est déduite de son heure d'émission.
 - **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'agents IA travaillant sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. Les revues ont été faites par des agents à contexte neuf et par un modèle d'IA d'un autre fournisseur, ce qui n'est pas une validation indépendante au sens de SR 11-7.
 
-## 9. Les bris, sur des données synthétiques
+## 11. Les bris, sur des données synthétiques
 
-Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attraper ; un témoin n'injecte rien et doit rester silencieux. L'exécution `breaks` les lance tous ; le rapport refuse d'être généré si l'un d'eux a échoué. Aucun bris ne lit les vraies données de demande ou de météo : les portes de qualité, les gardes et le rendu sont testés sur de petites données fabriquées, et l'horloge et les moniteurs dans un monde synthétique (`tests/replay_world.py`) : un peu plus de deux ans de demande fabriquée, un modèle figé dessus, des seuils tirés de ses propres semaines hors échantillon par la même règle des quantiles que les vrais (un seul jeu pour les quatre saisons), et un niveau d'alarme de dérive fixé à la main à 1,0, non par cette règle. Qu'un bris se déclenche dans ce monde montre que le contrôle peut se déclencher, pas qu'il verrait la même faute dans la vraie demande.
+Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attraper ; un témoin n'injecte rien et doit rester silencieux. L'exécution `breaks` les lance tous ; le rapport refuse d'être généré si l'un d'eux a échoué. Aucun bris ne lit les vraies données : les portes de qualité, les gardes et le rendu sont testés sur de petites données fabriquées, et l'horloge et les moniteurs dans un monde synthétique (`tests/replay_world.py`), avec un niveau d'alarme de dérive fixé à la main à 1,0. Qu'un bris se déclenche dans ce monde montre que le contrôle peut se déclencher, pas qu'il verrait la même faute dans la vraie demande.
 
 | Contrôle | Bris | Résultat |
 |---|---|---|
@@ -472,6 +620,8 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Portes de qualité des données | Une panne commune à plusieurs stations fait échouer la porte du panel | déclenché |
 | Portes de qualité des données | Une porte en échec arrête la chaîne : aucune donnée canonique n'est écrite | déclenché |
 | Portes de qualité des données | Des fichiers bruts qui ne correspondent plus à leur manifeste sont refusés | déclenché |
+| Portes de qualité des données | Un mois de la fenêtre absent du manifeste d'une station est refusé avant qu'aucun fichier de cette station ne soit haché | déclenché |
+| Portes de qualité des données | Témoin : un manifeste qui liste chaque mois de la fenêtre passe, et ses mois hors de la fenêtre sont écartés | resté silencieux |
 | Portes de qualité des données | Un enregistrement hors de la grille horaire fait échouer la porte, avec son horodatage | déclenché |
 | Portes de qualité des données | Une valeur hors bornes cachée dans une paire du retour à l'heure normale fait quand même échouer la porte | déclenché |
 | Portes de qualité des données | Une valeur hors bornes est écartée avant qu'une réparation ne la lise | déclenché |
@@ -594,42 +744,359 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Rendu des rapports | Un bris qui ne s'est pas déclenché met l'exécution des bris en échec | déclenché |
 | Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport français | déclenché |
 | Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport anglais | déclenché |
-| Pas d'information future | Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur ; une ligne notée à l'horloge même la calibre | déclenché |
+| Pas d'information future | Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur, une ligne notée à l'horloge même la calibre ; le dernier jour des données, noté à la fin des données, ne calibre pas une demi-largeur fixée à ce moment | déclenché |
 | Rendu des rapports | Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport | déclenché |
 | Rendu des rapports | Des mesures de 2024 faites avec d'autres durées, facteurs, changements de niveau ou bruits que celles de 2023 font refuser le rapport | déclenché |
 | Rendu des rapports | Un rejeu de 2024 qui déroge à des rejeux faits sous deux commits de gel, une dérogation que le rapport ne décrit pas, fait refuser le rapport | déclenché |
+| Portes de qualité des données | Une réponse de prévisions pour une autre station ou un autre modèle est refusée | déclenché |
+| Portes de qualité des données | Une température prévue qui n'est ni un nombre ni vide est refusée | déclenché |
+| Portes de qualité des données | Une réponse de prévisions vide est refusée | déclenché |
+| Portes de qualité des données | Une prévision émise hors de l'année demandée est refusée | déclenché |
+| Portes de qualité des données | Une réponse de prévisions refusée n'écrit rien | déclenché |
+| Portes de qualité des données | Témoin : une année de prévisions propre est vérifiée, et la première prévision de l'année suivante est dans sa requête | resté silencieux |
+| Portes de qualité des données | Un point de prévision sans heure d'émission ou sans heure de validité est refusé à la vérification et au chargement, avec ses lignes | déclenché |
+| Portes de qualité des données | Deux valeurs pour un même point de prévision font refuser le chargement | déclenché |
+| Portes de qualité des données | Témoin : des points de prévision en double identiques sont écartés et comptés, sans refus | resté silencieux |
+| Portes de qualité des données | Une station principale autre que celle de Montréal-Trudeau fait refuser l'appariement de la prévision | déclenché |
+| Portes de qualité des données | Un fichier de prévisions qui ne correspond plus à son manifeste est refusé | déclenché |
+| Portes de qualité des données | Témoin : une prévision propre passe ses portes | resté silencieux |
+| Portes de qualité des données | Une température prévue impossible fait échouer la porte des bornes de la prévision | déclenché |
+| Portes de qualité des données | Trop peu de jours alimentés par une prévision font échouer la porte de couverture de la prévision ; un jour sans prévision à lui, alimenté par celle de la veille, ne la fait pas échouer | déclenché |
+| Portes de qualité des données | 49 jours alimentés sur 50 (98 %) passent la porte de couverture de la prévision ; 48 sur 50, ou 48 sur 49, la font échouer | déclenché |
+| Portes de qualité des données | La station et la prévision passent par un seul filtre de bornes | déclenché |
+| Portes de qualité des données | L'erreur de la prévision contre la station ne lit que les heures de la fenêtre de conception, et jamais une observation hors bornes | déclenché |
+| Portes de qualité des données | Une prévision à laquelle manque un point d'encadrement cède la place à la suivante | déclenché |
+| Portes de qualité des données | Une prévision dont un point d'encadrement est hors bornes ne couvre pas le jour | déclenché |
+| Portes de qualité des données | Une prévision dont un point d'encadrement est vide ne couvre pas le jour | déclenché |
+| Portes de qualité des données | Sans prévision couvrante parmi les douze plus récentes, le jour reste sans prévision, avec sa raison | déclenché |
+| Portes de qualité des données | Témoin : les valeurs horaires sont linéaires dans le temps entre les points d'une même prévision, en degrés Celsius | resté silencieux |
+| Portes de qualité des données | Les points de deux prévisions ne sont jamais mélangés | déclenché |
+| Portes de qualité des données | Une porte de la prévision qui échoue arrête la chaîne | déclenché |
+| Portes de qualité des données | La qualité des données vérifie exactement les prévisions que le chargement remet ensuite, et refuse un point sans heure d'émission au lieu de l'écarter en silence | déclenché |
+| Portes de qualité des données | Des fichiers de prévisions autres que ceux qu'a vérifiés l'exécution de qualité des données sont refusés | déclenché |
+| Portes de qualité des données | Témoin : les enregistrements d'Hydro-Québec après la fenêtre sont écartés au chargement et comptés | resté silencieux |
+| Portes de qualité des données | Témoin : les enregistrements de 2019 à 2024 révisés sont listés par l'exécution de qualité des données jusqu'à 2025 | resté silencieux |
+| Portes de qualité des données | Témoin : l'exécution de qualité des données jusqu'à 2025 consigne la liste des révisions, vide ou non | resté silencieux |
+| Portes de qualité des données | Témoin : une échéance de 75 heures ou plus est signalée contre l'argument des deux jours | resté silencieux |
+| Portes de qualité des données | Chaque requête à Hydro-Québec, jusqu'à 2024 ou 2025, est bornée par le portail à la fin de l'année de sa fenêtre, et son compte est demandé sous la même borne | déclenché |
+| Portes de qualité des données | Une réponse contenant un enregistrement au-delà de sa borne est refusée et rien n'est écrit | déclenché |
+| Portes de qualité des données | Témoin : la borne de chaque requête est la dernière heure de la fenêtre | resté silencieux |
+| Portes de qualité des données | Témoin : un export de 2024 qui finit à la dernière heure de la fenêtre est écrit | resté silencieux |
+| Portes de qualité des données | Témoin : un téléchargement simple ne redemande jamais au portail un fichier déjà vérifié | resté silencieux |
+| Portes de qualité des données | Un téléchargement forcé de 2025 des fichiers météo est refusé avant toute requête | déclenché |
+| Portes de qualité des données | La commande « fetch » jusqu'à 2025 passe par la porte de chaque source avant toute requête, et refuse, avant qu'aucune source ne s'exécute, de forcer une autre source qu'Hydro-Québec | déclenché |
+| Portes de qualité des données | Un jour qu'aucune prévision météo n'alimente n'est pas prévu et échoue (prévision manquante) : examiner les données | déclenché |
+| Portes de qualité des données | Une température de conception hors des bornes est vide, comme dans le rejeu | déclenché |
+| Pas d'information future | Seuls les fichiers de prévisions des années nommées sont lus | déclenché |
+| Pas d'information future | Témoin : la prévision la plus récente disponible à l'origine alimente le jour | resté silencieux |
+| Pas d'information future | Une prévision disponible après l'origine n'est jamais utilisée, même absurde, et la suivante l'est | déclenché |
+| Pas d'information future | La règle du choix de la prévision refuse une prévision sans heure d'émission : sa disponibilité ne peut être établie | déclenché |
+| Pas d'information future | Témoin : le 31 décembre 2023 est prévu par sa propre prévision de 01 h UTC, qui lit son point du 1er janvier 2024 à 06 h UTC | resté silencieux |
+| Pas d'information future | Témoin : sans prévision, la table de v1 garde chaque colonne et chaque valeur | resté silencieux |
+| Pas d'information future | La table des variables refuse une prévision météo finie dont la prévision n'a pas d'heure de disponibilité, ou une heure postérieure à l'origine de sa ligne | déclenché |
+| Pas d'information future | Une ligne dont la prévision est devenue disponible après son origine est refusée | déclenché |
+| Pas d'information future | Témoin : une prévision disponible à l'origine même est acceptée | resté silencieux |
+| Pas d'information future | Une ligne dont la prévision météo n'a pas d'heure de disponibilité est refusée | déclenché |
+| Pas d'information future | Une ligne sans origine est refusée, même avec une prévision disponible 24 heures après son heure cible, et même sans aucune entrée de prévision | déclenché |
+| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne d'entraînement d'un pli, même fournie à part, dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | déclenché |
+| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne de test d'un pli dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine : elle n'atteint jamais l'étalonnage des intervalles | déclenché |
+| Pas d'information future | Un ajustement sur la prévision météo, le GAM ou les moindres carrés, refuse avant de placer ses nœuds une ligne dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | déclenché |
+| Pas d'information future | Des nœuds de spline placés aussi sur des heures de test font refuser l'ajustement, même pour une seule heure de test qui ne déplace aucun nœud d'un centième de degré ; des nœuds décalés de 1,1e-12 °C de la règle sont refusés | déclenché |
+| Pas d'information future | Témoin : un ajustement sur ses seules heures utilisables passe la vérification des nœuds, à sa tolérance de 1e-12 °C près, et prévoit encore les heures sans cible | resté silencieux |
+| Pas d'information future | Un gel dont les nœuds ne suivent pas la règle sur ses propres lignes d'entraînement est refusé | déclenché |
+| Pas d'information future | La veille de l'année rejouée ne calibre jamais une demi-largeur, ni au gel de 2024 ni à celui de 2023 | déclenché |
+| Pas d'information future | Des erreurs hors échantillon qui ne disent pas leur jour ne calibrent aucune demi-largeur | déclenché |
+| Pas d'information future | La demi-largeur du gel de 2024 laisse de côté la veille de l'année rejouée | déclenché |
+| Pas d'information future | Une alimentation de conception contenant une prévision disponible après la fenêtre de conception est refusée | déclenché |
+| Pas d'information future | Le code de conception ne lit que les fichiers de prévisions des années de conception | déclenché |
+| Pas d'information future | Témoin : la prévision de 01 h UTC du 1er janvier 2024, dans le fichier de 2023 et disponible à temps, est gardée | resté silencieux |
+| Pas d'information future | Le seuil de froid vient des seules températures prévues de la période de conception | déclenché |
+| Pas d'information future | La validation reçoit chaque entrée qu'elle prépare et ne demande que les années de conception | déclenché |
+| Pas d'information future | Témoin : le registre de la prévision est consigné pour chaque jour de conception | resté silencieux |
+| Pas d'information future | La température prévue à chaque origine de conception n'utilise que les prévisions disponibles à ce moment | déclenché |
+| Pas d'information future | Sur une archive lacunaire, le rejeu et la validation retiennent la même prévision pour chaque jour | déclenché |
+| Pas d'information future | Une référence de dérive de température contenant des jours rejoués est refusée | déclenché |
+| Pas d'information future | Les modèles de comparaison sont notés sur les entrées enregistrées à l'émission | déclenché |
+| Pas d'information future | Une répétition dont la prévision émise diffère de celle de la validation est refusée | déclenché |
+| Pas d'information future | La répétition de 2023 s'exécute de bout en bout et refuse une entrée que la validation n'a pas émise | déclenché |
+| Pas d'information future | Le rejeu de 2024 ne lit aucun enregistrement de 2025 | déclenché |
+| Pas d'information future | Le rejeu de la preuve ne reçoit aucun enregistrement de 2025 | déclenché |
+| Horloge du rejeu | Le rejeu ne voit une prévision qu'une fois disponible, et le verdict des jours non plus | déclenché |
+| Moniteurs et table de décision | Les seuils de dérive de température lisent la prévision émise, pas l'observation | déclenché |
+| Moniteurs et table de décision | Un jour qu'aucune prévision n'a alimenté échoue au critère « prévision manquante » dans les verdicts du jour que lit le calibrage de la validation, comme dans le rejeu | déclenché |
+| Moniteurs et table de décision | Une dérive de la température prévue, performance dans les bornes, donne « examiner les données » | déclenché |
+| Moniteurs et table de décision | Témoin : la mesure de réutilisation fait alimenter deux jours par une même prévision faussée | resté silencieux |
+| Moniteurs et table de décision | La mesure de réutilisation ne présente jamais comme deux jours une prévision qui en manque un | déclenché |
+| Moniteurs et table de décision | Témoin : sans prévisions météo, le rejeu est celui de la v1 | resté silencieux |
+| Moniteurs et table de décision | Témoin : la règle de décision s'applique à l'année rejouée, avec son étiquette d'évaluation | resté silencieux |
+| Moniteurs et table de décision | Témoin : les mesures de sensibilité de v2 s'exécutent avec le flux de prévisions | resté silencieux |
+| Moniteurs et table de décision | Un contraste dont l'intervalle est sous zéro est meilleur | déclenché |
+| Moniteurs et table de décision | Un contraste dont l'intervalle est au-dessus de zéro est moins bon | déclenché |
+| Moniteurs et table de décision | Un contraste dont l'intervalle contient zéro n'est pas départagé | déclenché |
+| Moniteurs et table de décision | Une borne qui s'imprime 0,00 point ne départage pas et une borne qui s'imprime 0,01 point départage, des deux côtés : l'état suit les bornes imprimées | déclenché |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre v1 tel que livré | déclenché |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre la forme de v1 sur la prévision | déclenché |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre v1 tel que livré | déclenché |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre la forme de v1 sur la prévision | déclenché |
+| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre v1 tel que livré | déclenché |
+| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre la forme de v1 sur la prévision | déclenché |
+| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre v1 tel que livré | déclenché |
+| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre la forme de v1 sur la prévision | déclenché |
+| Moniteurs et table de décision | Un verdict sur un état inconnu est refusé | déclenché |
+| Moniteurs et table de décision | Témoin : un v2 plus proche à chaque heure est meilleur sur les deux comparaisons | resté silencieux |
+| Moniteurs et table de décision | Des heures où un modèle a une prévision et un autre non, loin de la cible et froides, ne changent ni les contrastes ni la queue froide : tout est mesuré sur les heures communes | déclenché |
+| Moniteurs et table de décision | Les contrastes qui décident des verdicts, ceux de la queue froide compris, sont la différence appariée de l'erreur absolue horaire rapportée à la demande observée, sur les heures communes, à mille rééchantillonnages par semaines et graine 0 : une autre métrique, une autre graine ou un autre nombre de rééchantillonnages échoue | déclenché |
+| Moniteurs et table de décision | Sur les mêmes heures, les trois contrastes s'additionnent : changement entier = famille + entrée | déclenché |
+| Moniteurs et table de décision | Les cinq heures les plus chargées sont prises sur toute l'année selon la demande, une prévision manquante gardée avec sa raison, et des heures plus calmes ne les remplacent pas | déclenché |
+| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures en 6 semaines, ni à 120 heures en 3 semaines, ni à 119 heures sous le seuil plus une au seuil ; elle l'est à 120 heures en 4 semaines | déclenché |
+| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures froides et l'est à 120, et le verdict le dit | déclenché |
+| Moniteurs et table de décision | Un v2 meilleur en moyenne mais moins bon sur les heures froides n'est pas montré meilleur | déclenché |
+| Moniteurs et table de décision | Le seuil froid ne lit que les températures prévues : changer toutes les demandes ne le change pas | déclenché |
+| Moniteurs et table de décision | Le statut de la fiche du modèle suit le test de référence : candidat sans départ de 2025, inachevé tant qu'il n'a pas fini, quelle que soit sa position, même avant qu'elle soit consignée, a posteriori s'il l'est, un statut sur données réservées seulement sur un 2025 propre et fini ; un test fini dont la position n'est ni propre ni a posteriori est refusé | déclenché |
+| Moniteurs et table de décision | Seul un test de référence propre est étiqueté « données réservées » : un test de référence a posteriori est étiqueté a posteriori, un départ qui suit un départ fini est vu par les développeurs, et un départ qui suit un départ arrêté sans la décision du propriétaire qui le nomme est refusé | déclenché |
+| Le moniteur n'agit jamais | Témoin : des modèles de comparaison hors de leurs seuils ne déclenchent aucune recommandation | resté silencieux |
+| Le moniteur n'agit jamais | Un modèle de comparaison modifié pendant le rejeu le fait échouer | déclenché |
+| Règles gelées | Le GAM prévoit ce que prévoit le pipeline scikit-learn tranché par le propriétaire, mêmes colonnes, même normalisation et même ridge, extrapolation sous et au-dessus de la plage d'entraînement comprise | déclenché |
+| Règles gelées | Témoin : sans les modèles de v2, la validation glissante reste exactement celle de v1 | resté silencieux |
+| Règles gelées | Témoin : sans les modèles de v2, la validation est exactement celle de v1 | resté silencieux |
+| Règles gelées | Témoin : le GAM figé, relu de son fichier, prévoit ce que prévoient le GAM ajusté et le pipeline scikit-learn tranché, construit à part, au-delà de la plage d'entraînement compris | resté silencieux |
+| Règles gelées | Un GAM figé dont un nœud, une échelle, un coefficient ou tout autre champ de son empreinte a changé est refusé | déclenché |
+| Règles gelées | Un GAM figé d'un autre degré, d'une autre extrapolation ou d'un autre réglage de biais est refusé, et chacun de ces réglages change l'empreinte | déclenché |
+| Règles gelées | Un GAM figé dont les nœuds ne sont pas dix valeurs finies strictement croissantes est refusé | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : l'extrapolation du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le degré du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : la colonne de biais du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le nombre de nœuds du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : les types de jour du module remis dans un autre ordre après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | déclenché |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : un type de jour ajouté au module après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | déclenché |
+| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : les blocs horaires du module changés après le gel (l'heure 6 passée de la matinée à la nuit) ne changent ni leur prévision ni leurs courbes | déclenché |
+| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : la température de base du module changée après le gel, et les degrés-heures de la table calculés avec elle, ne changent ni leur prévision ni leurs courbes | déclenché |
+| Règles gelées | Les blocs horaires et la température de base des moindres carrés figés sont dans leur fichier et leur empreinte : une autre prévision vient avec une autre empreinte, et un fichier modifié est refusé | déclenché |
+| Règles gelées | Des moindres carrés figés dont les blocs ne partagent pas les heures 0 à 23, dont la base n'est pas un nombre fini, ou dont les colonnes ne sont pas celles que leurs blocs engendrent, sont refusés | déclenché |
+| Règles gelées | Une ligne sans type de jour ou d'une heure hors de 0 à 23 n'est jamais prévue, et un type de jour que les cellules stockées ne couvrent pas est refusé, pour les deux familles | déclenché |
+| Règles gelées | Une heure donnée en texte (« 6 ») est l'heure 6 partout : ses cellules, ses blocs et ses courbes sont ceux de l'heure entière, jamais une ligne tenue pour connue et prévue de ses seuls retards, pour les deux familles | déclenché |
+| Règles gelées | Témoin : sur les lignes que produit la chaîne, les moindres carrés figés prévoient exactement ce que prévoyait la formule précédente (0 MW d'écart) | resté silencieux |
+| Règles gelées | Témoin : les modèles de comparaison notent chaque heure rejouée exactement comme la formule précédente (0 MW d'écart) | resté silencieux |
+| Règles gelées | Un GAM figé dont les colonnes ne sont pas celles que ses nœuds, ses réglages et ses types de jour engendrent, nom pour nom et dans l'ordre, est refusé à la prévision ; écrit avec ses types de jour dans un autre ordre, il prévoit la même chose | déclenché |
+| Règles gelées | Un modèle de production dont un coefficient de retard n'est pas positif est refusé | déclenché |
+| Règles gelées | Le gel refuse, avant toute consignation, un modèle de production dont un coefficient de retard n'est pas positif | déclenché |
+| Règles gelées | Témoin : les moindres carrés figés gardent la prévision de v1 | resté silencieux |
+| Règles gelées | Un modèle de comparaison modifié, remplacé par un autre modèle, figé pour une autre année ou manquant est refusé | déclenché |
+| Règles gelées | Un calcul sur données réelles hors de la descendance de l'étiquette v2-first-run est refusé | déclenché |
+| Règles gelées | Témoin : un calcul sur données réelles depuis un descendant de l'étiquette v2-first-run passe | resté silencieux |
+| Règles gelées | Un téléchargement de 2025 avant le gel est refusé | déclenché |
+| Règles gelées | Un téléchargement de 2025 depuis un arbre de travail aux changements non validés est refusé | déclenché |
+| Règles gelées | Un export de 2025 incomplet est refusé et rien n'est écrit | déclenché |
+| Règles gelées | Une dépendance modifiée après l'étiquette de gel de v2 est refusée et nommée | déclenché |
+| Règles gelées | Témoin : les rejeux de v1 ne comptent jamais comme un déplacement de l'étiquette de gel de v2 | resté silencieux |
+| Règles gelées | Un rejeu de v2 sous une étiquette de gel de v2 déplacée est refusé sauf dérogation consignée | déclenché |
+| Règles gelées | Un rejeu de 2025 lancé seul voit une étiquette déplacée depuis le rejeu de 2024 de v2 : la vérification suit le gel, pas l'année | déclenché |
+| Règles gelées | Un départ inachevé compte pour la vérification de l'étiquette déplacée | déclenché |
+| Règles gelées | Un rejeu stocké sans étiquette de gel compte comme un rejeu de v1 | déclenché |
+| Règles gelées | Une étiquette nommée comme un gel que la configuration ne liste pas est refusée | déclenché |
+| Règles gelées | Témoin : les dérogations consignées sont lues dans la section de leur étiquette de gel | resté silencieux |
+| Règles gelées | Une entrée de dérogation de v2 qui ne nomme que le nouveau commit de gel est refusée : ni le commit d'où l'étiquette est partie ni le changement de règle entre les deux ne sont consignés | déclenché |
+| Règles gelées | Une entrée de dérogation de v2 qui ne nomme pas le commit de gel d'où l'étiquette est partie, celui d'un rejeu antérieur, est refusée | déclenché |
+| Règles gelées | Une entrée de dérogation de v2 qui omet un commit de règle entre ses deux commits de gel, lu commit par commit, est refusée et le commit est nommé | déclenché |
+| Règles gelées | Une entrée de dérogation de v2 qui nomme un commit de son déplacement ne touchant ni une règle ni une dépendance est refusée | déclenché |
+| Règles gelées | Un registre de dérogations de v2 dont le second déplacement ne part pas du commit où le premier a mené l'étiquette est refusé | déclenché |
+| Règles gelées | Une étiquette de gel de v2 ramenée sur un commit d'arrivée antérieur, sans entrée qui consigne ce déplacement, est refusée ; sur le dernier commit d'arrivée, elle passe | déclenché |
+| Règles gelées | La porte de 2025 refuse un registre de dérogations incomplet avant l'ouverture de l'exécution, et rien ne s'ouvre | déclenché |
+| Règles gelées | Avant l'étiquette de gel de v2, une entrée du registre sous elle, une section de v2 qui nomme un commit, une section absente ou une tête qui ne descend pas de v1 font échouer l'historique | déclenché |
+| Règles gelées | Témoin : une dérogation de v2 qui nomme le commit de gel d'où l'étiquette est partie passe l'historique de v2 | resté silencieux |
+| Règles gelées | Témoin : un changement de dépendance consigné comme dérogation passe l'historique de v2 | resté silencieux |
+| Règles gelées | Un commit de règle après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
+| Règles gelées | Un changement de pyproject.toml après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
+| Règles gelées | Un changement de uv.lock après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
+| Règles gelées | Un changement de règle annulé ensuite, l'étiquette restée en place, fait échouer l'historique lu commit par commit | déclenché |
+| Règles gelées | Une dérogation de v2 qui ne nomme pas un commit de changement de son déplacement fait échouer l'historique | déclenché |
+| Règles gelées | Une dérogation de v2 qui nomme un commit ni changement de son déplacement ni commit de gel fait échouer l'historique | déclenché |
+| Règles gelées | Une dérogation de v2 qui ne nomme pas le commit d'où l'étiquette est partie, ou celui où elle est arrivée, fait échouer l'historique | déclenché |
+| Règles gelées | Un déplacement de l'étiquette de gel de v2 sans entrée de dérogation, ou une entrée sans déplacement, fait échouer l'historique | déclenché |
+| Règles gelées | Une entrée de la section de v2 qui nomme un commit sans être une dérogation ni la décision du propriétaire sur 2025 avec son issue fait échouer l'historique | déclenché |
+| Règles gelées | Une étiquette de gel de v2 déplacée sans que son épingle soit validée fait échouer l'historique dès le commit suivant | déclenché |
+| Règles gelées | Une étiquette déplacée hors du commit de son épingle fait échouer le test des étiquettes | déclenché |
+| Règles gelées | Un changement de fichier de règles après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
+| Règles gelées | Un changement de pyproject.toml après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
+| Règles gelées | Un changement de uv.lock après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
+| Règles gelées | Une modification du plan de v2 après plan-v2, hors de sa section 18 et non nommée par elle, fait échouer l'historique du plan | déclenché |
+| Règles gelées | Une entrée de la section 18 du plan réécrite sans être nommée fait échouer l'historique du plan | déclenché |
+| Règles gelées | Témoin : un départ de 2025 propre, rien n'ayant changé, passe la porte | resté silencieux |
+| Règles gelées | La porte de 2025 parcourt chaque commit après le premier commit de gel et refuse un changement de règle ou de dépendance, même annulé ensuite, en nommant les commits et les fichiers ; un commit vide passe | déclenché |
+| Règles gelées | La porte de 2025 refuse une fusion, un clone superficiel et une tête qui ne descend pas du commit de gel | déclenché |
+| Règles gelées | Un correctif après l'échec du premier départ de 2024 fait refuser la porte de 2025, qui le nomme | déclenché |
+| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : propre, étiqueté « données réservées » | déclenché |
+| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : a posteriori, étiqueté a posteriori | déclenché |
+| Règles gelées | Une décision du propriétaire qui ne s'applique pas laisse le refus : suivie d'un changement de règle, sur un commit dont un départ antérieur descend, introuvable, ou sans exécution de preuve finie faite d'un arbre propre | déclenché |
+| Règles gelées | Un départ de 2025 dont un artefact figé diffère de la première entrée de 2024 de v2 est refusé | déclenché |
+| Règles gelées | Un départ de 2025 dont les exécutions manquent au magasin, comme dans une copie fraîche, est refusé | déclenché |
+| Règles gelées | La porte de 2025 refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | déclenché |
+| Règles gelées | La porte de 2025 refuse un fichier brut que le contrôle de qualité des données n'a pas vérifié, sans lire aucune demande | déclenché |
+| Règles gelées | Un départ de 2025 pendant qu'un autre est en cours est refusé | déclenché |
+| Règles gelées | Deux départs de 2025 simultanés n'ouvrent qu'une exécution ; l'autre est refusé | déclenché |
+| Règles gelées | Une exécution de diagnostic de 2025 sans son rejeu fini et complet fait refuser la porte | déclenché |
+| Règles gelées | Un rejeu de 2025 sans entrée de 2024 de v2 au registre des rejeux est refusé | déclenché |
+| Règles gelées | Après un test de référence inachevé, un départ suivant est refusé, en disant si l'exécution arrêtée tient un résultat, jusqu'à une décision du propriétaire qui nomme le départ arrêté | déclenché |
+| Règles gelées | Un départ de 2025 ultérieur à un test de référence fini est étiqueté « vu par les développeurs » | déclenché |
+| Règles gelées | La fonction de rejeu, appelée seule, refuse 2025 | déclenché |
+| Règles gelées | Le rejeu de 2025 est refusé tant que la fenêtre des données n'atteint pas la fin de 2025 | déclenché |
+| Règles gelées | Le rejeu de 2025 refuse un arbre de travail aux changements non validés | déclenché |
+| Règles gelées | Le rejeu de 2025 lit les artefacts figés pour 2024, jamais les plus récents | déclenché |
+| Règles gelées | Un rejeu de 2025 arrêté en cours laisse son exécution démarrée, avec l'étape atteinte et la classe de son erreur ; arrêté par un contrôle, il ne tient aucune métrique ni aucun résultat | déclenché |
+| Règles gelées | Un départ de 2025 arrêté pendant qu'il enregistre la fiche de sa porte garde la classe de son erreur, et le refus du départ suivant la nomme | déclenché |
+| Règles gelées | Une exécution de 2025 n'existe qu'avec ses étiquettes : leur calcul en échec n'en crée aucune, et un arrêt juste après sa création laisse un départ arrêté que la porte suivante voit | déclenché |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_ID) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_CONTEXT) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_EXPERIMENT_NAME) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
+| Règles gelées | Un départ de 2025 est toujours une exécution neuve de l'expérience de suivi, même quand l'environnement nomme une exécution plus ancienne d'une autre expérience (MLFLOW_RUN_ID) : la porte suivante le voit | déclenché |
+| Règles gelées | Une exécution qui ne pourrait pas être ouverte (une autre déjà active, une autre expérience choisie) est refusée avant d'exister ; si l'ouverture échoue quand même, elle finit en échec avec la classe de son erreur, jamais « en cours » : un départ de 2025 ainsi arrêté est un départ arrêté | déclenché |
+| Règles gelées | Témoin : un refus de la porte n'ouvre aucune exécution | resté silencieux |
+| Règles gelées | La fonction de rejeu refuse 2025 sans son exécution ouverte et démarrée, de ce code et de ce genre | déclenché |
+| Règles gelées | Les diagnostics s'exécutent après la fin du rejeu, dans leur propre exécution ; leur échec laisse le rejeu fini | déclenché |
+| Règles gelées | Deux processus rejouent 2025 sous l'exécution de diagnostic, chacun la cherchant dans le magasin ; un identifiant que le magasin n'a pas est refusé dans le processus | déclenché |
+| Règles gelées | La preuve compare chaque colonne de chaque heure et ne décide rien | déclenché |
+| Règles gelées | La preuve refuse un arbre de travail aux changements non validés | déclenché |
+| Règles gelées | La preuve refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | déclenché |
+| Règles gelées | La commande « all » ne rejoue jamais 2025 ni ne lance la preuve, quels que soient ses drapeaux, et refuse --through | déclenché |
+| Règles gelées | Aucun drapeau autre que --departure n'atteint le rejeu de 2025 | déclenché |
+| Règles gelées | La commande « freeze » refuse 2025 : 2025 est jugé par les artefacts figés pour 2024 | déclenché |
+| Rendu des rapports | Une entrée de v1 du registre des rejeux modifiée depuis l'étiquette v1 est repérée | déclenché |
+| Rendu des rapports | Une entrée de v2 d'une année que son gel ne rejoue pas est refusée | déclenché |
+| Rendu des rapports | Une entrée du registre sous une étiquette de gel inconnue est refusée | déclenché |
+| Rendu des rapports | Une entrée de v1 qui porte les champs de v2 est refusée | déclenché |
+| Rendu des rapports | Une entrée de v2 sans son étiquette d'évaluation est refusée | déclenché |
+| Rendu des rapports | Une étiquette d'évaluation autre que celle que donnent les départs de 2025 est refusée | déclenché |
+| Rendu des rapports | Un test de référence a posteriori étiqueté « données réservées » est refusé | déclenché |
+| Rendu des rapports | Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, propre et étiqueté « données réservées » | resté silencieux |
+| Rendu des rapports | Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, a posteriori et étiqueté a posteriori | resté silencieux |
+| Rendu des rapports | Témoin : un rejeu de 2025 refait, étiqueté « vu par les développeurs », passe | resté silencieux |
+| Rendu des rapports | Une entrée de 2024 qui porte une position, ou de 2025 qui n'en porte pas, est refusée | déclenché |
+| Rendu des rapports | Une entrée de v2 qui n'est pas une dérogation, sous un autre commit de gel que la première entrée de 2024 de v2, est refusée | déclenché |
+| Rendu des rapports | Une entrée de 2025 antérieure à toute entrée de 2024 de v2 est refusée | déclenché |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'étiquette d'évaluation est refusé | déclenché |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte du modèle de production est refusé | déclenché |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par les verdicts de la règle de décision est refusé | déclenché |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte des artefacts figés est refusé | déclenché |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par la position est refusé | déclenché |
+| Rendu des rapports | Un départ de 2025 plus tardif présenté comme test de référence est refusé | déclenché |
+| Rendu des rapports | Après un départ arrêté, un départ sans la décision du propriétaire qui le nomme ne devient pas le test de référence | déclenché |
+| Rendu des rapports | Un rejeu que MLflow dit fini mais qui ne s'est pas marqué complet n'entre pas au registre des rejeux | déclenché |
+| Rendu des rapports | Témoin : la chaîne suit le rejeu de 2024 de v2, pas un rejeu de v1 ni un rejeu de 2025 | resté silencieux |
+| Rendu des rapports | Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à côté, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à côté, rapport anglais | resté silencieux |
+| Rendu des rapports | Un rejeu de 2025 jugé par des artefacts figés d'autres empreintes que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2025 refait, jugé par des artefacts figés dont une empreinte diffère de celles du rejeu de 2024 de référence, rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2025, le test de référence ou un rejeu refait, dont l'exécution de qualité des données ne va pas jusqu'à la fin de 2025 rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un test de référence de 2025 inachevé dont le registre de la porte nomme d'autres artefacts figés que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2024 étiqueté autrement que « vu par les développeurs », ou sans étiquette, fait refuser le rapport | déclenché |
+| Rendu des rapports | Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport anglais | resté silencieux |
+| Rendu des rapports | Un modèle de comparaison dont l'empreinte diffère de celle que le rejeu a consignée rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport français | déclenché |
+| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport anglais | déclenché |
+| Rendu des rapports | L'historique de v1 ne vient que de ses entrées « rules-frozen » ; sans son entrée simple, la chaîne est rompue | déclenché |
+| Rendu des rapports | Une étiquette de gel ramenée à un commit d'avant, ou posée sur un commit de changement nommé, est refusée ; une décision du propriétaire sur 2025 n'est pas une dérogation | déclenché |
+| Rendu des rapports | Le rapport refuse un registre de dérogations de v2 incomplet, par la règle même de la porte du rejeu | déclenché |
+| Rendu des rapports | Un rejeu d'avant une dérogation fait sous un commit de changement que l'entrée nomme, ni commit de départ ni commit d'arrivée de l'étiquette, rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Une position que le registre de la porte n'a pas consignée, ou un statut tiré d'autre chose que le test de référence, fait refuser le rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2025 fini sans sa position ou sans le registre de sa porte rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, rapport anglais | resté silencieux |
+| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport français | déclenché |
+| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport anglais | déclenché |
+| Rendu des rapports | Un nombre de v2 sur 2024 sans son étiquette d'évaluation fait refuser le rapport | déclenché |
+| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport français | déclenché |
+| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport anglais | déclenché |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport français | déclenché |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport anglais | déclenché |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport français | déclenché |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport anglais | déclenché |
+| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport français | déclenché |
+| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport anglais | déclenché |
+| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport français | déclenché |
+| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport anglais | déclenché |
+| Rendu des rapports | Un jour de 2024 sans prévision, que liste l'exécution de qualité des données jusqu'à 2025, n'est pas compté parmi les jours de 2025 | déclenché |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport français | déclenché |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport anglais | déclenché |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport français | déclenché |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport anglais | déclenché |
+| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport français | déclenché |
+| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport anglais | déclenché |
+| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport français | déclenché |
+| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport anglais | déclenché |
+| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport français | déclenché |
+| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport anglais | déclenché |
+| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport français | déclenché |
+| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport anglais | déclenché |
+| Rendu des rapports | Un délai de 75 heures ou plus non énoncé à la section 4.1 du rapport de qualité des données le fait refuser, même si « En bref » l'énonce | déclenché |
+| Rendu des rapports | Le rapport de qualité des données d'une exécution jusqu'à 2025 ne liste aucun jour de 2025 sans prévision, ni l'heure de la prévision de 2025, ni un délai de 2025 de 75 heures ou plus, et dit quels comptes comprennent 2025 | déclenché |
+| Rendu des rapports | Avant tout départ de 2025, une exécution de qualité des données qui atteint 2025, nommée ou la plus récente, fait refuser le rendu, qui nomme cette exécution | déclenché |
+| Rendu des rapports | Par la commande, avant tout départ de 2025, le rapport sur une exécution de qualité des données jusqu'à 2025 nommée par son identifiant est refusé, en nommant l'exécution, et le dossier du rapport reste vide | déclenché |
+| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport français | déclenché |
+| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport anglais | déclenché |
+| Rendu des rapports | Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont il dérive, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont il dérive, rapport anglais | resté silencieux |
+| Rendu des rapports | Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du registre, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du registre, rapport anglais | resté silencieux |
+| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport français | déclenché |
+| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport anglais | déclenché |
+| Rendu des rapports | Des lignes d'attribution qui diffèrent du libellé que le propriétaire a fixé dans `AGENTS.md` font échouer le test | déclenché |
+| Rendu des rapports | Un mot changé dans `attribution.py` fait échouer la comparaison avec `AGENTS.md` | déclenché |
+| Rendu des rapports | Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport français | resté silencieux |
+| Rendu des rapports | Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport anglais | resté silencieux |
+| Rendu des rapports | Des mesures de 2025 faites avec une autre conception que celles de 2023 et 2024 font refuser le rapport | déclenché |
+| Rendu des rapports | Un rejeu dont les coefficients des retards ne sont pas tous deux positifs fait refuser le rapport, qui les dit positifs | déclenché |
+| Rendu des rapports | Un plus long délai de diagnostic qui diffère de celui de l'exécution de qualité des données fait refuser le rapport | déclenché |
+| Rendu des rapports | Des valeurs du choix qui ne concordent pas avec l'exécution de validation font refuser le rapport | déclenché |
+| Rendu des rapports | Témoin : les deux pages, dans les deux langues, sont rendues d'après ce qu'écrivent le rejeu, ses diagnostics, la porte de 2025 et le registre, et les lignes d'épisodes du rapport ont les clés de celles que la mesure construit | resté silencieux |
+| Rendu des rapports | Témoin : l'estampille porte la position de 2025 du test de référence, jamais celle d'un rejeu refait | resté silencieux |
+| Rendu des rapports | Témoin : les figures et les gabarits de v2 passent l'analyse de sécurité publique | resté silencieux |
 
-Le bris « Un changement de niveau de la demande : réentraîner » multiplie la demande du monde synthétique par 1,12, une hausse de 12 %. Sur les vraies heures de 2023, une hausse de 10 % n'a pas donné « réentraîner » en 10 semaines à 4 des 4 départs (section 8) : la règle peut se déclencher, mais elle n'a vu une telle hausse dans la vraie demande à aucun départ. Sur les vraies heures de 2024 (hors échantillon, mesure ajoutée après les résultats), la même hausse n'a pas donné « réentraîner » en 10 semaines à 3 des 4 départs (section 8).
+Le bris « Un changement de niveau de la demande : réentraîner » multiplie la demande du monde synthétique par 1,12, une hausse de 12 %. Sur les vraies heures de 2023, une hausse de 10 % a donné « réentraîner » en 10 semaines à chaque départ (section 10). Sur les vraies heures de 2024 (vu par les développeurs), la même hausse a donné « réentraîner » en 10 semaines à chaque départ (section 10).
 
-## 10. Correspondance avec SR 11-7 et le NIST AI RMF
+## 12. Correspondance avec SR 11-7 et le NIST AI RMF
 
 Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en anglais, langue des documents). Le tableau dit ce que les contrôles couvrent, rien de plus.
 
 | Attente | Ce que fait valiwatt | Où c'est vérifié |
 |---|---|---|
-| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Configuration fixée dans le plan avant la validation (la source de température, après la comparaison des stations du rapport de qualité sur 2019–2023) ; variables nommées, coefficients montrés à côté d'un ajustement sans retards. Des spécifications de rechange : moyenne des 6 stations, intervalle absolu, quantile par saison, première formulation de la règle 2. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité ; celles-ci ne sont pas faites. | Plan, section 2 ; exécutions de validation et du modèle figé |
-| SR 11-7, qualité et pertinence des données | 23 portes de qualité sur toute la fenêtre, chaque réparation documentée ; représentativité de la station ; en production, un moniteur de qualité quotidien sur les enregistrements bruts. | Rapport de qualité des données ; rejeux |
-| SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures ; empreinte du modèle vérifiée avant et après ; le rejeu de 2024 refuse de tourner si les règles diffèrent de l'étiquette `rules-frozen` ; l'étiquette a été déplacée une fois, par une dérogation consignée dans `AGENTS.md`, et le rejeu d'avant est montré à côté (section 7). Chaque garde a son bris. | Section 9 |
-| SR 11-7, surveillance continue : étalonnage comparatif | Référence naïve ; météo observée comme borne optimiste ; modèle figé contre plis réajustés sur 2023 (analyse de résultats en parallèle). | Sections 2 et 6 |
-| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles à 90 % de forme conforme, sans garantie en échantillon fini, dont la couverture est mesurée globalement, par saison, par bloc horaire et par décile ; statistiques hebdomadaires jugées contre des seuils fixés d'avance. Au sens de SR 11-7, une période qui n'a pas servi au développement, seul le rejeu de 2024 est un contrôle a posteriori : les années de validation, 2020–2023, sont parmi celles (2019–2023) sur lesquelles la station a été choisie, et 2023 a servi à la conception des règles. Depuis la dérogation, ce contrôle est le rejeu d'avant, sur les règles gelées avant 2024 (section 7) : les règles du rejeu après la dérogation ont été changées après que ses résultats eurent été vus. | Sections 2, 4, 6, 7 |
-| SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée (examiner, réentraîner, recalibrer), avec preuves ; recommande sans agir. | Sections 5 et 7 |
+| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Modèle, entrée et règle de décision fixés dans le plan avant tout rejeu de v2 ; courbes du GAM montrées à côté d'un ajustement sans retards. Des spécifications de rechange : forme de v1 sur la prévision, borne de la météo observée, marge de disponibilité de 6 heures, moyenne des 6 stations, intervalle absolu, quantile par saison. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité ; celles-ci ne sont pas faites. | Plan de v2, sections 4 et 8 ; exécutions de validation et des modèles figés |
+| SR 11-7, qualité et pertinence des données | 25 portes de qualité sur toute la fenêtre, chaque réparation documentée ; en production, un moniteur de qualité quotidien sur les enregistrements bruts, y compris un jour sans prévision. | Rapport de qualité des données ; rejeux |
+| SR 11-7, données et modèles de tiers : l'entrée de prévision de la NOAA | Couverts : ses portes de qualité, sa règle de disponibilité, son erreur contre les observations, sa dérive et la sensibilité à la disponibilité. Non couverts : la solidité et la gestion des changements du modèle de la NOAA lui-même. | Sections 2 et 8 ; rapport de qualité des données |
+| SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures, prévisions comprises ; empreintes des trois modèles vérifiées avant et après ; le rejeu refuse de tourner si les règles ou les dépendances diffèrent de l'étiquette `rules-frozen-v2`. Chaque garde a son bris. | Section 11 |
+| SR 11-7, surveillance continue : étalonnage comparatif | Deux modèles de comparaison (v1 tel que livré et la forme de v1 sur la même prévision), référence naïve, borne de la météo observée ; modèle figé contre plis réajustés sur 2023. | Sections 3, 7 et 8 |
+| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles de forme conforme dont la couverture est mesurée. Le contrôle a posteriori au sens de SR 11-7 est 2025, données réservées : en attente. 2020–2023 a servi au choix, 2024 a été vue par les développeurs. | Sections 3, 5, 8 et 9 |
+| SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée, avec preuves ; règle de décision de v2 contre v1 fixée d'avance ; recommande sans agir. | Sections 1, 6, 8 et 9 |
 | SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
 | NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |
-| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 9 |
-| NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 7 |
+| NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 11 |
+| NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 8 |
 
-**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 (petites variations des entrées et des paramètres) ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 ; la solidité et la gestion des changements du modèle de la NOAA ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
 
-## 11. Provenance
+## 13. Provenance
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-| qualité des données | `06ef010ae4cb47e0aeeaff547b3093c8` | 2026-10-16 03:10 UTC |
-| validation | `198ddcd70f154ff4b1a8b918bb8e8c67` | 2026-10-16 03:12 UTC |
-| modèle figé pour 2023 | `3cb920027d524ab5bc490c16c90b5330` | 2026-10-16 03:12 UTC |
-| modèle figé pour 2024 | `e0fc291ffb07464494d82f9a05bc2968` | 2026-10-16 03:46 UTC |
-| rejeu de 2023 | `265d2a96a9974f22a664871ec6e98864` | 2026-10-16 03:46 UTC |
-| rejeu de 2024 | `9f87c124e34344a8a65e4a7679c3c458` | 2026-10-16 04:26 UTC |
-| bris | `90f58bd8739b4c70965c3f0ed317bfdd` | 2026-10-16 04:32 UTC |
+| qualité des données | `10c78de051d54785b94d58ffba6eea15` | 2026-10-17 22:46 UTC |
+| validation | `8ed71f1375c64f13a62d2e9a3652bd2d` | 2026-10-17 22:48 UTC |
+| modèles figés pour 2023 | `fcec1b39ce164e6999cec7fb0cb3b1d4` | 2026-10-17 22:49 UTC |
+| modèles figés pour 2024 | `6c53b6d7eef4446dacadd66312c9c1f1` | 2026-10-17 23:11 UTC |
+| répétition de 2023 | `a3ad248e1cc9427985161fca18fe1b26` | 2026-10-17 22:49 UTC |
+| rejeu de 2024 de cette chaîne | `18daf1fc40a24300aeaba5e4f14d4107` | 2026-10-17 23:11 UTC |
+| bris | `a009868785af446ba0205cea36a9d4c5` | 2026-10-17 23:52 UTC |
 
-Empreinte du code : `d21f1f49cd46720509d643553973150f978e58ce230cf27a34e7e7494e5a0e67`. Empreinte des règles : `e0b993967d938d40af6e678effe3822ba2d5042552468f90d8187f4107295a49`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte.
+Empreinte du code : `521febded2db62c9f9241debd7daf14706a18ca91fd2d37995ab023308d1085c`. Empreinte des règles : `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.

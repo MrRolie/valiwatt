@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `06ef010ae4cb47e0aeeaff547b3093c8` (2026-10-16 03:10 UTC), code `3a67ac3d2e3f`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `10c78de051d54785b94d58ffba6eea15` (2026-10-17 22:46 UTC), code `c778e08fc0b5`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -8,7 +8,9 @@ _Generated from MLflow run `06ef010ae4cb47e0aeeaff547b3093c8` (2026-10-16 03:10 
 >
 > Extracted from the Environment and Climate Change Canada Historical Climate Data web site ( https://climate.weather.gc.ca/index_e.html ) on 2026-10-14.
 >
-> Neither Hydro-Québec nor Environment and Climate Change Canada produced, reviewed or endorsed this work.
+> Weather forecasts: NOAA National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), downloaded from the Iowa Environmental Mesonet archive of Iowa State University (https://mesonet.agron.iastate.edu/). This project interpolated these three-hourly forecasts to hourly values and converted them to degrees Celsius: the values it uses are modified and are not original NOAA data.
+>
+> Neither Hydro-Québec, Environment and Climate Change Canada, NOAA nor the Iowa Environmental Mesonet produced, reviewed or endorsed this work, and the project is affiliated with neither NOAA nor the Iowa Environmental Mesonet.
 >
 > Built with Claude Code under the repository owner's direction.
 
@@ -19,6 +21,7 @@ _Generated from MLflow run `06ef010ae4cb47e0aeeaff547b3093c8` (2026-10-16 03:10 
 - **One record** carries a timestamp 365 days off; it is moved back, with its evidence (section 3.2).
 - **45 hours** are blank at the source, in 2 runs (the longest: 41 hours). They stay blank.
 - Each of the 6 weather stations has a temperature for at least 99.2% of the hours.
+- v2's temperature forecast fed **100.00%** of the window's 2,192 days; none of its points is 75 hours or more after its issue (section 4.1).
 - Over 2019–2023, Montréal's degree-days and the day of the week reproduce **94.2%** of the variation in daily demand; with the mean of the 6 stations, **93.0%**.
 - The busiest hour of 2019–2023 is the hour ending 2023-02-03 18:00 EST: **42,473 MW**, at −26.1 °C in Montréal.
 
@@ -132,6 +135,50 @@ _A very strong spike also gets its neighbour flagged: 1 pair of consecutive hour
 
 Temperature spikes are flagged with the same rule as demand (score beyond 10, scale estimated on 2019–2023). They are not removed: no check here separates a sensor error from a real change in the weather.
 
+### 4.1 The temperature forecast
+
+The temperature forecast v2 uses is NOAA's National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), archived by the Iowa Environmental Mesonet: 8,747 forecasts, 197,879 points every three hours, in degrees Fahrenheit, converted to degrees Celsius. 136 identical duplicate points, where the yearly files meet, are dropped; two different values for one forecast and one hour would refuse the load. Each day is fed by the freshest forecast whose own points bracket its 24 hours, among the 12 freshest available at the day's origin; the full rule is in the validation report (section 2).
+
+| Check | Result | Measure |
+|---|---|---|
+| Bounds, the whole window (−60 to 45 °C) | passed | 0 points outside the bounds out of 197,879; from −28.3 to 35.0 °C; 0 blank points |
+| Days fed, the whole window (threshold 98%) | passed | 2,192 days out of 2,192 (100.00%) |
+
+**The days no forecast fed**: none. Such a day fails the replay's day data-quality check ("investigate the data"). 0 days were fed by the same forecast as the day before.
+
+**Ranks of the forecast used** (0: the freshest): rank 0, 2,192 days. **Age of the forecast at the day's origin**: 4 h, 1,770 days; 5 h, 419 days; 10 h, 1 days; 17 h, 1 days; 22 h, 1 days. **Hour of the forecast used, by year**: 2019: 0 h UTC (364 days), 12 h UTC (1 days); 2020: 0 h UTC (55 days), 1 h UTC (310 days), 7 h UTC (1 days); 2021: 1 h UTC (364 days), 19 h UTC (1 days); 2022: 1 h UTC (365 days); 2023: 1 h UTC (365 days); 2024: 1 h UTC (366 days).
+
+**The leads.** The longest lead of a forecast point, from its issue to the hour it targets, by issue year: 2019, 66 h; 2020, 72 h; 2021, 71 h; 2022, 71 h; 2023, 71 h; 2024, 71 h. The argument of plan section 9.2 (a bad forecast spoils at most two consecutive days) holds as long as no point reaches 75 hours. No year reaches it.
+
+**The forecast's error against the observation** (forecast minus observed temperature at Montréal at the target hour, up to 2024-01-01):
+
+| Year | Season | Mean gap | Mean absolute gap | Hours |
+|---|---|---|---|---|
+| 2019 | fall | +0.09 °C | 0.95 °C | 2,184 |
+| 2019 | spring | +0.15 °C | 1.26 °C | 2,208 |
+| 2019 | summer | +0.07 °C | 0.92 °C | 2,207 |
+| 2019 | winter | +0.04 °C | 1.40 °C | 2,160 |
+| 2020 | fall | +0.16 °C | 1.08 °C | 2,184 |
+| 2020 | spring | +0.02 °C | 1.15 °C | 2,208 |
+| 2020 | summer | +0.30 °C | 0.94 °C | 2,206 |
+| 2020 | winter | −0.18 °C | 1.26 °C | 2,184 |
+| 2021 | fall | +0.22 °C | 0.86 °C | 2,184 |
+| 2021 | spring | −0.08 °C | 1.18 °C | 2,208 |
+| 2021 | summer | +0.16 °C | 0.84 °C | 2,208 |
+| 2021 | winter | −0.12 °C | 1.18 °C | 2,160 |
+| 2022 | fall | +0.13 °C | 0.95 °C | 2,183 |
+| 2022 | spring | −0.23 °C | 1.13 °C | 2,187 |
+| 2022 | summer | +0.06 °C | 0.86 °C | 2,208 |
+| 2022 | winter | −0.01 °C | 1.29 °C | 2,159 |
+| 2023 | fall | +0.10 °C | 0.78 °C | 2,178 |
+| 2023 | spring | +0.05 °C | 1.19 °C | 2,206 |
+| 2023 | summer | +0.14 °C | 0.91 °C | 2,203 |
+| 2023 | winter | −0.09 °C | 1.35 °C | 2,159 |
+
+![Days fed by a forecast](figures/en/nbm_feeding.png)
+
+_Days fed by a forecast, by month, and the hour of the forecast used, over the whole window._
+
 ## 5. Station representativeness (2019–2023 only)
 
 **Why only 2019–2023.** The following year is replayed hour by hour as if it were production, with a model frozen at the end of 2023 (validation report). No outcome from that year enters this analysis. The gates, on the other hand, check data availability and validity (bounds, duplicates) over the whole window, as a production pipeline would; no value from that year enters this analysis.
@@ -163,7 +210,7 @@ _Daily demand against the day's mean temperature in Montréal, 2019–2023._
 
 Over the whole year, Montréal alone does better than the mean of the stations, and the interval excludes zero.
 In winter, Montréal alone and the mean of the stations cannot be told apart: the interval contains zero.
-The mean gives every station the same weight, whatever population it stands for; this report does not test a population weighting. The forecast model's temperature source is fixed in the plan (section 2): the Montréal station, the station mean being only a sensitivity run there. The plan fixed it after this comparison, made on years that include the validation years.
+The mean gives every station the same weight, whatever population it stands for; this report does not test a population weighting. v1's temperature source was fixed in its plan: the Montréal station, the station mean being only a sensitivity run there; the plan fixed it after this comparison, made on years that include the validation years. v2 forecasts from the forecast of section 4.1; the Montréal station serves data quality, v1 as shipped's model and the optimistic bound.
 
 ## 6. Landmarks to confirm in validation
 
@@ -207,7 +254,7 @@ A persistent gap says demand moved for reasons this weather model does not carry
 
 ## 7. What this report does not show
 
-- It measures no forecast's quality: the validation report does.
+- It measures no demand forecast's quality: the validation report does. Of the temperature forecast, it measures only the gap to the observation (section 4.1).
 - The associations in section 5 use **observed** weather. A forecast made in advance has only forecast weather; the validation report says so of its results.
 - The intervals in section 5 are about how well the models fit the years studied, not about a forecast error.
 - It does not say why demand departs from the 2019 model.

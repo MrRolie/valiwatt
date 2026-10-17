@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `06ef010ae4cb47e0aeeaff547b3093c8` (2026-10-16 03:10 UTC), code `3a67ac3d2e3f`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `10c78de051d54785b94d58ffba6eea15` (2026-10-17 22:46 UTC), code `c778e08fc0b5`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -8,7 +8,9 @@ _Rapport généré à partir de l'exécution MLflow `06ef010ae4cb47e0aeeaff547b3
 >
 > Données extraites du site Web « Données climatiques historiques » d’Environnement et Changement climatique Canada ( https://climat.meteo.gc.ca/index_f.html ) le 2026-10-14.
 >
-> Ni Hydro-Québec ni Environnement et Changement climatique Canada n'ont produit, revu ou approuvé ce travail.
+> Prévisions météorologiques : guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), téléchargée des archives de l'Iowa Environmental Mesonet de l'Université d'État de l'Iowa (https://mesonet.agron.iastate.edu/). Ce projet a interpolé à l'heure ces prévisions trihoraires et les a converties en degrés Celsius : les valeurs qu'il utilise sont modifiées et ne sont pas des données originales de la NOAA.
+>
+> Ni Hydro-Québec, ni Environnement et Changement climatique Canada, ni la NOAA, ni l'Iowa Environmental Mesonet n'ont produit, revu ou approuvé ce travail, et ce projet n'est affilié ni à la NOAA ni à l'Iowa Environmental Mesonet.
 >
 > Construit avec Claude Code sous la direction du propriétaire du dépôt.
 
@@ -19,6 +21,7 @@ _Rapport généré à partir de l'exécution MLflow `06ef010ae4cb47e0aeeaff547b3
 - **Un enregistrement** porte un horodatage décalé de 365 jours ; il est replacé, avec sa preuve (section 3.2).
 - **45 heures** sont vides à la source, en 2 plages (la plus longue : 41 heures). Elles restent vides.
 - Les 6 stations météo ont chacune une température pour au moins 99,2 % des heures.
+- La prévision de température de v2 a alimenté **100,00 %** des 2 192 jours de la fenêtre ; aucun de ses points n'est à 75 heures ou plus de son émission (section 4.1).
 - Sur 2019–2023, les degrés-jours de Montréal et le jour de la semaine reproduisent **94,2 %** de la variation de la demande journalière ; avec la moyenne des 6 stations, **93,0 %**.
 - L'heure la plus chargée de 2019–2023 est l'heure finissant à 2023-02-03 18:00 HNE : **42 473 MW**, par −26,1 °C à Montréal.
 
@@ -132,6 +135,50 @@ _Un pic très fort fait aussi signaler sa voisine : 1 paire d'heures consécutiv
 
 Les pics de température sont signalés avec la même règle que la demande (score au-delà de 10, échelle estimée sur 2019–2023). Ils ne sont pas retirés : aucun contrôle ici ne sépare une erreur de capteur d'un vrai changement de temps.
 
+### 4.1 La prévision de température
+
+La prévision de température que v2 utilise est la guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), archivée par l'Iowa Environmental Mesonet : 8 747 prévisions, 197 879 points toutes les trois heures, en degrés Fahrenheit, convertis en degrés Celsius. 136 points identiques en double, à la jonction des fichiers annuels, sont écartés ; deux valeurs différentes pour une même prévision et une même heure feraient refuser le chargement. Chaque jour est alimenté par la plus fraîche des prévisions dont les propres points encadrent ses 24 heures, parmi les 12 plus fraîches disponibles à l'origine du jour ; la règle complète est dans le rapport de validation (section 2).
+
+| Contrôle | Résultat | Mesure |
+|---|---|---|
+| Bornes, toute la fenêtre (−60 à 45 °C) | réussi | 0 points hors bornes sur 197 879 ; de −28,3 à 35,0 °C ; 0 points vides |
+| Jours alimentés, toute la fenêtre (seuil 98 %) | réussi | 2 192 jours sur 2 192 (100,00 %) |
+
+**Les jours qu'aucune prévision n'a alimentés** : aucun. Un tel jour échoue au contrôle de qualité du jour dans le rejeu (« examiner les données »). 0 jours ont été alimentés par la même prévision que la veille.
+
+**Rangs de la prévision utilisée** (0 : la plus fraîche) : rang 0, 2 192 jours. **Âge de la prévision à l'origine du jour** : 4 h, 1 770 jours ; 5 h, 419 jours ; 10 h, 1 jours ; 17 h, 1 jours ; 22 h, 1 jours. **Heure de la prévision utilisée, par année** : 2019 : 0 h UTC (364 jours), 12 h UTC (1 jours) ; 2020 : 0 h UTC (55 jours), 1 h UTC (310 jours), 7 h UTC (1 jours) ; 2021 : 1 h UTC (364 jours), 19 h UTC (1 jours) ; 2022 : 1 h UTC (365 jours) ; 2023 : 1 h UTC (365 jours) ; 2024 : 1 h UTC (366 jours).
+
+**Les délais.** Le plus long délai d'un point de prévision, de son émission à l'heure qu'il vise, par année d'émission : 2019, 66 h ; 2020, 72 h ; 2021, 71 h ; 2022, 71 h ; 2023, 71 h ; 2024, 71 h. L'argument de la section 9.2 du plan (une mauvaise prévision gâte au plus deux jours consécutifs) tient tant qu'aucun point n'atteint 75 heures. Aucune année ne l'atteint.
+
+**L'erreur de la prévision contre l'observation** (prévision moins température observée à Montréal à l'heure visée, jusqu'au 2024-01-01) :
+
+| Année | Saison | Écart moyen | Écart absolu moyen | Heures |
+|---|---|---|---|---|
+| 2019 | automne | +0,09 °C | 0,95 °C | 2 184 |
+| 2019 | printemps | +0,15 °C | 1,26 °C | 2 208 |
+| 2019 | été | +0,07 °C | 0,92 °C | 2 207 |
+| 2019 | hiver | +0,04 °C | 1,40 °C | 2 160 |
+| 2020 | automne | +0,16 °C | 1,08 °C | 2 184 |
+| 2020 | printemps | +0,02 °C | 1,15 °C | 2 208 |
+| 2020 | été | +0,30 °C | 0,94 °C | 2 206 |
+| 2020 | hiver | −0,18 °C | 1,26 °C | 2 184 |
+| 2021 | automne | +0,22 °C | 0,86 °C | 2 184 |
+| 2021 | printemps | −0,08 °C | 1,18 °C | 2 208 |
+| 2021 | été | +0,16 °C | 0,84 °C | 2 208 |
+| 2021 | hiver | −0,12 °C | 1,18 °C | 2 160 |
+| 2022 | automne | +0,13 °C | 0,95 °C | 2 183 |
+| 2022 | printemps | −0,23 °C | 1,13 °C | 2 187 |
+| 2022 | été | +0,06 °C | 0,86 °C | 2 208 |
+| 2022 | hiver | −0,01 °C | 1,29 °C | 2 159 |
+| 2023 | automne | +0,10 °C | 0,78 °C | 2 178 |
+| 2023 | printemps | +0,05 °C | 1,19 °C | 2 206 |
+| 2023 | été | +0,14 °C | 0,91 °C | 2 203 |
+| 2023 | hiver | −0,09 °C | 1,35 °C | 2 159 |
+
+![Jours alimentés par une prévision](figures/fr/nbm_feeding.png)
+
+_Jours alimentés par une prévision, par mois, et l'heure de la prévision utilisée, sur toute la fenêtre._
+
 ## 5. Représentativité des stations (2019–2023 seulement)
 
 **Pourquoi seulement 2019–2023.** L'année suivante est rejouée heure par heure comme si elle était la production, avec un modèle figé à la fin de 2023 (rapport de validation). Aucun résultat de cette année-là n'entre dans cette analyse. Les contrôles bloquants, eux, vérifient la disponibilité et la validité des données (bornes, doublons) sur toute la fenêtre, comme le ferait une chaîne de production ; aucune valeur de cette année-là n'entre dans la présente analyse.
@@ -163,7 +210,7 @@ _La demande journalière selon la température moyenne du jour à Montréal, 201
 
 Sur l'année, Montréal seule fait mieux que la moyenne des stations, et l'intervalle exclut zéro.
 En hiver, Montréal seule et la moyenne des stations ne se distinguent pas : l'intervalle contient zéro.
-La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. La source de température du modèle de prévision est fixée dans le plan (section 2) : la station de Montréal, la moyenne des stations n'y étant qu'une analyse de sensibilité. Le plan l'a fixée après cette comparaison, faite sur des années qui couvrent celles de la validation.
+La moyenne donne le même poids à chaque station, quelle que soit la population qu'elle représente ; ce rapport ne teste pas de pondération par la population. La source de température de v1 était fixée dans son plan : la station de Montréal, la moyenne des stations n'y étant qu'une analyse de sensibilité ; le plan l'a fixée après cette comparaison, faite sur des années qui couvrent celles de la validation. v2 prévoit à partir de la prévision de la section 4.1 ; la station de Montréal sert au contrôle de qualité, au modèle de v1 tel que livré et à la borne optimiste.
 
 ## 6. Repères à confirmer en validation
 
@@ -207,7 +254,7 @@ Un écart persistant dit que la demande a bougé pour des raisons que ce modèle
 
 ## 7. Ce que ce rapport ne montre pas
 
-- Il ne mesure la qualité d'aucune prévision : c'est le rapport de validation qui la mesure.
+- Il ne mesure la qualité d'aucune prévision de la demande : c'est le rapport de validation qui la mesure. De la prévision de température, il ne mesure que l'écart à l'observation (section 4.1).
 - Les associations de la section 5 utilisent la météo **observée**. Une prévision faite à l'avance n'a qu'une météo prévue ; le rapport de validation le dit de ses résultats.
 - Les intervalles de la section 5 portent sur l'ajustement des modèles aux années étudiées, pas sur une erreur de prévision.
 - Il ne dit pas pourquoi la demande s'écarte du modèle de 2019.
