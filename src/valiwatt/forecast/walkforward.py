@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from valiwatt.forecast.features import day_origin
-from valiwatt.forecast.guards import require_embargo
+from valiwatt.forecast.guards import require_embargo, require_known_at_origin
 from valiwatt.forecast.model import OLSForecaster, baseline, forecaster
 
 EMBARGO_DAYS = 7
@@ -57,7 +57,9 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
     scenarios: v1's least squares on each temperature input (columns `pred_<scenario>`, `n_train_<scenario>`).
     models: keys of `model.MODELS` (v2): one forecaster per key per fold, each on its own usable training rows
     (columns `pred_<key>`, `n_train_<key>`); given, it alone sets the forecasts and `scenarios` is unused. The least
-    squares keys are v1's scenario names, so `pred_persistence` keeps its meaning."""
+    squares keys are v1's scenario names, so `pred_persistence` keeps its meaning.
+    Each fold's training rows (from train_at when given) and test rows pass the origin guard
+    (`guards.require_known_at_origin`) before anything is fitted or forecast; a refusal names the fold and the rows."""
     keys = list(scenarios) if models is None else list(models)
     make = OLSForecaster if models is None else forecaster
     parts = []
@@ -68,6 +70,9 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
         if train.empty or test.empty:
             raise ValueError(f"fold {fold.test_month} has no training or test rows")
         require_embargo(train, fold.test_first_day, EMBARGO_DAYS)
+        # The rows this fold actually fits on and forecasts, whoever supplied them, before any fit or knot placement.
+        require_known_at_origin(train, f"fold {fold.test_month}, training rows")
+        require_known_at_origin(test, f"fold {fold.test_month}, test rows")
         out = pd.DataFrame({"target": test["target"], "fold": str(fold.test_month), "day": test["day"],
                             "scored_at": test["scored_at"], "hour": test["hour"], "day_type": test["day_type"],
                             "baseline": baseline(test)}, index=test.index)

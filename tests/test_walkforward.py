@@ -8,6 +8,7 @@ import pytest
 from conftest import synth_demand, synth_obs
 from valiwatt.forecast import walkforward as wf
 from valiwatt.forecast.features import BASE_C, build
+from valiwatt.forecast.guards import LookaheadError, require_known_at_origin
 from valiwatt.forecast.model import MODELS, OLSForecaster, design, forecaster, usable_rows
 from valiwatt.quality.demand import build_demand
 
@@ -55,6 +56,7 @@ def v2_table():
         f.loc[f["day"].isin(pd.to_datetime(gaps)), f"temp_{s}"] = np.nan
         f[f"hdh_{s}"] = np.maximum(BASE_C - f[f"temp_{s}"], 0.0)
         f[f"cdh_{s}"] = np.maximum(f[f"temp_{s}"] - BASE_C, 0.0)
+        f[f"available_{s}"] = f["origin"].where(f[f"temp_{s}"].notna())  # fed days: known at the origin
     gap = f.index[(f["day"] == pd.Timestamp("2021-03-20")).to_numpy()][:5]
     f.loc[gap, ["temp_observed", "hdh_observed", "cdh_observed"]] = np.nan
     f["target"] = 15_000 + 300 * f["hdh_observed"].fillna(10.0) + rng.normal(0, 60, len(f))
@@ -106,3 +108,59 @@ def test_models_none_is_v1_exactly():
                 pd.testing.assert_series_equal(rows[f"pred_{s}"], m.predict(test), check_names=False)
                 assert (rows[f"n_train_{s}"] == m.n_train).all()
     pd.testing.assert_frame_equal(wf.run(f, fl), wf.run(f, fl, models=("observed", "persistence")))
+
+
+def _no_fit(monkeypatch):
+    """Any fit or knot placement the walk-forward attempts fails the test: the guards must refuse first."""
+    def fail(*args, **kwargs):
+        raise AssertionError("a fit ran before the guard")
+    monkeypatch.setattr(wf, "forecaster", fail)
+    monkeypatch.setattr(wf, "OLSForecaster", fail)
+
+
+BREAKS = (("available_forecast", pd.NaT, "forecast_availability_missing"),
+          ("available_forecast", pd.Timedelta(hours=1), "forecast_available_after_origin"),  # one hour after the origin
+          ("origin", pd.NaT, "origin_missing"))
+
+
+def broken_at(f: pd.DataFrame, t: pd.Timestamp, column: str, value) -> pd.DataFrame:
+    out = f.copy()
+    out.loc[t, column] = out.loc[t, "origin"] + value if isinstance(value, pd.Timedelta) else value
+    return out
+
+
+def test_a_fold_trains_only_on_rows_whose_forecast_was_known_at_their_origin(monkeypatch):
+    """The rows a fold fits on are guarded where they are consumed, whoever supplies them: a train_at table holding a
+    training row whose forecast has no availability, one available after its origin, or a row without its origin is
+    refused before any fit, though the test table passes the guard on its own (Astra's reproduction)."""
+    f = v2_table()
+    require_known_at_origin(f)
+    fl = wf.folds("2021-03", "2021-04")
+    t = f.index[(f["day"] == pd.Timestamp("2021-02-01")).to_numpy()][10]  # a training row of both folds
+    assert np.isfinite(f.loc[t, "temp_forecast"])
+    # The control: train_at's rows are what the folds fit on.
+    pd.testing.assert_frame_equal(wf.run(f, fl, models=("gam_forecast", "persistence"), train_at=lambda clock: f),
+                                  wf.run(f, fl, models=("gam_forecast", "persistence")))
+    _no_fit(monkeypatch)
+    for column, value, term in BREAKS:
+        broken = broken_at(f, t, column, value)
+        for kwargs in ({}, {"models": ("persistence",)}, {"models": tuple(MODELS)}):
+            with pytest.raises(LookaheadError, match=rf"fold 2021-03, training rows: 1 rows .*\({term}; first"):
+                wf.run(f, fl, train_at=lambda clock, b=broken: b, **kwargs)
+
+
+def test_a_fold_forecasts_only_rows_whose_forecast_was_known_at_their_origin(monkeypatch):
+    """A fold's test rows, whose forecasts go on to calibrate the intervals, are guarded before any fit: a test row
+    whose forecast has no availability, one available after its origin, or a row without its origin is refused."""
+    f = v2_table()
+    fl = wf.folds("2021-03", "2021-04")
+    t = f.index[(f["day"] == pd.Timestamp("2021-04-12")).to_numpy()][10]  # a test row of the second fold only
+    assert np.isfinite(f.loc[t, "temp_forecast"])
+    for column, value, term in BREAKS:
+        broken = broken_at(f, t, column, value)
+        for kwargs in ({}, {"models": ("persistence",)}, {"models": tuple(MODELS)}):
+            wf.run(broken, fl[:1], **kwargs)  # the first fold neither trains on nor forecasts the row
+            with monkeypatch.context() as m:
+                _no_fit(m)
+                with pytest.raises(LookaheadError, match=rf"fold 2021-04, test rows: 1 rows .*\({term}; first"):
+                    wf.run(broken, fl[1:], train_at=lambda clock: f, **kwargs)

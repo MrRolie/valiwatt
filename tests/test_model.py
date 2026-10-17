@@ -46,6 +46,7 @@ def with_forecast(f: pd.DataFrame, seed: int = 5) -> pd.DataFrame:
     f.loc[f["day"] == COLD_DAY, "temp_forecast"] = -35.0
     f["hdh_forecast"] = np.maximum(BASE_C - f["temp_forecast"], 0.0)
     f["cdh_forecast"] = np.maximum(f["temp_forecast"] - BASE_C, 0.0)
+    f["available_forecast"] = f["origin"].where(f["temp_forecast"].notna())  # fed days: known at the origin
     slope = np.where(f["hour"] < 6, 450.0, np.where(f["hour"].between(12, 17), 0.0, 200.0))
     f["target"] = 15_000 + slope * f["hdh_forecast"] + 0.1 * f["lag24"] + rng.normal(0, 60, len(f))
     return f
@@ -226,6 +227,43 @@ def test_a_fit_on_its_own_rows_passes_the_knot_check():
     # The rows it could not train on (no target) are still forecast: a forecast needs its inputs, not its outcome.
     pred = gam.predict(train.iloc[-30:])
     assert train["target"].iloc[-30:].isna().all() and np.isfinite(pred.to_numpy()).all()
+
+
+def test_a_fit_on_a_forecast_without_its_availability_is_refused(monkeypatch):
+    """A fit checks the one input it reads, whoever supplied the rows: a training row holding a finite forecast whose
+    availability is NaT or absent, after its origin, or without its origin is refused, before the knots are placed,
+    by the GAM and by the least squares on the forecast; fits on the observed or persistence input read no forecast
+    and fit as before (control)."""
+    f = with_forecast(frame())
+    train, _ = train_test(f)
+    gam = GAMForecaster("forecast").fit(train)  # the control: every row known at its origin
+    t = train.index[500]
+    assert usable(train, "forecast")[t]
+    lost = train.copy()
+    lost.loc[t, "available_forecast"] = pd.NaT
+    late = train.copy()
+    late.loc[t, "available_forecast"] = late.loc[t, "origin"] + pd.Timedelta(hours=1)
+    unplaced = train.copy()
+    unplaced.loc[t, "origin"] = pd.NaT
+    cases = ((lost, "forecast_availability_missing"), (train.drop(columns=["available_forecast"]),
+                                                       "forecast_availability_missing"),
+             (late, "forecast_available_after_origin"), (unplaced, "origin_missing"))
+
+    def no_knots(temps):
+        raise AssertionError("knots placed before the check")
+    with monkeypatch.context() as m:
+        m.setattr(model, "_place_knots", no_knots)
+        for broken, term in cases:
+            with pytest.raises(LookaheadError, match=rf"the GAM fit on forecast: \d+ rows .*\({term}; first"):
+                GAMForecaster("forecast").fit(broken)
+            with pytest.raises(LookaheadError, match=rf"the least squares fit on forecast: \d+ rows .*\({term};"):
+                OLSForecaster("forecast").fit(broken)
+    assert gam.n_train == GAMForecaster("forecast").fit(train).n_train
+    for broken, _ in cases:
+        np.testing.assert_array_equal(GAMForecaster("observed").fit(broken).coef,
+                                      GAMForecaster("observed").fit(train).coef)
+        np.testing.assert_array_equal(OLSForecaster("persistence").fit(broken).beta,
+                                      OLSForecaster("persistence").fit(train).beta)
 
 
 def test_a_basis_rebuilt_from_the_stored_knots_equals_the_fitted_one():

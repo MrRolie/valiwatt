@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import DEMAND_FIRST, DESIGN_LAST, LOCAL_TZ, LST_OFFSET
-from valiwatt.forecast.guards import LookaheadError
+from valiwatt.forecast.guards import LookaheadError, require_forecast_known
 from valiwatt.quality import weather
 from valiwatt.quality.demand import USABLE, build_demand
 from valiwatt.sources.nbm import AVAILABILITY_LAG, MAX_RUNS_BACK, SENSITIVITY_LAG
@@ -190,7 +190,12 @@ def build(demand: pd.DataFrame, temperature: pd.Series,
     Every temperature passes the one bounds filter (quality.weather.usable_temperature). The table always holds
     temp_<s>, hdh_<s> and cdh_<s> of every scenario (NaN for a forecast scenario not given) and, for each forecast
     scenario, available_<s>: when the run that fed the row's day became available (NaT when none did). v1's columns
-    come first, in v1's order, with v1's values."""
+    come first, in v1's order, with v1's values.
+
+    A forecast value is taken only with its availability (docs/plan-v2.md, sections 2 and 3.2): a row holding a finite
+    input of a scenario given whose availability is missing (its day absent from the record, or the record's
+    available_utc NaT) or after its origin is refused (LookaheadError, guards.require_forecast_known), before any
+    consumer reads the table."""
     idx = demand.index
     mw = demand["mw"].where(demand["status"].isin(USABLE))
     temp = weather.usable_temperature(temperature.reindex(idx))
@@ -227,6 +232,7 @@ def build(demand: pd.DataFrame, temperature: pd.Series,
             f[f"available_{s}"] = pd.Series(f["day"].map(fed), index=idx).astype(AVAILABLE_DTYPE)
         f[f"hdh_{s}"] = np.maximum(BASE_C - f[f"temp_{s}"], 0.0)
         f[f"cdh_{s}"] = np.maximum(f[f"temp_{s}"] - BASE_C, 0.0)
+    require_forecast_known(f, tuple(given), "features.build")
     return f
 
 

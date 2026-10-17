@@ -17,7 +17,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import SplineTransformer, StandardScaler
 
-from valiwatt.forecast.guards import LookaheadError
+from valiwatt.forecast.guards import LookaheadError, require_forecast_known
 
 DAY_TYPES = ("weekday", "saturday", "sunday_holiday")
 # Hours of the local day grouped where heating and cooling act differently: night, morning ramp, day, evening peak,
@@ -64,6 +64,13 @@ def usable_rows(X: pd.DataFrame, y: pd.Series | None = None) -> pd.Series:
     return pd.Series(ok, index=X.index)
 
 
+def require_input_known(f: pd.DataFrame, scenario: str, family: str) -> None:
+    """A fit's own check on the one input it reads: on a weather forecast (forecast, forecast_late), every row holding
+    a finite temp_, hdh_ or cdh_ of it must carry its run's availability, at or before its origin, and its origin
+    (guards.forecast_violations), whoever supplied the rows. The observed and persistence inputs check nothing."""
+    require_forecast_known(f, (scenario,), f"the {family} fit on {scenario}")
+
+
 @dataclass
 class OLSForecaster:
     scenario: str
@@ -72,6 +79,9 @@ class OLSForecaster:
     n_train: int = 0
 
     def fit(self, f: pd.DataFrame) -> "OLSForecaster":
+        """Fit on the usable rows (target and every input of `design` present), nothing imputed. A fit on a weather
+        forecast first refuses any row whose forecast was not known at its origin (`require_input_known`)."""
+        require_input_known(f, self.scenario, "least squares")
         X = design(f, self.scenario)
         ok = usable_rows(X, f["target"])
         Xa, y = X[ok].to_numpy(), f.loc[ok, "target"].to_numpy()
@@ -211,7 +221,10 @@ class GAMForecaster:
         self.n_train: int = 0
 
     def fit(self, f: pd.DataFrame) -> "GAMForecaster":
-        """Fit on the usable rows (v1's rule: target and every input of `design` present), nothing imputed."""
+        """Fit on the usable rows (v1's rule: target and every input of `design` present), nothing imputed. A fit on a
+        weather forecast first refuses any row whose forecast was not known at its origin (`require_input_known`),
+        before the knots are placed."""
+        require_input_known(f, self.scenario, "GAM")
         ok = usable_rows(design(f, self.scenario), f["target"])
         rows = f[ok]
         temp = f"temp_{self.scenario}"

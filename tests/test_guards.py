@@ -13,6 +13,7 @@ from valiwatt.forecast.guards import (
     origin_violations,
     require_design_window,
     require_embargo,
+    require_forecast_known,
     require_known_at_origin,
 )
 from valiwatt.quality.demand import build_demand
@@ -146,3 +147,34 @@ def test_a_finite_forecast_without_its_availability_is_refused():
         assert fired(absent) == ["forecast_availability_missing"], s
         with pytest.raises(LookaheadError, match="forecast_availability_missing"):
             require_known_at_origin(absent)
+
+
+def test_a_row_without_its_origin_is_refused():
+    """Every term compares with the origin, and a comparison with NaT is False: a row whose origin is missing would
+    pass them all. A forecast available 24 hours after its target hour, on a row with no origin, is refused, and so is
+    a v1-shaped row with no forecast input at all: no row is judged without its origin."""
+    f = forecast_frame()
+    t = f.index[100]
+    late = f.copy()
+    late.loc[t, "origin"] = pd.NaT
+    late.loc[t, "available_forecast"] = t + pd.Timedelta(hours=24)  # 24 hours after the target hour
+    assert np.isfinite(late.loc[t, "temp_forecast"])
+    assert fired(late) == ["origin_missing"]  # this term alone: every other one compares False with NaT
+    assert origin_violations(late)["origin_missing"].sum() == 1
+    with pytest.raises(LookaheadError, match="origin_missing"):
+        require_known_at_origin(late)
+    # The forecast terms a consumer reads (features.build, a fit on the forecast) refuse it too.
+    with pytest.raises(LookaheadError, match="origin_missing"):
+        require_forecast_known(late, ("forecast",), "a consumer")
+    # v1's shape, no forecast input: still refused, its lags unjudged without an origin.
+    v1 = frame("2021-02-01T06:00Z", "2021-03-01T05:00Z")
+    v1 = v1.drop(columns=[c for c in v1.columns
+                          if c.startswith(("available_", "temp_forecast", "hdh_forecast", "cdh_forecast"))])
+    v1.loc[v1.index[100], "origin"] = pd.NaT
+    assert fired(v1) == ["origin_missing"]
+    with pytest.raises(LookaheadError, match="origin_missing"):
+        require_known_at_origin(v1)
+    # A table without an origin column: every row is missing it.
+    assert origin_violations(f.drop(columns=["origin"]))["origin_missing"].all()
+    # The control: every table features.build makes carries an origin on every row.
+    assert f["origin"].notna().all() and "origin_missing" not in fired(f)

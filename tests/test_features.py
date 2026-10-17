@@ -9,12 +9,14 @@ from conftest import synth_demand, synth_obs, synth_runs
 from valiwatt.forecast.features import (
     FORECAST_LAGS,
     SCENARIOS,
+    IssuedForecast,
     build,
     day_origin,
     forecast_temperature,
     known_at_origin,
     origin_of,
 )
+from valiwatt.forecast.guards import LookaheadError
 from valiwatt.quality.demand import USABLE, build_demand
 from valiwatt.sources.nbm import AVAILABILITY_LAG, MAX_RUNS_BACK
 
@@ -295,3 +297,39 @@ def test_build_carries_the_forecast_and_its_availability():
     assert first["temp_forecast"].isna().all() and first["available_forecast"].isna().all()
     with pytest.raises(ValueError, match="no forecast scenario"):
         build(demand, temp, {"observed": issued["forecast"]})
+
+
+def test_build_refuses_a_finite_forecast_without_its_availability():
+    """A forecast value is taken only with its availability (docs/plan-v2.md, sections 2 and 3.2): build refuses a
+    finite forecast whose day's run has no availability (NaT, or the day absent from the record) or one after the
+    day's origin, for each forecast scenario; the issued forecasts themselves pass (control)."""
+    demand = build_demand(synth_demand(FIRST, LAST), FIRST, LAST).frame
+    temp = synth_obs(FIRST, LAST).set_index("ts_utc")["temp_c"]
+    days = pd.date_range("2021-02-02", "2021-03-31", freq="D")
+    runs = synth_runs(FIRST - 48 * H, LAST)
+    issued = {s: forecast_temperature(runs, days, lag) for s, lag in FORECAST_LAGS.items()}
+    build(demand, temp, issued)
+    day = pd.Timestamp("2021-02-20")
+    for s in FORECAST_LAGS:
+        assert issued[s].record.loc[day, "reason"] == "" and day_values(issued[s], day).notna().all()
+        lost = issued[s].record.copy()
+        lost.loc[day, "available_utc"] = pd.NaT  # the run that fed the day, its availability lost
+        absent = issued[s].record.drop(index=day)  # the day's values without its record
+        late = issued[s].record.copy()
+        late.loc[day, "available_utc"] = day_origin(day) + H
+        for record, term in ((lost, "forecast_availability_missing"), (absent, "forecast_availability_missing"),
+                             (late, "forecast_available_after_origin")):
+            broken = dict(issued, **{s: IssuedForecast(hourly=issued[s].hourly, record=record)})
+            with pytest.raises(LookaheadError, match=rf"features\.build: 24 rows .*\({term}; first"):
+                build(demand, temp, broken)
+            alone = {s: IssuedForecast(hourly=issued[s].hourly, record=record)}  # the scenario given alone
+            with pytest.raises(LookaheadError, match=term):
+                build(demand, temp, alone)
+    # A value the bounds filter blanks is not taken, so it needs no availability: the check reads what the table holds.
+    s = "forecast"
+    hot = issued[s].hourly.copy()
+    hot[day_values(issued[s], day).index] = 99.0
+    lost = issued[s].record.copy()
+    lost.loc[day, "available_utc"] = pd.NaT
+    f = build(demand, temp, {s: IssuedForecast(hourly=hot, record=lost)})
+    assert f.loc[f["day"] == day, "temp_forecast"].isna().all()
