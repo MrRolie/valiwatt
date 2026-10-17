@@ -20,6 +20,7 @@ PINS = {
     "v1": "132138ba79fd5700804777efa4f7035f3599a7c4",
     "plan-v2": "ff64c9aa2af418840958d520ddcae42f6150c370",
     "v2-first-run": "7438fc0293c95a808684e1ccdaaffd691f0693ae",
+    "rules-frozen-v2": "825b7bd134a88ad38dc62efe361e30f80321c8be",
 }
 
 ORDER = ("rules-frozen", "v1", "plan-v2", "v2-first-run", "rules-frozen-v2")
