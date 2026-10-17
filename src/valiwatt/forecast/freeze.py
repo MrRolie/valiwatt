@@ -87,7 +87,8 @@ class FrozenModel:
     Refused at construction (FrozenModelError): a family other than FAMILIES; a degree, extrapolation or bias setting
     other than the owner's ruling (model.DEGREE, model.EXTRAPOLATION, model.INCLUDE_BIAS), for either family; a GAM
     whose knots are not model.N_KNOTS finite increasing values; coefficients, means or scales that do not match the
-    columns."""
+    columns. A GAM forecasts, and draws its curves, from its stored values only (`gam_spec`), whatever the module's
+    settings say once it is built."""
 
     columns: tuple
     beta: np.ndarray
@@ -144,13 +145,37 @@ class FrozenModel:
         return frozen_sha256(self.family, self.scenario, self.columns, self.knots, self.degree, self.extrapolation,
                              self.include_bias, self.center, self.scale, self.beta, self.intercept, self.q)
 
+    def gam_spec(self) -> dict:
+        """What a frozen GAM's design is rebuilt from, all of it stored and hashed: the day types in the order of its
+        stored cell columns, and its spline's degree, extrapolation and bias setting (keyword arguments of
+        model.gam_design and model.gam_partial_effects). Refused (FrozenModelError) unless the columns that design
+        generates, with its stored knots, are its stored columns, name for name and in order."""
+        day_types = tuple(dict.fromkeys(c.split(":")[1] for c in self.columns if c.startswith("cell:")))
+        spline = {"degree": self.degree, "extrapolation": self.extrapolation, "include_bias": self.include_bias}
+        knots = np.asarray(self.knots)
+        n_basis = model.gam_basis(knots[:1], knots, **spline).shape[1]
+        generated = tuple(model.gam_columns(day_types=day_types, n_basis=n_basis))
+        if generated != self.columns:
+            i = next(i for i, (a, b) in enumerate(zip(self.columns + (None,), generated + (None,))) if a != b)
+            raise FrozenModelError(
+                f"the frozen GAM's {len(self.columns)} stored columns are not the {len(generated)} columns its stored "
+                f"knots, settings and day types generate: column {i} is {self.columns[i:i + 1]} stored, "
+                f"{generated[i:i + 1]} generated")
+        return {"day_types": day_types, **spline}
+
     def forecast(self, f: pd.DataFrame) -> pd.Series:
         """The forecast of every row whose inputs are all present; NaN otherwise (never imputed). The GAM predicts
-        through model.gam_design and model.gam_predict, the path validation's fits predict through, its basis rebuilt
-        from the stored knots and the ruled settings."""
+        through model.gam_design and model.gam_predict, the path validation's fits predict through, its design rebuilt
+        from the stored knots, settings and column order (`gam_spec`, which refuses columns it cannot rebuild)."""
         out = pd.Series(np.nan, index=f.index)
         if self.family == "gam":
-            X = model.gam_design(f, self.scenario, np.asarray(self.knots))
+            spec = self.gam_spec()
+            stray = f["day_type"].notna() & ~f["day_type"].isin(spec["day_types"])
+            if stray.any():  # such a row's cells would all be zero: refused, never forecast
+                raise FrozenModelError(
+                    f"{int(stray.sum())} rows have a day type the frozen GAM's stored cells do not cover: "
+                    f"{sorted(set(f.loc[stray, 'day_type'].astype(str)))}, stored {list(spec['day_types'])}")
+            X = model.gam_design(f, self.scenario, np.asarray(self.knots), **spec)
             ok = np.isfinite(X).all(axis=1)
             if ok.any():
                 out[ok] = model.gam_predict(X[ok], self.center, self.scale, self.beta, self.intercept)
@@ -176,11 +201,12 @@ class FrozenModel:
 
     def partial_effects(self, temps) -> pd.DataFrame:
         """Each hour's temperature effect in MW relative to its value at BASE_C, at the temperatures `temps` (columns
-        hour, temp_c, effect_mw; hour major): the GAM's curve (model.gam_partial_effects), or v1's degree-hour lines
-        of the hour's block."""
+        hour, temp_c, effect_mw; hour major): the GAM's curve (model.gam_partial_effects, from its stored values,
+        `gam_spec`), or v1's degree-hour lines of the hour's block."""
         t = np.asarray(temps, dtype=float).ravel()
         if self.family == "gam":
-            return model.gam_partial_effects(np.asarray(self.knots), self.beta, self.scale, t, ref_c=BASE_C)
+            return model.gam_partial_effects(np.asarray(self.knots), self.beta, self.scale, t, ref_c=BASE_C,
+                                             **self.gam_spec())
         b = dict(zip(self.columns, self.beta))
         rows = []
         for h in range(24):

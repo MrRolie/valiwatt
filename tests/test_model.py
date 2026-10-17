@@ -286,6 +286,46 @@ def test_a_basis_rebuilt_from_the_stored_knots_equals_the_fitted_one():
     assert np.isnan(gam_basis(np.array([np.nan, 0.0]), knots)[0]).all()
 
 
+def test_the_gam_design_follows_the_settings_and_day_types_it_is_given(monkeypatch):
+    """The frozen model's path: given a spline setting, the basis is scikit-learn's own transformer with that setting
+    on the same knots; given day types, the design's cells follow them in their order, and the names gam_columns
+    gives for them and the basis width name the design's columns one for one. Given nothing, each reads the module
+    when called, not when imported, so a fit follows the ruling."""
+    f = with_forecast(frame())
+    train, test = train_test(f)
+    temps = train.loc[usable(train, "forecast"), "temp_forecast"].to_numpy()
+    knots = knot_rule(temps)
+    k = knots.reshape(-1, 1)
+    grid = np.linspace(temps.min() - 25, temps.max() + 20, 200)
+    ruled = {"degree": 3, "extrapolation": "linear", "include_bias": False}
+    for given in ({"degree": 2}, {"extrapolation": "constant"}, {"include_bias": True}, ruled):
+        sk = SplineTransformer(knots=k, **(ruled | given)).fit(k)
+        np.testing.assert_array_equal(gam_basis(grid, knots, **given), sk.transform(grid.reshape(-1, 1)))
+    te = test[usable(test, "forecast", target=False)]
+    order = tuple(reversed(model.DAY_TYPES))
+    X = gam_design(te, "forecast", knots, day_types=order, degree=2)
+    B = gam_basis(te["temp_forecast"].to_numpy(), knots, degree=2)
+    names = model.gam_columns(day_types=order, n_basis=B.shape[1])
+    assert X.shape == (len(te), len(names)) and names[0] == "cell:sunday_holiday:00"
+    for j, name in enumerate(names):
+        kind, *rest = name.split(":")
+        if kind == "cell":
+            expected = ((te["day_type"] == rest[0]) & (te["hour"] == int(rest[1]))).to_numpy(float)
+        elif kind == "spline":
+            expected = (te["hour"] == int(rest[0])).to_numpy(float) * B[:, int(rest[1])]
+        else:
+            expected = te[name].to_numpy(float)
+        np.testing.assert_array_equal(X[:, j], expected, err_msg=name)
+    # Given nothing, the module's settings and day types as they are when called.
+    monkeypatch.setattr(model, "EXTRAPOLATION", "constant")
+    monkeypatch.setattr(model, "DAY_TYPES", order)
+    sk = SplineTransformer(knots=k, **(ruled | {"extrapolation": "constant"})).fit(k)
+    np.testing.assert_array_equal(gam_basis(grid, knots), sk.transform(grid.reshape(-1, 1)))
+    np.testing.assert_array_equal(gam_design(te, "forecast", knots), gam_design(te, "forecast", knots, day_types=order,
+                                                                                extrapolation="constant"))
+    assert model.gam_columns()[0] == "cell:sunday_holiday:00"
+
+
 def test_each_hour_has_its_own_temperature_curve():
     """Demand planted at 450 MW per heating degree at night, none mid-day, 200 otherwise: each hour's curve follows
     its own slope."""

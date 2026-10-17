@@ -6,6 +6,10 @@ cubic spline curve of the temperature for each local hour of the day (11 basis c
 the 24-hour and 168-hour demand lags, standardized, then ridge regression. The spline's knots follow each fit's own
 usable training rows by a fixed rule (`knot_rule`), checked by the fit (`check_knots`); every other setting is fixed
 here. Past the coldest and warmest training temperatures each curve continues as a straight line.
+
+The GAM's design functions read the ruled settings and day types when called, unless they are given others: a fit
+gives none, so it follows this module; the frozen model gives its own stored ones (freeze.FrozenModel), so what it
+forecasts depends on its file alone.
 """
 
 from __future__ import annotations
@@ -133,9 +137,17 @@ def check_knots(knots: np.ndarray, temps: np.ndarray) -> None:
                              f"({np.round(expected, 4).tolist()})")
 
 
-def _spline(knots=KNOTS) -> SplineTransformer:
-    return SplineTransformer(n_knots=N_KNOTS, degree=DEGREE, knots=knots, extrapolation=EXTRAPOLATION,
-                             include_bias=INCLUDE_BIAS)
+def _settings(degree=None, extrapolation=None, include_bias=None) -> dict:
+    """The spline's three settings: each one given, else the ruled one, read when called (never at import)."""
+    return {"degree": DEGREE if degree is None else int(degree),
+            "extrapolation": EXTRAPOLATION if extrapolation is None else str(extrapolation),
+            "include_bias": INCLUDE_BIAS if include_bias is None else bool(include_bias)}
+
+
+def _spline(knots=KNOTS, *, degree=None, extrapolation=None, include_bias=None) -> SplineTransformer:
+    """The ruled transformer, or one with the settings given. n_knots is read only by a placement rule: knots given
+    as values are used as they are."""
+    return SplineTransformer(n_knots=N_KNOTS, knots=knots, **_settings(degree, extrapolation, include_bias))
 
 
 def _place_knots(temps: np.ndarray) -> np.ndarray:
@@ -145,12 +157,13 @@ def _place_knots(temps: np.ndarray) -> np.ndarray:
     return np.array(sp.bsplines_[0].t[DEGREE:-DEGREE], dtype=float)
 
 
-def gam_basis(temps: np.ndarray, knots: np.ndarray) -> np.ndarray:
+def gam_basis(temps: np.ndarray, knots: np.ndarray, *, degree=None, extrapolation=None,
+              include_bias=None) -> np.ndarray:
     """The spline basis of these temperatures, the transformer rebuilt from the 10 stored base knots with the ruled
-    degree, extrapolation and bias setting; equal to the fitted transformer's output. A missing temperature gives a
-    row of NaN (never imputed)."""
+    degree, extrapolation and bias setting, or those given; with the ruled ones, equal to the fitted transformer's
+    output. A missing temperature gives a row of NaN (never imputed)."""
     k = np.asarray(knots, dtype=float).reshape(-1, 1)
-    sp = _spline(knots=k).fit(k)
+    sp = _spline(knots=k, degree=degree, extrapolation=extrapolation, include_bias=include_bias).fit(k)
     t = np.asarray(temps, dtype=float).ravel()
     ok = np.isfinite(t)
     out = np.full((len(t), sp.n_features_out_), np.nan)
@@ -163,23 +176,30 @@ def _n_basis() -> int:
     return N_KNOTS + DEGREE - 1 - (0 if INCLUDE_BIAS else 1)
 
 
-def gam_columns() -> list[str]:
-    """The GAM's column names, in `gam_design`'s order: 72 cells, 24 x 11 spline columns (hour major), the lags."""
-    cells = [f"cell:{dt}:{h:02d}" for dt in DAY_TYPES for h in range(24)]
-    spline = [f"spline:{h:02d}:{k:02d}" for h in range(24) for k in range(_n_basis())]
+def gam_columns(*, day_types=None, n_basis: int | None = None) -> list[str]:
+    """The GAM's column names, in `gam_design`'s order: 72 cells, 24 x 11 spline columns (hour major), the lags; the
+    cells of the day types given, in their order, and n_basis spline columns per hour, else the ruled ones."""
+    day_types = DAY_TYPES if day_types is None else tuple(day_types)
+    n_basis = _n_basis() if n_basis is None else int(n_basis)
+    cells = [f"cell:{dt}:{h:02d}" for dt in day_types for h in range(24)]
+    spline = [f"spline:{h:02d}:{k:02d}" for h in range(24) for k in range(n_basis)]
     return cells + spline + list(LAGS)
 
 
-def gam_design(f: pd.DataFrame, scenario: str, knots: np.ndarray) -> np.ndarray:
+def gam_design(f: pd.DataFrame, scenario: str, knots: np.ndarray, *, day_types=None, degree=None, extrapolation=None,
+               include_bias=None) -> np.ndarray:
     """The GAM's columns, in the spike's order: the 72 cells (day type major, hour minor, as `design`), then the
     spline basis times each local-hour indicator (hour major, basis minor: each hour has its own curve), then lag24
-    and lag168. A row with a missing temperature or lag has NaN in those columns."""
-    B = gam_basis(f[f"temp_{scenario}"].to_numpy(dtype=float), knots)
+    and lag168. A row with a missing temperature or lag has NaN in those columns. The day types and the spline's
+    settings are the ruled ones unless given (the frozen model gives its stored ones)."""
+    day_types = DAY_TYPES if day_types is None else tuple(day_types)
+    B = gam_basis(f[f"temp_{scenario}"].to_numpy(dtype=float), knots, degree=degree, extrapolation=extrapolation,
+                  include_bias=include_bias)
     cells = np.column_stack([((f["day_type"] == dt) & (f["hour"] == h)).to_numpy(float)
-                             for dt in DAY_TYPES for h in range(24)])
+                             for dt in day_types for h in range(24)])
     hours = np.column_stack([(f["hour"] == h).to_numpy(float) for h in range(24)])
     tensor = (hours[:, :, None] * B[:, None, :]).reshape(len(f), -1)
-    return np.column_stack([cells, tensor, f["lag24"].to_numpy(dtype=float), f["lag168"].to_numpy(dtype=float)])
+    return np.column_stack([cells, tensor, *(f[lag].to_numpy(dtype=float) for lag in LAGS)])
 
 
 def gam_predict(X: np.ndarray, center, scale, coef, intercept) -> np.ndarray:
@@ -188,13 +208,16 @@ def gam_predict(X: np.ndarray, center, scale, coef, intercept) -> np.ndarray:
         @ np.asarray(coef, dtype=float) + float(intercept)
 
 
-def gam_partial_effects(knots, coef, scale, temps: np.ndarray, ref_c: float = 18.0) -> pd.DataFrame:
+def gam_partial_effects(knots, coef, scale, temps: np.ndarray, ref_c: float = 18.0, *, day_types=None, degree=None,
+                        extrapolation=None, include_bias=None) -> pd.DataFrame:
     """Each hour's temperature curve relative to its value at `ref_c`, in MW: for hour h,
-    sum_k coef[h,k] / scale[h,k] * (B_k(T) - B_k(ref_c)); the scaler's centring cancels in the difference."""
+    sum_k coef[h,k] / scale[h,k] * (B_k(T) - B_k(ref_c)); the scaler's centring cancels in the difference. The day
+    types and the spline's settings are those of `gam_design`, the ruled ones unless given."""
     t = np.asarray(temps, dtype=float).ravel()
-    B = gam_basis(t, knots) - gam_basis(np.array([ref_c]), knots)
+    spline = _settings(degree, extrapolation, include_bias)
+    B = gam_basis(t, knots, **spline) - gam_basis(np.array([ref_c]), knots, **spline)
     nb = B.shape[1]
-    first = len(DAY_TYPES) * 24
+    first = len(DAY_TYPES if day_types is None else tuple(day_types)) * 24
     w = (np.asarray(coef, dtype=float) / np.asarray(scale, dtype=float))[first:first + 24 * nb].reshape(24, nb)
     effect = B @ w.T  # (temps, hours)
     return pd.DataFrame({"hour": np.repeat(np.arange(24), len(t)), "temp_c": np.tile(t, 24),

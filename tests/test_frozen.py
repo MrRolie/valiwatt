@@ -1,7 +1,8 @@
 """The frozen models (docs/plan-v2.md, sections 4.4 and 4.5): the GAM and its two comparison models as JSON files of
 numbers, each refused when it no longer matches its hash or holds a spline setting other than the ruled ones; the
-freeze's own knot check; the echo premise; the eve of the replayed year left out of the half-width; the partial
-effects drawn over the training range.
+frozen GAM's forecast read from its file alone, whatever the module's settings say after the freeze, and checked
+against the ruled scikit-learn pipeline built on its own; the freeze's own knot check; the echo premise; the eve of
+the replayed year left out of the half-width; the partial effects drawn over the training range.
 
 A synthetic world: two design years of demand that respond to the cold, the station's observations, and NBM-shaped
 forecast runs; out-of-sample forecasts of 2023 for each model frozen, the eve of 2024 far off.
@@ -20,6 +21,7 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from conftest import synth_demand, synth_obs, synth_runs
+from test_model import SpikeGam
 from valiwatt.config import DESIGN_LAST
 from valiwatt.forecast import freeze as fz
 from valiwatt.forecast import model
@@ -84,6 +86,9 @@ def test_a_frozen_gam_round_trips_through_json_and_predicts_as_fitted(world, fro
     fitted = model.GAMForecaster("forecast").fit(wf.split(world, wf.folds("2024-01", "2024-01")[0])[0])
     rows = world[world["day"] >= pd.Timestamp("2023-11-01")].copy()
     rows.loc[rows.index[5], "temp_forecast"] = np.nan  # a row without its input is not predicted
+    # Two hours past the training range, below and above it: each curve continues as a straight line there.
+    rows.loc[rows.index[6], "temp_forecast"] = frozen.knots[0] - 10.0
+    rows.loc[rows.index[7], "temp_forecast"] = frozen.knots[-1] + 10.0
     expected = fitted.predict(rows)
     again = fz.FrozenModel.from_json(frozen.to_json())
     assert again.sha256() == frozen.sha256() and again.knots == frozen.knots
@@ -94,16 +99,135 @@ def test_a_frozen_gam_round_trips_through_json_and_predicts_as_fitted(world, fro
         np.testing.assert_allclose(p.loc[ok, "forecast"], expected[ok], rtol=1e-9, atol=0)
         np.testing.assert_allclose(p["lower"], p["forecast"] * (1 - m.q))
         np.testing.assert_allclose(p["upper"], p["forecast"] * (1 + m.q))
-    # The frozen GAM predicts what the ruled scikit-learn pipeline, fitted on the same rows, predicts.
-    train = train_rows(world)
-    temps = train["temp_forecast"].to_numpy().reshape(-1, 1)
-    from sklearn.preprocessing import SplineTransformer
-
-    spline = SplineTransformer(n_knots=10, degree=3, knots="quantile", extrapolation="linear",
-                               include_bias=False).fit(temps)
-    np.testing.assert_allclose(spline.bsplines_[0].t[3:-3], frozen.knots, rtol=0, atol=1e-12)
+    # The frozen GAM predicts what the ruled scikit-learn pipeline, fitted on the same rows, predicts: the spike's
+    # pipeline built on its own (test_model.SpikeGam: its design, SplineTransformer, StandardScaler and Ridge, the
+    # settings literal, none of model's functions), so a fault in the prediction path the fitted and the frozen GAM
+    # share (model.gam_design, model.gam_predict) cannot pass.
+    spike = SpikeGam().fit(train_rows(world), "forecast")
+    np.testing.assert_allclose(spike.sp.bsplines_[0].t[3:-3], frozen.knots, rtol=0, atol=1e-12)
     ok = expected.notna()
-    np.testing.assert_allclose(again.predict(rows.loc[ok])["forecast"], fitted.predict(rows.loc[ok]), rtol=1e-9)
+    assert ok.sum() > 1000 and ok.iloc[6] and ok.iloc[7]
+    for m in (frozen, again):
+        np.testing.assert_allclose(m.predict(rows.loc[ok])["forecast"], spike.predict(rows.loc[ok]), rtol=1e-9, atol=0)
+
+
+def past_the_range(world, frozen):
+    """Usable rows of late 2023, one day of them forecast 10 C below the frozen GAM's training range and one 10 C
+    above it, where its extrapolation setting bites; and temperatures for its curves over the same span."""
+    rows = world[world["day"] >= pd.Timestamp("2023-11-01")]
+    rows = rows[model.usable_rows(model.design(rows, "forecast"))].copy()
+    rows.loc[rows.index[:24], "temp_forecast"] = frozen.knots[0] - 10.0
+    rows.loc[rows.index[24:48], "temp_forecast"] = frozen.knots[-1] + 10.0
+    return rows, np.linspace(frozen.knots[0] - 10.0, frozen.knots[-1] + 10.0, 41)
+
+
+# The module's GAM settings, each changed after the freeze: the module's attribute, its new value, and what the
+# frozen model's file, read again, is refused by (None: the file still loads).
+AMBIENT = {
+    "extrapolation": ("EXTRAPOLATION", "constant", "extrapolation"),
+    "degree": ("DEGREE", 2, "degree"),
+    "include_bias": ("INCLUDE_BIAS", True, "include_bias"),
+    "n_knots": ("N_KNOTS", 11, "increasing knots"),
+    "day_types": ("DAY_TYPES", tuple(reversed(model.DAY_TYPES)), None),
+    "day_types_added": ("DAY_TYPES", (*model.DAY_TYPES, "extra"), None),  # another count: the cells' span moves
+}
+
+
+@pytest.mark.parametrize("change", list(AMBIENT))
+def test_a_frozen_gam_forecasts_from_its_file_whatever_the_module_now_says(change, world, frozen_gam, monkeypatch):
+    """Plan section 4.4: the frozen GAM rebuilds its design from its stored knots, settings and column order. With
+    one of the module's GAM settings changed after the freeze, the frozen GAM forecasts and draws its curves exactly
+    as before, past its training range included; its file, read again, is refused when the setting is one the file
+    is checked against (the three spline settings, the number of knots), and otherwise loads under the same hash and
+    forecasts exactly as before: never a different forecast under an unchanged hash. The control: the change is live,
+    the module's own design of the same rows, or its column names, are no longer the frozen GAM's."""
+    frozen, _ = frozen_gam
+    rows, temps = past_the_range(world, frozen)
+    text, knots = frozen.to_json(), np.asarray(frozen.knots)
+    before, curves = frozen.predict(rows).to_numpy(), frozen.partial_effects(temps).to_numpy()
+    design_before = model.gam_design(rows, "forecast", knots)
+    name, value, refused_by = AMBIENT[change]
+    monkeypatch.setattr(model, name, value)
+    design_now = model.gam_design(rows, "forecast", knots)
+    assert model.gam_columns() != list(frozen.columns) or design_now.shape != design_before.shape \
+        or not np.array_equal(design_now, design_before), change  # the control: the change is live
+    np.testing.assert_array_equal(frozen.predict(rows).to_numpy(), before)
+    np.testing.assert_array_equal(frozen.partial_effects(temps).to_numpy(), curves)
+    if refused_by:
+        with pytest.raises(fz.FrozenModelError, match=refused_by):
+            fz.FrozenModel.from_json(text)
+    else:
+        again = fz.FrozenModel.from_json(text)
+        assert again.sha256() == frozen.sha256()
+        np.testing.assert_array_equal(again.predict(rows).to_numpy(), before)
+        np.testing.assert_array_equal(again.partial_effects(temps).to_numpy(), curves)
+
+
+def _reordered(frozen, order):
+    """The frozen GAM with its columns, means, scales and coefficients all taken in `order`: the same numbers, its
+    columns written in another order."""
+    def take(v):
+        return [v[i] for i in order]
+    return dataclasses.replace(frozen, columns=take(frozen.columns), beta=take(list(frozen.beta)),
+                               center=take(frozen.center), scale=take(frozen.scale))
+
+
+def test_a_frozen_gam_reads_its_cells_in_their_stored_order_and_refuses_columns_it_cannot_rebuild(world, frozen_gam):
+    """The day types are read in the order of the stored cell columns: a file written with them in another order (as
+    a fit under another order of model.DAY_TYPES writes it, its means, scales and coefficients in that order, its hash
+    its own) forecasts and draws its curves as the frozen GAM does. A file whose columns are not those its stored
+    knots, settings and day types generate, name for name and in order, matches its own hash and loads, and its
+    forecast and its curves are refused (FrozenModelError), never computed on columns read in another order: the
+    cells written hour major, a spline column renamed, the two lags swapped, a lag dropped. A file whose cells do not
+    cover a row's day type (a day type renamed, or one dropped) forecasts no such row: refused, never with all-zero
+    cells; its curves, which read no cell, are the frozen GAM's."""
+    frozen, _ = frozen_gam
+    rows, temps = past_the_range(world, frozen)
+    before, curves = frozen.predict(rows), frozen.partial_effects(temps)
+    cols = list(frozen.columns)
+    n_cells = 24 * len(model.DAY_TYPES)
+    by_type = [cols.index(f"cell:{dt}:{h:02d}") for dt in reversed(model.DAY_TYPES) for h in range(24)]
+    other = _reordered(frozen, by_type + list(range(n_cells, len(cols))))
+    assert other.columns[0] == "cell:sunday_holiday:00" and other.sha256() != frozen.sha256()
+    again = fz.FrozenModel.from_json(other.to_json())  # the control: another order of the day types forecasts the same
+    for m in (other, again):
+        np.testing.assert_allclose(m.predict(rows).to_numpy(), before.to_numpy(), rtol=1e-12, atol=0)
+        np.testing.assert_allclose(m.partial_effects(temps).to_numpy(), curves.to_numpy(), rtol=1e-12, atol=1e-9)
+
+    hour_major = [cols.index(f"cell:{dt}:{h:02d}") for h in range(24) for dt in model.DAY_TYPES]
+    renamed = dataclasses.replace(frozen, columns=cols[:100] + ["spline:01:99"] + cols[101:])
+    dropped = dataclasses.replace(frozen, columns=cols[:-1], beta=frozen.beta[:-1], center=frozen.center[:-1],
+                                  scale=frozen.scale[:-1])
+    bad = {"hour_major": _reordered(frozen, hour_major + list(range(n_cells, len(cols)))),
+           "renamed": renamed,
+           "lags_swapped": _reordered(frozen, list(range(len(cols) - 2)) + [len(cols) - 1, len(cols) - 2]),
+           "lag_dropped": dropped}
+    for name, m in bad.items():
+        loaded = fz.FrozenModel.from_json(m.to_json())
+        assert loaded.sha256() == m.sha256() != frozen.sha256(), name
+        for each in (m, loaded):
+            with pytest.raises(fz.FrozenModelError, match="stored columns are not"):
+                each.predict(rows)
+            with pytest.raises(fz.FrozenModelError, match="stored columns are not"):
+                each.partial_effects(temps)
+    weekday = [i for i, c in enumerate(cols) if c.startswith("cell:weekday:")]
+    keep = [i for i in range(len(cols)) if i not in weekday]
+    uncovered = {"renamed_type": dataclasses.replace(frozen, columns=[c.replace("cell:weekday:", "cell:workday:")
+                                                                      for c in cols]),
+                 "type_dropped": dataclasses.replace(frozen, columns=[cols[i] for i in keep],
+                                                     beta=[frozen.beta[i] for i in keep],
+                                                     center=[frozen.center[i] for i in keep],
+                                                     scale=[frozen.scale[i] for i in keep])}
+    assert (rows["day_type"] == "weekday").any()
+    for name, m in uncovered.items():  # rows of a day type its cells do not cover would get all-zero cells
+        loaded = fz.FrozenModel.from_json(m.to_json())
+        assert loaded.sha256() == m.sha256() != frozen.sha256(), name
+        for each in (m, loaded):
+            with pytest.raises(fz.FrozenModelError, match=r"day type the frozen GAM's stored cells do not cover: "
+                                                          r"\['weekday'\]"):
+                each.predict(rows)
+            np.testing.assert_allclose(each.partial_effects(temps).to_numpy(), curves.to_numpy(), rtol=1e-12,
+                                       atol=1e-9)  # the curves read no cell
 
 
 def test_a_frozen_gam_with_an_altered_knot_scale_or_coefficient_is_refused(frozen_gam):
