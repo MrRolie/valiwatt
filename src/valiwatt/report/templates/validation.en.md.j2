@@ -40,6 +40,15 @@
 
 {% endfor %}
 {% endmacro %}
+{% macro weekly_table(rows, year, lbl, station) %}
+**The temperature forecast's weekly error in {{ year }}** ({{ label(lbl) }}): the issued forecast minus the temperature observed at {{ station }} (ECCC) at the target hour, on the hours that have both, by replay week (Monday to Sunday, standard time). The report derives it from the replay's hourly frame (`frames/hourly.parquet`), held to the replay's log: the monthly and seasonal errors it gives are those the replay logged, hours, means and mean absolute errors. Evidence attached to the replay, without a threshold: it decides nothing.
+
+| Week of ({{ label(lbl) }}) | Mean gap | Mean absolute gap | Hours |
+|---|---|---|---|
+{% for w in rows %}
+| {{ w.week_start|day }} | {{ w.mean_c|signed(2) }} °C | {{ w.mae_c|num(2) }} °C | {{ w.hours|num }} |
+{% endfor %}
+{% endmacro %}
 {% set prod, fam, ship = sel.models.production, sel.models.family, sel.models.shipped %}
 {% set P = v.performance %}
 {% set Cv = v.coverage %}
@@ -68,6 +77,10 @@
 {% set vy = K.validation_years %}
 {% set HY = K.held_out_year %}
 {% set R = held.record if held else none %}
+{# Section 9 holds a coverage once the test of record finished, and the busiest hours once its results are in the
+   store (a record read from the ledger has none). #}
+{% set C9 = R is not none and R.finished %}
+{% set B9 = C9 and R.results is not none %}
 {% set status_text = status_line(status, R, say, vy) %}
 {% set lag = r.model.lag_coefficients %}
 {% set fin = v.forecast_input %}
@@ -94,14 +107,14 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 - {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides, v.folds.last, HBS.under) }} These are v2's intervals; coverage is never a criterion of the decision rule.
 - {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }} Reported, never judged.
 - {{ r.year|string }} ({{ label(r.contrasts.label) }}): MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}, {{ recs(n_recs) }}; verdicts: v2 against v1 as shipped, "{{ VERDICT[r.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[r.verdict.family] }}"{% if r.verdict.shipped in ('not_shown_better', 'worse') or r.verdict.family in ('not_shown_better', 'worse') %}. A verdict that is not "better" on a year already seen is a finding against v2{% else %}. A success on a year already seen is weak evidence: it supports no claim{% endif %}; v2 goes to {{ HY }} as frozen (section 8).
-- {{ HY }}: {% if not held %}pending; the test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}` (section 9).{% elif not R.finished %}the test of record `{{ R.run_id }}` {{ say.unfinished }}; no claim on {{ HY }} (section 9).{% else %}the test of record `{{ R.run_id }}` finished, its standing logged by its gate: "{{ OUTCOME[R.standing] }}" (section 9).{% endif +%}
+- {{ HY }}: {% if not held %}pending; the test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}`, unless that start stops before it finishes and a dated ruling of the owner names the start that takes its place (section 9; plan section 11.3.5).{% elif not R.finished %}the test of record `{{ R.run_id }}` {{ say.unfinished }}; no claim on {{ HY }} (section 9).{% else %}the test of record `{{ R.run_id }}` finished, its standing logged by its gate: "{{ OUTCOME[R.standing] }}" (section 9).{% endif +%}
 - {% if level is not none %}{{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24, K.power_horizon) }}{% else %}The {{ p.year }} false-alarm and blind-spot measures did not finish (section 7); {{ power_limit(LR, r.year, K.power_horizon) }}{% endif +%}
 
 ## Model card
 
 | | |
 |---|---|
-| **Status** | {{ status_text }} Interval coverage and the busiest hours: beside the status (sections 5 and 9), never in it. |
+| **Status** | {{ status_text }} Interval coverage and the busiest hours: beside the status, never in it (coverage: sections 4 (the peak hours), 5, 7{{ ', 8 and 9' if C9 else ' and 8' }}; busiest hours: sections 3, 4, 7{{ ', 8 and 9' if B9 else ' and 8' }}). |
 | **What it forecasts** | Québec's hourly electricity demand as published by Hydro-Québec, for the 24 hours of day D, issued at the end of day D−1 (Eastern Standard Time), with a {{ nominal|pct(0) }} prediction interval. |
 | **Intended use** | To show, on a real forecast, validation and monitoring of the kind a model-risk team does. |
 | **Out of scope** | Any operational dispatch, any trading or pricing, any decision. Hydro-Québec publishes this data for information; it is not official data. |
@@ -120,8 +133,8 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 - **Walk-forward validation.** Each month from {{ vy[0] }} to {{ vy[1] }} is forecast by models refitted on the hours before it only, less the last {{ K.embargo_days }} days (the embargo). The three models compared are fitted on the same folds: v2, v1's form on the same forecast and v1 as shipped, rebuilt in v2's harness.
 - **The error.** The mean absolute percentage error (MAPE): on average, by how much the forecast misses actual demand. The signed bias says in which direction: bias = (demand − forecast) / demand, positive when the forecast is too low.
 - **The uncertainty of a mean.** Neighbouring hours share the weather; so whole weeks are resampled, {{ K.n_boot|num }} times, to get a 95% interval around each mean.
-- **The decision rule, fixed before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a 95% interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the {{ ordinal(100 * K.cold_quantile) }} percentile of those of {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than {{ K.min_cold_hours }} cold hours or fewer than {{ K.min_cold_weeks }} weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
-- **Beside, never judged.** The {{ K.peak_hours }} busiest hours of each year judged (by actual demand, among all the hours that have one): each model's signed error, or why it has no forecast. The coverage of v2's intervals, with the sentence on its {{ nominal|pct(0) }} (section 5).
+- **The decision rule, fixed in the plan before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a 95% interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the {{ ordinal(100 * K.cold_quantile) }} percentile of those of {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than {{ K.min_cold_hours }} cold hours or fewer than {{ K.min_cold_weeks }} weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
+- **Beside, never judged.** The {{ K.peak_hours }} busiest hours of each period judged, {{ span(vy) }} as one period, then each replayed year (by actual demand, among all the hours that have one): each model's signed error, or why it has no forecast. The coverage of v2's intervals, with the sentence on its {{ nominal|pct(0) }} (section 5).
 - **The prediction interval.** Its half-width is a quantile of the relative errors |demand − forecast| / forecast. For each validation month, it is the quantile of rank ⌈(n + 1) × {{ nominal|num(2) }}⌉ of the n out-of-sample errors of the {{ K.calibration_folds }} months before, already scored when that month's model is fitted; for the frozen model, the same quantile over the errors of the {{ K.calibration_folds }} months before the replayed year, already scored when it is fitted. It is the form of a split conformal interval, without its finite-sample coverage guarantee: these hourly errors are autocorrelated and come from other models. The only evidence is the coverage measured out of sample.
 - **The frozen model.** In production the model is not refitted: it is fitted once, frozen with its hash, then replayed hour by hour.
 - **The thresholds.** For each season, the weekly thresholds are quantiles of v2's validation weeks: MAPE above the {{ ordinal(K.centiles.mape_high) }} percentile, bias outside the {{ ordinal(K.centiles.bias_low) }}–{{ ordinal(K.centiles.bias_high) }} percentile range, coverage below the {{ ordinal(K.centiles.coverage_low) }} percentile.
@@ -146,7 +159,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 {% endfor %}
 {% endfor %}
 
-**The sensitivity to the availability margin.** Validated also with forecasts available {{ K.late_h|num(0) }} hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by {{ pp(late.difference) }} {{ ppci(late.ci95_low, late.ci95_high) }} ({{ K.late_h|num(0) }} hours minus {{ K.lag_h|num(0) }}, over {{ late.hours|num }} hours): this is what, at most, the availability assumption is worth. This variant is labelled and chooses nothing.
+**The sensitivity to the availability margin.** Validated also with forecasts available {{ K.late_h|num(0) }} hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by {{ pp(late.difference) }} {{ ppci(late.ci95_low, late.ci95_high) }} ({{ K.late_h|num(0) }} hours minus {{ K.lag_h|num(0) }}, over {{ late.hours|num }} hours): this is what an availability of {{ K.late_h|num(0) }} hours instead of {{ K.lag_h|num(0) }} would cost; a longer delay is not measured. This variant is labelled and chooses nothing.
 
 **31 December {{ vy[1] }}.** Its last two hours need the {{ vy[1] + 1 }}-01-01 06:00 UTC point of a forecast issued on 31 December and available before that day's origin: the information is {{ vy[1] }}'s, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of {{ span(vy) }} hold 24 more than the trial's.
 
@@ -165,7 +178,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 {% endfor %}
 | v1 as shipped, mean of the {{ dq.sources.eccc|length }} stations (sensitivity) | {{ P.panel_persistence.overall.mean|pct(2) }} | {{ ci(P.panel_persistence.overall.ci95_low, P.panel_persistence.overall.ci95_high) }} | {{ sp(P.panel_persistence.overall.bias.mean, 2) }} | {{ P.panel_persistence.overall.hours|num }} |
 
-**The choice's tracked values**, on the {{ sel.hours|num }} common hours ({{ sel.weeks }} weeks; {{ label(v.contrasts.label) }}): MAPE {{ sel.mape[prod]|pct(2) }} for v2, {{ sel.mape[fam]|pct(2) }} for v1's form on the forecast, {{ sel.mape[ship]|pct(2) }} for v1 as shipped. Signed error at the {{ sel.peak|length }} busiest of these hours (demand minus forecast, over demand; positive when the forecast is too low): {% for k in [prod, fam, ship] %}{{ MODEL[k] }}, {% if sel.mean_signed[k] is not none %}{{ sp(sel.mean_signed[k], 1) }} on average{% else %}no mean, at least one hour having no forecast{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}. The hours each model lacks, by reason: {% for k in [prod, fam, ship] %}{{ MODEL[k] }}: {% for why_, n in v.common_hours[k].items() %}{{ why(why_) }} ({{ n|num }}){% if not loop.last %}, {% endif %}{% else %}none{% endfor %}{% if not loop.last %}; {% endif %}{% endfor %}; without usable demand: {{ v.common_hours.no_target|num }}.
+**The choice's tracked values**, on the {{ sel.hours|num }} common hours ({{ sel.weeks }} weeks; {{ label(v.contrasts.label) }}): MAPE {{ sel.mape[prod]|pct(2) }} for v2, {{ sel.mape[fam]|pct(2) }} for v1's form on the forecast, {{ sel.mape[ship]|pct(2) }} for v1 as shipped. Signed error at the {{ sel.peak|length }} busiest hours of {{ span(vy) }}, among all the hours that have a demand (demand minus forecast, over demand; positive when the forecast is too low): {% for k in [prod, fam, ship] %}{{ MODEL[k] }}, {% if sel.mean_signed[k] is not none %}{{ sp(sel.mean_signed[k], 1) }} on average{% else %}no mean, at least one hour having no forecast{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}. The hours each model lacks, by reason: {% for k in [prod, fam, ship] %}{{ MODEL[k] }}: {% for why_, n in v.common_hours[k].items() %}{{ why(why_) }} ({{ n|num }}){% if not loop.last %}, {% endif %}{% else %}none{% endfor %}{% if not loop.last %}; {% endif %}{% endfor %}; without usable demand: {{ v.common_hours.no_target|num }}.
 
 {{ contrast_table(v.contrasts, v.contrasts.label) }}
 On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 against v1's form + the input. Verdicts ({{ label(v.verdict.label) }}): v2 against v1 as shipped, "{{ VERDICT[v.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[v.verdict.family] }}". They are in sample for the choice: they decide nothing.
@@ -320,7 +333,11 @@ Before replaying {{ r.year }}, the same procedure is rehearsed on the design yea
 MAPE difference (frozen minus refitted), on the same {{ pr.hours|num }} hours: {{ pp(pr.frozen_minus_refitted_ape.difference) }} {{ ppci(pr.frozen_minus_refitted_ape.ci95_low, pr.frozen_minus_refitted_ape.ci95_high) }}{% if pr.frozen_minus_refitted_ape.separated %}, a gap confirmed{% else %}: no gap confirmed; freezing the model for a year costs no measurable accuracy on {{ p.year }}{% endif %}.
 
 {{ contrast_table(p.contrasts, p.contrasts.label) }}
-Verdicts ({{ label(p.verdict.label) }}): "{{ VERDICT[p.verdict.shipped] }}" against v1 as shipped, "{{ VERDICT[p.verdict.family] }}" against v1's form; they decide nothing.
+Verdicts ({{ label(p.verdict.label) }}): "{{ VERDICT[p.verdict.shipped] }}" against v1 as shipped, "{{ VERDICT[p.verdict.family] }}" against v1's form; they decide nothing. {{ cold_sentence(p.contrasts, p.contrasts.label) }}
+
+{{ peak_table(p.contrasts.peak, p.contrasts.label) }}
+
+{{ weekly_table(weekly_error.pseudo, p.year, p.contrasts.label, primary) }}
 
 {% set alone = near.pseudo %}
 **Rule 2 on {{ p.year }}.** {% if alone %}Its first wording (MAPE or bias beyond its threshold {{ K.consecutive_weeks }} weeks in a row, in any combination) says "retrain" {{ near_list(alone) }}. {{ near_why(alone, K.trim_days) }}{% else %}Its first wording would have recommended nothing more.{% endif +%}
@@ -413,7 +430,7 @@ _Every number in this section is of {{ r.year }}, {{ LABEL[r.contrasts.label] }}
 {% endif %}
 
 {% set rc = v1.reconciliation %}
-**v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `{{ rc.ledger_run_id }}`: MAPE {{ rc.mape|pct(2) }} against {{ rc.ledger_mape|pct(2) }} (relative gap {{ '%.1e'|format(rc.mape_rel_diff) }}), coverage {{ rc.coverage|pct(1) }} against {{ rc.ledger_coverage|pct(1) }}, which the eve fix of the replayed year moves (plan section 6.3).
+**v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `{{ rc.ledger_run_id }}`: MAPE {{ rc.mape|pct(2) }} against {{ rc.ledger_mape|pct(2) }} (relative gap {{ '%.1e'|format(rc.mape_rel_diff) }}), coverage {{ rc.coverage|pct(2) }} against {{ rc.ledger_coverage|pct(2) }} ({{ ((100 * rc.coverage)|round(2) - (100 * rc.ledger_coverage)|round(2))|signed(2) }} pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
 | Model ({{ label(r.contrasts.label) }}) | MAPE | 95% CI | Coverage | Hours |
 |---|---|---|---|---|
@@ -427,7 +444,9 @@ Verdicts ({{ label(r.verdict.label) }}): v2 against v1 as shipped, "{{ VERDICT[r
 
 {{ peak_table(r.contrasts.peak, r.contrasts.label) }}
 
-**The temperature forecast's error in {{ r.year }}** (forecast minus observation at the scored hours; {{ label(r.contrasts.label) }}), by season: {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C on average and {{ e.mae_c|num(2) }} °C in absolute terms ({{ e.hours|num }} hours){% if not loop.last %}; {% endif %}{% endfor %}. Evidence attached to the replay, without a threshold.
+**The temperature forecast's error in {{ r.year }}** (forecast minus observation at the replayed hours that have both; {{ label(r.contrasts.label) }}), by season: {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C on average and {{ e.mae_c|num(2) }} °C in absolute terms ({{ e.hours|num }} hours){% if not loop.last %}; {% endif %}{% endfor %}. Evidence attached to the replay, without a threshold.
+
+{{ weekly_table(weekly_error.replay, r.year, r.contrasts.label, primary) }}
 
 The clock steps hour by hour from {{ r.days[0].day|day }} to {{ r.days[-1].day|day }}; every read, temperature forecasts included, goes through an accessor that refuses any data past the clock, each forecast visible only from its availability on. The model and the two comparison models are checked by hash before and after, unchanged: v2 `{{ r.frozen_sha256.production|short }}`, v1's form on the forecast `{{ r.frozen_sha256.comparators[fam]|short }}`, v1 as shipped `{{ r.frozen_sha256.comparators[ship]|short }}`.
 
@@ -476,9 +495,9 @@ No week of {{ r.year }} triggered a recommendation.
 {{ echo_table(S24.echo_exclusion_cost.rows) }}
 {{ reuse(diag.replay, r.year) }}{% endif %}
 
-![{{ r.year }} replay]({{ fig.replay_2024_weekly }})
+![{{ r.year }} replay, {{ LABEL[r.contrasts.label] }}]({{ fig.replay_2024_weekly }})
 
-![{{ r.year }} drift]({{ fig.replay_2024_drift }})
+![{{ r.year }} replay's drift, {{ LABEL[r.contrasts.label] }}]({{ fig.replay_2024_drift }})
 
 {% if r.evidently_checks %}
 For each week in drift alarm, the Evidently report is kept in the run, and Evidently's value is compared with the monitor's: {% if r.evidently_checks|length == 1 %}1 comparison, equal.{% else %}{{ r.evidently_checks|length }} comparisons, all equal.{% endif +%}
@@ -487,7 +506,7 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 ## 9. {{ HY }}, the test of record
 
 {% if not held %}
-**Pending.** No {{ HY }} replay has started. The test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). What {{ HY }} will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year {{ HY }} is rendered before that first start.
+**Pending.** No {{ HY }} replay has started. The test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What {{ HY }} will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year {{ HY }} is rendered before that first start.
 {% else %}
 {% for s in held.stopped %}
 - **Start {{ say.stopped }}** `{{ s.run_id }}`, started on {{ s.started_utc }}: stopped at "{{ STAGE[s.stage] }}"{% if s.error %}, error `{{ s.error }}`{% endif %}; its run {% if s.holds_results %}holds results{% else %}holds no result{% endif %}. It is not a result. The next start ran under the owner's ruling "{{ s.ruling.head }}" (commit `{{ s.ruling.commit|short }}`, outcome {{ OUTCOME[s.ruling.outcome] }}), which names this start by its start time.
@@ -540,13 +559,23 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 **What the data-quality run the test of record read says**, `{{ f.run_id }}` (findings, which decide nothing): the forecast fed {{ f.share|pct(1) }} of {{ HY }}'s {{ f.days }} days{% if f.unfed %}; days without a forecast: {% for d in f.unfed %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}; the longest lead of a point in {{ HY }}: {% if f.longest is not none %}{{ f.longest|num(0) }} h{% else %}no point{% endif %}{% if f.at_or_above %}, **{{ f.bound|num(0) }} hours or more: a {{ say.lead_75 }}, and the trigger of a plan section 18 entry**{% endif %}.
 
 {% if f.revised.records %}
-**{{ f.revised.records|num }} {{ say.revised }}** (added {{ f.revised.by_kind.added|default(0) }}, removed {{ f.revised.by_kind.removed|default(0) }}, changed {{ f.revised.by_kind.changed|default(0) }}), compared record by record before any repair; a data-quality finding, whatever {{ HY }}'s standing:
+**{{ f.revised.records|num }} {{ say.revised }}** (added {{ f.revised.by_kind.added|default(0) }}, removed {{ f.revised.by_kind.removed|default(0) }}, changed {{ f.revised.by_kind.changed|default(0) }}), compared record by record before any repair; a data-quality finding, whatever {{ HY }}'s standing. Every revised hour is listed with its change; {% if f.revised.rest %}only the first {{ f.revised.quoted|length }} are listed with their old and new values, since this report quotes only a few Hydro-Québec values, as evidence: the full table stays in the data-quality run's artifact, never committed.{% else %}each with its old and new values.{% endif %}
 
 | Hour ending (UTC) | Change | Old value (MW) | New value (MW) |
 |---|---|---|---|
-{% for x in f.revised.rows %}
-| {{ x.utc|utc }} | {{ {'added': 'added', 'removed': 'removed', 'changed': 'changed'}[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
+{% for x in f.revised.quoted %}
+| {{ x.utc|utc }} | {{ say.kind[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
 {% endfor %}
+{% if f.revised.rest %}
+
+The {{ f.revised.rest|length|num }} other revised hours, without their values:
+
+| Hour ending (UTC) | Change |
+|---|---|
+{% for x in f.revised.rest %}
+| {{ x.utc|utc }} | {{ say.kind[x.kind] }} |
+{% endfor %}
+{% endif %}
 {% else %}
 The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year }}.
 {% endif %}
@@ -561,7 +590,7 @@ The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year 
 
 {% set high_thr = [] %}{% for s in ['winter', 'spring', 'summer', 'fall'] %}{% if th24.performance[s].coverage_low|round(3) > nominal|round(3) %}{% set _ = high_thr.append(s) %}{% endif %}{% endfor %}
 - **The choice and 2024.** v2's family and input were chosen on {{ span(vy) }}; {{ r.year }} had been seen through v1. Neither proves v2 better: only a clean {{ HY }} test of record can (section 9).
-- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed ({{ fin.availability_lag_h|num(0) }} hours after issue), and the {{ K.late_h|num(0) }}-hour sensitivity bounds what it is worth (section 2). The NBM's model changes over the years without being tracked.
+- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed ({{ fin.availability_lag_h|num(0) }} hours after issue), and the sensitivity of section 2 measures what an availability of {{ K.late_h|num(0) }} hours instead of {{ K.lag_h|num(0) }} would cost; a longer delay is not measured. The NBM's model changes over the years without being tracked.
 - **One forecast for a province.** A single forecast point stands for Québec's weather, as a single station did in v1.
 - **Conditional coverage.** {% if sides.season.under or sides.decile.under or HBS.under %}v2's interval under-covers {{ groups(sides.season.under, sides.decile.under, HBS.under) }} (section 5).{% if sides.season.under %} The coverage thresholds of {{ groups(sides.season.under, []) }} are drawn from weeks that already had this under-coverage: the monitor does not flag it as a degradation.{% endif %}{% else %}No season, no hour block and no decile is under-covered in the sense of section 5.{% endif %}{% if high_thr %} Conversely, the coverage threshold of {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) exceeds the {{ nominal|pct(0) }} nominal: a week covered beyond nominal can be flagged low there.{% endif %}{{ '' }}
 - **Extrapolation.** Below the training range, the curves are straight lines; the decision rule's cold tail and section 3's count of hours outside the range measure what that costs.
@@ -576,7 +605,7 @@ The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year 
 {% set DY = drift_years %}
 - **Drift false alarms in {{ r.year }}.** The alarm levels are the {{ ordinal(K.centiles.drift_high) }} percentile of the validation weeks of {{ span(K.threshold_years[r.year|string]) }}, whose references spanned {{ DY.temperature.calibration[0] }} to {{ DY.temperature.calibration[1] }} earlier years for the temperature forecast and {{ DY.forecast.calibration[0] }} to {{ DY.forecast.calibration[1] }} for the demand forecast; in {{ r.year }}, they span {{ DY.temperature.replay }} and {{ DY.forecast.replay }}. The drift false-alarm rate in {{ r.year }} is not measured.
 - **Rule 4 and a real change in temperature.** A real, sustained drift in the temperature forecast, which the model follows, performance within its thresholds, can give "investigate the data": the rule does not tell a real change in the weather from a data error. The rule stays as it is.
-- **Real-time data.** The values are those downloaded on {{ dq.sources.hydroquebec.retrieved_utc[:10] }} (demand) and from {{ (dq.sources.eccc|map(attribute='first_retrieved_utc')|min)[:10] }} on (observed weather); no revision is modelled, and a forecast's arrival is deduced from its issue time.
+- **Real-time data.** The values are those downloaded on {{ dq.sources.hydroquebec.retrieved_utc[:10] }} (demand), from {{ (dq.sources.eccc|map(attribute='first_retrieved_utc')|min)[:10] }} on (observed weather) and from {{ (dq.sources.nbm.years.values()|map(attribute='retrieved_utc')|min)[:10] }} on (NBM forecasts); no revision is modelled, and a forecast's arrival is deduced from its issue time.
 - **Independence.** The model, the checks and this report come from AI agents working under the direction of a single owner, without independent human review of the code. Reviews were made by fresh-context agents and by another vendor's AI model, which is not independent validation in SR 11-7's sense.
 
 ## 11. The breaks, on synthetic data
@@ -616,7 +645,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Run | Identifier | Date |
 |---|---|---|
-{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('breaks', 'breaks'), ('replay_2024_record', 'the 2024 replay of record'), ('replay_2025', 'the 2025 test of record')] if name in runs %}
+{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('diag_pseudo_replay', 'the ' ~ p.year ~ ' rehearsal\'s diagnostics (section 7)'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('diag_replay', 'the diagnostics of the ' ~ r.year ~ ' replay whose numbers section 8 shows'), ('breaks', 'breaks'), ('replay_2024_record', 'the 2024 replay of record'), ('replay_2025', 'the 2025 test of record')] if name in runs %}
 | {{ lbl }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
 {% endfor %}
 

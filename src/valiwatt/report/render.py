@@ -133,15 +133,41 @@ def nbm_findings(dq: dict) -> dict:
             "at_or_above": sorted(int(y) for y in m["leads_at_or_above_reuse_bound"])}
 
 
+def local_year(hour_ending_utc) -> int:
+    """The year, in local standard time, of the hour that ends at `hour_ending_utc`: an hour belongs to the day it
+    starts in (the data-quality report's time conventions), so the window ending 2025-01-01 05:00 UTC ends in 2024."""
+    from valiwatt.config import LST_OFFSET
+
+    return (pd.Timestamp(hour_ending_utc) - pd.Timedelta(hours=1) + LST_OFFSET).year
+
+
+def nbm_source(results: dict) -> dict:
+    """The NBM forecast's row of the data-quality report's sources table, from the fetch manifest the run carries
+    (`sources.nbm`): its station and product, its yearly files and when they were fetched (the first and last day). A
+    run without it (made before the forecast was a source) is refused."""
+    src = (results.get("sources") or {}).get("nbm")
+    years = (src or {}).get("years") or {}
+    if not years or any(not (y or {}).get("retrieved_utc") for y in years.values()):
+        raise ReportRefused(f"data-quality run {results.get('run_id')} holds no NBM fetch manifest; run `valiwatt dq` "
+                            "again")
+    days = sorted(str(y["retrieved_utc"])[:10] for y in years.values())
+    return {"station": src.get("station"), "model": src.get("model"), "files": len(years), "first_retrieved": days[0],
+            "last_retrieved": days[-1], "rows": sum(int(y.get("rows") or 0) for y in years.values())}
+
+
 def dq_context(results: dict, run) -> dict:
     """What the data-quality report reads: the run's results, its provenance and its forecast findings. The years it
     states are those before the held-out year: a run of the 2025 vintage leaves 2025's findings to the validation
     report, from the run its test of record read (plan section 13)."""
-    from valiwatt.config import HELD_OUT_YEAR
+    from valiwatt.config import EVALUATION, HELD_OUT_YEAR
     from valiwatt.sources.nbm import MAX_RUNS_BACK
 
     nbm = nbm_findings(results)
+    window = results["checks"]["demand_window"]["metrics"]
     return {
+        "window_years": (local_year(window["first_utc"]), local_year(window["last_utc"])),
+        "seen_year": next(y for y, x in EVALUATION.items() if x == "seen_by_developers"),
+        "nbm_source": nbm_source(results),
         "r": results,
         "run_id": run.info.run_id,
         "commit": run.data.tags.get("git_commit", "none"),

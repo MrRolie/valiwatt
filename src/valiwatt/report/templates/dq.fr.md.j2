@@ -52,6 +52,7 @@ _Rapport généré à partir de l'exécution MLflow `{{ run_id }}` ({{ run_date 
 {% for s in r.sources.eccc %}
 | ECCC, {{ s.name }} ({{ s.climate_id }}) | voir `docs/data-licences.md` | {{ s.first_retrieved_utc[:10] }} | {{ s.months }} mois | manifeste |
 {% endfor %}
+| NOAA, prévisions NBM ({{ nbm_source.model }}, station {{ nbm_source.station }}), archive de l'Iowa Environmental Mesonet | voir `docs/data-licences.md` | {{ nbm_source.first_retrieved }}{% if nbm_source.last_retrieved != nbm_source.first_retrieved %} au {{ nbm_source.last_retrieved }}{% endif %} | {{ nbm_source.files }} fichiers annuels | manifeste |
 
 Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les télécharge et chaque fichier est vérifié contre son empreinte avant usage. Hydro-Québec indique une date de modification du jeu de données au {{ hq.dataset_modified[:10] }}.
 
@@ -74,7 +75,7 @@ Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les tél
 
 ![Demande moyenne journalière, {{ years }}](figures/fr/daily_demand.png)
 
-_Demande moyenne journalière, {{ years }} (jours complets seulement). Les heures après {{ rep.design_last_year }} ne sont pas tracées : elles sont réservées au rejeu de production. Les contrôles des sections 3 et 4 couvrent toute la fenêtre._
+_Demande moyenne journalière, {{ years }} (jours complets seulement). Les heures après {{ rep.design_last_year }} ne sont pas tracées : elles appartiennent au rejeu de {{ seen_year }}, vu par les développeurs{% if reaches_held_out %}, et à celui de {{ held_out_year }}{% endif %}. Les contrôles des sections 3 et 4 couvrent toute la fenêtre._
 
 ### Contrôles bloquants
 
@@ -84,7 +85,7 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 |---|---|---|---|
 | Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | 0 |
 | Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | 0 |
-| Valeurs dans des bornes physiques larges ({{ c['demand_window'].metrics.first_utc[:4] }}–{{ c['demand_window'].metrics.last_utc[:4] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
+| Valeurs dans des bornes physiques larges ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Part des heures utilisables | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
 ### 3.1 Retour à l'heure normale : heures masquées

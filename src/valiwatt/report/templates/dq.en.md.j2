@@ -52,6 +52,7 @@ _Generated from MLflow run `{{ run_id }}` ({{ run_date }}), code `{{ commit|shor
 {% for s in r.sources.eccc %}
 | ECCC, {{ s.name }} ({{ s.climate_id }}) | see `docs/data-licences.md` | {{ s.first_retrieved_utc[:10] }} | {{ s.months }} months | manifest |
 {% endfor %}
+| NOAA, NBM forecasts ({{ nbm_source.model }}, station {{ nbm_source.station }}), Iowa Environmental Mesonet archive | see `docs/data-licences.md` | {{ nbm_source.first_retrieved }}{% if nbm_source.last_retrieved != nbm_source.first_retrieved %} to {{ nbm_source.last_retrieved }}{% endif %} | {{ nbm_source.files }} yearly files | manifest |
 
 Data never enters the repository: `valiwatt fetch` downloads it, and every file is checked against its hash before use. Hydro-Québec gives the dataset a modification date of {{ hq.dataset_modified[:10] }}.
 
@@ -74,7 +75,7 @@ Data never enters the repository: `valiwatt fetch` downloads it, and every file 
 
 ![Daily mean demand, {{ years }}](figures/en/daily_demand.png)
 
-_Daily mean demand, {{ years }} (complete days only). Hours after {{ rep.design_last_year }} are not plotted: they are held back for the production replay. The checks in sections 3 and 4 cover the whole window._
+_Daily mean demand, {{ years }} (complete days only). Hours after {{ rep.design_last_year }} are not plotted: they belong to the {{ seen_year }} replay, seen by the developers{% if reaches_held_out %}, and to the {{ held_out_year }} one{% endif %}. The checks in sections 3 and 4 cover the whole window._
 
 ### Gates
 
@@ -84,7 +85,7 @@ A gate that fails stops the chain: no canonical data is written and the command 
 |---|---|---|---|
 | Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | 0 |
 | Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | 0 |
-| Values within loose physical bounds ({{ c['demand_window'].metrics.first_utc[:4] }}–{{ c['demand_window'].metrics.last_utc[:4] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
+| Values within loose physical bounds ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Share of usable hours | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
 ### 3.1 Clocks going back: masked hours

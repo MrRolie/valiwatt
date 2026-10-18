@@ -17,6 +17,7 @@ same replay instead, and their episode rows to one row the measure builds from a
 from __future__ import annotations
 
 import functools
+import tempfile
 
 import pandas as pd
 import pytest
@@ -96,8 +97,12 @@ def produce(tmp_path, monkeypatch) -> dict:
     (pseudo,) = rw.replay_runs(2023, kind="pseudo_replay")
     replay = rw.replay_runs(2024)[-1]
     (held,) = rw.replay_runs(2025)
+    def frame(run):
+        with tempfile.TemporaryDirectory() as tmp:
+            return pd.read_parquet(client.download_artifacts(run.info.run_id, "frames/hourly.parquet", tmp))
+
     out = {"p": read(pseudo), "r": read(replay), "h": read(held), "gate": read(held, mrun.GATE_RECORD),
-           "h_tags": dict(held.data.tags)}
+           "h_tags": dict(held.data.tags), "hourly_p": frame(pseudo), "hourly_r": frame(replay)}
     for key, run in (("diag_p", pseudo), ("diag_r", replay), ("diag_h", held)):
         d = RV.diagnostics(client, run)
         assert d is not None, f"the diagnostics of {key[5:]} did not finish"
@@ -115,6 +120,8 @@ def report_world(produced: dict) -> S.World:
     dq["checks"]["nbm_runs"]["metrics"]["longest_lead_h"] = {str(y): LONGEST for y in range(2019, 2025)}
     w.files[("pseudo", "results/replay.json")] = produced["p"] | {"frozen_sha256": S.FROZEN23}
     w.files[(S.REPLAY, "results/replay.json")] = produced["r"] | {"freeze_commit": W.F0, "frozen_sha256": W.FROZEN}
+    w.files[("pseudo", "frames/hourly.parquet")] = produced["hourly_p"]
+    w.files[(S.REPLAY, "frames/hourly.parquet")] = produced["hourly_r"]
     w.files[("diag-pseudo", "results/diagnostics.json")] = produced["diag_p"]
     w.files[(f"diag-{S.REPLAY}", "results/diagnostics.json")] = produced["diag_r"]
 
@@ -163,6 +170,15 @@ def test_the_report_renders_what_the_replay_writes(produced, tmp_path, monkeypat
         eight, nine = RV.numbered_section(text, 8), RV.numbered_section(text, 9)
         for s, e in produced["r"]["forecast_error"]["by_season"].items():
             assert f"{f['num'](e['mae_c'], 2)} °C" in eight, (lang, s)
+        # The weekly forecast error, derived from the frame each replay's code wrote: every week, in its section.
+        seven = RV.numbered_section(text, 7)
+        for part, key in ((seven, "pseudo"), (eight, "replay")):
+            weeks = ctx["weekly_error"][key]
+            assert weeks and sum(w["hours"] for w in weeks) == sum(
+                e["hours"] for e in produced["p" if key == "pseudo" else "r"]["forecast_error"]["by_season"].values())
+            for w in weeks:
+                assert f"| {w['week_start']} | {f['signed'](w['mean_c'], 2)} °C | {f['num'](w['mae_c'], 2)} °C |" \
+                    in part, (lang, key, w)
         for p in made:
             assert all(f["day"](d) in nine for d in p["days"]), (lang, p["placement"])
         cov = produced["h"]["summary"]["coverage"]

@@ -144,7 +144,7 @@ class World:
         self.add(fake_run("pseudo", start=self.tick(), **on_dq, kind="pseudo_replay", year="2023",
                           validation_run_id="val", frozen_run_id="f2023", coefficient_sha256=FROZEN23["production"],
                           evaluation="rehearsal"),
-                 {"results/replay.json": {**p, "frozen_sha256": FROZEN23}})
+                 {"results/replay.json": {**p, "frozen_sha256": FROZEN23}, "frames/hourly.parquet": RP.hourly(2023)})
         self.add_replay(REPLAY, r, start=self.tick())
         self.add(fake_run("breaks", start=self.tick(), **made, kind="breaks"), {"results/breaks.json": b})
         self.add_diagnostics("pseudo", diag["pseudo"])
@@ -173,7 +173,7 @@ class World:
         run.data.tags |= tags
         body = {**results, "year": year, "freeze_tag": TAG, "freeze_commit": freeze_commit,
                 "frozen_sha256": frozen or W.FROZEN}
-        return self.add(run, {"results/replay.json": body})
+        return self.add(run, {"results/replay.json": body, "frames/hourly.parquet": RP.hourly(year)})
 
     def add_diagnostics(self, replay_id: str, results: dict, status: str = "FINISHED"):
         return self.add(fake_run(f"diag-{replay_id}", run_status=status, start=self.tick(), kind="diagnostic",

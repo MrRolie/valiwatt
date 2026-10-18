@@ -283,12 +283,41 @@ def replay(g, year, base, decisions, near, label):
         "comparators": {k: {"mape": ci(g, 0.03, 0.06), "coverage": ci(g, 0.85, 0.93), "hours": int(g(8000, 8700))}
                         for k in (FAM, SHIP)},
         "contrasts": c, "verdict": evaluate.verdict(c) | {"label": label},
-        # monitor/run.py `forecast_error`'s shape.
-        "forecast_error": {"by_month": {f"{year}-{m:02d}": {"mean_c": g(-1, 1), "mae_c": g(1, 3),
-                                                            "hours": int(g(600, 744))} for m in range(1, 13)},
-                           "by_season": {s: {"mean_c": g(-1, 1), "mae_c": g(1, 3), "hours": int(g(2000, 2200))}
-                                         for s in SEASONS}},
+        # monitor/run.py `forecast_error` itself, on the hourly frame the replay's run holds (`hourly`), so the report's
+        # weekly table, derived from that frame, counts the hours the logged aggregates count.
+        "forecast_error": forecast_error(hourly(year)),
     }
+
+
+def hourly(year: int) -> pd.DataFrame:
+    """A replay's frames/hourly.parquet, the columns the report reads from it: every hour of `year` (hour ending, UTC),
+    its local standard day, the issued forecast temperature and the ECCC observation, some hours without one."""
+    from valiwatt.config import LST_OFFSET
+
+    idx = pd.date_range(f"{year}-01-01T06:00Z", f"{year + 1}-01-01T05:00Z", freq="h", name="ts_utc")
+    rng = np.random.default_rng(year)
+    observed = rng.normal(5.0, 10.0, len(idx))
+    forecast = observed + rng.normal(0.2, 1.5, len(idx))
+    observed[::97] = np.nan
+    day = (idx - pd.Timedelta(hours=1) + LST_OFFSET).tz_localize(None).normalize()
+    return pd.DataFrame({"day": day, "temp_forecast": forecast, "temp_observed": observed}, index=idx)
+
+
+def forecast_error(frame: pd.DataFrame) -> dict:
+    from valiwatt.monitor.run import forecast_error as logged
+
+    return logged(frame)
+
+
+_WEEKLY: dict = {}
+
+
+def weekly_error() -> dict:
+    """What `validation.context` derives from the two replays' hourly frames."""
+    if not _WEEKLY:
+        _WEEKLY.update({k: RV.weekly_forecast_error(hourly(y), forecast_error(hourly(y)), y)
+                        for k, y in (("pseudo", P_YEAR), ("replay", R_YEAR))})
+    return {k: [dict(x) for x in rows] for k, rows in _WEEKLY.items()}
 
 
 V1_PLAIN = {"run_id": "9" * 32, "year": 2024, "freeze_tag": "rules-frozen", "freeze_commit": "e" * 40,
@@ -442,7 +471,11 @@ def payloads(seed: int = 0):
     dq = {"run_id": "d" * 32,
           "sources": {"eccc": [{"centre": "Montréal", "primary": True, "first_retrieved_utc": "2026-10-13T10:00:00Z"},
                                {"centre": "Québec", "primary": False, "first_retrieved_utc": "2026-10-12T10:00:00Z"}],
-                      "hydroquebec": {"retrieved_utc": "2026-10-11T09:00:00Z"}},
+                      "hydroquebec": {"retrieved_utc": "2026-10-11T09:00:00Z"},
+                      # quality/run.py's `sources.nbm`: the fetch manifest of the window's years.
+                      "nbm": {"station": "CYUL", "model": "NBS", "years": {
+                          str(y): {"retrieved_utc": f"2026-10-1{5 + (y == 2024)}T16:3{y - 2019}:00Z", "rows": 30000 + y}
+                          for y in range(2019, 2025)}}},
           "checks": {"demand_window": {"kind": "gate"}, "demand_bounds": {"kind": "gate"},
                      "demand_misplaced": {"kind": "repair", "evidence": [
                          {"moved_to_utc": "2022-01-01T05:00:00+00:00", "duplicated_utc": "2023-01-01T05:00:00+00:00"}]},
@@ -460,7 +493,8 @@ def dq_2025(g=None, revised=3, at_or_above=(), unfed=(("2025-02-03", "no_coverin
     for y in at_or_above:
         longest[str(y)] = 76.0
     # As quality/run.py revised_records writes them; the first, a label that held two records and now holds one.
-    rows = pd.DataFrame([{"utc": f"2024-0{i + 1}-0{i + 2}T1{i}:00:00+00:00", "kind": ("changed", "added", "removed")[i % 3],
+    rows = pd.DataFrame([{"utc": (pd.Timestamp("2024-01-02T10:00:00+00:00") + pd.Timedelta(hours=7 * i)).isoformat(),
+                          "kind": ("changed", "added", "removed")[i % 3],
                           "old_mw": "" if i % 3 == 1 else f"2{i}000.0" + (";21000.0" if i == 0 else ""),
                           "new_mw": "" if i % 3 == 2 else f"2{i}100.0"}
                          for i in range(revised)], columns=["utc", "kind", "old_mw", "new_mw"])
@@ -541,7 +575,11 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
     derived = _BASE[key]
     status = held_view["status"] if held_view else RV.status_of(None)
     runs = {k: {"id": f"{i + 1:032x}", "when": f"2026-10-14 0{i}:00 UTC"} for i, k in enumerate(
-        ("dq", "validation", "frozen_2023", "frozen_2024", "pseudo_replay", "replay", "breaks"))}
+        ("dq", "validation", "frozen_2023", "frozen_2024", "pseudo_replay", "diag_pseudo_replay", "replay",
+         "diag_replay", "breaks"))}
+    for k, x in (("diag_pseudo_replay", diag.get("pseudo")), ("diag_replay", diag.get("replay"))):
+        if x is None:  # a diagnostic run that did not finish is in no provenance
+            runs.pop(k)
     if rec24 is not None:
         runs["replay_2024_record"] = {"id": rec24["run_id"], "when": "2026-11-01 00:00 UTC"}
     if held_view is not None:
@@ -550,6 +588,7 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
            "r_id": runs["replay"]["id"], "b": b, "frozen": frozen, **derived, "diag": diag, "curves": curves(),
            "departures": [dict(x) for x in departures], "departure_record": None, "dep_entries": list(dep_entries),
            "v1": RV.v1_view([RecordedReplay(V1_PLAIN), RecordedReplay(V1_DEPARTED)], r),
+           "weekly_error": weekly_error(),
            "rec24": rec24, "rerun24": rerun24, "held": held_view, "status": status,
            "recommendation": held_view["recommendation"] if held_view else None,
            "store_only": bool((rec24 or {}).get("recorded")) or bool(held_view and held_view["recorded"]),

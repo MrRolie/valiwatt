@@ -5,16 +5,19 @@ The project is about the checks around the forecast: how the model is tested bef
 once it runs, and what it says when it should no longer be trusted.
 
 **What it measures.** The validation report measures the forecast's error on 2020–2023, out of sample, against the
-model v1 shipped and against v1's form on the same weather forecast, under a decision rule fixed before any v2 replay;
-how often its prediction intervals cover the actual demand, overall and group by group; what the monitor recommended
-when 2023 was rehearsed and 2024 replayed hour by hour under rules frozen before either replay; and how often the rules
-raise a false alarm or miss a real change. Every number comes from a tracked run, and every result carries its
+model v1 shipped and against v1's form on the same weather forecast, under a decision rule fixed in the plan before
+any v2 replay; how often its prediction intervals cover the actual demand, overall and group by group; what the
+monitor recommended when 2023 was rehearsed and 2024 replayed hour by hour, under rules frozen before v2's 2024 replay
+(the rules were tuned on 2023 rehearsals run before the freeze, as plan section 10.6 allows; the rehearsal the report
+shows, like the 2024 replay, ran on the frozen code); and how often the rules raise a false alarm or miss a real
+change. Every number comes from a tracked run, and every result carries its
 evaluation label: 2020–2023 served to choose the model, and 2024 had been seen by the developers through v1 before v2
 was chosen, so neither proves v2 better. Only 2025, held out, can.
 
 **Status: v2.** The model card's status is in the validation report, never here: it reads *candidate* until a 2025
 replay starts; then that the 2025 test of record did not finish, while it has not; then what that test showed, under
-the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md). v1, the first version, stays in the history at the tag
+the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md), or, if the owner ruled the 2025 start post hoc, that 2025
+is not a held-out test. v1, the first version, stays in the history at the tag
 `v1`, its report as published included. What is built:
 
 - the data layer and its gates, the weather forecast included;
@@ -24,7 +27,7 @@ the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md). v1, the first version
   shape (without that method's finite-sample coverage guarantee: their coverage is measured out of sample);
 - frozen models registered in MLflow;
 - a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
-  rules frozen by the `rules-frozen-v2` tag before any v2 replay;
+  rules frozen by the `rules-frozen-v2` tag before v2's 2024 replay;
 - the rules' false alarms and blind spots, measured after each replay in a diagnostic run of their own;
 - a gate in front of the 2025 replay that finds it clean or refuses it; only a dated ruling of the owner, recorded in
   `AGENTS.md`, lifts a refusal.
@@ -44,7 +47,8 @@ the same runs, are the reference behind it; each opens with an « En bref » blo
 **The weather forecast.** The forecast is issued at the end of the day before from a temperature forecast already
 issued then: NOAA's National Blend of Models NBS guidance for Montréal-Trudeau (CYUL), from the Iowa Environmental
 Mesonet's archive, interpolated to the hour and converted to degrees Celsius. The archive records no arrival time, so
-a forecast is assumed available two hours after its issue time; the report measures what a later margin would cost.
+a forecast is assumed available two hours after its issue time; the report measures what one later margin (6 hours
+instead of 2) would cost; a longer delay is not measured.
 The report also gives the bound with the observed weather of the target hour, which stands in for a perfect weather
 forecast; that bound is optimistic, and it issues no recommendation.
 
@@ -67,7 +71,8 @@ when the code no longer matches the stamp. It never replays 2025. Neither `data/
 regenerate every figure, and the runs, not the rendered files, are the source of truth.
 
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
-`ledger`, `report`. A replay refuses to run until the monitoring rules are frozen by the `rules-frozen-v2` tag.
+`ledger`, `report`. The 2024 and 2025 replays refuse to run until the monitoring rules are frozen by the
+`rules-frozen-v2` tag; the 2023 rehearsal does not need it.
 `valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
 
 **2025, once Hydro-Québec publishes it.** No 2025 demand is read before then. Afterwards: `valiwatt fetch --through
@@ -84,25 +89,29 @@ from their entries in the committed replay ledger, labelled as recorded in the l
 what only the original store holds.
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
-entry per finished replay of 2024 and 2025: its run ID, freeze tag and commit, rules and code hashes, start and end
-times, MAPE, coverage and recommendations, and for v2 its evaluation label, its model's hash, its verdicts, the hash of
-the frozen artifacts that judged it and, for 2025, its standing. v1's entries stay as they were. `valiwatt report`
+entry per replay of 2024 or 2025 finished since the history was rewritten (the 2023 rehearsal has none): its run ID,
+freeze tag and commit, rules and code hashes, start and end times, MAPE, coverage and recommendations, and for v2 its
+evaluation label, its model's hash, its verdicts, the hash of the frozen artifacts that judged it and, for 2025, its
+standing. v1's entries stay as they were. `valiwatt report`
 appends the replays it lacks before it renders (`valiwatt ledger` does only that); an entry is never rewritten, a run
 that disagrees with its entry is refused, and the new content must pass the public-safety scan before it is written.
 Its hash is in the report's stamp, so a test fails when it changes after the render.
 
-How it is built, and why each choice was made before any v2 result was seen: [`docs/plan-v2.md`](docs/plan-v2.md)
-(v1's plan: [`docs/plan.md`](docs/plan.md)). The standards the report maps to, quoted and checked against their PDFs:
-[`docs/standards.md`](docs/standards.md).
+How it is built, and what each choice was made on: [`docs/plan-v2.md`](docs/plan-v2.md), whose section 0 lists what
+had been seen first, v1's 2024 replay and its departure, and the spike whose 2020–2023 results chose v2's family and
+input (v1's plan: [`docs/plan.md`](docs/plan.md)). The standards the report maps to, quoted and checked against
+their PDFs: [`docs/standards.md`](docs/standards.md).
 
 ## The rails
 
 The rules every part of the project follows.
 
-- **No lookahead.** Design choices use 2019 to 2023 only; 2024 and 2025 are replayed as production, and the code
-  refuses design analysis that reaches into them. Validation is walk-forward with an embargo. A forecast is used only
-  from the time it is assumed available, and any result that leans on observed weather in place of a weather forecast
-  says so. The replay reads raw records, forecasts included, through a clock that refuses anything later.
+- **No lookahead.** Models, intervals and thresholds are fitted on 2019–2023 only, and the code refuses design
+  analysis that reads 2024 or 2025, which are replayed as production. v2 was nevertheless chosen after 2024 had been
+  seen through v1 (plan section 0), so its 2024 replay is labelled seen by the developers. Validation is walk-forward
+  with an embargo. A forecast is used only from the time it is assumed available, and any result that leans on
+  observed weather in place of a weather forecast says so. The replay reads raw records, forecasts included, through
+  a clock that refuses anything later.
 - **A check that cannot fail is not a check.** Every gate and monitor has a test that injects the fault it must catch:
   a duplicated hour, a misplaced record, an impossible value, a sensor outage, a day no forecast fed, a reading past
   the clock, a shifted demand level, intervals made too narrow, a moved freeze tag. `valiwatt breaks` runs them all as
@@ -143,6 +152,7 @@ licences ([`docs/data-licences.md`](docs/data-licences.md)).
 ## Continuous integration
 
 `.github/workflows/checks.yml` runs the offline tests (every injected break included) and the public-safety scan on
-every branch push (not on pull requests: their merge commit is one the history tests refuse). CI's scan covers paths,
+every branch push and on every pull request, a fork's included, checked out at the pull request's own head commit
+rather than its merge commit, which the history tests refuse. CI's scan covers paths,
 credentials, forbidden files, every file in the history and every commit and tag message, but not private names:
 those live in a gitignored list, so only the local `valiwatt safety` checks them.

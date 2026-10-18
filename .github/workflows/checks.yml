@@ -2,10 +2,14 @@ name: checks
 
 on:
   push:
-    # Branch pushes only. Not tags: the rules-frozen tag marks the commit that freezes the rules, made before the
-    # report is rendered, so the committed report there is not the one its code would render. Not pull requests: their
-    # merge ref is a merge commit, which the history tests refuse.
+    # Branch pushes. Not tags: the rules-frozen tag marks the commit that freezes the rules, made before the report is
+    # rendered, so the committed report there is not the one its code would render.
     branches: ["**"]
+  # Pull requests, a fork's included, so that the safety scan and the breaks run on them. `pull_request`, never
+  # `pull_request_target`: the fork's code runs with a read-only GITHUB_TOKEN and none of this repository's secrets. The
+  # job checks out the pull request's own head commit, not the merge ref GitHub builds (a merge commit, which the
+  # history tests refuse), so the history tests see the branch's own linear history.
+  pull_request:
 
 permissions:
   contents: read
@@ -16,9 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          # On a pull request, its head commit; on a push, the pushed commit (an empty ref means the event's own).
+          ref: ${{ github.event.pull_request.head.sha || '' }}
           # The safety scan reads every object in the history, and the history tests read the tags (rules-frozen,
           # v1, plan-v2, then v2-first-run and rules-frozen-v2): a depth of 0 fetches every branch and every tag.
           fetch-depth: 0
+          fetch-tags: true
       - uses: astral-sh/setup-uv@v10.3.0  # no major tag since v8: an immutable release, named exactly
         with:
           version: "0.5.9"

@@ -39,6 +39,15 @@
 
 {% endfor %}
 {% endmacro %}
+{% macro weekly_table(rows, year, lbl, station) %}
+**L'erreur hebdomadaire de la prévision de température en {{ year }}** ({{ label(lbl) }}) : la prévision émise moins la température observée de {{ station }} (ECCC) à l'heure visée, sur les heures qui ont les deux, par semaine du rejeu (du lundi au dimanche, heure normale). Le rapport la dérive du cadre horaire du rejeu (`frames/hourly.parquet`), tenu à ce que le rejeu consigne : les erreurs par mois et par saison qu'il donne sont celles que le rejeu a consignées, heures, moyennes et erreurs absolues moyennes. Une preuve jointe au rejeu, sans seuil : elle ne décide rien.
+
+| Semaine du ({{ label(lbl) }}) | Écart moyen | Écart absolu moyen | Heures |
+|---|---|---|---|
+{% for w in rows %}
+| {{ w.week_start|day }} | {{ w.mean_c|signed(2) }} °C | {{ w.mae_c|num(2) }} °C | {{ w.hours|num }} |
+{% endfor %}
+{% endmacro %}
 {% set prod, fam, ship = sel.models.production, sel.models.family, sel.models.shipped %}
 {% set P = v.performance %}
 {% set Cv = v.coverage %}
@@ -67,6 +76,10 @@
 {% set vy = K.validation_years %}
 {% set HY = K.held_out_year %}
 {% set R = held.record if held else none %}
+{# La section 9 porte une couverture une fois le test de référence terminé, et les heures les plus chargées une fois
+   ses résultats dans le magasin (une entrée lue du registre n'en a pas). #}
+{% set C9 = R is not none and R.finished %}
+{% set B9 = C9 and R.results is not none %}
 {% set status_text = status_line(status, R, say, vy) %}
 {% set lag = r.model.lag_coefficients %}
 {% set fin = v.forecast_input %}
@@ -93,14 +106,14 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 - {{ brief_coverage(nominal, C.relative.overall.mean, v.conformal.first_fold, sides, v.folds.last, HBS.under) }} Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
 - {{ brief_peak(peak, K.design_years, peak_in_month, peak_above) }} Rapporté, jamais jugé.
 - {{ r.year|string }} ({{ label(r.contrasts.label) }}) : EAMP de {{ r.summary.mape.mean|pct(2) }}, couverture de {{ r.summary.coverage.mean|pct(1) }}, {{ recs(n_recs) }} ; verdicts : v2 contre v1 tel que livré, « {{ VERDICT[r.verdict.shipped] }} » ; v2 contre la forme de v1, « {{ VERDICT[r.verdict.family] }} »{% if r.verdict.shipped in ('not_shown_better', 'worse') or r.verdict.family in ('not_shown_better', 'worse') %}. Un verdict qui n'est pas « meilleur » sur une année vue est un constat contre v2{% else %}. Un succès sur une année déjà vue est une preuve faible : il ne soutient aucune affirmation{% endif %} ; v2 va à {{ HY }} tel que gelé (section 8).
-- {{ HY }} : {% if not held %}en attente ; le test de référence sera le premier rejeu de {{ HY }} commencé sous `{{ freeze.freeze_tag }}` (section 9).{% elif not R.finished %}le test de référence `{{ R.run_id }}` {{ say.unfinished }} ; aucune affirmation sur {{ HY }} (section 9).{% else %}le test de référence `{{ R.run_id }}` a fini, sa position consignée par sa barrière : « {{ OUTCOME[R.standing] }} » (section 9).{% endif +%}
+- {{ HY }} : {% if not held %}en attente ; le test de référence sera le premier rejeu de {{ HY }} commencé sous `{{ freeze.freeze_tag }}`, sauf si ce départ s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 9 ; section 11.3.5 du plan).{% elif not R.finished %}le test de référence `{{ R.run_id }}` {{ say.unfinished }} ; aucune affirmation sur {{ HY }} (section 9).{% else %}le test de référence `{{ R.run_id }}` a fini, sa position consignée par sa barrière : « {{ OUTCOME[R.standing] }} » (section 9).{% endif +%}
 - {% if level is not none %}{{ brief_misses(level, LR, p.year, r.year, K.step_horizon, level24, K.power_horizon) }}{% else %}Les mesures de fausses alertes et d'angles morts de {{ p.year }} n'ont pas fini (section 7) ; {{ power_limit(LR, r.year, K.power_horizon) }}{% endif +%}
 
 ## Fiche du modèle
 
 | | |
 |---|---|
-| **Statut** | {{ status_text }} Couverture des intervalles et heures les plus chargées : à côté du statut (sections 5 et 9), jamais dedans. |
+| **Statut** | {{ status_text }} Couverture des intervalles et heures les plus chargées : à côté du statut, jamais dedans (couverture : sections 4 (les heures de pointe), 5, 7{{ ', 8 et 9' if C9 else ' et 8' }} ; heures les plus chargées : sections 3, 4, 7{{ ', 8 et 9' if B9 else ' et 8' }}). |
 | **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à la fin du jour J−1 (heure normale de l'Est), avec un intervalle de prévision à {{ nominal|pct(0) }}. |
 | **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
 | **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
@@ -119,8 +132,8 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 - **Validation progressive.** Chaque mois de {{ vy[0] }} à {{ vy[1] }} est prévu par des modèles réajustés sur les heures qui le précèdent seulement, moins les {{ K.embargo_days }} derniers jours (l'embargo). Les trois modèles comparés y sont ajustés aux mêmes plis : v2, la forme de v1 sur la même prévision et v1 tel que livré, refait dans le harnais de v2.
 - **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) : en moyenne, de combien la prévision s'écarte de la demande réelle. Le biais signé dit dans quel sens : biais = (demande − prévision) / demande, positif quand la prévision est trop basse.
 - **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, {{ K.n_boot|num }} fois, pour obtenir un intervalle à 95 % autour de chaque moyenne.
-- **La règle de décision, fixée avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le {{ cent(100 * K.cold_quantile) }}ᵉ centile de celles de {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de {{ K.min_cold_hours }} heures froides ou moins de {{ K.min_cold_weeks }} semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
-- **À côté, jamais jugés.** Les {{ K.peak_hours }} heures les plus chargées de chaque année jugée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses {{ nominal|pct(0) }} (section 5).
+- **La règle de décision, fixée dans le plan avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le {{ cent(100 * K.cold_quantile) }}ᵉ centile de celles de {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de {{ K.min_cold_hours }} heures froides ou moins de {{ K.min_cold_weeks }} semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
+- **À côté, jamais jugés.** Les {{ K.peak_hours }} heures les plus chargées de chaque période jugée, {{ span(vy) }} comme une seule période puis chaque année rejouée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses {{ nominal|pct(0) }} (section 5).
 - **L'intervalle de prévision.** Sa demi-largeur est un quantile des erreurs relatives |demande − prévision| / prévision. Pour chaque mois de validation, c'est le quantile de rang ⌈(n + 1) × {{ nominal|num(2) }}⌉ des n erreurs hors échantillon des {{ K.calibration_folds }} mois précédents déjà notées quand le modèle du mois est ajusté ; pour le modèle figé, le même quantile sur les erreurs des {{ K.calibration_folds }} mois qui précèdent l'année rejouée, déjà notées quand il est ajusté. C'est la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini : ces erreurs horaires sont autocorrélées et viennent d'autres modèles. La seule preuve est la couverture mesurée hors échantillon.
 - **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec son empreinte, puis rejoué heure par heure.
 - **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation de v2 : EAMP au-dessus du {{ cent(K.centiles.mape_high) }}ᵉ centile, biais hors de l'intervalle {{ cent(K.centiles.bias_low) }}ᵉ–{{ cent(K.centiles.bias_high) }}ᵉ centile, couverture sous le {{ cent(K.centiles.coverage_low) }}ᵉ centile.
@@ -145,7 +158,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 {% endfor %}
 {% endfor %}
 
-**La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles {{ K.late_h|num(0) }} heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de {{ pp(late.difference) }} {{ ppci(late.ci95_low, late.ci95_high) }} ({{ K.late_h|num(0) }} heures moins {{ K.lag_h|num(0) }}, sur {{ late.hours|num }} heures) : c'est ce que vaut, au plus, l'hypothèse de disponibilité. Cette variante est étiquetée et ne choisit rien.
+**La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles {{ K.late_h|num(0) }} heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de {{ pp(late.difference) }} {{ ppci(late.ci95_low, late.ci95_high) }} ({{ K.late_h|num(0) }} heures moins {{ K.lag_h|num(0) }}, sur {{ late.hours|num }} heures) : c'est ce que coûterait une disponibilité à {{ K.late_h|num(0) }} heures au lieu de {{ K.lag_h|num(0) }} ; un délai plus long n'est pas mesuré. Cette variante est étiquetée et ne choisit rien.
 
 **Le 31 décembre {{ vy[1] }}.** Ses deux dernières heures demandent le point du 1ᵉʳ janvier {{ vy[1] + 1 }} 06:00 UTC d'une prévision émise le 31 décembre et disponible avant l'origine de ce jour : l'information est celle de {{ vy[1] }}, et ce jour est prévu comme les autres. L'essai préliminaire qui a servi au choix coupait sur l'heure de validité et laissait ce jour de côté : les heures de v2 sur {{ span(vy) }} en ont 24 de plus que les siennes.
 
@@ -164,7 +177,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 {% endfor %}
 | v1 tel que livré, moyenne des {{ dq.sources.eccc|length }} stations (sensibilité) | {{ P.panel_persistence.overall.mean|pct(2) }} | {{ ci(P.panel_persistence.overall.ci95_low, P.panel_persistence.overall.ci95_high) }} | {{ sp(P.panel_persistence.overall.bias.mean, 2) }} | {{ P.panel_persistence.overall.hours|num }} |
 
-**Les valeurs suivies du choix**, sur les {{ sel.hours|num }} heures communes ({{ sel.weeks }} semaines ; {{ label(v.contrasts.label) }}) : EAMP de {{ sel.mape[prod]|pct(2) }} pour v2, {{ sel.mape[fam]|pct(2) }} pour la forme de v1 sur la prévision, {{ sel.mape[ship]|pct(2) }} pour v1 tel que livré. Erreur signée aux {{ sel.peak|length }} heures les plus chargées de ces heures (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : {% for k in [prod, fam, ship] %}{{ MODEL[k] }}, {% if sel.mean_signed[k] is not none %}{{ sp(sel.mean_signed[k], 1) }} en moyenne{% else %}pas de moyenne, une heure au moins étant sans prévision{% endif %}{% if not loop.last %} ; {% endif %}{% endfor %}. Les heures que chaque modèle n'a pas, par raison : {% for k in [prod, fam, ship] %}{{ MODEL[k] }} : {% for why_, n in v.common_hours[k].items() %}{{ why(why_) }} ({{ n|num }}){% if not loop.last %}, {% endif %}{% else %}aucune{% endfor %}{% if not loop.last %} ; {% endif %}{% endfor %} ; sans demande utilisable : {{ v.common_hours.no_target|num }}.
+**Les valeurs suivies du choix**, sur les {{ sel.hours|num }} heures communes ({{ sel.weeks }} semaines ; {{ label(v.contrasts.label) }}) : EAMP de {{ sel.mape[prod]|pct(2) }} pour v2, {{ sel.mape[fam]|pct(2) }} pour la forme de v1 sur la prévision, {{ sel.mape[ship]|pct(2) }} pour v1 tel que livré. Erreur signée aux {{ sel.peak|length }} heures les plus chargées de {{ span(vy) }}, parmi toutes les heures qui ont une demande (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : {% for k in [prod, fam, ship] %}{{ MODEL[k] }}, {% if sel.mean_signed[k] is not none %}{{ sp(sel.mean_signed[k], 1) }} en moyenne{% else %}pas de moyenne, une heure au moins étant sans prévision{% endif %}{% if not loop.last %} ; {% endif %}{% endfor %}. Les heures que chaque modèle n'a pas, par raison : {% for k in [prod, fam, ship] %}{{ MODEL[k] }} : {% for why_, n in v.common_hours[k].items() %}{{ why(why_) }} ({{ n|num }}){% if not loop.last %}, {% endif %}{% else %}aucune{% endfor %}{% if not loop.last %} ; {% endif %}{% endfor %} ; sans demande utilisable : {{ v.common_hours.no_target|num }}.
 
 {{ contrast_table(v.contrasts, v.contrasts.label) }}
 Sur un même ensemble d'heures, les trois comparaisons s'additionnent : v2 contre v1 tel que livré = v2 contre la forme de v1 + l'entrée. Verdicts ({{ label(v.verdict.label) }}) : v2 contre v1 tel que livré, « {{ VERDICT[v.verdict.shipped] }} » ; v2 contre la forme de v1, « {{ VERDICT[v.verdict.family] }} ». Ils sont dans l'échantillon du choix : ils ne décident rien.
@@ -319,7 +332,11 @@ Avant de rejouer {{ r.year }}, la même procédure est répétée sur les année
 Différence d'EAMP (figé moins réajusté), sur les mêmes {{ pr.hours|num }} heures : {{ pp(pr.frozen_minus_refitted_ape.difference) }} {{ ppci(pr.frozen_minus_refitted_ape.ci95_low, pr.frozen_minus_refitted_ape.ci95_high) }}{% if pr.frozen_minus_refitted_ape.separated %}, écart confirmé{% else %} : aucun écart confirmé ; figer le modèle un an ne coûte pas de précision mesurable sur {{ p.year }}{% endif %}.
 
 {{ contrast_table(p.contrasts, p.contrasts.label) }}
-Verdicts ({{ label(p.verdict.label) }}) : « {{ VERDICT[p.verdict.shipped] }} » contre v1 tel que livré, « {{ VERDICT[p.verdict.family] }} » contre la forme de v1 ; ils ne décident rien.
+Verdicts ({{ label(p.verdict.label) }}) : « {{ VERDICT[p.verdict.shipped] }} » contre v1 tel que livré, « {{ VERDICT[p.verdict.family] }} » contre la forme de v1 ; ils ne décident rien. {{ cold_sentence(p.contrasts, p.contrasts.label) }}
+
+{{ peak_table(p.contrasts.peak, p.contrasts.label) }}
+
+{{ weekly_table(weekly_error.pseudo, p.year, p.contrasts.label, primary) }}
 
 {% set alone = near.pseudo %}
 **La règle 2 sur {{ p.year }}.** {% if alone %}Sa première formulation (EAMP ou biais hors seuil {{ K.consecutive_weeks }} semaines de suite, dans n'importe quelle combinaison) dit « réentraîner » {{ near_list(alone) }}. {{ near_why(alone, K.trim_days) }}{% else %}Sa première formulation n'aurait rien recommandé de plus.{% endif +%}
@@ -412,7 +429,7 @@ _Chaque nombre de cette section est de {{ r.year }}, {{ LABEL[r.contrasts.label]
 {% endif %}
 
 {% set rc = v1.reconciliation %}
-**Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `{{ rc.ledger_run_id }}` : EAMP de {{ rc.mape|pct(2) }} contre {{ rc.ledger_mape|pct(2) }} (écart relatif {{ ('%.1e'|format(rc.mape_rel_diff)).replace('.', ',') }}), couverture de {{ rc.coverage|pct(1) }} contre {{ rc.ledger_coverage|pct(1) }}, que la correction de la veille de l'année rejouée déplace (section 6.3 du plan).
+**Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `{{ rc.ledger_run_id }}` : EAMP de {{ rc.mape|pct(2) }} contre {{ rc.ledger_mape|pct(2) }} (écart relatif {{ ('%.1e'|format(rc.mape_rel_diff)).replace('.', ',') }}), couverture de {{ rc.coverage|pct(2) }} contre {{ rc.ledger_coverage|pct(2) }} ({{ ((100 * rc.coverage)|round(2) - (100 * rc.ledger_coverage)|round(2))|signed(2) }} pt), l'écart que fait la correction de la veille de l'année rejouée (section 6.3 du plan).
 
 | Modèle ({{ label(r.contrasts.label) }}) | EAMP | IC 95 % | Couverture | Heures |
 |---|---|---|---|---|
@@ -426,7 +443,9 @@ Verdicts ({{ label(r.verdict.label) }}) : v2 contre v1 tel que livré, « {{ VER
 
 {{ peak_table(r.contrasts.peak, r.contrasts.label) }}
 
-**L'erreur de la prévision de température en {{ r.year }}** (prévision moins observation aux heures notées ; {{ label(r.contrasts.label) }}), par saison : {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C en moyenne et {{ e.mae_c|num(2) }} °C en absolu ({{ e.hours|num }} heures){% if not loop.last %} ; {% endif %}{% endfor %}. Une preuve jointe au rejeu, sans seuil.
+**L'erreur de la prévision de température en {{ r.year }}** (prévision moins observation aux heures rejouées qui ont les deux ; {{ label(r.contrasts.label) }}), par saison : {% set FE = r.forecast_error.by_season %}{% for s in ['winter', 'spring', 'summer', 'fall'] if s in FE %}{% set e = FE[s] %}{{ SEASON[s] }}, {{ e.mean_c|signed(2) }} °C en moyenne et {{ e.mae_c|num(2) }} °C en absolu ({{ e.hours|num }} heures){% if not loop.last %} ; {% endif %}{% endfor %}. Une preuve jointe au rejeu, sans seuil.
+
+{{ weekly_table(weekly_error.replay, r.year, r.contrasts.label, primary) }}
 
 L'horloge avance d'heure en heure du {{ r.days[0].day|day }} au {{ r.days[-1].day|day }} ; chaque lecture, prévisions de température comprises, passe par un accès qui refuse toute donnée postérieure à l'horloge, chaque prévision n'étant visible qu'à partir de sa disponibilité. Le modèle et les deux modèles de comparaison sont vérifiés par empreinte avant et après, inchangées : v2 `{{ r.frozen_sha256.production|short }}`, la forme de v1 sur la prévision `{{ r.frozen_sha256.comparators[fam]|short }}`, v1 tel que livré `{{ r.frozen_sha256.comparators[ship]|short }}`.
 
@@ -475,9 +494,9 @@ Aucune semaine de {{ r.year }} n'a déclenché de recommandation.
 {{ echo_table(S24.echo_exclusion_cost.rows) }}
 {{ reuse(diag.replay, r.year) }}{% endif %}
 
-![Rejeu de {{ r.year }}]({{ fig.replay_2024_weekly }})
+![Rejeu de {{ r.year }}, {{ LABEL[r.contrasts.label] }}]({{ fig.replay_2024_weekly }})
 
-![Dérive {{ r.year }}]({{ fig.replay_2024_drift }})
+![Dérive du rejeu de {{ r.year }}, {{ LABEL[r.contrasts.label] }}]({{ fig.replay_2024_drift }})
 
 {% if r.evidently_checks %}
 Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dans l'exécution, et la valeur d'Evidently est comparée à celle du moniteur : {% if r.evidently_checks|length == 1 %}1 comparaison, égale.{% else %}{{ r.evidently_checks|length }} comparaisons, toutes égales.{% endif +%}
@@ -486,7 +505,7 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 ## 9. {{ HY }}, le test de référence
 
 {% if not held %}
-**En attente.** Aucun rejeu de {{ HY }} n'a commencé. Le test de référence sera le premier rejeu de {{ HY }} commencé sous `{{ freeze.freeze_tag }}`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce que {{ HY }} jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année {{ HY }} n'est rendu avant ce premier départ.
+**En attente.** Aucun rejeu de {{ HY }} n'a commencé. Le test de référence sera le premier rejeu de {{ HY }} commencé sous `{{ freeze.freeze_tag }}`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce sera ce premier départ, sauf s'il s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 11.3.5 du plan). Ce que {{ HY }} jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année {{ HY }} n'est rendu avant ce premier départ.
 {% else %}
 {% for s in held.stopped %}
 - **Départ {{ say.stopped }}** `{{ s.run_id }}`, commencé le {{ s.started_utc }} : arrêté à l'étape « {{ STAGE[s.stage] }} »{% if s.error %}, erreur `{{ s.error }}`{% endif %} ; son exécution {% if s.holds_results %}contient des résultats{% else %}ne contient aucun résultat{% endif %}. Ce n'est pas un résultat. Le départ suivant a tourné sous la décision du propriétaire « {{ s.ruling.head }} » (commit `{{ s.ruling.commit|short }}`, issue {{ OUTCOME[s.ruling.outcome] }}), qui nomme ce départ par son heure de départ.
@@ -539,13 +558,23 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 **Ce que dit l'exécution de qualité des données que le test de référence a lue**, `{{ f.run_id }}` (constats, qui ne décident rien) : la prévision a alimenté {{ f.share|pct(1) }} des {{ f.days }} jours de {{ HY }}{% if f.unfed %} ; jours sans prévision : {% for d in f.unfed %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %} ; plus long délai d'un point en {{ HY }} : {% if f.longest is not none %}{{ f.longest|num(0) }} h{% else %}aucun point{% endif %}{% if f.at_or_above %}, **{{ f.bound|num(0) }} heures ou plus : {{ say.lead_75 }}, et le déclencheur d'une entrée de la section 18 du plan**{% endif %}.
 
 {% if f.revised.records %}
-**{{ f.revised.records|num }} {{ say.revised }}** (ajoutés {{ f.revised.by_kind.added|default(0) }}, retirés {{ f.revised.by_kind.removed|default(0) }}, changés {{ f.revised.by_kind.changed|default(0) }}), comparés enregistrement par enregistrement avant toute réparation ; un constat de qualité des données, quelle que soit la position de {{ HY }} :
+**{{ f.revised.records|num }} {{ say.revised }}** (ajoutés {{ f.revised.by_kind.added|default(0) }}, retirés {{ f.revised.by_kind.removed|default(0) }}, changés {{ f.revised.by_kind.changed|default(0) }}), comparés enregistrement par enregistrement avant toute réparation ; un constat de qualité des données, quelle que soit la position de {{ HY }}. Chaque heure révisée est listée avec son changement ; {% if f.revised.rest %}seules les {{ f.revised.quoted|length }} premières le sont avec leurs anciennes et nouvelles valeurs, car ce rapport ne cite que quelques valeurs de Hydro-Québec, comme preuves : le tableau complet reste dans l'artefact de l'exécution de qualité des données, jamais versé au dépôt.{% else %}chacune avec ses anciennes et nouvelles valeurs.{% endif %}
 
 | Heure finissant à (UTC) | Changement | Ancienne valeur (MW) | Nouvelle valeur (MW) |
 |---|---|---|---|
-{% for x in f.revised.rows %}
-| {{ x.utc|utc }} | {{ {'added': 'ajouté', 'removed': 'retiré', 'changed': 'changé'}[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
+{% for x in f.revised.quoted %}
+| {{ x.utc|utc }} | {{ say.kind[x.kind] }} | {{ x.old_mw|mw(x.kind != 'added') }} | {{ x.new_mw|mw(x.kind != 'removed') }} |
 {% endfor %}
+{% if f.revised.rest %}
+
+Les {{ f.revised.rest|length|num }} autres heures révisées, sans leurs valeurs :
+
+| Heure finissant à (UTC) | Changement |
+|---|---|
+{% for x in f.revised.rest %}
+| {{ x.utc|utc }} | {{ say.kind[x.kind] }} |
+{% endfor %}
+{% endif %}
 {% else %}
 L'export de {{ HY }} ne révise aucun enregistrement de {{ K.design_years[0] }} à {{ r.year }}.
 {% endif %}
@@ -560,7 +589,7 @@ L'export de {{ HY }} ne révise aucun enregistrement de {{ K.design_years[0] }} 
 
 {% set high_thr = [] %}{% for s in ['winter', 'spring', 'summer', 'fall'] %}{% if th24.performance[s].coverage_low|round(3) > nominal|round(3) %}{% set _ = high_thr.append(s) %}{% endif %}{% endfor %}
 - **Le choix et 2024.** La famille et l'entrée de v2 ont été choisies sur {{ span(vy) }} ; {{ r.year }} avait été vue à travers v1. Ni l'une ni l'autre ne prouve que v2 est meilleur : seul un test de référence propre de {{ HY }} le peut (section 9).
-- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée ({{ fin.availability_lag_h|num(0) }} heures après l'émission), et la sensibilité de {{ K.late_h|num(0) }} heures borne ce qu'elle vaut (section 2). Le modèle du NBM change au fil des années sans être suivi.
+- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée ({{ fin.availability_lag_h|num(0) }} heures après l'émission), et la sensibilité de la section 2 mesure ce que coûterait une disponibilité à {{ K.late_h|num(0) }} heures au lieu de {{ K.lag_h|num(0) }} ; un délai plus long n'est pas mesuré. Le modèle du NBM change au fil des années sans être suivi.
 - **Une seule prévision pour une province.** Un seul point de prévision tient lieu de la météo du Québec, comme une seule station en v1.
 - **Couverture conditionnelle.** {% if sides.season.under or sides.decile.under or HBS.under %}L'intervalle de v2 sous-couvre {{ groups(sides.season.under, sides.decile.under, HBS.under) }} (section 5).{% if sides.season.under %} Les seuils de couverture de {{ groups(sides.season.under, []) }} sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation.{% endif %}{% else %}Aucune saison, aucun bloc horaire ni aucun décile n'est sous-couvert au sens de la section 5.{% endif %}{% if high_thr %} À l'inverse, le seuil de couverture de {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) dépasse le nominal de {{ nominal|pct(0) }} : une semaine couverte au-delà du nominal peut y être signalée basse.{% endif %}{{ '' }}
 - **Extrapolation.** Sous la plage d'entraînement, les courbes sont des droites ; la queue froide de la règle de décision et le décompte des heures hors plage de la section 3 mesurent ce que cela coûte.
@@ -575,7 +604,7 @@ L'export de {{ HY }} ne révise aucun enregistrement de {{ K.design_years[0] }} 
 {% set DY = drift_years %}
 - **Fausses alertes de dérive en {{ r.year }}.** Les niveaux d'alarme sont le {{ cent(K.centiles.drift_high) }}ᵉ centile des semaines de validation {{ span(K.threshold_years[r.year|string]) }}, dont les références couvraient de {{ DY.temperature.calibration[0] }} à {{ DY.temperature.calibration[1] }} années antérieures pour la prévision de température et de {{ DY.forecast.calibration[0] }} à {{ DY.forecast.calibration[1] }} pour la prévision de demande ; en {{ r.year }}, elles en couvrent {{ DY.temperature.replay }} et {{ DY.forecast.replay }}. Le taux de fausses alertes de dérive en {{ r.year }} n'est pas mesuré.
 - **Règle 4 et un vrai changement de température.** Une dérive réelle et soutenue de la prévision de température, que le modèle suit, performance dans ses seuils, peut donner « examiner les données » : la règle ne distingue pas un vrai changement de la météo d'une erreur de données. La règle reste telle quelle.
-- **Données en temps réel.** Les valeurs sont celles téléchargées le {{ dq.sources.hydroquebec.retrieved_utc[:10] }} (demande) et à partir du {{ (dq.sources.eccc|map(attribute='first_retrieved_utc')|min)[:10] }} (météo observée) ; aucune révision n'est modélisée, et l'arrivée d'une prévision est déduite de son heure d'émission.
+- **Données en temps réel.** Les valeurs sont celles téléchargées le {{ dq.sources.hydroquebec.retrieved_utc[:10] }} (demande), à partir du {{ (dq.sources.eccc|map(attribute='first_retrieved_utc')|min)[:10] }} (météo observée) et à partir du {{ (dq.sources.nbm.years.values()|map(attribute='retrieved_utc')|min)[:10] }} (prévisions NBM) ; aucune révision n'est modélisée, et l'arrivée d'une prévision est déduite de son heure d'émission.
 - **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'agents IA travaillant sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. Les revues ont été faites par des agents à contexte neuf et par un modèle d'IA d'un autre fournisseur, ce qui n'est pas une validation indépendante au sens de SR 11-7.
 
 ## 11. Les bris, sur des données synthétiques
@@ -615,7 +644,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-{% for name, lbl in [('dq', 'qualité des données'), ('validation', 'validation'), ('frozen_2023', 'modèles figés pour ' ~ p.year), ('frozen_2024', 'modèles figés pour ' ~ r.year), ('pseudo_replay', 'répétition de ' ~ p.year), ('replay', 'rejeu de ' ~ r.year ~ ' de cette chaîne'), ('breaks', 'bris'), ('replay_2024_record', 'rejeu de 2024 de référence'), ('replay_2025', 'test de référence de 2025')] if name in runs %}
+{% for name, lbl in [('dq', 'qualité des données'), ('validation', 'validation'), ('frozen_2023', 'modèles figés pour ' ~ p.year), ('frozen_2024', 'modèles figés pour ' ~ r.year), ('pseudo_replay', 'répétition de ' ~ p.year), ('diag_pseudo_replay', 'diagnostics de la répétition de ' ~ p.year ~ ' (section 7)'), ('replay', 'rejeu de ' ~ r.year ~ ' de cette chaîne'), ('diag_replay', 'diagnostics du rejeu de ' ~ r.year ~ ' dont la section 8 montre les chiffres'), ('breaks', 'bris'), ('replay_2024_record', 'rejeu de 2024 de référence'), ('replay_2025', 'test de référence de 2025')] if name in runs %}
 | {{ lbl }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
 {% endfor %}
 

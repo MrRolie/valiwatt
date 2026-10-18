@@ -1488,8 +1488,10 @@ BREAKS = [
        "A report or story that does not open with its status sentence, whatever the status, is refused, English "
        "report"),
     _b(RENDER, f"{T_REND}::test_a_2024_v2_number_without_its_label_is_refused",
-       "Un nombre de v2 sur 2024 sans son étiquette d'évaluation fait refuser le rapport",
-       "A v2 number on 2024 without its evaluation label makes the report refuse"),
+       "Un rejeu de 2024 dont les contrastes ou les verdicts ne portent pas l'étiquette « vu par les développeurs » "
+       "fait refuser le rapport",
+       "A 2024 replay whose contrasts or verdicts do not carry the seen-by-the-developers label makes the report "
+       "refuse"),
     _b(RENDER, f"{T_REND}::test_a_better_claim_without_the_held_out_label_is_refused[fr]",
        "Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait "
        "refuser le rapport, rapport français",

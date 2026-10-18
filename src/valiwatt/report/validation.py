@@ -13,9 +13,11 @@ by side, each result with its evaluation label read from the runs; and refuses t
 more than its runs show (`ReportRefused`): a v2 number on 2024 without its label, a "better" claim without the
 held-out label or from a 2025 that is not clean, a 2025 verdict without a 2025 replay, a test of record other than
 the walk's, a stopped or unfinished start not listed, a clean 2025 that does not confirm v2 without its
-recommendation, revised records or a lead of 75 hours not stated, a standing other than the one the gate logged, a
-record read from the ledger without its label or without the sentence on what only the store holds, v1's 2024
-numbers from anything but its ledger entries, and an attribution block without the NOAA and IEM lines.
+recommendation, revised records or a lead of 75 hours not stated, the values of more revised records quoted than the
+report quotes as evidence, a weekly forecast error from another frame than the replay logged, a standing other than
+the one the gate logged, a record read from the ledger without its label or without the sentence on what only the
+store holds, v1's 2024 numbers from anything but its ledger entries, and an attribution block without the NOAA and
+IEM lines.
 """
 
 from __future__ import annotations
@@ -551,11 +553,19 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
     }
 
 
+# The revised records whose old and new values the report quotes (the first ones, in the artifact's order): every
+# revised hour is listed, with its kind, but a 2025 export revising thousands of hours must not redistribute thousands
+# of Hydro-Québec values (AGENTS.md: the reports quote only a few hourly values, as evidence). The full table stays in
+# the data-quality run's artifact, never committed.
+QUOTED_REVISIONS = 10
+
+
 def held_out_findings(dq: dict, revisions: pd.DataFrame | None, year: int = HELD_OUT) -> dict:
     """What the validation report states from the data-quality run the 2025 test of record read (plan section 13):
     the forecast's coverage of 2025, as the share of its days fed; the days of 2025 no run fed, with their reasons;
     2025's longest lead and whether it reaches the bound of section 9.2's argument; and every 2019-2024 demand record
-    the 2025 export revised (added, removed or changed), a data-quality finding that decides nothing."""
+    the 2025 export revised (added, removed or changed), a data-quality finding that decides nothing: each listed by
+    its hour and kind, the old and new values of the first QUOTED_REVISIONS only (`quoted`; the others: `rest`)."""
     n = nbm_findings(dq)
     days = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq="D")
     unfed = [x for x in n["not_fed"] if str(x["day"])[:4] == str(year)]
@@ -568,7 +578,65 @@ def held_out_findings(dq: dict, revisions: pd.DataFrame | None, year: int = HELD
             "share": 1 - len(unfed) / len(days), "longest": n["longest"].get(year),
             "at_or_above": year in n["at_or_above"], "bound": n["runs"]["reuse_lead_h"],
             "revised": {"records": count, "by_kind": (dq.get("revisions") or {}).get("hydroquebec", {}).get(
-                "by_kind", {}), "rows": rows}}
+                "by_kind", {}), "rows": rows, "quoted": rows[:QUOTED_REVISIONS], "rest": rows[QUOTED_REVISIONS:],
+                "cap": QUOTED_REVISIONS}}
+
+
+# The columns the weekly forecast error is derived from, in a replay's frames/hourly.parquet (monitor/run.py writes
+# them; its `forecast_error` logs the monthly and seasonal aggregates of the same difference).
+WEEKLY_ERROR_COLUMNS = ("day", "temp_forecast", "temp_observed")
+
+
+def _forecast_error_differences(ours: dict, logged: dict) -> list[str]:
+    """Where `ours` (monitor/run.py `forecast_error`, recomputed) and the replay's logged forecast error differ: a
+    month or season one has and the other lacks, other hours, or a mean or mean absolute error not equal (to float
+    rounding, as written to and read from JSON)."""
+    out = []
+    for table in ("by_month", "by_season"):
+        a, b = ours.get(table) or {}, (logged.get(table) or {})
+        for k in sorted(set(a) ^ set(b)):
+            out.append(f"{table} {k}: {'only in the frame' if k in a else 'only in the log'}")
+        for k in sorted(set(a) & set(b)):
+            x, y = a[k], b[k]
+            if int(x["hours"]) != int(y["hours"]):
+                out.append(f"{table} {k}: {x['hours']} hours against {y['hours']}")
+            for f in ("mean_c", "mae_c"):
+                if not np.isclose(float(x[f]), float(y[f]), rtol=1e-9, atol=1e-9):
+                    out.append(f"{table} {k} {f}: {x[f]} against {y[f]}")
+    return out
+
+
+def weekly_forecast_error(hourly: pd.DataFrame, logged: dict | None, year) -> list[dict]:
+    """The temperature forecast's weekly error against the ECCC observation (plan section 9.3: evidence attached to
+    the replay, without a threshold), derived by the report from the replay's own hourly frame: the issued forecast
+    minus the observation at the target hour, on the hours that have both, by the replay's weeks (Monday to Sunday,
+    local standard time, `evaluate.week_of`): its mean, mean absolute error and hours. A frame without those columns
+    is refused, and so is one that is not the frame the replay logged: the monitor's own `forecast_error`, recomputed
+    on it, must give the replay's logged `forecast_error` (`logged`, from its results) month by month and season by
+    season, the same hours and the same mean and mean absolute error. A replay that logged none is refused."""
+    from valiwatt.forecast.evaluate import week_of
+    from valiwatt.monitor.run import forecast_error
+
+    missing = [k for k in WEEKLY_ERROR_COLUMNS if k not in hourly.columns]
+    if missing:
+        raise ReportRefused(f"the {year} replay's hourly frame lacks {missing}: the weekly forecast error is derived "
+                            "from its forecast and observed temperatures")
+    if not logged:
+        raise ReportRefused(f"the {year} replay logged no forecast error: the weekly table cannot be held to the "
+                            "frame the replay logged")
+    differs = _forecast_error_differences(forecast_error(hourly), logged)
+    if differs:
+        raise ReportRefused(f"the {year} replay's hourly frame gives another forecast error than the one the replay "
+                            f"logged ({'; '.join(differs[:5])}): the weekly table would come from another frame than "
+                            "the one the replay logged")
+    err = (hourly["temp_forecast"].astype(float) - hourly["temp_observed"].astype(float)).dropna()
+    day = pd.to_datetime(hourly.loc[err.index, "day"])
+    out = []
+    for _, g in err.groupby(week_of(day).to_numpy(), sort=True):
+        first = day.loc[g.index].min()
+        out.append({"week_start": (first - pd.Timedelta(days=first.dayofweek)).strftime("%Y-%m-%d"),
+                    "mean_c": float(g.mean()), "mae_c": float(g.abs().mean()), "hours": int(len(g))})
+    return out
 
 
 # --- v1's replays, v2's records -----------------------------------------------------------------------------------
@@ -665,8 +733,15 @@ def record_view(c, run, entries: list[dict], year: int) -> dict:
 
 
 def diagnostics(c, run) -> dict | None:
-    """A replay's diagnostics: the results of its latest diagnostic run (kind `diagnostic`, tag `replay_run_id` its
-    run ID) that finished, complete; None when none did."""
+    """A replay's diagnostics: the results of its latest diagnostic run that finished, complete (`diagnostic_run`);
+    None when none did."""
+    d = diagnostic_run(run)
+    return None if d is None else {**_json(c, d, "results/diagnostics.json"), "run_id": d.info.run_id}
+
+
+def diagnostic_run(run):
+    """A replay's latest diagnostic run (kind `diagnostic`, tag `replay_run_id` its run ID) that finished, complete;
+    None when none did."""
     from valiwatt.monitor.run import EXPERIMENT
     from valiwatt.tracking import latest_run
 
@@ -678,7 +753,7 @@ def diagnostics(c, run) -> dict | None:
     if d.info.status != "FINISHED" or d.data.tags.get("status") != "complete" or \
             d.data.tags.get("replay_run_id") != run.info.run_id:
         return None
-    return {**_json(c, d, "results/diagnostics.json"), "run_id": d.info.run_id}
+    return d
 
 
 def differences(a: dict, b: dict) -> list[str]:
@@ -876,7 +951,11 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
     if r_run.data.tags.get("evaluation") != "seen_by_developers":
         raise ReportRefused(f"the 2024 replay {r_run.info.run_id} is tagged {r_run.data.tags.get('evaluation')!r}, "
                             "not seen_by_developers: no v2 number on 2024 is rendered without its label")
-    diag = {"pseudo": diagnostics(c, chain.pseudo), "replay": diagnostics(c, r_run)}
+    diag_runs = {"pseudo": diagnostic_run(chain.pseudo), "replay": diagnostic_run(r_run)}
+    diag = {k: None if d is None else {**_json(c, d, "results/diagnostics.json"), "run_id": d.info.run_id}
+            for k, d in diag_runs.items()}
+    weekly = {k: weekly_forecast_error(_frame(c, run, "frames/hourly.parquet"), x.get("forecast_error"), x.get("year"))
+              for k, run, x in (("pseudo", chain.pseudo, p), ("replay", r_run, r))}
     departures = [departure(c, run) for run in chain.departed]
     v2 = ledger.is_v2(chain.freeze.get("freeze_tag") or ledger.V1_TAG)
     held = held_view(c, chain, entries, starts)
@@ -894,11 +973,25 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
         "rec24": rec24, "rerun24": rerun24, "held": held, "status": status,
         "recommendation": held["recommendation"] if held else None,
         "store_only": bool((rec24 or {}).get("recorded")) or bool(held and held["recorded"]),
-        "runs": {k: {"id": run_id_of(run), "when": _when(run)} for k, run in chain.runs().items()},
+        "weekly_error": weekly,
+        "runs": provenance(chain.runs(), diag_runs),
         "code_sha": code_sha, "rules_sha": rules_sha, "freeze": chain.freeze,
         "commit": chain.replay.data.tags.get("git_commit", "none"),
         "dirty": chain.replay.data.tags.get("git_dirty") != "false",
     }
+
+
+def provenance(runs: dict, diag_runs: dict) -> dict:
+    """The runs the report names in its provenance table and its stamp: the chain's (and the records'), the rehearsal
+    and the 2024 replay each followed by the diagnostic run sections 7 and 8 cite, when one finished
+    (`diag_pseudo_replay`; `diag_replay`, that of the 2024 replay whose numbers section 8 shows)."""
+    out = {}
+    for k, run in runs.items():
+        out[k] = {"id": run_id_of(run), "when": _when(run)}
+        d = {"pseudo_replay": diag_runs.get("pseudo"), "replay": diag_runs.get("replay")}.get(k)
+        if d is not None:
+            out[f"diag_{k}"] = {"id": d.info.run_id, "when": _when(d)}
+    return out
 
 
 def figures(ctx: dict, lang: str, folder: Path | None = None) -> dict:
@@ -943,6 +1036,7 @@ SAY = {
         "recommendation": {"return_or_rule": "revenir à v1 tel que livré ou décider d'un autre modèle",
                            "keep_input_review_family": "garder l'entrée de prévision et revoir la famille"},
         "revised": "enregistrements de 2019 à 2024 révisés par Hydro-Québec",
+        "kind": {"added": "ajouté", "removed": "retiré", "changed": "changé"},
         "unfinished": "n'a pas fini",
         "stopped": "arrêté",
     },
@@ -958,6 +1052,7 @@ SAY = {
         "recommendation": {"return_or_rule": "return to v1 as shipped or rule another model",
                            "keep_input_review_family": "keep the forecast input and review the family"},
         "revised": "2019–2024 records revised by Hydro-Québec",
+        "kind": {"added": "added", "removed": "removed", "changed": "changed"},
         "unfinished": "did not finish",
         "stopped": "stopped",
     },
@@ -1027,15 +1122,27 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
         if f is not None:
             shown, mw = filters(lang)["utc"], filters(lang)["mw"]
             lines = nine.splitlines()
+            rev = f["revised"]
 
-            def listed(x) -> bool:
-                values = f"| {mw(x['old_mw'], x['kind'] != 'added')} | {mw(x['new_mw'], x['kind'] != 'removed')} |"
-                return any(line.startswith(f"| {shown(x['utc'])} |") and line.endswith(values) for line in lines)
+            def quoted(x) -> str:
+                return (f"| {shown(x['utc'])} | {say['kind'][x['kind']]} | {mw(x['old_mw'], x['kind'] != 'added')} | "
+                        f"{mw(x['new_mw'], x['kind'] != 'removed')} |")
 
-            if f["revised"]["records"] and (say["revised"] not in nine or not all(
-                    listed(x) for x in f["revised"]["rows"])):
+            def bare(x) -> str:
+                return f"| {shown(x['utc'])} | {say['kind'][x['kind']]} |"
+
+            # Every revised hour listed with its kind; the old and new values of the first ones only, and of no other:
+            # a page that quotes more Hydro-Québec values than the cap is refused as surely as one that drops a record.
+            if rev["records"] and (say["revised"] not in nine or not all(quoted(x) in lines for x in rev["quoted"])
+                                   or not all(bare(x) in lines for x in rev["rest"])):
                 raise ReportRefused("the revised records the test of record's data-quality run lists are not all "
-                                    "listed, each with its values")
+                                    "listed, each with its kind, the first ones each with its values")
+            hours = {shown(x["utc"]) for x in rev["rows"]}
+            with_values = [line for line in lines if line.startswith("| ") and line.count(" | ") >= 3
+                           and line[2:].split(" | ", 1)[0] in hours]
+            if len(with_values) > rev["cap"]:
+                raise ReportRefused(f"section 9 quotes the values of {len(with_values)} revised records, more than the "
+                                    f"{rev['cap']} the report quotes as evidence")
             if f["at_or_above"] and say["lead_75"] not in nine:
                 raise ReportRefused("a 2025 lead at or above the bound of plan section 9.2 is not stated in section 9")
     nbm = ctx.get("nbm") or {}
