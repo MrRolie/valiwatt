@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `10c78de051d54785b94d58ffba6eea15` (2026-10-17 22:46 UTC), code `c778e08fc0b5`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `718b9c3a51ad46009cf33e04db045e46` (2026-10-18 07:20 UTC), code `c9d98aaa957b`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -36,6 +36,7 @@ _Rapport généré à partir de l'exécution MLflow `10c78de051d54785b94d58ffba6
 | ECCC, SHERBROOKE (7028123) | voir `docs/data-licences.md` | 2026-10-14 | 73 mois | manifeste |
 | ECCC, BAGOTVILLE A (7060400) | voir `docs/data-licences.md` | 2026-10-14 | 73 mois | manifeste |
 | ECCC, TROIS RIVIERES A (7018561) | voir `docs/data-licences.md` | 2026-10-14 | 73 mois | manifeste |
+| NOAA, prévisions NBM (NBS, station CYUL), archive de l'Iowa Environmental Mesonet | voir `docs/data-licences.md` | 2026-10-17 | 6 fichiers annuels | manifeste |
 
 Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les télécharge et chaque fichier est vérifié contre son empreinte avant usage. Hydro-Québec indique une date de modification du jeu de données au 2026-06-05.
 
@@ -61,7 +62,7 @@ Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les tél
 
 ![Demande moyenne journalière, 2019–2023](figures/fr/daily_demand.png)
 
-_Demande moyenne journalière, 2019–2023 (jours complets seulement). Les heures après 2023 ne sont pas tracées : elles sont réservées au rejeu de production. Les contrôles des sections 3 et 4 couvrent toute la fenêtre._
+_Demande moyenne journalière, 2019–2023 (jours complets seulement). Les heures après 2023 ne sont pas tracées : elles appartiennent au rejeu de 2024, vu par les développeurs. Les contrôles des sections 3 et 4 couvrent toute la fenêtre._
 
 ### Contrôles bloquants
 
@@ -71,7 +72,7 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 |---|---|---|---|
 | Fenêtre attendue, aucun enregistrement hors fenêtre | réussi | 0 hors fenêtre | 0 |
 | Chaque doublon correspond à une forme connue | réussi | 0 non résolu | 0 |
-| Valeurs dans des bornes physiques larges (2019–2025) | réussi | 13 294 à 42 473 MW | 5 000 à 60 000 MW |
+| Valeurs dans des bornes physiques larges (2019–2024) | réussi | 13 294 à 42 473 MW | 5 000 à 60 000 MW |
 | Part des heures utilisables | réussi | 99,89 % | ≥ 99 % |
 
 ### 3.1 Retour à l'heure normale : heures masquées

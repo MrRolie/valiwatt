@@ -111,6 +111,30 @@
       },
       "frozen_sha256": "eb412529206f9af7e8dc7a536e36a6c1eff47f252c9da40e44d0787fbab1b2fe",
       "standing": ""
+    },
+    {
+      "run_id": "fac1d0f3813b4499b10e4622c8fc4997",
+      "year": 2024,
+      "freeze_tag": "rules-frozen-v2",
+      "freeze_commit": "825b7bd134a88ad38dc62efe361e30f80321c8be",
+      "rules_sha256": "998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38",
+      "code_sha256": "53b6983300730f26e728fcdaf93e8e4fc23b99007dc1de9164c19a150fe04bc6",
+      "started_utc": "2026-10-18T07:53:18.050Z",
+      "ended_utc": "2026-10-18T07:54:07.008Z",
+      "status": "complete",
+      "mape": 0.025812024206171087,
+      "coverage": 0.9223057644110275,
+      "recommendations": [],
+      "departure": false,
+      "departure_from": [],
+      "evaluation": "seen_by_developers",
+      "model_sha256": "7aadbc5866c62438533417a145a6f1045f3f73fcdaae077172e2c07c5cc4ab04",
+      "verdict": {
+        "shipped": "better",
+        "family": "better"
+      },
+      "frozen_sha256": "eb412529206f9af7e8dc7a536e36a6c1eff47f252c9da40e44d0787fbab1b2fe",
+      "standing": ""
     }
   ]
 }

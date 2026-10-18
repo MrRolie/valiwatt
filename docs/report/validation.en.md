@@ -1,6 +1,6 @@
 # Validating and monitoring a forecast of Québec's electricity demand, v2
 
-_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `c778e08fc0b5`, code hash `521febded2db`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs, and every design constant from the runs or from the code that produced them; none is typed by hand. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
+_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `c9d98aaa957b`, code hash `53b698330073`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs, and every design constant from the runs or from the code that produced them; none is typed by hand. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -21,14 +21,14 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 - Its 90% intervals held demand 90.3% of the time from 2021-01 to 2023-12, and the 95% CI of that coverage contains the nominal. They hold it less often than promised in these groups: winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). These are v2's intervals; coverage is never a criterion of the decision rule.
 - At the 5 busiest hours of 2019–2023, all in 2023-02, demand fell outside the interval 3 times out of 5, always above it. Reported, never judged.
 - 2024 (_seen by the developers_): MAPE 2.58%, coverage 92.2%, no recommendation; verdicts: v2 against v1 as shipped, "better"; v2 against v1's form, "better". A success on a year already seen is weak evidence: it supports no claim; v2 goes to 2025 as frozen (section 8).
-- 2025: pending; the test of record will be the first 2025 replay started under `rules-frozen-v2` (section 9).
+- 2025: pending; the test of record will be the first 2025 replay started under `rules-frozen-v2`, unless that start stops before it finishes and a dated ruling of the owner names the start that takes its place (section 9; plan section 11.3.5).
 - The report also measures what the monitor could miss: on 2023, a sustained 10% rise in demand yielded "retrain" within 10 weeks at 4 of 4 starts, and on 2024 (seen by the developers), at 4 of 4; on 2024, a sustained gap of ±2% between demand and forecast did within 8 weeks at 4 of 8 cases (sections 7, 8 and 10).
 
 ## Model card
 
 | | |
 |---|---|
-| **Status** | **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending. Interval coverage and the busiest hours: beside the status (sections 5 and 9), never in it. |
+| **Status** | **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending. Interval coverage and the busiest hours: beside the status, never in it (coverage: sections 4 (the peak hours), 5, 7 and 8; busiest hours: sections 3, 4, 7 and 8). |
 | **What it forecasts** | Québec's hourly electricity demand as published by Hydro-Québec, for the 24 hours of day D, issued at the end of day D−1 (Eastern Standard Time), with a 90% prediction interval. |
 | **Intended use** | To show, on a real forecast, validation and monitoring of the kind a model-risk team does. |
 | **Out of scope** | Any operational dispatch, any trading or pricing, any decision. Hydro-Québec publishes this data for information; it is not official data. |
@@ -47,8 +47,8 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 - **Walk-forward validation.** Each month from 2020 to 2023 is forecast by models refitted on the hours before it only, less the last 7 days (the embargo). The three models compared are fitted on the same folds: v2, v1's form on the same forecast and v1 as shipped, rebuilt in v2's harness.
 - **The error.** The mean absolute percentage error (MAPE): on average, by how much the forecast misses actual demand. The signed bias says in which direction: bias = (demand − forecast) / demand, positive when the forecast is too low.
 - **The uncertainty of a mean.** Neighbouring hours share the weather; so whole weeks are resampled, 1,000 times, to get a 95% interval around each mean.
-- **The decision rule, fixed before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a 95% interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the 5th percentile of those of 2019–2023 (−12.0 °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than 120 cold hours or fewer than 4 weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
-- **Beside, never judged.** The 5 busiest hours of each year judged (by actual demand, among all the hours that have one): each model's signed error, or why it has no forecast. The coverage of v2's intervals, with the sentence on its 90% (section 5).
+- **The decision rule, fixed in the plan before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a 95% interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the 5th percentile of those of 2019–2023 (−12.0 °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than 120 cold hours or fewer than 4 weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
+- **Beside, never judged.** The 5 busiest hours of each period judged, 2020–2023 as one period, then each replayed year (by actual demand, among all the hours that have one): each model's signed error, or why it has no forecast. The coverage of v2's intervals, with the sentence on its 90% (section 5).
 - **The prediction interval.** Its half-width is a quantile of the relative errors |demand − forecast| / forecast. For each validation month, it is the quantile of rank ⌈(n + 1) × 0.90⌉ of the n out-of-sample errors of the 12 months before, already scored when that month's model is fitted; for the frozen model, the same quantile over the errors of the 12 months before the replayed year, already scored when it is fitted. It is the form of a split conformal interval, without its finite-sample coverage guarantee: these hourly errors are autocorrelated and come from other models. The only evidence is the coverage measured out of sample.
 - **The frozen model.** In production the model is not refitted: it is fitted once, frozen with its hash, then replayed hour by hour.
 - **The thresholds.** For each season, the weekly thresholds are quantiles of v2's validation weeks: MAPE above the 95th percentile, bias outside the 2.5th–97.5th percentile range, coverage below the 5th percentile.
@@ -88,7 +88,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 | 2023 | summer | +0.14 °C | 0.91 °C | 2,203 |
 | 2023 | winter | −0.09 °C | 1.35 °C | 2,159 |
 
-**The sensitivity to the availability margin.** Validated also with forecasts available 6 hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by +0.02 pt [+0.01 pt, +0.02 pt] (6 hours minus 2, over 35,036 hours): this is what, at most, the availability assumption is worth. This variant is labelled and chooses nothing.
+**The sensitivity to the availability margin.** Validated also with forecasts available 6 hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by +0.02 pt [+0.01 pt, +0.02 pt] (6 hours minus 2, over 35,036 hours): this is what an availability of 6 hours instead of 2 would cost; a longer delay is not measured. This variant is labelled and chooses nothing.
 
 **31 December 2023.** Its last two hours need the 2024-01-01 06:00 UTC point of a forecast issued on 31 December and available before that day's origin: the information is 2023's, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of 2020–2023 hold 24 more than the trial's.
 
@@ -110,7 +110,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 | same hour, one week earlier (naive baseline) | 7.81% | [7.14%, 8.44%] | −0.60% | 35,046 |
 | v1 as shipped, mean of the 6 stations (sensitivity) | 4.45% | [4.17%, 4.73%] | −0.01% | 35,013 |
 
-**The choice's tracked values**, on the 34,997 common hours (209 weeks; _in sample for the choice of family and input_): MAPE 2.83% for v2, 3.48% for v1's form on the forecast, 4.42% for v1 as shipped. Signed error at the 5 busiest of these hours (demand minus forecast, over demand; positive when the forecast is too low): v2, the GAM on the forecast (production), +5.7% on average; v1's form on the forecast, +12.8% on average; v1 as shipped (the day before's weather), +27.0% on average. The hours each model lacks, by reason: v2, the GAM on the forecast (production): the week before's demand unavailable (9), the day before's demand unavailable (10); v1's form on the forecast: the week before's demand unavailable (9), the day before's demand unavailable (10); v1 as shipped (the day before's weather): the week before's demand unavailable (9), the day before's demand unavailable (10), the day before's temperature missing (39); without usable demand: 9.
+**The choice's tracked values**, on the 34,997 common hours (209 weeks; _in sample for the choice of family and input_): MAPE 2.83% for v2, 3.48% for v1's form on the forecast, 4.42% for v1 as shipped. Signed error at the 5 busiest hours of 2020–2023, among all the hours that have a demand (demand minus forecast, over demand; positive when the forecast is too low): v2, the GAM on the forecast (production), +5.7% on average; v1's form on the forecast, +12.8% on average; v1 as shipped (the day before's weather), +27.0% on average. The hours each model lacks, by reason: v2, the GAM on the forecast (production): the week before's demand unavailable (9), the day before's demand unavailable (10); v1's form on the forecast: the week before's demand unavailable (9), the day before's demand unavailable (10); v1 as shipped (the day before's weather): the week before's demand unavailable (9), the day before's demand unavailable (10), the day before's temperature missing (39); without usable demand: 9.
 
 | Comparison (_in sample for the choice of family and input_) | MAPE difference | 95% CI | State |
 |---|---|---|---|
@@ -224,6 +224,155 @@ Cold tail (_in sample for the choice of family and input_): 1,468 common hours b
 | 21 h | −28 °C | +17,029 MW | +23,803 MW |
 | 22 h | −28 °C | +16,237 MW | +23,214 MW |
 | 23 h | −28 °C | +16,137 MW | +23,318 MW |
+
+### 3.1 Conceptual soundness, added after the freeze
+
+_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for 2023 and for 2024 and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the 2025 verdict stays as the plan pre-registers it. Run `6af4421e1e8f466a845118761947a708`._
+
+The settings were fixed before these measures were computed on the real runs: the heating base, 18 °C, is v1's, fixed before any v2 curve existed and the temperature at which every curve is zero (a base read off these curves would fit the check to what it checks); the tolerance is 1 MW per 1 °C step, one unit of the whole MW the report prints the curves in, so that the check is no finer than the page that states it; a fold is flagged when its slope leaves the folds' 5th to 95th percentile band by more than 0.5 times its width (10% of the folds lie outside the band by construction, so a flag needs a distance past its edge, and one measured in the band's own width holds at every hour whatever its spread). The developers had, however, already looked at the curves table of the model frozen for 2024 before fixing them.
+
+**The reading.** Given the demand of the day before and of the week before, each degree colder between −20 and −5 °C adds 306 to 385 MW to the forecast depending on the hour (343 at the median): the most at 17 h, the least at 10 h. Without the lags, the same slope runs from 427 to 536 MW (481 at the median). Between −5 and 10 °C, it runs from 280 to 388 MW with the lags. On the warm side, each degree warmer between 18 and 28 °C adds 91 to 171 MW with the lags: cooling. Depending on the hour, the curve with the lags is lowest between 14 and 19 °C. The sum of the two lag coefficients, 0.454, is below 1: a one-off shock fades.
+
+#### Shape (added after the freeze; decides nothing)
+
+Over each frozen model's training range, in 1 °C steps: below 18 °C, a step colder must not lower the curve by more than 1 MW (heating); above it, a step warmer must not lower it by more than 1 MW (cooling). Each step that breaks its side, with its change:
+
+| Hour | With the lags, 2024 | Without the lags, 2024 | With the lags, 2023 | Without the lags, 2023 |
+|---|---|---|---|---|
+| 0 h | 16→15 °C: −25 MW; 17→16 °C: −46 MW; 18→17 °C: −66 MW | 16→15 °C: −7 MW; 17→16 °C: −65 MW; 18→17 °C: −108 MW | 15→14 °C: −4 MW; 16→15 °C: −27 MW; 17→16 °C: −45 MW; 18→17 °C: −65 MW | 16→15 °C: −10 MW; 17→16 °C: −79 MW; 18→17 °C: −126 MW |
+| 1 h | 15→14 °C: −12 MW; 16→15 °C: −25 MW; 17→16 °C: −33 MW; 18→17 °C: −50 MW | 16→15 °C: −5 MW; 17→16 °C: −41 MW; 18→17 °C: −77 MW | 15→14 °C: −17 MW; 16→15 °C: −28 MW; 17→16 °C: −34 MW; 18→17 °C: −50 MW | 16→15 °C: −11 MW; 17→16 °C: −50 MW; 18→17 °C: −86 MW |
+| 2 h | 15→14 °C: −14 MW; 16→15 °C: −25 MW; 17→16 °C: −30 MW; 18→17 °C: −46 MW | 16→15 °C: −2 MW; 17→16 °C: −35 MW; 18→17 °C: −70 MW | 15→14 °C: −19 MW; 16→15 °C: −29 MW; 17→16 °C: −35 MW; 18→17 °C: −50 MW | 16→15 °C: −11 MW; 17→16 °C: −46 MW; 18→17 °C: −79 MW |
+| 3 h | 15→14 °C: −17 MW; 16→15 °C: −24 MW; 17→16 °C: −27 MW; 18→17 °C: −41 MW | 16→15 °C: −1 MW; 17→16 °C: −30 MW; 18→17 °C: −62 MW | 15→14 °C: −25 MW; 16→15 °C: −30 MW; 17→16 °C: −30 MW; 18→17 °C: −43 MW | 16→15 °C: −12 MW; 17→16 °C: −38 MW; 18→17 °C: −65 MW |
+| 4 h | 15→14 °C: −17 MW; 16→15 °C: −24 MW; 17→16 °C: −27 MW; 18→17 °C: −41 MW | 17→16 °C: −26 MW; 18→17 °C: −57 MW | 14→13 °C: −3 MW; 15→14 °C: −27 MW; 16→15 °C: −29 MW; 17→16 °C: −26 MW; 18→17 °C: −37 MW | 16→15 °C: −8 MW; 17→16 °C: −27 MW; 18→17 °C: −53 MW |
+| 5 h | 17→16 °C: −4 MW; 18→17 °C: −22 MW | 18→17 °C: −19 MW | 16→15 °C: −3 MW; 17→16 °C: −9 MW; 18→17 °C: −26 MW | 18→17 °C: −25 MW |
+| 6 h | — | — | — | — |
+| 7 h | — | — | 18→17 °C: −11 MW | — |
+| 8 h | 18→17 °C: −5 MW | — | 18→17 °C: −18 MW | 18→17 °C: −21 MW |
+| 9 h | 18→17 °C: −11 MW | — | 18→17 °C: −18 MW | 18→17 °C: −12 MW |
+| 10 h | — | — | — | — |
+| 11 h | — | 18→19 °C: −7 MW | — | 18→19 °C: −8 MW |
+| 12 h | — | 18→19 °C: −14 MW | 18→19 °C: −11 MW | 18→19 °C: −24 MW |
+| 13 h | 18→19 °C: −20 MW | 18→19 °C: −37 MW | 18→19 °C: −34 MW | 18→19 °C: −51 MW |
+| 14 h | 18→19 °C: −16 MW | 18→19 °C: −30 MW | 18→19 °C: −29 MW | 18→19 °C: −42 MW |
+| 15 h | 18→19 °C: −17 MW | 18→19 °C: −31 MW | 18→19 °C: −29 MW | 18→19 °C: −42 MW |
+| 16 h | 18→19 °C: −26 MW | 18→19 °C: −54 MW | 18→19 °C: −38 MW | 18→19 °C: −65 MW; 19→20 °C: −9 MW |
+| 17 h | 18→19 °C: −10 MW | 18→19 °C: −39 MW | 18→19 °C: −22 MW | 18→19 °C: −49 MW |
+| 18 h | — | 18→19 °C: −20 MW | 18→19 °C: −11 MW | 18→19 °C: −33 MW |
+| 19 h | — | — | — | 18→19 °C: −6 MW |
+| 20 h | 18→17 °C: −33 MW | 18→17 °C: −32 MW | 18→17 °C: −24 MW | 18→17 °C: −31 MW |
+| 21 h | 17→16 °C: −25 MW; 18→17 °C: −61 MW | 17→16 °C: −25 MW; 18→17 °C: −91 MW | 17→16 °C: −29 MW; 18→17 °C: −65 MW | 17→16 °C: −37 MW; 18→17 °C: −106 MW |
+| 22 h | 16→15 °C: −3 MW; 17→16 °C: −43 MW; 18→17 °C: −75 MW | 17→16 °C: −60 MW; 18→17 °C: −122 MW | 16→15 °C: −7 MW; 17→16 °C: −44 MW; 18→17 °C: −74 MW | 17→16 °C: −70 MW; 18→17 °C: −135 MW |
+| 23 h | 16→15 °C: −16 MW; 17→16 °C: −45 MW; 18→17 °C: −71 MW | 17→16 °C: −69 MW; 18→17 °C: −124 MW | 16→15 °C: −17 MW; 17→16 °C: −41 MW; 18→17 °C: −66 MW | 17→16 °C: −77 MW; 18→17 °C: −134 MW |
+
+#### Size (added after the freeze; decides nothing)
+
+The cold slope from −20 to −5 °C, in MW per °C colder, by hour, and the band of the 48 refitted folds (with the lags):
+
+| Hour | With the lags, 2024 | Without the lags, 2024 | With the lags, 2023 | Without the lags, 2023 | Folds, 5th to 95th percentile |
+|---|---|---|---|---|---|
+| 0 h | 334 | 466 | 337 | 474 | 337 to 353 |
+| 1 h | 340 | 477 | 344 | 485 | 332 to 350 |
+| 2 h | 344 | 483 | 348 | 491 | 326 to 354 |
+| 3 h | 345 | 483 | 349 | 491 | 321 to 354 |
+| 4 h | 346 | 485 | 350 | 493 | 319 to 356 |
+| 5 h | 346 | 485 | 351 | 493 | 323 to 357 |
+| 6 h | 343 | 482 | 348 | 489 | 321 to 355 |
+| 7 h | 356 | 498 | 361 | 504 | 333 to 369 |
+| 8 h | 339 | 478 | 343 | 485 | 309 to 350 |
+| 9 h | 320 | 451 | 322 | 460 | 290 to 328 |
+| 10 h | 306 | 429 | 308 | 438 | 290 to 313 |
+| 11 h | 309 | 427 | 308 | 432 | 303 to 329 |
+| 12 h | 322 | 438 | 325 | 451 | 320 to 358 |
+| 13 h | 335 | 454 | 346 | 471 | 334 to 406 |
+| 14 h | 356 | 480 | 371 | 494 | 355 to 459 |
+| 15 h | 379 | 510 | 382 | 511 | 371 to 498 |
+| 16 h | 376 | 517 | 378 | 532 | 374 to 510 |
+| 17 h | 385 | 536 | 373 | 536 | 375 to 509 |
+| 18 h | 365 | 515 | 350 | 511 | 353 to 471 |
+| 19 h | 353 | 502 | 340 | 499 | 343 to 435 |
+| 20 h | 345 | 490 | 335 | 491 | 339 to 423 |
+| 21 h | 333 | 474 | 327 | 476 | 331 to 397 |
+| 22 h | 329 | 466 | 327 | 471 | 331 to 380 |
+| 23 h | 329 | 463 | 329 | 469 | 331 to 359 |
+
+Model frozen for 2024: training range from −28.3 to 34.4 °C. Model frozen for 2023: training range from −27.8 to 34.4 °C. Over every hour, the slopes from −5 to 10 °C of the model frozen for 2024: with the lags, 280 to 388 MW; without, 492 to 685 MW. Warm slope from 18 to 28 °C: with the lags, 91 to 171 MW per °C warmer; without, 141 to 251 MW. A cold slope that is not positive would be a finding.
+
+**An independent public figure.** Radio-Canada (Thomas Gerbet, « Grand froid : le jour où Hydro-Québec a atteint sa pointe de frayeur », published 2025-01-20, read 2026-10-17, <https://ici.radio-canada.ca/nouvelle/2133488/froid-pointe-hydro-quebec-frayeur-record-postes-documents>), in French: « Une variation d’un degré Celsius représente 500 MW d’impact sur la charge à alimenter, dit la porte-parole de la société d'État, Caroline Des Rosiers. » ("A one-degree Celsius change represents a 500 MW impact on the load to be supplied, says the Crown corporation's spokesperson, Caroline Des Rosiers.") The figure gives neither the temperature it is a change of, nor the hours, nor the year, nor whether it allows for the day before's demand: the comparison with the slopes above is not like for like. The slope without the lags from −20 to −5 °C, the closest to a sensitivity of demand itself, has a median of 481 MW per °C, beside the figure quoted: setting them side by side validates nothing.
+
+![Cold slopes by hour](figures/validation/validation-soundness-slopes.en.png)
+
+#### Stability (added after the freeze; decides nothing)
+
+**Between the two freezes.** Over their common training range (−27.8 to 34.4 °C), the curves with the lags of the model frozen for 2024 differ from those of the model frozen for 2023 by at most 3,030 MW, and their cold slope from −20 to −5 °C changes by −4.1% to +4.3% depending on the hour; without the lags, by at most 3,073 MW and by −3.7% to +0.8%. The curves are zero at 18 °C: their difference grows away from that temperature.
+
+| Hour | Largest difference (MW) | At (°C) | Cold slope, 2023 | Cold slope, 2024 | Change |
+|---|---|---|---|---|---|
+| 0 h | 1,588 | −27 | 337 | 334 | −1.0% |
+| 1 h | 1,555 | −27 | 344 | 340 | −1.1% |
+| 2 h | 1,457 | −27 | 348 | 344 | −1.3% |
+| 3 h | 1,367 | −27 | 349 | 345 | −1.2% |
+| 4 h | 1,164 | −27 | 350 | 346 | −1.1% |
+| 5 h | 754 | −27 | 351 | 346 | −1.4% |
+| 6 h | 384 | −27 | 348 | 343 | −1.6% |
+| 7 h | 179 | −3 | 361 | 356 | −1.4% |
+| 8 h | 301 | −27 | 343 | 339 | −1.1% |
+| 9 h | 703 | −27 | 322 | 320 | −0.9% |
+| 10 h | 707 | −27 | 308 | 306 | −0.6% |
+| 11 h | 531 | −27 | 308 | 309 | +0.2% |
+| 12 h | 1,073 | −27 | 325 | 322 | −1.1% |
+| 13 h | 1,713 | −27 | 346 | 335 | −3.1% |
+| 14 h | 1,870 | −27 | 371 | 356 | −4.1% |
+| 15 h | 265 | −27 | 382 | 379 | −0.9% |
+| 16 h | 504 | −27 | 378 | 376 | −0.5% |
+| 17 h | 2,270 | −27 | 373 | 385 | +3.4% |
+| 18 h | 2,790 | −27 | 350 | 365 | +4.3% |
+| 19 h | 3,030 | −27 | 340 | 353 | +4.1% |
+| 20 h | 2,845 | −27 | 335 | 345 | +2.9% |
+| 21 h | 2,682 | −27 | 327 | 333 | +1.8% |
+| 22 h | 1,989 | −27 | 327 | 329 | +0.6% |
+| 23 h | 1,724 | −27 | 329 | 329 | +0.1% |
+
+**Across the folds.** The GAM refitted at the ruled settings on each of validation's 48 folds reproduces its out-of-sample forecasts exactly on its 35,045 hours (the control: beyond 1 × 10⁻⁶ MW, the run stops). Each hour's band is in the size table. Folds whose slope leaves the band by more than 0.5 times its width: 2020-01 at 0 h (364 MW per °C); 2020-02 at 3 h (305 MW per °C); 2020-01 at 4 h (300 MW per °C); 2020-02 at 4 h (300 MW per °C); 2020-01 at 5 h (303 MW per °C); 2020-01 at 6 h (298 MW per °C); 2020-01 at 7 h (314 MW per °C). Neither frozen model leaves it so.
+
+#### The lags (added after the freeze; decides nothing)
+
+| Coefficient, in MW per MW | 2023 | 2024 | Folds: 5th, 50th, 95th percentile |
+|---|---|---|---|
+| The day before's demand | 0.384 | 0.389 | 0.371, 0.385, 0.392 |
+| The week before's demand | 0.071 | 0.065 | 0.065, 0.073, 0.090 |
+| Sum | 0.455 | 0.454 | 0.443, 0.457, 0.481 |
+
+A 1,000 MW rise in the day before's demand carries about 389 MW into the next day's forecast; with the coefficients summing to less than 1, a one-off shock fades from one forecast to the next. In every fold, both coefficients are positive and their sum is below 1. Measured on the model frozen for 2024: without the lags, each hour's cold slope from −20 to −5 °C is steeper by 116 to 151 MW per °C; the curve with the lags keeps 70 to 74% of it. These are measured differences, given without a theory: at every hour, the curve with the lags is the flatter of the two.
+
+#### Sensitivity in the sense of SR 11-7 (added after the freeze; decides nothing)
+
+**The input** (_in sample: the frozen model's own training rows_). The model frozen for 2024, on its own training rows of 2023 (8,588 hours), with the temperature forecast moved by ±1 °C:
+
+| Move | Mean change | In % | Winter | Spring | Summer | Fall | MW per °C warmer |
+|---|---|---|---|---|---|---|---|
+| +1 °C | −148 MW | −0.58% | −332 MW (−1.22%) | −234 MW (−1.05%) | +102 MW (+0.57%) | −147 MW (−0.66%) | −148 |
+| −1 °C | +163 MW | +0.66% | +331 MW (+1.21%) | +250 MW (+1.15%) | −79 MW (−0.44%) | +165 MW (+0.78%) | −163 |
+
+Each change is its hour's curve difference over the move, to within 1.1 × 10⁻¹¹ MW: an identity of an additive model, which the computation checks; it would hold whatever the data.
+
+**The settings** (_in sample for the choice of family and input_). The MAPE on validation's folds and hours, each setting changed alone, beside the ruled settings (10 knots, alpha 1.0: 2.827% on 35,036 hours). These variants do not change the model: they say how much the result leans on each setting.
+
+| Setting (_in sample for the choice of family and input_) | Value | MAPE | Difference | 95% CI |
+|---|---|---|---|---|
+| Number of knots | 8 | 2.822% | −0.004 pt | [−0.010 pt, 0.000 pt] |
+| Number of knots | 12 | 2.832% | +0.005 pt | [+0.001 pt, +0.009 pt] |
+| Ridge alpha | 0.5 | 2.827% | 0.000 pt | [0.000 pt, 0.000 pt] |
+| Ridge alpha | 2.0 | 2.826% | 0.000 pt | [0.000 pt, 0.000 pt] |
+
+#### Findings (added after the freeze; decides nothing)
+
+- Finding (added after the freeze; decides nothing): the curve with the lags of the model frozen for 2023 has steps that break their side (count: 43; on both sides of 18 °C), the largest −74 MW at 22 h.
+- Finding (added after the freeze; decides nothing): the curve without the lags of the model frozen for 2023 has steps that break their side (count: 35; on both sides of 18 °C), the largest −135 MW at 22 h.
+- Finding (added after the freeze; decides nothing): the curve with the lags of the model frozen for 2024 has steps that break their side (count: 37; on both sides of 18 °C), the largest −75 MW at 22 h.
+- Finding (added after the freeze; decides nothing): the curve without the lags of the model frozen for 2024 has steps that break their side (count: 30; on both sides of 18 °C), the largest −124 MW at 23 h.
+- Finding (added after the freeze; decides nothing): fold slopes leave the band (count: 7; folds 2020-01, 2020-02).
+
+The curves with the lags of the model frozen for 2024 are lowest between 14 and 19 °C depending on the hour; v1's base, fixed in advance, is 18 °C; their steps that break their side all lie between 14 and 19 °C. These findings change neither the model, nor its rules, nor the 2025 verdict.
 
 ## 4. Test cases
 
@@ -354,7 +503,75 @@ MAPE difference (frozen minus refitted), on the same 8,753 hours: +0.04 pt [+0.0
 | v2 against v1's form on the same forecast | −0.59 pt | [−0.82 pt, −0.36 pt] | better |
 | v1's form on the forecast against v1 as shipped (reported, never judged) | −0.83 pt | [−1.27 pt, −0.40 pt] | better |
 
-Verdicts (_rehearsal on a design year_): "better" against v1 as shipped, "better" against v1's form; they decide nothing.
+Verdicts (_rehearsal on a design year_): "better" against v1 as shipped, "better" against v1's form; they decide nothing. Cold tail (_rehearsal on a design year_): 181 common hours below the threshold of −12.0 °C, spread over 9 Monday-to-Sunday weeks; it is testable (at least 120 hours and 4 weeks): v2 against v1 as shipped, −6.78 pt [−8.50 pt, −4.40 pt] (better); v2 against v1's form, −1.65 pt [−2.42 pt, −0.63 pt] (better).
+
+| Hour ending (UTC) (_rehearsal on a design year_) | Demand | Forecast temperature | v2 | v1's form on the forecast | v1 as shipped |
+|---|---|---|---|---|---|
+| 2023-02-03 23:00 UTC | 42,473 MW | −25.2 °C | +4.6% | +13.5% | +27.0% | 
+| 2023-02-04 00:00 UTC | 42,254 MW | −25.6 °C | +6.8% | +13.0% | +26.8% | 
+| 2023-02-04 01:00 UTC | 41,799 MW | −25.7 °C | +8.5% | +13.0% | +27.2% | 
+| 2023-02-04 02:00 UTC | 41,141 MW | −25.9 °C | +9.6% | +13.1% | +28.0% | 
+| 2023-02-03 22:00 UTC | 40,585 MW | −24.8 °C | +0.5% | +11.9% | +26.3% | 
+
+
+**The temperature forecast's weekly error in 2023** (_rehearsal on a design year_): the issued forecast minus the temperature observed at Montréal (ECCC) at the target hour, on the hours that have both, by replay week (Monday to Sunday, standard time). The report derives it from the replay's hourly frame (`frames/hourly.parquet`), held to the replay's log: the monthly and seasonal errors it gives are those the replay logged, hours, means and mean absolute errors. Evidence attached to the replay, without a threshold: it decides nothing.
+
+| Week of (_rehearsal on a design year_) | Mean gap | Mean absolute gap | Hours |
+|---|---|---|---|
+| 2022-12-26 | −0.16 °C | 0.36 °C | 24 |
+| 2023-01-02 | +0.31 °C | 1.27 °C | 168 |
+| 2023-01-09 | +0.29 °C | 1.38 °C | 168 |
+| 2023-01-16 | −1.23 °C | 1.54 °C | 168 |
+| 2023-01-23 | −0.73 °C | 1.72 °C | 168 |
+| 2023-01-30 | +1.03 °C | 2.19 °C | 167 |
+| 2023-02-06 | −0.32 °C | 1.26 °C | 168 |
+| 2023-02-13 | −1.17 °C | 1.37 °C | 168 |
+| 2023-02-20 | +0.44 °C | 1.19 °C | 168 |
+| 2023-02-27 | −0.05 °C | 1.00 °C | 168 |
+| 2023-03-06 | +0.19 °C | 1.42 °C | 168 |
+| 2023-03-13 | −0.24 °C | 0.87 °C | 168 |
+| 2023-03-20 | +0.05 °C | 1.05 °C | 168 |
+| 2023-03-27 | +0.22 °C | 1.18 °C | 168 |
+| 2023-04-03 | 0.00 °C | 1.39 °C | 168 |
+| 2023-04-10 | −1.20 °C | 1.86 °C | 168 |
+| 2023-04-17 | +1.22 °C | 1.44 °C | 168 |
+| 2023-04-24 | +0.68 °C | 1.24 °C | 168 |
+| 2023-05-01 | −0.19 °C | 1.06 °C | 168 |
+| 2023-05-08 | −0.41 °C | 0.82 °C | 168 |
+| 2023-05-15 | +0.30 °C | 1.24 °C | 168 |
+| 2023-05-22 | +0.11 °C | 1.00 °C | 166 |
+| 2023-05-29 | +0.48 °C | 1.09 °C | 168 |
+| 2023-06-05 | −0.13 °C | 0.70 °C | 168 |
+| 2023-06-12 | +0.54 °C | 1.24 °C | 168 |
+| 2023-06-19 | −0.01 °C | 0.88 °C | 168 |
+| 2023-06-26 | +0.73 °C | 1.26 °C | 166 |
+| 2023-07-03 | +0.12 °C | 0.71 °C | 168 |
+| 2023-07-10 | +0.06 °C | 0.88 °C | 168 |
+| 2023-07-17 | −0.32 °C | 0.79 °C | 167 |
+| 2023-07-24 | +0.80 °C | 1.16 °C | 167 |
+| 2023-07-31 | −0.34 °C | 0.79 °C | 168 |
+| 2023-08-07 | −0.12 °C | 0.78 °C | 168 |
+| 2023-08-14 | +0.02 °C | 0.72 °C | 168 |
+| 2023-08-21 | +0.03 °C | 0.89 °C | 168 |
+| 2023-08-28 | 0.00 °C | 0.61 °C | 166 |
+| 2023-09-04 | +0.42 °C | 0.78 °C | 168 |
+| 2023-09-11 | −0.02 °C | 0.75 °C | 168 |
+| 2023-09-18 | +0.17 °C | 0.66 °C | 164 |
+| 2023-09-25 | +0.50 °C | 0.74 °C | 168 |
+| 2023-10-02 | +0.21 °C | 0.93 °C | 167 |
+| 2023-10-09 | −0.10 °C | 0.61 °C | 168 |
+| 2023-10-16 | −0.06 °C | 0.80 °C | 168 |
+| 2023-10-23 | −0.09 °C | 0.68 °C | 168 |
+| 2023-10-30 | +0.10 °C | 0.83 °C | 168 |
+| 2023-11-06 | +0.10 °C | 1.01 °C | 168 |
+| 2023-11-13 | −0.20 °C | 1.07 °C | 168 |
+| 2023-11-20 | −0.01 °C | 0.72 °C | 168 |
+| 2023-11-27 | +0.35 °C | 0.88 °C | 168 |
+| 2023-12-04 | +0.03 °C | 1.57 °C | 168 |
+| 2023-12-11 | −0.92 °C | 1.09 °C | 168 |
+| 2023-12-18 | +0.47 °C | 0.82 °C | 168 |
+| 2023-12-25 | +0.56 °C | 1.19 °C | 168 |
+
 
 **Rule 2 on 2023.** Its first wording (MAPE or bias beyond its threshold 2 weeks in a row, in any combination) says "retrain" in the week of 2023-06-26 (the week before: MAPE 2.52%, bias +0.41% outside its band; that week: MAPE 1.83%, bias +0.52% outside its band), then in the week of 2023-07-31 (the week before: MAPE 1.34%, bias −0.07% outside its band; that week: MAPE 1.40%, bias +0.31% outside its band). Week of 2023-06-26: the bias, low side is beyond its threshold in both weeks, but without each week's 2 most extreme days it is +1.84% then +1.43% against a threshold of +0.60%: neither week is broadly beyond it; so the rule kept sees nothing. Week of 2023-07-31: the bias, low side is beyond its threshold in both weeks, but without each week's 2 most extreme days it is +0.34% then +0.82% against a threshold of +0.60%: one of the two weeks is not broadly beyond it; so the rule kept sees nothing.
 
@@ -452,9 +669,9 @@ _Every number in this section is of 2024, seen by the developers: seen through v
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (frozen first), recorded in the ledger | — | 4.23% | 89.4% | none |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (after its departure), recorded in the ledger | — | 4.23% | 89.4% | none |
-| v2, `18daf1fc40a24300aeaba5e4f14d4107` | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, `fac1d0f3813b4499b10e4622c8fc4997` | _seen by the developers_ | 2.58% | 92.2% | none |
 
-**v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `9f87c124e34344a8a65e4a7679c3c458`: MAPE 4.23% against 4.23% (relative gap 0.0e+00), coverage 89.4% against 89.4%, which the eve fix of the replayed year moves (plan section 6.3).
+**v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `9f87c124e34344a8a65e4a7679c3c458`: MAPE 4.23% against 4.23% (relative gap 0.0e+00), coverage 89.39% against 89.43% (−0.04 pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
 | Model (_seen by the developers_) | MAPE | 95% CI | Coverage | Hours |
 |---|---|---|---|---|
@@ -479,7 +696,66 @@ Verdicts (_seen by the developers_): v2 against v1 as shipped, "better"; v2 agai
 | 2024-01-20 00:00 UTC | 35,668 MW | −15.0 °C | +2.3% | +3.2% | +8.7% | 
 
 
-**The temperature forecast's error in 2024** (forecast minus observation at the scored hours; _seen by the developers_), by season: winter, −0.02 °C on average and 1.19 °C in absolute terms (2,178 hours); spring, +0.07 °C on average and 1.06 °C in absolute terms (2,202 hours); summer, +0.13 °C on average and 0.87 °C in absolute terms (2,201 hours); fall, +0.11 °C on average and 0.82 °C in absolute terms (2,183 hours). Evidence attached to the replay, without a threshold.
+**The temperature forecast's error in 2024** (forecast minus observation at the replayed hours that have both; _seen by the developers_), by season: winter, −0.02 °C on average and 1.19 °C in absolute terms (2,178 hours); spring, +0.07 °C on average and 1.06 °C in absolute terms (2,202 hours); summer, +0.13 °C on average and 0.87 °C in absolute terms (2,201 hours); fall, +0.11 °C on average and 0.82 °C in absolute terms (2,183 hours). Evidence attached to the replay, without a threshold.
+
+**The temperature forecast's weekly error in 2024** (_seen by the developers_): the issued forecast minus the temperature observed at Montréal (ECCC) at the target hour, on the hours that have both, by replay week (Monday to Sunday, standard time). The report derives it from the replay's hourly frame (`frames/hourly.parquet`), held to the replay's log: the monthly and seasonal errors it gives are those the replay logged, hours, means and mean absolute errors. Evidence attached to the replay, without a threshold: it decides nothing.
+
+| Week of (_seen by the developers_) | Mean gap | Mean absolute gap | Hours |
+|---|---|---|---|
+| 2024-01-01 | +0.93 °C | 1.24 °C | 168 |
+| 2024-01-08 | −0.58 °C | 1.31 °C | 165 |
+| 2024-01-15 | −0.57 °C | 1.03 °C | 167 |
+| 2024-01-22 | −0.28 °C | 1.16 °C | 168 |
+| 2024-01-29 | −0.88 °C | 1.03 °C | 168 |
+| 2024-02-05 | −1.44 °C | 1.83 °C | 166 |
+| 2024-02-12 | +0.57 °C | 1.05 °C | 168 |
+| 2024-02-19 | +0.19 °C | 1.02 °C | 168 |
+| 2024-02-26 | +0.47 °C | 1.39 °C | 168 |
+| 2024-03-04 | +0.58 °C | 1.19 °C | 166 |
+| 2024-03-11 | −0.40 °C | 1.07 °C | 168 |
+| 2024-03-18 | +0.83 °C | 0.99 °C | 168 |
+| 2024-03-25 | −0.53 °C | 0.95 °C | 167 |
+| 2024-04-01 | +0.17 °C | 0.96 °C | 168 |
+| 2024-04-08 | +0.41 °C | 1.33 °C | 168 |
+| 2024-04-15 | +0.40 °C | 0.84 °C | 168 |
+| 2024-04-22 | −0.02 °C | 1.10 °C | 168 |
+| 2024-04-29 | +0.35 °C | 1.12 °C | 167 |
+| 2024-05-06 | −0.55 °C | 1.09 °C | 168 |
+| 2024-05-13 | −0.63 °C | 1.07 °C | 167 |
+| 2024-05-20 | +0.09 °C | 0.89 °C | 167 |
+| 2024-05-27 | −0.26 °C | 1.02 °C | 167 |
+| 2024-06-03 | +0.25 °C | 1.00 °C | 168 |
+| 2024-06-10 | +0.56 °C | 1.03 °C | 168 |
+| 2024-06-17 | −0.01 °C | 0.93 °C | 168 |
+| 2024-06-24 | −0.23 °C | 1.07 °C | 166 |
+| 2024-07-01 | −0.09 °C | 0.77 °C | 167 |
+| 2024-07-08 | +0.50 °C | 0.86 °C | 166 |
+| 2024-07-15 | +0.01 °C | 0.73 °C | 168 |
+| 2024-07-22 | +0.21 °C | 0.72 °C | 168 |
+| 2024-07-29 | +0.06 °C | 0.60 °C | 167 |
+| 2024-08-05 | +0.41 °C | 1.24 °C | 168 |
+| 2024-08-12 | −0.02 °C | 0.77 °C | 168 |
+| 2024-08-19 | +0.22 °C | 0.79 °C | 168 |
+| 2024-08-26 | −0.10 °C | 0.86 °C | 168 |
+| 2024-09-02 | −0.14 °C | 0.69 °C | 168 |
+| 2024-09-09 | −0.06 °C | 0.92 °C | 168 |
+| 2024-09-16 | +0.31 °C | 0.62 °C | 168 |
+| 2024-09-23 | +0.50 °C | 0.91 °C | 168 |
+| 2024-09-30 | +0.29 °C | 0.78 °C | 168 |
+| 2024-10-07 | −0.22 °C | 0.73 °C | 168 |
+| 2024-10-14 | +0.02 °C | 0.73 °C | 168 |
+| 2024-10-21 | +0.08 °C | 0.87 °C | 168 |
+| 2024-10-28 | 0.00 °C | 1.09 °C | 168 |
+| 2024-11-04 | −0.17 °C | 0.85 °C | 168 |
+| 2024-11-11 | +0.04 °C | 0.85 °C | 168 |
+| 2024-11-18 | +0.32 °C | 0.71 °C | 168 |
+| 2024-11-25 | +0.55 °C | 0.96 °C | 167 |
+| 2024-12-02 | +0.34 °C | 0.61 °C | 168 |
+| 2024-12-09 | +0.62 °C | 1.43 °C | 168 |
+| 2024-12-16 | +0.50 °C | 1.04 °C | 168 |
+| 2024-12-23 | +0.54 °C | 1.44 °C | 168 |
+| 2024-12-30 | −1.03 °C | 1.12 °C | 48 |
+
 
 The clock steps hour by hour from 2024-01-01 to 2024-12-31; every read, temperature forecasts included, goes through an accessor that refuses any data past the clock, each forecast visible only from its availability on. The model and the two comparison models are checked by hash before and after, unchanged: v2 `7aadbc5866c6`, v1's form on the forecast `4e9433077a9a`, v1 as shipped `7469cd232977`.
 
@@ -578,20 +854,20 @@ No one-day shock gave an alarm on 2024: a bad day spoils at most two days of a w
 
 No statistic of a touched week lies beyond the mean of its untouched days, as the argument says. The longest lead of a forecast point in 2024: 71 h.
 
-![2024 replay](figures/validation/replay-2024-weekly.en.png)
+![2024 replay, seen by the developers](figures/validation/replay-2024-weekly.en.png)
 
-![2024 drift](figures/validation/replay-2024-drift.en.png)
+![2024 replay's drift, seen by the developers](figures/validation/replay-2024-drift.en.png)
 
 For each week in drift alarm, the Evidently report is kept in the run, and Evidently's value is compared with the monitor's: 4 comparisons, all equal.
 
 ## 9. 2025, the test of record
 
-**Pending.** No 2025 replay has started. The test of record will be the first 2025 replay started under `rules-frozen-v2`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). What 2025 will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year 2025 is rendered before that first start.
+**Pending.** No 2025 replay has started. The test of record will be the first 2025 replay started under `rules-frozen-v2`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What 2025 will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year 2025 is rendered before that first start.
 
 ## 10. Limitations
 
 - **The choice and 2024.** v2's family and input were chosen on 2020–2023; 2024 had been seen through v1. Neither proves v2 better: only a clean 2025 test of record can (section 9).
-- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed (2 hours after issue), and the 6-hour sensitivity bounds what it is worth (section 2). The NBM's model changes over the years without being tracked.
+- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed (2 hours after issue), and the sensitivity of section 2 measures what an availability of 6 hours instead of 2 would cost; a longer delay is not measured. The NBM's model changes over the years without being tracked.
 - **One forecast for a province.** A single forecast point stands for Québec's weather, as a single station did in v1.
 - **Conditional coverage.** v2's interval under-covers winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). The coverage thresholds of winter are drawn from weeks that already had this under-coverage: the monitor does not flag it as a degradation. Conversely, the coverage threshold of summer (91.0%) exceeds the 90% nominal: a week covered beyond nominal can be flagged low there.
 - **Extrapolation.** Below the training range, the curves are straight lines; the decision rule's cold tail and section 3's count of hours outside the range measure what that costs.
@@ -600,7 +876,7 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 - **The echo exclusion** (measured on 2023, the rehearsal year, and on 2024, seen by the developers). On a degraded model whose bias changes side, it suppresses "retrain" on 2023 in 5 trials out of 240 and delays it in 32, and on 2024 in 4 trials out of 240 and delays it in 30; that is the price of avoiding the false alarms of an episode followed by its echo.
 - **Drift false alarms in 2024.** The alarm levels are the 95th percentile of the validation weeks of 2021–2023, whose references spanned 2 to 4 earlier years for the temperature forecast and 1 to 3 for the demand forecast; in 2024, they span 5 and 4. The drift false-alarm rate in 2024 is not measured.
 - **Rule 4 and a real change in temperature.** A real, sustained drift in the temperature forecast, which the model follows, performance within its thresholds, can give "investigate the data": the rule does not tell a real change in the weather from a data error. The rule stays as it is.
-- **Real-time data.** The values are those downloaded on 2026-10-14 (demand) and from 2026-10-14 on (observed weather); no revision is modelled, and a forecast's arrival is deduced from its issue time.
+- **Real-time data.** The values are those downloaded on 2026-10-14 (demand), from 2026-10-14 on (observed weather) and from 2026-10-17 on (NBM forecasts); no revision is modelled, and a forecast's arrival is deduced from its issue time.
 - **Independence.** The model, the checks and this report come from AI agents working under the direction of a single owner, without independent human review of the code. Reviews were made by fresh-context agents and by another vendor's AI model, which is not independent validation in SR 11-7's sense.
 
 ## 11. The breaks, on synthetic data
@@ -1005,7 +1281,7 @@ Each gate and each monitor has a test that injects the fault it must catch; a co
 | Report rendering | Control: the owner's ruling the gate read is printed, with the stopped start it names, English report | stayed quiet |
 | Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, French report | fired |
 | Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, English report | fired |
-| Report rendering | A v2 number on 2024 without its evaluation label makes the report refuse | fired |
+| Report rendering | A 2024 replay whose contrasts or verdicts do not carry the seen-by-the-developers label makes the report refuse | fired |
 | Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, French report | fired |
 | Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, English report | fired |
 | Report rendering | A better claim from a 2025 that is not clean makes the report refuse, French report | fired |
@@ -1064,6 +1340,29 @@ Each gate and each monitor has a test that injects the fault it must catch; a co
 | Report rendering | Control: both pages, in both languages, render from what the replay, its diagnostics, the 2025 gate and the ledger write, and the report's episode rows have the keys of the rows the measure builds | stayed quiet |
 | Report rendering | Control: the stamp carries the test of record's 2025 standing, never a rerun's | stayed quiet |
 | Report rendering | Control: v2's figures and templates pass the public-safety scan | stayed quiet |
+| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step colder below the heating base is a finding, with its hour, its step and its size | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step warmer above the base is a finding | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | Control: a sound curve, and a reversal within the tolerance, give no shape finding | stayed quiet |
+| Conceptual soundness, added after the freeze (decides nothing) | A cold slope that is not positive is a finding; a positive one is not | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A fold, or a frozen model, whose slope leaves the folds' band by more than the fixed factor is flagged; without one, nothing is | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | Lags that are not positive, or whose sum is not below 1, are findings, of a frozen model or of a fold | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | Control: the GAM the soundness measure refits at the ruled settings reproduces validation's out-of-sample forecasts on every hour | stayed quiet |
+| Conceptual soundness, added after the freeze (decides nothing) | A refit variant that does not reproduce validation, or not on the same hours, stops the run | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | The soundness measure refuses a row after the design window | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | Curves that are not the ones that forecast make the input sensitivity a finding | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A curves table that is not the frozen model's is refused | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness run that does not name the chain's frozen models, validation, hashes or code makes the report refuse | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | Soundness results that name another run than their own make the report refuse | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, French report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, French report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, French report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, English report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, English report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, English report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, French report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, English report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, French report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, English report | fired |
 
 The break "A shift in the demand level: retrain" multiplies the synthetic world's demand by 1.12, a 12% rise. On the real 2023 hours, a 10% rise yielded "retrain" within 10 weeks at every start (section 10). On the real 2024 hours (seen by the developers), the same rise yielded "retrain" within 10 weeks at every start (section 10).
 
@@ -1073,7 +1372,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Expectation | What valiwatt does | Where it is checked |
 |---|---|---|
-| SR 11-7, conceptual soundness, including sensitivity analysis | Model, input and decision rule fixed in the plan before any v2 replay; the GAM's curves shown beside a fit without the lags. Alternative specifications: v1's form on the forecast, the observed-weather bound, a 6-hour availability margin, the mean of the 6 stations, an absolute interval, one quantile per season. These are not the small changes to inputs and parameters SR 11-7 calls sensitivity analysis; those are not made. | v2's plan, sections 4 and 8; the validation and frozen-model runs |
+| SR 11-7, conceptual soundness, including sensitivity analysis | Model, input and decision rule fixed in the plan before any v2 replay; the GAM's curves shown beside a fit without the lags. Alternative specifications: v1's form on the forecast, the observed-weather bound, a 6-hour availability margin, the mean of the 6 stations, an absolute interval, one quantile per season. These are not the small changes to inputs and parameters SR 11-7 calls sensitivity analysis. Added after the freeze, deciding nothing: each hourly curve's shape and size, their stability across folds and freezes, the lags read, and a sensitivity analysis in SR 11-7's sense, the input moved by ±1 °C and the number of knots and the ridge alpha changed one at a time; the other settings are not varied. | v2's plan, sections 4 and 8; the validation and frozen-model runs; section 3.1 and its soundness run |
 | SR 11-7, data quality and relevance | 25 quality gates over the whole window, every repair documented; in production, a daily quality monitor on the raw records, a day without a forecast included. | Data-quality report; replays |
 | SR 11-7, third-party data and models: NOAA's forecast input | Covered: its quality gates, its availability rule, its error against the observations, its drift and the sensitivity to availability. Not covered: the soundness and change management of NOAA's model itself. | Sections 2 and 8; data-quality report |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards; a clock that refuses later data, forecasts included; the three models' hashes checked before and after; the replay refuses to run if the rules or the dependencies differ from tag `rules-frozen-v2`. Each guard has its break. | Section 11 |
@@ -1085,18 +1384,21 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | MLflow runs (test sets, metrics, parameters, versions); replays under production conditions; breaks; the "not covered" list below. | Runs; section 11 |
 | NIST MANAGE 2.2 | Weekly recommendations with evidence; who acts, and how, is out of scope. | Section 8 |
 
-**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; NIST GOVERN for the most part); periodic review; analysis of overrides of the model's outputs; use in decisions and materiality; independent review of a recalibration; sensitivity analysis in SR 11-7's sense; the soundness and change management of NOAA's model; NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the card's limitations; NIST MEASURE 2.4 (monitoring in production: simulated by the replay only); real-time data.
+**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; NIST GOVERN for the most part); periodic review; analysis of overrides of the model's outputs; use in decisions and materiality; independent review of a recalibration; sensitivity analysis in SR 11-7's sense beyond the input and two settings (section 3.1), and on held-out data; the soundness and change management of NOAA's model; NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the card's limitations; NIST MEASURE 2.4 (monitoring in production: simulated by the replay only); real-time data.
 
 ## 13. Provenance
 
 | Run | Identifier | Date |
 |---|---|---|
-| data quality | `10c78de051d54785b94d58ffba6eea15` | 2026-10-17 22:46 UTC |
-| validation | `8ed71f1375c64f13a62d2e9a3652bd2d` | 2026-10-17 22:48 UTC |
-| models frozen for 2023 | `fcec1b39ce164e6999cec7fb0cb3b1d4` | 2026-10-17 22:49 UTC |
-| models frozen for 2024 | `6c53b6d7eef4446dacadd66312c9c1f1` | 2026-10-17 23:11 UTC |
-| 2023 rehearsal | `a3ad248e1cc9427985161fca18fe1b26` | 2026-10-17 22:49 UTC |
-| this chain's 2024 replay | `18daf1fc40a24300aeaba5e4f14d4107` | 2026-10-17 23:11 UTC |
-| breaks | `a009868785af446ba0205cea36a9d4c5` | 2026-10-17 23:52 UTC |
+| data quality | `718b9c3a51ad46009cf33e04db045e46` | 2026-10-18 07:20 UTC |
+| validation | `47d38b233b804a29982140268449cdaf` | 2026-10-18 07:24 UTC |
+| models frozen for 2023 | `6c6ce0666e844452a95eeaf863bcc736` | 2026-10-18 07:24 UTC |
+| models frozen for 2024 | `26df92f2be4948d9b5a5d97fa2fcfe30` | 2026-10-18 07:53 UTC |
+| 2023 rehearsal | `aa12983bc72e4186bcf3124a2b7ec9c1` | 2026-10-18 07:24 UTC |
+| the 2023 rehearsal's diagnostics (section 7) | `477bbd6d09f041099f0c315d1af7b89b` | 2026-10-18 07:25 UTC |
+| this chain's 2024 replay | `fac1d0f3813b4499b10e4622c8fc4997` | 2026-10-18 07:53 UTC |
+| the diagnostics of the 2024 replay whose numbers section 8 shows | `e7655cd3f663402f82c4fae16277e60a` | 2026-10-18 07:54 UTC |
+| conceptual soundness, added after the freeze (section 3.1) | `6af4421e1e8f466a845118761947a708` | 2026-10-18 08:27 UTC |
+| breaks | `5b95f2f8ffbe48ecb1e786b41f2649b6` | 2026-10-18 08:48 UTC |
 
-Code hash: `521febded2db62c9f9241debd7daf14706a18ca91fd2d37995ab023308d1085c`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.
+Code hash: `53b6983300730f26e728fcdaf93e8e4fc23b99007dc1de9164c19a150fe04bc6`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.

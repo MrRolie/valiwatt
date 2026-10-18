@@ -1,6 +1,6 @@
 # Validation et surveillance d'une prévision de la demande d'électricité au Québec, v2
 
-_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 8), code `c778e08fc0b5`, empreinte du code `521febded2db`, règles gelées au commit `825b7bd134a8` (étiquette `rules-frozen-v2`). Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Chaque résultat porte son étiquette d'évaluation, lue des exécutions : _dans l'échantillon du choix de la famille et de l'entrée_ pour 2020–2023, _répétition sur une année de conception_ pour 2023, _vu par les développeurs_ pour 2024, et pour 2025 _données réservées_ seulement quand son test de référence est propre. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 8), code `c9d98aaa957b`, empreinte du code `53b698330073`, règles gelées au commit `825b7bd134a8` (étiquette `rules-frozen-v2`). Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Chaque résultat porte son étiquette d'évaluation, lue des exécutions : _dans l'échantillon du choix de la famille et de l'entrée_ pour 2020–2023, _répétition sur une année de conception_ pour 2023, _vu par les développeurs_ pour 2024, et pour 2025 _données réservées_ seulement quand son test de référence est propre. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -21,14 +21,14 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 - Ses intervalles à 90 % ont contenu la demande 90,3 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
 - Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 3 fois sur 5, toujours par le haut. Rapporté, jamais jugé.
 - 2024 (_vu par les développeurs_) : EAMP de 2,58 %, couverture de 92,2 %, aucune recommandation ; verdicts : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Un succès sur une année déjà vue est une preuve faible : il ne soutient aucune affirmation ; v2 va à 2025 tel que gelé (section 8).
-- 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2` (section 9).
+- 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sauf si ce départ s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 9 ; section 11.3.5 du plan).
 - Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 4 des 4 départs, et sur 2024 (vu par les développeurs), à 4 des 4 ; sur 2024, un écart soutenu de ±2 % entre la demande et la prévision l'a donné en 8 semaines à 4 des 8 cas (sections 7, 8 et 10).
 
 ## Fiche du modèle
 
 | | |
 |---|---|
-| **Statut** | **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente. Couverture des intervalles et heures les plus chargées : à côté du statut (sections 5 et 9), jamais dedans. |
+| **Statut** | **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente. Couverture des intervalles et heures les plus chargées : à côté du statut, jamais dedans (couverture : sections 4 (les heures de pointe), 5, 7 et 8 ; heures les plus chargées : sections 3, 4, 7 et 8). |
 | **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à la fin du jour J−1 (heure normale de l'Est), avec un intervalle de prévision à 90 %. |
 | **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
 | **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
@@ -47,8 +47,8 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 - **Validation progressive.** Chaque mois de 2020 à 2023 est prévu par des modèles réajustés sur les heures qui le précèdent seulement, moins les 7 derniers jours (l'embargo). Les trois modèles comparés y sont ajustés aux mêmes plis : v2, la forme de v1 sur la même prévision et v1 tel que livré, refait dans le harnais de v2.
 - **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) : en moyenne, de combien la prévision s'écarte de la demande réelle. Le biais signé dit dans quel sens : biais = (demande − prévision) / demande, positif quand la prévision est trop basse.
 - **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne.
-- **La règle de décision, fixée avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le 5ᵉ centile de celles de 2019–2023 (−12,0 °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de 120 heures froides ou moins de 4 semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
-- **À côté, jamais jugés.** Les 5 heures les plus chargées de chaque année jugée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses 90 % (section 5).
+- **La règle de décision, fixée dans le plan avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le 5ᵉ centile de celles de 2019–2023 (−12,0 °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de 120 heures froides ou moins de 4 semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
+- **À côté, jamais jugés.** Les 5 heures les plus chargées de chaque période jugée, 2020–2023 comme une seule période puis chaque année rejouée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses 90 % (section 5).
 - **L'intervalle de prévision.** Sa demi-largeur est un quantile des erreurs relatives |demande − prévision| / prévision. Pour chaque mois de validation, c'est le quantile de rang ⌈(n + 1) × 0,90⌉ des n erreurs hors échantillon des 12 mois précédents déjà notées quand le modèle du mois est ajusté ; pour le modèle figé, le même quantile sur les erreurs des 12 mois qui précèdent l'année rejouée, déjà notées quand il est ajusté. C'est la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini : ces erreurs horaires sont autocorrélées et viennent d'autres modèles. La seule preuve est la couverture mesurée hors échantillon.
 - **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec son empreinte, puis rejoué heure par heure.
 - **Les seuils.** Pour chaque saison, les seuils hebdomadaires sont des quantiles des semaines de validation de v2 : EAMP au-dessus du 95ᵉ centile, biais hors de l'intervalle 2,5ᵉ–97,5ᵉ centile, couverture sous le 5ᵉ centile.
@@ -88,7 +88,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 | 2023 | été | +0,14 °C | 0,91 °C | 2 203 |
 | 2023 | hiver | −0,09 °C | 1,35 °C | 2 159 |
 
-**La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles 6 heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de +0,02 pt [+0,01 pt ; +0,02 pt] (6 heures moins 2, sur 35 036 heures) : c'est ce que vaut, au plus, l'hypothèse de disponibilité. Cette variante est étiquetée et ne choisit rien.
+**La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles 6 heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de +0,02 pt [+0,01 pt ; +0,02 pt] (6 heures moins 2, sur 35 036 heures) : c'est ce que coûterait une disponibilité à 6 heures au lieu de 2 ; un délai plus long n'est pas mesuré. Cette variante est étiquetée et ne choisit rien.
 
 **Le 31 décembre 2023.** Ses deux dernières heures demandent le point du 1ᵉʳ janvier 2024 06:00 UTC d'une prévision émise le 31 décembre et disponible avant l'origine de ce jour : l'information est celle de 2023, et ce jour est prévu comme les autres. L'essai préliminaire qui a servi au choix coupait sur l'heure de validité et laissait ce jour de côté : les heures de v2 sur 2020–2023 en ont 24 de plus que les siennes.
 
@@ -110,7 +110,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 | même heure, une semaine avant (référence naïve) | 7,81 % | [7,14 % ; 8,44 %] | −0,60 % | 35 046 |
 | v1 tel que livré, moyenne des 6 stations (sensibilité) | 4,45 % | [4,17 % ; 4,73 %] | −0,01 % | 35 013 |
 
-**Les valeurs suivies du choix**, sur les 34 997 heures communes (209 semaines ; _dans l'échantillon du choix de la famille et de l'entrée_) : EAMP de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la prévision, 4,42 % pour v1 tel que livré. Erreur signée aux 5 heures les plus chargées de ces heures (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : v2, le GAM sur la prévision (production), +5,7 % en moyenne ; la forme de v1 sur la prévision, +12,8 % en moyenne ; v1 tel que livré (météo de la veille), +27,0 % en moyenne. Les heures que chaque modèle n'a pas, par raison : v2, le GAM sur la prévision (production) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; la forme de v1 sur la prévision : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; v1 tel que livré (météo de la veille) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10), température de la veille absente (39) ; sans demande utilisable : 9.
+**Les valeurs suivies du choix**, sur les 34 997 heures communes (209 semaines ; _dans l'échantillon du choix de la famille et de l'entrée_) : EAMP de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la prévision, 4,42 % pour v1 tel que livré. Erreur signée aux 5 heures les plus chargées de 2020–2023, parmi toutes les heures qui ont une demande (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : v2, le GAM sur la prévision (production), +5,7 % en moyenne ; la forme de v1 sur la prévision, +12,8 % en moyenne ; v1 tel que livré (météo de la veille), +27,0 % en moyenne. Les heures que chaque modèle n'a pas, par raison : v2, le GAM sur la prévision (production) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; la forme de v1 sur la prévision : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; v1 tel que livré (météo de la veille) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10), température de la veille absente (39) ; sans demande utilisable : 9.
 
 | Comparaison (_dans l'échantillon du choix de la famille et de l'entrée_) | Différence d'EAMP | IC 95 % | État |
 |---|---|---|---|
@@ -224,6 +224,155 @@ Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1�
 | 21 h | −28 °C | +17 029 MW | +23 803 MW |
 | 22 h | −28 °C | +16 237 MW | +23 214 MW |
 | 23 h | −28 °C | +16 137 MW | +23 318 MW |
+
+### 3.1 Solidité conceptuelle, ajoutée après le gel
+
+_Ajoutée après le gel des règles de v2, à la décision du propriétaire du 2026-10-17, cette section ne décide rien : elle interprète et vérifie les facteurs du modèle, à partir des modèles figés pour 2023 et pour 2024 et des plis de la validation, sans réajuster aucun modèle figé ni changer aucune règle. Une vérification qui échoue est un constat que le rapport énonce, jamais une porte : aucun nombre de cette section n'entre dans un seuil, un statut, un verdict ou une recommandation, et le verdict de 2025 reste celui que le plan préenregistre. Exécution `6af4421e1e8f466a845118761947a708`._
+
+Les réglages ont été fixés avant que ces mesures soient calculées sur les exécutions réelles : la base de chauffage, 18 °C, est celle de v1, fixée avant toute courbe de v2 et température à laquelle chaque courbe vaut zéro (une base lue sur ces courbes ajusterait la vérification à ce qu'elle vérifie) ; la tolérance est de 1 MW par pas de 1 °C, une unité des MW entiers dans lesquels le rapport imprime les courbes, pour que la vérification ne soit pas plus fine que la page qui l'énonce ; un pli est signalé quand sa pente sort de la bande du 5ᵉ au 95ᵉ centile des plis de plus de 0,5 fois sa largeur (10 % des plis sont hors de la bande par construction : un signalement demande donc une distance au-delà de son bord, et une distance mesurée en largeurs de la bande vaut à chaque heure, quel que soit son étalement). Les développeurs avaient toutefois déjà regardé, avant de les fixer, la table des courbes du modèle figé pour 2024.
+
+**La lecture.** Compte tenu de la demande de la veille et de la semaine précédente, chaque degré plus froid entre −20 et −5 °C ajoute à la prévision de 306 à 385 MW selon l'heure (343 en médiane) : le plus à 17 h, le moins à 10 h. Sans les retards, la même pente va de 427 à 536 MW (481 en médiane). Entre −5 et 10 °C, elle va de 280 à 388 MW avec les retards. Côté chaud, chaque degré plus chaud entre 18 et 28 °C ajoute de 91 à 171 MW avec les retards : la climatisation. Selon l'heure, la courbe avec les retards est au plus bas entre 14 et 19 °C. La somme des deux coefficients des retards, 0,454, est sous 1 : un choc isolé s'efface.
+
+#### Forme (ajouté après le gel ; ne décide rien)
+
+Sur la plage d'entraînement de chaque modèle figé, par pas de 1 °C : sous 18 °C, un pas plus froid ne doit pas baisser la courbe de plus de 1 MW (le chauffage) ; au-dessus, un pas plus chaud ne doit pas la baisser de plus de 1 MW (la climatisation). Chaque pas en défaut, avec sa variation :
+
+| Heure | Avec les retards, 2024 | Sans les retards, 2024 | Avec les retards, 2023 | Sans les retards, 2023 |
+|---|---|---|---|---|
+| 0 h | 16→15 °C : −25 MW ; 17→16 °C : −46 MW ; 18→17 °C : −66 MW | 16→15 °C : −7 MW ; 17→16 °C : −65 MW ; 18→17 °C : −108 MW | 15→14 °C : −4 MW ; 16→15 °C : −27 MW ; 17→16 °C : −45 MW ; 18→17 °C : −65 MW | 16→15 °C : −10 MW ; 17→16 °C : −79 MW ; 18→17 °C : −126 MW |
+| 1 h | 15→14 °C : −12 MW ; 16→15 °C : −25 MW ; 17→16 °C : −33 MW ; 18→17 °C : −50 MW | 16→15 °C : −5 MW ; 17→16 °C : −41 MW ; 18→17 °C : −77 MW | 15→14 °C : −17 MW ; 16→15 °C : −28 MW ; 17→16 °C : −34 MW ; 18→17 °C : −50 MW | 16→15 °C : −11 MW ; 17→16 °C : −50 MW ; 18→17 °C : −86 MW |
+| 2 h | 15→14 °C : −14 MW ; 16→15 °C : −25 MW ; 17→16 °C : −30 MW ; 18→17 °C : −46 MW | 16→15 °C : −2 MW ; 17→16 °C : −35 MW ; 18→17 °C : −70 MW | 15→14 °C : −19 MW ; 16→15 °C : −29 MW ; 17→16 °C : −35 MW ; 18→17 °C : −50 MW | 16→15 °C : −11 MW ; 17→16 °C : −46 MW ; 18→17 °C : −79 MW |
+| 3 h | 15→14 °C : −17 MW ; 16→15 °C : −24 MW ; 17→16 °C : −27 MW ; 18→17 °C : −41 MW | 16→15 °C : −1 MW ; 17→16 °C : −30 MW ; 18→17 °C : −62 MW | 15→14 °C : −25 MW ; 16→15 °C : −30 MW ; 17→16 °C : −30 MW ; 18→17 °C : −43 MW | 16→15 °C : −12 MW ; 17→16 °C : −38 MW ; 18→17 °C : −65 MW |
+| 4 h | 15→14 °C : −17 MW ; 16→15 °C : −24 MW ; 17→16 °C : −27 MW ; 18→17 °C : −41 MW | 17→16 °C : −26 MW ; 18→17 °C : −57 MW | 14→13 °C : −3 MW ; 15→14 °C : −27 MW ; 16→15 °C : −29 MW ; 17→16 °C : −26 MW ; 18→17 °C : −37 MW | 16→15 °C : −8 MW ; 17→16 °C : −27 MW ; 18→17 °C : −53 MW |
+| 5 h | 17→16 °C : −4 MW ; 18→17 °C : −22 MW | 18→17 °C : −19 MW | 16→15 °C : −3 MW ; 17→16 °C : −9 MW ; 18→17 °C : −26 MW | 18→17 °C : −25 MW |
+| 6 h | — | — | — | — |
+| 7 h | — | — | 18→17 °C : −11 MW | — |
+| 8 h | 18→17 °C : −5 MW | — | 18→17 °C : −18 MW | 18→17 °C : −21 MW |
+| 9 h | 18→17 °C : −11 MW | — | 18→17 °C : −18 MW | 18→17 °C : −12 MW |
+| 10 h | — | — | — | — |
+| 11 h | — | 18→19 °C : −7 MW | — | 18→19 °C : −8 MW |
+| 12 h | — | 18→19 °C : −14 MW | 18→19 °C : −11 MW | 18→19 °C : −24 MW |
+| 13 h | 18→19 °C : −20 MW | 18→19 °C : −37 MW | 18→19 °C : −34 MW | 18→19 °C : −51 MW |
+| 14 h | 18→19 °C : −16 MW | 18→19 °C : −30 MW | 18→19 °C : −29 MW | 18→19 °C : −42 MW |
+| 15 h | 18→19 °C : −17 MW | 18→19 °C : −31 MW | 18→19 °C : −29 MW | 18→19 °C : −42 MW |
+| 16 h | 18→19 °C : −26 MW | 18→19 °C : −54 MW | 18→19 °C : −38 MW | 18→19 °C : −65 MW ; 19→20 °C : −9 MW |
+| 17 h | 18→19 °C : −10 MW | 18→19 °C : −39 MW | 18→19 °C : −22 MW | 18→19 °C : −49 MW |
+| 18 h | — | 18→19 °C : −20 MW | 18→19 °C : −11 MW | 18→19 °C : −33 MW |
+| 19 h | — | — | — | 18→19 °C : −6 MW |
+| 20 h | 18→17 °C : −33 MW | 18→17 °C : −32 MW | 18→17 °C : −24 MW | 18→17 °C : −31 MW |
+| 21 h | 17→16 °C : −25 MW ; 18→17 °C : −61 MW | 17→16 °C : −25 MW ; 18→17 °C : −91 MW | 17→16 °C : −29 MW ; 18→17 °C : −65 MW | 17→16 °C : −37 MW ; 18→17 °C : −106 MW |
+| 22 h | 16→15 °C : −3 MW ; 17→16 °C : −43 MW ; 18→17 °C : −75 MW | 17→16 °C : −60 MW ; 18→17 °C : −122 MW | 16→15 °C : −7 MW ; 17→16 °C : −44 MW ; 18→17 °C : −74 MW | 17→16 °C : −70 MW ; 18→17 °C : −135 MW |
+| 23 h | 16→15 °C : −16 MW ; 17→16 °C : −45 MW ; 18→17 °C : −71 MW | 17→16 °C : −69 MW ; 18→17 °C : −124 MW | 16→15 °C : −17 MW ; 17→16 °C : −41 MW ; 18→17 °C : −66 MW | 17→16 °C : −77 MW ; 18→17 °C : −134 MW |
+
+#### Taille (ajouté après le gel ; ne décide rien)
+
+La pente froide de −20 à −5 °C, en MW par °C plus froid, par heure, et la bande des 48 plis réajustés (avec les retards) :
+
+| Heure | Avec les retards, 2024 | Sans les retards, 2024 | Avec les retards, 2023 | Sans les retards, 2023 | Plis, 5ᵉ à 95ᵉ centile |
+|---|---|---|---|---|---|
+| 0 h | 334 | 466 | 337 | 474 | 337 à 353 |
+| 1 h | 340 | 477 | 344 | 485 | 332 à 350 |
+| 2 h | 344 | 483 | 348 | 491 | 326 à 354 |
+| 3 h | 345 | 483 | 349 | 491 | 321 à 354 |
+| 4 h | 346 | 485 | 350 | 493 | 319 à 356 |
+| 5 h | 346 | 485 | 351 | 493 | 323 à 357 |
+| 6 h | 343 | 482 | 348 | 489 | 321 à 355 |
+| 7 h | 356 | 498 | 361 | 504 | 333 à 369 |
+| 8 h | 339 | 478 | 343 | 485 | 309 à 350 |
+| 9 h | 320 | 451 | 322 | 460 | 290 à 328 |
+| 10 h | 306 | 429 | 308 | 438 | 290 à 313 |
+| 11 h | 309 | 427 | 308 | 432 | 303 à 329 |
+| 12 h | 322 | 438 | 325 | 451 | 320 à 358 |
+| 13 h | 335 | 454 | 346 | 471 | 334 à 406 |
+| 14 h | 356 | 480 | 371 | 494 | 355 à 459 |
+| 15 h | 379 | 510 | 382 | 511 | 371 à 498 |
+| 16 h | 376 | 517 | 378 | 532 | 374 à 510 |
+| 17 h | 385 | 536 | 373 | 536 | 375 à 509 |
+| 18 h | 365 | 515 | 350 | 511 | 353 à 471 |
+| 19 h | 353 | 502 | 340 | 499 | 343 à 435 |
+| 20 h | 345 | 490 | 335 | 491 | 339 à 423 |
+| 21 h | 333 | 474 | 327 | 476 | 331 à 397 |
+| 22 h | 329 | 466 | 327 | 471 | 331 à 380 |
+| 23 h | 329 | 463 | 329 | 469 | 331 à 359 |
+
+Modèle figé pour 2024 : plage d'entraînement de −28,3 à 34,4 °C. Modèle figé pour 2023 : plage d'entraînement de −27,8 à 34,4 °C. Sur toutes les heures, pentes de −5 à 10 °C du modèle figé pour 2024 : avec les retards, de 280 à 388 MW ; sans, de 492 à 685 MW. Pente chaude de 18 à 28 °C : avec les retards, de 91 à 171 MW par °C plus chaud ; sans, de 141 à 251 MW. Une pente froide qui n'est pas positive serait un constat.
+
+**Un chiffre public, indépendant.** Radio-Canada (Thomas Gerbet, « Grand froid : le jour où Hydro-Québec a atteint sa pointe de frayeur », publié le 2025-01-20, lu le 2026-10-17, <https://ici.radio-canada.ca/nouvelle/2133488/froid-pointe-hydro-quebec-frayeur-record-postes-documents>) : « Une variation d’un degré Celsius représente 500 MW d’impact sur la charge à alimenter, dit la porte-parole de la société d'État, Caroline Des Rosiers. » Ce chiffre ne dit ni la température dont il est la variation, ni les heures, ni l'année, ni s'il tient compte de la demande de la veille : la comparaison avec les pentes ci-dessus n'est pas à l'identique. La pente sans les retards de −20 à −5 °C, la plus proche d'une sensibilité de la demande elle-même, a une médiane de 481 MW par °C, à côté de ses 500 MW par degré : ce rapprochement ne valide rien.
+
+![Pentes froides par heure](figures/validation/validation-soundness-slopes.fr.png)
+
+#### Stabilité (ajouté après le gel ; ne décide rien)
+
+**Entre les deux gels.** Sur leur plage d'entraînement commune (−27,8 à 34,4 °C), les courbes avec les retards du modèle figé pour 2024 s'écartent de celles du modèle figé pour 2023 d'au plus 3 030 MW, et leur pente froide de −20 à −5 °C varie de −4,1 % à +4,3 % selon l'heure ; sans les retards, d'au plus 3 073 MW et de −3,7 % à +0,8 %. Les courbes valent zéro à 18 °C : leur écart grandit loin de cette température.
+
+| Heure | Écart le plus grand (MW) | À (°C) | Pente froide, 2023 | Pente froide, 2024 | Variation |
+|---|---|---|---|---|---|
+| 0 h | 1 588 | −27 | 337 | 334 | −1,0 % |
+| 1 h | 1 555 | −27 | 344 | 340 | −1,1 % |
+| 2 h | 1 457 | −27 | 348 | 344 | −1,3 % |
+| 3 h | 1 367 | −27 | 349 | 345 | −1,2 % |
+| 4 h | 1 164 | −27 | 350 | 346 | −1,1 % |
+| 5 h | 754 | −27 | 351 | 346 | −1,4 % |
+| 6 h | 384 | −27 | 348 | 343 | −1,6 % |
+| 7 h | 179 | −3 | 361 | 356 | −1,4 % |
+| 8 h | 301 | −27 | 343 | 339 | −1,1 % |
+| 9 h | 703 | −27 | 322 | 320 | −0,9 % |
+| 10 h | 707 | −27 | 308 | 306 | −0,6 % |
+| 11 h | 531 | −27 | 308 | 309 | +0,2 % |
+| 12 h | 1 073 | −27 | 325 | 322 | −1,1 % |
+| 13 h | 1 713 | −27 | 346 | 335 | −3,1 % |
+| 14 h | 1 870 | −27 | 371 | 356 | −4,1 % |
+| 15 h | 265 | −27 | 382 | 379 | −0,9 % |
+| 16 h | 504 | −27 | 378 | 376 | −0,5 % |
+| 17 h | 2 270 | −27 | 373 | 385 | +3,4 % |
+| 18 h | 2 790 | −27 | 350 | 365 | +4,3 % |
+| 19 h | 3 030 | −27 | 340 | 353 | +4,1 % |
+| 20 h | 2 845 | −27 | 335 | 345 | +2,9 % |
+| 21 h | 2 682 | −27 | 327 | 333 | +1,8 % |
+| 22 h | 1 989 | −27 | 327 | 329 | +0,6 % |
+| 23 h | 1 724 | −27 | 329 | 329 | +0,1 % |
+
+**Entre les plis.** Le GAM réajusté aux réglages fixés sur chacun des 48 plis de la validation reproduit ses prévisions hors échantillon exactement sur ses 35 045 heures (le témoin : au-delà de 1 × 10⁻⁶ MW, l'exécution s'arrête). La bande de chaque heure est dans le tableau de la taille. Plis dont la pente sort de la bande de plus de 0,5 fois sa largeur : 2020-01 à 0 h (364 MW par °C) ; 2020-02 à 3 h (305 MW par °C) ; 2020-01 à 4 h (300 MW par °C) ; 2020-02 à 4 h (300 MW par °C) ; 2020-01 à 5 h (303 MW par °C) ; 2020-01 à 6 h (298 MW par °C) ; 2020-01 à 7 h (314 MW par °C). Aucun des deux modèles figés n'en sort ainsi.
+
+#### Les retards (ajouté après le gel ; ne décide rien)
+
+| Coefficient, en MW par MW | 2023 | 2024 | Plis : 5ᵉ, 50ᵉ, 95ᵉ centile |
+|---|---|---|---|
+| Demande de la veille | 0,384 | 0,389 | 0,371, 0,385, 0,392 |
+| Demande de la semaine précédente | 0,071 | 0,065 | 0,065, 0,073, 0,090 |
+| Somme | 0,455 | 0,454 | 0,443, 0,457, 0,481 |
+
+Un gain de 1 000 MW de la demande de la veille porte environ 389 MW dans la prévision du lendemain ; la somme des coefficients étant sous 1, un choc isolé s'efface d'une prévision à l'autre. Dans chaque pli, les deux coefficients sont positifs et leur somme est sous 1. Mesuré sur le modèle figé pour 2024 : sans les retards, la pente froide de −20 à −5 °C de chaque heure est plus forte de 116 à 151 MW par °C ; la courbe avec les retards en garde de 70 à 74 %. Ce sont des différences mesurées, données sans théorie : à chaque heure, la courbe avec les retards est la plus plate des deux.
+
+#### Sensibilité au sens de SR 11-7 (ajouté après le gel ; ne décide rien)
+
+**L'entrée** (_dans l'échantillon : les propres lignes d'entraînement du modèle figé_). Le modèle figé pour 2024, sur ses propres lignes d'entraînement de 2023 (8 588 heures), avec la prévision de température déplacée de ±1 °C :
+
+| Déplacement | Variation moyenne | En % | Hiver | Printemps | Été | Automne | MW par °C plus chaud |
+|---|---|---|---|---|---|---|---|
+| +1 °C | −148 MW | −0,58 % | −332 MW (−1,22 %) | −234 MW (−1,05 %) | +102 MW (+0,57 %) | −147 MW (−0,66 %) | −148 |
+| −1 °C | +163 MW | +0,66 % | +331 MW (+1,21 %) | +250 MW (+1,15 %) | −79 MW (−0,44 %) | +165 MW (+0,78 %) | −163 |
+
+Chaque variation est la différence de la courbe de son heure sur le déplacement, à 1,1 × 10⁻¹¹ MW près : c'est une identité d'un modèle additif, que le calcul vérifie ; elle tiendrait quelles que soient les données.
+
+**Les réglages** (_dans l'échantillon du choix de la famille et de l'entrée_). L'EAMP sur les plis et les heures de la validation, chaque réglage changé seul, à côté des réglages fixés (10 nœuds, alpha 1,0 : 2,827 % sur 35 036 heures). Ces variantes ne changent pas le modèle : elles disent combien le résultat dépend de chaque réglage.
+
+| Réglage (_dans l'échantillon du choix de la famille et de l'entrée_) | Valeur | EAMP | Différence | IC 95 % |
+|---|---|---|---|---|
+| Nombre de nœuds | 8 | 2,822 % | −0,004 pt | [−0,010 pt ; 0,000 pt] |
+| Nombre de nœuds | 12 | 2,832 % | +0,005 pt | [+0,001 pt ; +0,009 pt] |
+| Alpha de la crête | 0,5 | 2,827 % | 0,000 pt | [0,000 pt ; 0,000 pt] |
+| Alpha de la crête | 2,0 | 2,826 % | 0,000 pt | [0,000 pt ; 0,000 pt] |
+
+#### Constats (ajouté après le gel ; ne décide rien)
+
+- Constat (ajouté après le gel ; ne décide rien) : la courbe avec les retards du modèle figé pour 2023 a des pas en défaut (nombre : 43 ; des deux côtés de 18 °C), le plus grand de −74 MW à 22 h.
+- Constat (ajouté après le gel ; ne décide rien) : la courbe sans les retards du modèle figé pour 2023 a des pas en défaut (nombre : 35 ; des deux côtés de 18 °C), le plus grand de −135 MW à 22 h.
+- Constat (ajouté après le gel ; ne décide rien) : la courbe avec les retards du modèle figé pour 2024 a des pas en défaut (nombre : 37 ; des deux côtés de 18 °C), le plus grand de −75 MW à 22 h.
+- Constat (ajouté après le gel ; ne décide rien) : la courbe sans les retards du modèle figé pour 2024 a des pas en défaut (nombre : 30 ; des deux côtés de 18 °C), le plus grand de −124 MW à 23 h.
+- Constat (ajouté après le gel ; ne décide rien) : des pentes de plis sortent de la bande (nombre : 7 ; plis 2020-01, 2020-02).
+
+Les courbes avec les retards du modèle figé pour 2024 atteignent leur plus bas entre 14 et 19 °C selon l'heure ; la base de v1 fixée d'avance est de 18 °C ; leurs pas en défaut sont tous entre 14 et 19 °C. Ces constats ne changent ni le modèle, ni ses règles, ni le verdict de 2025.
 
 ## 4. Cas tests
 
@@ -354,7 +503,75 @@ Différence d'EAMP (figé moins réajusté), sur les mêmes 8 753 heures : +0,
 | v2 contre la forme de v1 sur la même prévision | −0,59 pt | [−0,82 pt ; −0,36 pt] | meilleur |
 | la forme de v1 sur la prévision contre v1 tel que livré (rapportée, jamais jugée) | −0,83 pt | [−1,27 pt ; −0,40 pt] | meilleur |
 
-Verdicts (_répétition sur une année de conception_) : « meilleur » contre v1 tel que livré, « meilleur » contre la forme de v1 ; ils ne décident rien.
+Verdicts (_répétition sur une année de conception_) : « meilleur » contre v1 tel que livré, « meilleur » contre la forme de v1 ; ils ne décident rien. Queue froide (_répétition sur une année de conception_) : 181 heures communes sous le seuil de −12,0 °C, réparties sur 9 semaines du lundi au dimanche ; elle est testable (au moins 120 heures et 4 semaines) : v2 contre v1 tel que livré, −6,78 pt [−8,50 pt ; −4,40 pt] (meilleur) ; v2 contre la forme de v1, −1,65 pt [−2,42 pt ; −0,63 pt] (meilleur).
+
+| Heure finissant à (UTC) (_répétition sur une année de conception_) | Demande | Prévision de température | v2 | Forme de v1 sur la prévision | v1 tel que livré |
+|---|---|---|---|---|---|
+| 2023-02-03 23:00 UTC | 42 473 MW | −25,2 °C | +4,6 % | +13,5 % | +27,0 % | 
+| 2023-02-04 00:00 UTC | 42 254 MW | −25,6 °C | +6,8 % | +13,0 % | +26,8 % | 
+| 2023-02-04 01:00 UTC | 41 799 MW | −25,7 °C | +8,5 % | +13,0 % | +27,2 % | 
+| 2023-02-04 02:00 UTC | 41 141 MW | −25,9 °C | +9,6 % | +13,1 % | +28,0 % | 
+| 2023-02-03 22:00 UTC | 40 585 MW | −24,8 °C | +0,5 % | +11,9 % | +26,3 % | 
+
+
+**L'erreur hebdomadaire de la prévision de température en 2023** (_répétition sur une année de conception_) : la prévision émise moins la température observée de Montréal (ECCC) à l'heure visée, sur les heures qui ont les deux, par semaine du rejeu (du lundi au dimanche, heure normale). Le rapport la dérive du cadre horaire du rejeu (`frames/hourly.parquet`), tenu à ce que le rejeu consigne : les erreurs par mois et par saison qu'il donne sont celles que le rejeu a consignées, heures, moyennes et erreurs absolues moyennes. Une preuve jointe au rejeu, sans seuil : elle ne décide rien.
+
+| Semaine du (_répétition sur une année de conception_) | Écart moyen | Écart absolu moyen | Heures |
+|---|---|---|---|
+| 2022-12-26 | −0,16 °C | 0,36 °C | 24 |
+| 2023-01-02 | +0,31 °C | 1,27 °C | 168 |
+| 2023-01-09 | +0,29 °C | 1,38 °C | 168 |
+| 2023-01-16 | −1,23 °C | 1,54 °C | 168 |
+| 2023-01-23 | −0,73 °C | 1,72 °C | 168 |
+| 2023-01-30 | +1,03 °C | 2,19 °C | 167 |
+| 2023-02-06 | −0,32 °C | 1,26 °C | 168 |
+| 2023-02-13 | −1,17 °C | 1,37 °C | 168 |
+| 2023-02-20 | +0,44 °C | 1,19 °C | 168 |
+| 2023-02-27 | −0,05 °C | 1,00 °C | 168 |
+| 2023-03-06 | +0,19 °C | 1,42 °C | 168 |
+| 2023-03-13 | −0,24 °C | 0,87 °C | 168 |
+| 2023-03-20 | +0,05 °C | 1,05 °C | 168 |
+| 2023-03-27 | +0,22 °C | 1,18 °C | 168 |
+| 2023-04-03 | 0,00 °C | 1,39 °C | 168 |
+| 2023-04-10 | −1,20 °C | 1,86 °C | 168 |
+| 2023-04-17 | +1,22 °C | 1,44 °C | 168 |
+| 2023-04-24 | +0,68 °C | 1,24 °C | 168 |
+| 2023-05-01 | −0,19 °C | 1,06 °C | 168 |
+| 2023-05-08 | −0,41 °C | 0,82 °C | 168 |
+| 2023-05-15 | +0,30 °C | 1,24 °C | 168 |
+| 2023-05-22 | +0,11 °C | 1,00 °C | 166 |
+| 2023-05-29 | +0,48 °C | 1,09 °C | 168 |
+| 2023-06-05 | −0,13 °C | 0,70 °C | 168 |
+| 2023-06-12 | +0,54 °C | 1,24 °C | 168 |
+| 2023-06-19 | −0,01 °C | 0,88 °C | 168 |
+| 2023-06-26 | +0,73 °C | 1,26 °C | 166 |
+| 2023-07-03 | +0,12 °C | 0,71 °C | 168 |
+| 2023-07-10 | +0,06 °C | 0,88 °C | 168 |
+| 2023-07-17 | −0,32 °C | 0,79 °C | 167 |
+| 2023-07-24 | +0,80 °C | 1,16 °C | 167 |
+| 2023-07-31 | −0,34 °C | 0,79 °C | 168 |
+| 2023-08-07 | −0,12 °C | 0,78 °C | 168 |
+| 2023-08-14 | +0,02 °C | 0,72 °C | 168 |
+| 2023-08-21 | +0,03 °C | 0,89 °C | 168 |
+| 2023-08-28 | 0,00 °C | 0,61 °C | 166 |
+| 2023-09-04 | +0,42 °C | 0,78 °C | 168 |
+| 2023-09-11 | −0,02 °C | 0,75 °C | 168 |
+| 2023-09-18 | +0,17 °C | 0,66 °C | 164 |
+| 2023-09-25 | +0,50 °C | 0,74 °C | 168 |
+| 2023-10-02 | +0,21 °C | 0,93 °C | 167 |
+| 2023-10-09 | −0,10 °C | 0,61 °C | 168 |
+| 2023-10-16 | −0,06 °C | 0,80 °C | 168 |
+| 2023-10-23 | −0,09 °C | 0,68 °C | 168 |
+| 2023-10-30 | +0,10 °C | 0,83 °C | 168 |
+| 2023-11-06 | +0,10 °C | 1,01 °C | 168 |
+| 2023-11-13 | −0,20 °C | 1,07 °C | 168 |
+| 2023-11-20 | −0,01 °C | 0,72 °C | 168 |
+| 2023-11-27 | +0,35 °C | 0,88 °C | 168 |
+| 2023-12-04 | +0,03 °C | 1,57 °C | 168 |
+| 2023-12-11 | −0,92 °C | 1,09 °C | 168 |
+| 2023-12-18 | +0,47 °C | 0,82 °C | 168 |
+| 2023-12-25 | +0,56 °C | 1,19 °C | 168 |
+
 
 **La règle 2 sur 2023.** Sa première formulation (EAMP ou biais hors seuil 2 semaines de suite, dans n'importe quelle combinaison) dit « réentraîner » la semaine du 2023-06-26 (la semaine d'avant : EAMP 2,52 %, biais +0,41 % hors bande ; celle-ci : EAMP 1,83 %, biais +0,52 % hors bande), puis la semaine du 2023-07-31 (la semaine d'avant : EAMP 1,34 %, biais −0,07 % hors bande ; celle-ci : EAMP 1,40 %, biais +0,31 % hors bande). Semaine du 2023-06-26 : le biais, côté bas est au-delà de son seuil les deux semaines, mais, sans les 2 jours les plus extrêmes de chaque semaine, vaut +1,84 % puis +1,43 % pour un seuil de +0,60 % : aucune des deux semaines n'est hors seuil, étendue ; la règle retenue n'y voit donc rien. Semaine du 2023-07-31 : le biais, côté bas est au-delà de son seuil les deux semaines, mais, sans les 2 jours les plus extrêmes de chaque semaine, vaut +0,34 % puis +0,82 % pour un seuil de +0,60 % : l'une des deux semaines n'est pas hors seuil, étendue ; la règle retenue n'y voit donc rien.
 
@@ -452,9 +669,9 @@ _Chaque nombre de cette section est de 2024, vu par les développeurs : vue à t
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (gelé d’abord), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (après sa dérogation), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
-| v2, `18daf1fc40a24300aeaba5e4f14d4107` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+| v2, `fac1d0f3813b4499b10e4622c8fc4997` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 
-**Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `9f87c124e34344a8a65e4a7679c3c458` : EAMP de 4,23 % contre 4,23 % (écart relatif 0,0e+00), couverture de 89,4 % contre 89,4 %, que la correction de la veille de l'année rejouée déplace (section 6.3 du plan).
+**Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `9f87c124e34344a8a65e4a7679c3c458` : EAMP de 4,23 % contre 4,23 % (écart relatif 0,0e+00), couverture de 89,39 % contre 89,43 % (−0,04 pt), l'écart que fait la correction de la veille de l'année rejouée (section 6.3 du plan).
 
 | Modèle (_vu par les développeurs_) | EAMP | IC 95 % | Couverture | Heures |
 |---|---|---|---|---|
@@ -479,7 +696,66 @@ Verdicts (_vu par les développeurs_) : v2 contre v1 tel que livré, « meilleur
 | 2024-01-20 00:00 UTC | 35 668 MW | −15,0 °C | +2,3 % | +3,2 % | +8,7 % | 
 
 
-**L'erreur de la prévision de température en 2024** (prévision moins observation aux heures notées ; _vu par les développeurs_), par saison : hiver, −0,02 °C en moyenne et 1,19 °C en absolu (2 178 heures) ; printemps, +0,07 °C en moyenne et 1,06 °C en absolu (2 202 heures) ; été, +0,13 °C en moyenne et 0,87 °C en absolu (2 201 heures) ; automne, +0,11 °C en moyenne et 0,82 °C en absolu (2 183 heures). Une preuve jointe au rejeu, sans seuil.
+**L'erreur de la prévision de température en 2024** (prévision moins observation aux heures rejouées qui ont les deux ; _vu par les développeurs_), par saison : hiver, −0,02 °C en moyenne et 1,19 °C en absolu (2 178 heures) ; printemps, +0,07 °C en moyenne et 1,06 °C en absolu (2 202 heures) ; été, +0,13 °C en moyenne et 0,87 °C en absolu (2 201 heures) ; automne, +0,11 °C en moyenne et 0,82 °C en absolu (2 183 heures). Une preuve jointe au rejeu, sans seuil.
+
+**L'erreur hebdomadaire de la prévision de température en 2024** (_vu par les développeurs_) : la prévision émise moins la température observée de Montréal (ECCC) à l'heure visée, sur les heures qui ont les deux, par semaine du rejeu (du lundi au dimanche, heure normale). Le rapport la dérive du cadre horaire du rejeu (`frames/hourly.parquet`), tenu à ce que le rejeu consigne : les erreurs par mois et par saison qu'il donne sont celles que le rejeu a consignées, heures, moyennes et erreurs absolues moyennes. Une preuve jointe au rejeu, sans seuil : elle ne décide rien.
+
+| Semaine du (_vu par les développeurs_) | Écart moyen | Écart absolu moyen | Heures |
+|---|---|---|---|
+| 2024-01-01 | +0,93 °C | 1,24 °C | 168 |
+| 2024-01-08 | −0,58 °C | 1,31 °C | 165 |
+| 2024-01-15 | −0,57 °C | 1,03 °C | 167 |
+| 2024-01-22 | −0,28 °C | 1,16 °C | 168 |
+| 2024-01-29 | −0,88 °C | 1,03 °C | 168 |
+| 2024-02-05 | −1,44 °C | 1,83 °C | 166 |
+| 2024-02-12 | +0,57 °C | 1,05 °C | 168 |
+| 2024-02-19 | +0,19 °C | 1,02 °C | 168 |
+| 2024-02-26 | +0,47 °C | 1,39 °C | 168 |
+| 2024-03-04 | +0,58 °C | 1,19 °C | 166 |
+| 2024-03-11 | −0,40 °C | 1,07 °C | 168 |
+| 2024-03-18 | +0,83 °C | 0,99 °C | 168 |
+| 2024-03-25 | −0,53 °C | 0,95 °C | 167 |
+| 2024-04-01 | +0,17 °C | 0,96 °C | 168 |
+| 2024-04-08 | +0,41 °C | 1,33 °C | 168 |
+| 2024-04-15 | +0,40 °C | 0,84 °C | 168 |
+| 2024-04-22 | −0,02 °C | 1,10 °C | 168 |
+| 2024-04-29 | +0,35 °C | 1,12 °C | 167 |
+| 2024-05-06 | −0,55 °C | 1,09 °C | 168 |
+| 2024-05-13 | −0,63 °C | 1,07 °C | 167 |
+| 2024-05-20 | +0,09 °C | 0,89 °C | 167 |
+| 2024-05-27 | −0,26 °C | 1,02 °C | 167 |
+| 2024-06-03 | +0,25 °C | 1,00 °C | 168 |
+| 2024-06-10 | +0,56 °C | 1,03 °C | 168 |
+| 2024-06-17 | −0,01 °C | 0,93 °C | 168 |
+| 2024-06-24 | −0,23 °C | 1,07 °C | 166 |
+| 2024-07-01 | −0,09 °C | 0,77 °C | 167 |
+| 2024-07-08 | +0,50 °C | 0,86 °C | 166 |
+| 2024-07-15 | +0,01 °C | 0,73 °C | 168 |
+| 2024-07-22 | +0,21 °C | 0,72 °C | 168 |
+| 2024-07-29 | +0,06 °C | 0,60 °C | 167 |
+| 2024-08-05 | +0,41 °C | 1,24 °C | 168 |
+| 2024-08-12 | −0,02 °C | 0,77 °C | 168 |
+| 2024-08-19 | +0,22 °C | 0,79 °C | 168 |
+| 2024-08-26 | −0,10 °C | 0,86 °C | 168 |
+| 2024-09-02 | −0,14 °C | 0,69 °C | 168 |
+| 2024-09-09 | −0,06 °C | 0,92 °C | 168 |
+| 2024-09-16 | +0,31 °C | 0,62 °C | 168 |
+| 2024-09-23 | +0,50 °C | 0,91 °C | 168 |
+| 2024-09-30 | +0,29 °C | 0,78 °C | 168 |
+| 2024-10-07 | −0,22 °C | 0,73 °C | 168 |
+| 2024-10-14 | +0,02 °C | 0,73 °C | 168 |
+| 2024-10-21 | +0,08 °C | 0,87 °C | 168 |
+| 2024-10-28 | 0,00 °C | 1,09 °C | 168 |
+| 2024-11-04 | −0,17 °C | 0,85 °C | 168 |
+| 2024-11-11 | +0,04 °C | 0,85 °C | 168 |
+| 2024-11-18 | +0,32 °C | 0,71 °C | 168 |
+| 2024-11-25 | +0,55 °C | 0,96 °C | 167 |
+| 2024-12-02 | +0,34 °C | 0,61 °C | 168 |
+| 2024-12-09 | +0,62 °C | 1,43 °C | 168 |
+| 2024-12-16 | +0,50 °C | 1,04 °C | 168 |
+| 2024-12-23 | +0,54 °C | 1,44 °C | 168 |
+| 2024-12-30 | −1,03 °C | 1,12 °C | 48 |
+
 
 L'horloge avance d'heure en heure du 2024-01-01 au 2024-12-31 ; chaque lecture, prévisions de température comprises, passe par un accès qui refuse toute donnée postérieure à l'horloge, chaque prévision n'étant visible qu'à partir de sa disponibilité. Le modèle et les deux modèles de comparaison sont vérifiés par empreinte avant et après, inchangées : v2 `7aadbc5866c6`, la forme de v1 sur la prévision `4e9433077a9a`, v1 tel que livré `7469cd232977`.
 
@@ -578,20 +854,20 @@ Aucun choc d'un seul jour n'a donné d'alerte sur 2024 : un mauvais jour gâte a
 
 Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit. Plus long délai d'un point de prévision en 2024 : 71 h.
 
-![Rejeu de 2024](figures/validation/replay-2024-weekly.fr.png)
+![Rejeu de 2024, vu par les développeurs](figures/validation/replay-2024-weekly.fr.png)
 
-![Dérive 2024](figures/validation/replay-2024-drift.fr.png)
+![Dérive du rejeu de 2024, vu par les développeurs](figures/validation/replay-2024-drift.fr.png)
 
 Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dans l'exécution, et la valeur d'Evidently est comparée à celle du moniteur : 4 comparaisons, toutes égales.
 
 ## 9. 2025, le test de référence
 
-**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
+**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce sera ce premier départ, sauf s'il s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 11.3.5 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
 
 ## 10. Limites
 
 - **Le choix et 2024.** La famille et l'entrée de v2 ont été choisies sur 2020–2023 ; 2024 avait été vue à travers v1. Ni l'une ni l'autre ne prouve que v2 est meilleur : seul un test de référence propre de 2025 le peut (section 9).
-- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée (2 heures après l'émission), et la sensibilité de 6 heures borne ce qu'elle vaut (section 2). Le modèle du NBM change au fil des années sans être suivi.
+- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée (2 heures après l'émission), et la sensibilité de la section 2 mesure ce que coûterait une disponibilité à 6 heures au lieu de 2 ; un délai plus long n'est pas mesuré. Le modèle du NBM change au fil des années sans être suivi.
 - **Une seule prévision pour une province.** Un seul point de prévision tient lieu de la météo du Québec, comme une seule station en v1.
 - **Couverture conditionnelle.** L'intervalle de v2 sous-couvre l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Les seuils de couverture de l'hiver sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation. À l'inverse, le seuil de couverture de l'été (91,0 %) dépasse le nominal de 90 % : une semaine couverte au-delà du nominal peut y être signalée basse.
 - **Extrapolation.** Sous la plage d'entraînement, les courbes sont des droites ; la queue froide de la règle de décision et le décompte des heures hors plage de la section 3 mesurent ce que cela coûte.
@@ -600,7 +876,7 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 - **Exclusion de l'écho** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Sur un modèle dégradé dont le biais change de côté, elle supprime « réentraîner » sur 2023 dans 5 essais sur 240 et le retarde dans 32, et sur 2024 dans 4 essais sur 240 et le retarde dans 30 ; c'est le prix d'éviter les fausses alertes d'un épisode suivi de son écho.
 - **Fausses alertes de dérive en 2024.** Les niveaux d'alarme sont le 95ᵉ centile des semaines de validation 2021–2023, dont les références couvraient de 2 à 4 années antérieures pour la prévision de température et de 1 à 3 pour la prévision de demande ; en 2024, elles en couvrent 5 et 4. Le taux de fausses alertes de dérive en 2024 n'est pas mesuré.
 - **Règle 4 et un vrai changement de température.** Une dérive réelle et soutenue de la prévision de température, que le modèle suit, performance dans ses seuils, peut donner « examiner les données » : la règle ne distingue pas un vrai changement de la météo d'une erreur de données. La règle reste telle quelle.
-- **Données en temps réel.** Les valeurs sont celles téléchargées le 2026-10-14 (demande) et à partir du 2026-10-14 (météo observée) ; aucune révision n'est modélisée, et l'arrivée d'une prévision est déduite de son heure d'émission.
+- **Données en temps réel.** Les valeurs sont celles téléchargées le 2026-10-14 (demande), à partir du 2026-10-14 (météo observée) et à partir du 2026-10-17 (prévisions NBM) ; aucune révision n'est modélisée, et l'arrivée d'une prévision est déduite de son heure d'émission.
 - **Indépendance.** Le modèle, les contrôles et ce rapport viennent d'agents IA travaillant sous la direction d'un seul propriétaire, sans revue humaine indépendante du code. Les revues ont été faites par des agents à contexte neuf et par un modèle d'IA d'un autre fournisseur, ce qui n'est pas une validation indépendante au sens de SR 11-7.
 
 ## 11. Les bris, sur des données synthétiques
@@ -1005,7 +1281,7 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Rendu des rapports | Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, rapport anglais | resté silencieux |
 | Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport français | déclenché |
 | Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport anglais | déclenché |
-| Rendu des rapports | Un nombre de v2 sur 2024 sans son étiquette d'évaluation fait refuser le rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2024 dont les contrastes ou les verdicts ne portent pas l'étiquette « vu par les développeurs » fait refuser le rapport | déclenché |
 | Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport français | déclenché |
 | Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport anglais | déclenché |
 | Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport français | déclenché |
@@ -1064,6 +1340,29 @@ Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attrap
 | Rendu des rapports | Témoin : les deux pages, dans les deux langues, sont rendues d'après ce qu'écrivent le rejeu, ses diagnostics, la porte de 2025 et le registre, et les lignes d'épisodes du rapport ont les clés de celles que la mesure construit | resté silencieux |
 | Rendu des rapports | Témoin : l'estampille porte la position de 2025 du test de référence, jamais celle d'un rejeu refait | resté silencieux |
 | Rendu des rapports | Témoin : les figures et les gabarits de v2 passent l'analyse de sécurité publique | resté silencieux |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus froid sous la base de chauffage est un constat, avec son heure, son pas et sa taille | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus chaud au-dessus de la base est un constat | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Témoin : une courbe saine, et un retour en arrière dans la tolérance, ne donnent aucun constat de forme | resté silencieux |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une pente froide qui n'est pas positive est un constat ; une pente positive n'en est pas un | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un pli, ou un modèle figé, dont la pente sort de la bande des plis de plus du facteur fixé est signalé ; sans écart, rien ne l'est | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des retards qui ne sont pas positifs, ou dont la somme n'est pas sous 1, sont des constats, d'un modèle figé ou d'un pli | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Témoin : le GAM réajusté par la mesure de solidité aux réglages fixés reproduit les prévisions hors échantillon de la validation à chaque heure | resté silencieux |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une variante réajustée qui ne reproduit pas la validation, ou pas sur les mêmes heures, arrête l'exécution | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | La mesure de solidité refuse une ligne postérieure à la fenêtre de conception | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des courbes qui ne sont pas celles qui prévoient font de la sensibilité de l'entrée un constat | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une table des courbes qui n'est pas celle du modèle figé est refusée | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une exécution de solidité qui ne nomme pas les modèles figés, la validation, les empreintes ou le code de la chaîne fait refuser le rapport | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des résultats de solidité qui nomment une autre exécution que la leur font refuser le rapport | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport français | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport français | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport français | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport anglais | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport anglais | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport anglais | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport français | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport anglais | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport français | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport anglais | déclenché |
 
 Le bris « Un changement de niveau de la demande : réentraîner » multiplie la demande du monde synthétique par 1,12, une hausse de 12 %. Sur les vraies heures de 2023, une hausse de 10 % a donné « réentraîner » en 10 semaines à chaque départ (section 10). Sur les vraies heures de 2024 (vu par les développeurs), la même hausse a donné « réentraîner » en 10 semaines à chaque départ (section 10).
 
@@ -1073,7 +1372,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Attente | Ce que fait valiwatt | Où c'est vérifié |
 |---|---|---|
-| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Modèle, entrée et règle de décision fixés dans le plan avant tout rejeu de v2 ; courbes du GAM montrées à côté d'un ajustement sans retards. Des spécifications de rechange : forme de v1 sur la prévision, borne de la météo observée, marge de disponibilité de 6 heures, moyenne des 6 stations, intervalle absolu, quantile par saison. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité ; celles-ci ne sont pas faites. | Plan de v2, sections 4 et 8 ; exécutions de validation et des modèles figés |
+| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Modèle, entrée et règle de décision fixés dans le plan avant tout rejeu de v2 ; courbes du GAM montrées à côté d'un ajustement sans retards. Des spécifications de rechange : forme de v1 sur la prévision, borne de la météo observée, marge de disponibilité de 6 heures, moyenne des 6 stations, intervalle absolu, quantile par saison. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité. Ajoutées après le gel, sans rien décider : la forme et la taille de chaque courbe horaire, leur stabilité entre les plis et entre les gels, les retards lus, et une analyse de sensibilité au sens de SR 11-7, l'entrée déplacée de ±1 °C et le nombre de nœuds et l'alpha de la crête changés un à un ; les autres réglages ne sont pas variés. | Plan de v2, sections 4 et 8 ; exécutions de validation et des modèles figés ; section 3.1 et son exécution de solidité |
 | SR 11-7, qualité et pertinence des données | 25 portes de qualité sur toute la fenêtre, chaque réparation documentée ; en production, un moniteur de qualité quotidien sur les enregistrements bruts, y compris un jour sans prévision. | Rapport de qualité des données ; rejeux |
 | SR 11-7, données et modèles de tiers : l'entrée de prévision de la NOAA | Couverts : ses portes de qualité, sa règle de disponibilité, son erreur contre les observations, sa dérive et la sensibilité à la disponibilité. Non couverts : la solidité et la gestion des changements du modèle de la NOAA lui-même. | Sections 2 et 8 ; rapport de qualité des données |
 | SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures, prévisions comprises ; empreintes des trois modèles vérifiées avant et après ; le rejeu refuse de tourner si les règles ou les dépendances diffèrent de l'étiquette `rules-frozen-v2`. Chaque garde a son bris. | Section 11 |
@@ -1085,18 +1384,21 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 11 |
 | NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 8 |
 
-**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 ; la solidité et la gestion des changements du modèle de la NOAA ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; l'analyse de sensibilité au sens de SR 11-7 au-delà de l'entrée et de deux réglages (section 3.1), et sur des données réservées ; la solidité et la gestion des changements du modèle de la NOAA ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
 
 ## 13. Provenance
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-| qualité des données | `10c78de051d54785b94d58ffba6eea15` | 2026-10-17 22:46 UTC |
-| validation | `8ed71f1375c64f13a62d2e9a3652bd2d` | 2026-10-17 22:48 UTC |
-| modèles figés pour 2023 | `fcec1b39ce164e6999cec7fb0cb3b1d4` | 2026-10-17 22:49 UTC |
-| modèles figés pour 2024 | `6c53b6d7eef4446dacadd66312c9c1f1` | 2026-10-17 23:11 UTC |
-| répétition de 2023 | `a3ad248e1cc9427985161fca18fe1b26` | 2026-10-17 22:49 UTC |
-| rejeu de 2024 de cette chaîne | `18daf1fc40a24300aeaba5e4f14d4107` | 2026-10-17 23:11 UTC |
-| bris | `a009868785af446ba0205cea36a9d4c5` | 2026-10-17 23:52 UTC |
+| qualité des données | `718b9c3a51ad46009cf33e04db045e46` | 2026-10-18 07:20 UTC |
+| validation | `47d38b233b804a29982140268449cdaf` | 2026-10-18 07:24 UTC |
+| modèles figés pour 2023 | `6c6ce0666e844452a95eeaf863bcc736` | 2026-10-18 07:24 UTC |
+| modèles figés pour 2024 | `26df92f2be4948d9b5a5d97fa2fcfe30` | 2026-10-18 07:53 UTC |
+| répétition de 2023 | `aa12983bc72e4186bcf3124a2b7ec9c1` | 2026-10-18 07:24 UTC |
+| diagnostics de la répétition de 2023 (section 7) | `477bbd6d09f041099f0c315d1af7b89b` | 2026-10-18 07:25 UTC |
+| rejeu de 2024 de cette chaîne | `fac1d0f3813b4499b10e4622c8fc4997` | 2026-10-18 07:53 UTC |
+| diagnostics du rejeu de 2024 dont la section 8 montre les chiffres | `e7655cd3f663402f82c4fae16277e60a` | 2026-10-18 07:54 UTC |
+| solidité conceptuelle, ajoutée après le gel (section 3.1) | `6af4421e1e8f466a845118761947a708` | 2026-10-18 08:27 UTC |
+| bris | `5b95f2f8ffbe48ecb1e786b41f2649b6` | 2026-10-18 08:48 UTC |
 
-Empreinte du code : `521febded2db62c9f9241debd7daf14706a18ca91fd2d37995ab023308d1085c`. Empreinte des règles : `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.
+Empreinte du code : `53b6983300730f26e728fcdaf93e8e4fc23b99007dc1de9164c19a150fe04bc6`. Empreinte des règles : `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.

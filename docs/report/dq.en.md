@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `10c78de051d54785b94d58ffba6eea15` (2026-10-17 22:46 UTC), code `c778e08fc0b5`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `718b9c3a51ad46009cf33e04db045e46` (2026-10-18 07:20 UTC), code `c9d98aaa957b`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -36,6 +36,7 @@ _Generated from MLflow run `10c78de051d54785b94d58ffba6eea15` (2026-10-17 22:46 
 | ECCC, SHERBROOKE (7028123) | see `docs/data-licences.md` | 2026-10-14 | 73 months | manifest |
 | ECCC, BAGOTVILLE A (7060400) | see `docs/data-licences.md` | 2026-10-14 | 73 months | manifest |
 | ECCC, TROIS RIVIERES A (7018561) | see `docs/data-licences.md` | 2026-10-14 | 73 months | manifest |
+| NOAA, NBM forecasts (NBS, station CYUL), Iowa Environmental Mesonet archive | see `docs/data-licences.md` | 2026-10-17 | 6 yearly files | manifest |
 
 Data never enters the repository: `valiwatt fetch` downloads it, and every file is checked against its hash before use. Hydro-Québec gives the dataset a modification date of 2026-06-05.
 
@@ -61,7 +62,7 @@ Data never enters the repository: `valiwatt fetch` downloads it, and every file 
 
 ![Daily mean demand, 2019–2023](figures/en/daily_demand.png)
 
-_Daily mean demand, 2019–2023 (complete days only). Hours after 2023 are not plotted: they are held back for the production replay. The checks in sections 3 and 4 cover the whole window._
+_Daily mean demand, 2019–2023 (complete days only). Hours after 2023 are not plotted: they belong to the 2024 replay, seen by the developers. The checks in sections 3 and 4 cover the whole window._
 
 ### Gates
 
@@ -71,7 +72,7 @@ A gate that fails stops the chain: no canonical data is written and the command 
 |---|---|---|---|
 | Expected window, no record outside it | passed | 0 outside | 0 |
 | Every duplicate matches a known shape | passed | 0 unresolved | 0 |
-| Values within loose physical bounds (2019–2025) | passed | 13,294 to 42,473 MW | 5,000 to 60,000 MW |
+| Values within loose physical bounds (2019–2024) | passed | 13,294 to 42,473 MW | 5,000 to 60,000 MW |
 | Share of usable hours | passed | 99.89% | ≥ 99% |
 
 ### 3.1 Clocks going back: masked hours
