@@ -138,7 +138,14 @@ the gap goes to the owner as a question.
   report writes a recommendation in the monitor's form. No revert is pre-committed; the model afterwards is the
   owner's ruling.
 - **Going public** (2026-10-17): the repository goes public after the owner reads v2's render, with the fixes of the
-  review of everything since `v1` folded in.
+  review of everything since `v1` folded in. This repository is made public as it is: the commits the 2026-10-14
+  rewrite replaced stay reachable on GitHub by their hashes, with their agent session links and the two `BRIEF.md`
+  lines the rewrite removed; the owner accepted that, knowing it.
+- **Conceptual soundness, added after the freeze** (2026-10-17): the report interprets and checks the model's factors
+  (each hour's curve, its shape and size, their stability across folds and freezes, the lags, and sensitivity in the
+  sense of SR 11-7), from the frozen artifacts and the validation runs, with no refit of a frozen model and no rule
+  change. Labelled as added after the freeze, it decides nothing: a failed check is a finding the report states,
+  never a gate, and the 2025 verdict stays as `docs/plan-v2.md` pre-registers it.
 - **Hydro-Québec's general terms of use** (2026-10-17): publish as ruled on 2026-10-13. The dataset's own licence, CC
   BY-NC 4.0, governs this NonCommercial use; the general terms of use of Hydro-Québec's digital platforms, which the
   portal's footer links and a script loads, are not checked further.
