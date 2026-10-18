@@ -999,3 +999,13 @@ None yet.
   an ambient run identifier made MLflow resume an older run of another experiment, where no later 2025 gate looks, and
   other such variables could add to a run or make it fail once created. The run is created first and then entered by
   its identifier; should entering fail, it ends failed with the class of its error. No number changes.
+- 2026-10-17, after v2's 2024 render, from the review of everything since `v1` by another AI model; three readings of
+  this page that its code and reports now state, none a rule change:
+  - Section 11.3.4 (d), "the latest data-quality run": the 2025 gate reads the latest finished one. A run that stopped
+    or is still running gives no verdict on the data, and condition (e) ties every raw file the start reads to the
+    hashes of the run the gate read, so a file it did not check is refused.
+  - Section 9.3, the forecast's weekly error against the ECCC observation: the replay's record holds it by month and
+    by season; the report derives it by week from the replay's own hourly frame, held to the record's months and
+    seasons, and shows it as evidence without a threshold.
+  - Section 3.5, the six-hour availability: it measures what a six-hour delay instead of two would cost, and bounds
+    nothing; a longer delay is not measured.
