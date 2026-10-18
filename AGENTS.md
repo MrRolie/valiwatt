@@ -137,6 +137,11 @@ the gap goes to the owner as a question.
   says. The status changes, the claims it bears on are withdrawn, the report and the story open with it, and the
   report writes a recommendation in the monitor's form. No revert is pre-committed; the model afterwards is the
   owner's ruling.
+- **Going public** (2026-10-17): the repository goes public after the owner reads v2's render, with the fixes of the
+  review of everything since `v1` folded in.
+- **Hydro-Québec's general terms of use** (2026-10-17): publish as ruled on 2026-10-13. The dataset's own licence, CC
+  BY-NC 4.0, governs this NonCommercial use; the general terms of use of Hydro-Québec's digital platforms, which the
+  portal's footer links and a script loads, are not checked further.
 
 ## Departures from the brief
 
