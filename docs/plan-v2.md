@@ -1009,3 +1009,11 @@ None yet.
     seasons, and shows it as evidence without a threshold.
   - Section 3.5, the six-hour availability: it measures what a six-hour delay instead of two would cost, and bounds
     nothing; a longer delay is not measured.
+- 2026-10-17, the owner's ruling: conceptual soundness, added after the freeze and deciding nothing (AGENTS.md). A
+  tracked run of its own, after the 2024 replay, reads the two frozen models and the design years only, with no refit
+  of a frozen model and no rule change, and the validation report gives it a section: each hour's curve read in words,
+  its shape about v1's 18 °C base, its slopes in MW per °C beside one public figure that is not like for like, its
+  stability across the 48 folds and between the two freezes, the lags, and sensitivity to a degree on the forecast and
+  to the number of knots and the ridge penalty. A failed check is a finding the report states, never a gate; the 2025
+  verdict stays as this page pre-registers it. The developers had looked at the 2024 freeze's curves before fixing its
+  base and tolerances, and the report says so.
