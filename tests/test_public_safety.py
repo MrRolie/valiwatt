@@ -379,7 +379,8 @@ def test_the_v2_figures_and_templates_pass_the_scan(repo, monkeypatch):
     for lang in ("fr", "en"):
         RV.figures(ctx, lang)
     drawn = sorted((root / "docs" / "report" / "figures" / "validation").glob("*.png"))
-    assert len(drawn) == 14 and any("partial-effects" in p.name for p in drawn)
+    assert len(drawn) == 16 and any("partial-effects" in p.name for p in drawn)
+    assert any("soundness-slopes" in p.name for p in drawn)  # report/soundness.py, added after the freeze
     assert all(png_text(p.read_bytes()) is not None for p in drawn)
     git("add", "-f", "docs/report/figures")
     assert scan_index(root) == []

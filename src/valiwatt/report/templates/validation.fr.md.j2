@@ -231,6 +231,110 @@ Sur un même ensemble d'heures, les trois comparaisons s'additionnent : v2 contr
 | {{ h }} h | {{ row.temp_c|num(0) }} °C | {{ row.effect_mw|signed(0) }} MW | {{ row.effect_mw_nolag|signed(0) }} MW |
 {% endfor %}
 
+{% if sound %}
+{% set SO = sound %}
+{% set ST = SO.settings %}
+{% set L_, F_ = SO.last|string, SO.first|string %}
+{% set c1, c2 = ST.cold_spans[0], ST.cold_spans[1] %}
+{% set KIND = {'production': 'avec les retards', 'no_lag': 'sans les retards'} %}
+{% macro steps(bs) %}{% for b in bs %}{% if b.side == 'cold' %}{{ b.warmer_c|num(0) }}→{{ b.colder_c|num(0) }}{% else %}{{ b.colder_c|num(0) }}→{{ b.warmer_c|num(0) }}{% endif %} °C : {{ b.size_mw|signed(0) }} MW{% if not loop.last %} ; {% endif %}{% else %}—{% endfor %}{% endmacro %}
+{% macro s0(x) %}{% if x is none %}—{% else %}{{ x|num(0) }}{% endif %}{% endmacro %}
+{% macro lagrow(k) %}{{ SO.lags.freezes[F_][k]|num(3) }} | {{ SO.lags.freezes[L_][k]|num(3) }} | {{ SO.lags.folds[k].p5|num(3) }}, {{ SO.lags.folds[k].p50|num(3) }}, {{ SO.lags.folds[k].p95|num(3) }}{% endmacro %}
+{% set RS = SO.slope_stats[L_] %}
+{% set LA = SO.lags.freezes[L_] %}
+### 3.1 Solidité conceptuelle, ajoutée après le gel
+
+_Ajoutée après le gel des règles de v2, à la décision du propriétaire du 2026-10-17, cette section ne décide rien : elle interprète et vérifie les facteurs du modèle, à partir des modèles figés pour {{ SO.first }} et pour {{ SO.last }} et des plis de la validation, sans réajuster aucun modèle figé ni changer aucune règle. Une vérification qui échoue est un constat que le rapport énonce, jamais une porte : aucun nombre de cette section n'entre dans un seuil, un statut, un verdict ou une recommandation, et le verdict de {{ HY }} reste celui que le plan préenregistre. Exécution `{{ SO.run_id }}`._
+
+Les réglages ont été fixés avant que ces mesures soient calculées sur les exécutions réelles : la base de chauffage, {{ ST.heating_base_c|num(0) }} °C, est celle de v1, fixée avant toute courbe de v2 et température à laquelle chaque courbe vaut zéro (une base lue sur ces courbes ajusterait la vérification à ce qu'elle vérifie) ; la tolérance est de {{ ST.tolerance_mw|num(0) }} MW par pas de {{ ST.grid_step_c|num(0) }} °C, une unité des MW entiers dans lesquels le rapport imprime les courbes, pour que la vérification ne soit pas plus fine que la page qui l'énonce ; un pli est signalé quand sa pente sort de la bande du {{ (100 * ST.spread[0])|num(0) }}ᵉ au {{ (100 * ST.spread[2])|num(0) }}ᵉ centile des plis de plus de {{ ST.fold_factor|num(1) }} fois sa largeur ({{ (100 * (ST.spread[0] + 1 - ST.spread[2]))|num(0) }} % des plis sont hors de la bande par construction : un signalement demande donc une distance au-delà de son bord, et une distance mesurée en largeurs de la bande vaut à chaque heure, quel que soit son étalement). Les développeurs avaient toutefois déjà regardé, avant de les fixer, la table des courbes du modèle figé pour {{ SO.last }}.
+
+**La lecture.** Compte tenu de la demande de la veille et de la semaine précédente, chaque degré plus froid entre {{ c1[0]|num(0) }} et {{ c1[1]|num(0) }} °C ajoute à la prévision de {{ RS.production[SO.cold].min|num(0) }} à {{ RS.production[SO.cold].max|num(0) }} MW selon l'heure ({{ RS.production[SO.cold].median|num(0) }} en médiane) : le plus à {{ SO.reading.production.most }} h, le moins à {{ SO.reading.production.least }} h. Sans les retards, la même pente va de {{ RS.no_lag[SO.cold].min|num(0) }} à {{ RS.no_lag[SO.cold].max|num(0) }} MW ({{ RS.no_lag[SO.cold].median|num(0) }} en médiane). Entre {{ c2[0]|num(0) }} et {{ c2[1]|num(0) }} °C, elle va de {{ RS.production[SO.cold2].min|num(0) }} à {{ RS.production[SO.cold2].max|num(0) }} MW avec les retards. Côté chaud, chaque degré plus chaud entre {{ ST.warm_span[0]|num(0) }} et {{ ST.warm_span[1]|num(0) }} °C ajoute de {{ RS.production[SO.warm].min|num(0) }} à {{ RS.production[SO.warm].max|num(0) }} MW avec les retards : la climatisation. Selon l'heure, la courbe avec les retards est au plus bas entre {{ SO.reading.production.lowest.min|num(0) }} et {{ SO.reading.production.lowest.max|num(0) }} °C. La somme des deux coefficients des retards, {{ LA.sum|num(3) }}, {% if LA.fades %}est sous 1 : un choc isolé s'efface{% else %}n'est pas sous 1 : un choc isolé ne s'efface pas{% endif %}.
+
+#### Forme ({{ say.soundness_label }})
+
+Sur la plage d'entraînement de chaque modèle figé, par pas de {{ ST.grid_step_c|num(0) }} °C : sous {{ ST.heating_base_c|num(0) }} °C, un pas plus froid ne doit pas baisser la courbe de plus de {{ ST.tolerance_mw|num(0) }} MW (le chauffage) ; au-dessus, un pas plus chaud ne doit pas la baisser de plus de {{ ST.tolerance_mw|num(0) }} MW (la climatisation). Chaque pas en défaut, avec sa variation :
+
+| Heure | Avec les retards, {{ SO.last }} | Sans les retards, {{ SO.last }} | Avec les retards, {{ SO.first }} | Sans les retards, {{ SO.first }} |
+|---|---|---|---|---|
+{% for h in range(24) %}
+| {{ h }} h | {{ steps(SO.breaks_by_hour[L_].production.get(h, [])) }} | {{ steps(SO.breaks_by_hour[L_].no_lag.get(h, [])) }} | {{ steps(SO.breaks_by_hour[F_].production.get(h, [])) }} | {{ steps(SO.breaks_by_hour[F_].no_lag.get(h, [])) }} |
+{% endfor %}
+
+#### Taille ({{ say.soundness_label }})
+
+La pente froide de {{ c1[0]|num(0) }} à {{ c1[1]|num(0) }} °C, en MW par °C plus froid, par heure, et la bande des {{ SO.stability.folds }} plis réajustés (avec les retards) :
+
+| Heure | Avec les retards, {{ SO.last }} | Sans les retards, {{ SO.last }} | Avec les retards, {{ SO.first }} | Sans les retards, {{ SO.first }} | Plis, {{ (100 * ST.spread[0])|num(0) }}ᵉ {{ say.to }} {{ (100 * ST.spread[2])|num(0) }}ᵉ centile |
+|---|---|---|---|---|---|
+{% for p in SO.slopes[L_].production %}
+{% set i = loop.index0 %}
+{% set b = SO.stability.rows|selectattr('hour', 'equalto', p.hour)|first %}
+| {{ p.hour }} h | {{ s0(p[SO.cold]) }} | {{ s0(SO.slopes[L_].no_lag[i][SO.cold]) }} | {{ s0(SO.slopes[F_].production[i][SO.cold]) }} | {{ s0(SO.slopes[F_].no_lag[i][SO.cold]) }} | {% if b is defined and b %}{{ s0(b.p5) }} {{ say.to }} {{ s0(b.p95) }}{% else %}—{% endif %} |
+{% endfor %}
+
+{% for y in [L_, F_] %}{% set fz_ = SO.freezes[y] %}Modèle figé pour {{ y }} : plage d'entraînement de {{ fz_.training_range[0]|num(1) }} à {{ fz_.training_range[1]|num(1) }} °C{% if not fz_.spans_inside[SO.cold] %}, la pente de {{ c1[0]|num(0) }} à {{ c1[1]|num(0) }} °C y est en partie extrapolée{% endif %}. {% endfor %}Sur toutes les heures, pentes de {{ c2[0]|num(0) }} à {{ c2[1]|num(0) }} °C du modèle figé pour {{ SO.last }} : avec les retards, de {{ RS.production[SO.cold2].min|num(0) }} à {{ RS.production[SO.cold2].max|num(0) }} MW ; sans, de {{ RS.no_lag[SO.cold2].min|num(0) }} à {{ RS.no_lag[SO.cold2].max|num(0) }} MW. Pente chaude de {{ ST.warm_span[0]|num(0) }} à {{ ST.warm_span[1]|num(0) }} °C : avec les retards, de {{ RS.production[SO.warm].min|num(0) }} à {{ RS.production[SO.warm].max|num(0) }} MW par °C plus chaud ; sans, de {{ RS.no_lag[SO.warm].min|num(0) }} à {{ RS.no_lag[SO.warm].max|num(0) }} MW. Une pente froide qui n'est pas positive serait un constat.
+
+**Un chiffre public, indépendant.** Radio-Canada ({{ SO.public.author }}, « {{ SO.public.title }} », publié le {{ SO.public.published }}, lu le {{ SO.public.read }}, <{{ SO.public.url }}>) : « {{ SO.public.quote }} » Ce chiffre ne dit ni la température dont il est la variation, ni les heures, ni l'année, ni s'il tient compte de la demande de la veille : la comparaison avec les pentes ci-dessus n'est pas à l'identique. La pente sans les retards de {{ c1[0]|num(0) }} à {{ c1[1]|num(0) }} °C, la plus proche d'une sensibilité de la demande elle-même, a une médiane de {{ RS.no_lag[SO.cold].median|num(0) }} MW par °C, à côté de ses {{ SO.public.mw_per_c|num(0) }} MW par degré : ce rapprochement ne valide rien.
+
+![Pentes froides par heure]({{ fig.validation_soundness_slopes }})
+
+#### Stabilité ({{ say.soundness_label }})
+
+**Entre les deux gels.** Sur leur plage d'entraînement commune ({{ SO.between_freezes.production.common_range[0]|num(1) }} à {{ SO.between_freezes.production.common_range[1]|num(1) }} °C), les courbes avec les retards du modèle figé pour {{ SO.last }} s'écartent de celles du modèle figé pour {{ SO.first }} d'au plus {{ SO.between.production.max_abs_mw|num(0) }} MW, et leur pente froide de {{ c1[0]|num(0) }} à {{ c1[1]|num(0) }} °C varie de {{ SO.between.production.change_pct.min|signed(1) }} % à {{ SO.between.production.change_pct.max|signed(1) }} % selon l'heure ; sans les retards, d'au plus {{ SO.between.no_lag.max_abs_mw|num(0) }} MW et de {{ SO.between.no_lag.change_pct.min|signed(1) }} % à {{ SO.between.no_lag.change_pct.max|signed(1) }} %. Les courbes valent zéro à {{ ST.ref_c|num(0) }} °C : leur écart grandit loin de cette température.
+
+| Heure | Écart le plus grand (MW) | À (°C) | Pente froide, {{ SO.first }} | Pente froide, {{ SO.last }} | Variation |
+|---|---|---|---|---|---|
+{% for x in SO.between_freezes.production.rows %}
+| {{ x.hour }} h | {{ x.max_abs_mw|num(0) }} | {{ x.at_c|num(0) }} | {{ s0(x.slope_first) }} | {{ s0(x.slope_last) }} | {% if x.slope_change_pct is none %}—{% else %}{{ x.slope_change_pct|signed(1) }} %{% endif %} |
+{% endfor %}
+
+**Entre les plis.** Le GAM réajusté aux réglages fixés sur chacun des {{ SO.stability.folds }} plis de la validation reproduit ses prévisions hors échantillon {% if SO.control.max_abs_mw == 0 %}exactement{% else %}à {{ SO.control.max_abs_mw|sci }} MW près{% endif %} sur ses {{ SO.control.hours|num }} heures (le témoin : au-delà de {{ ST.control_mw|sci(0) }} MW, l'exécution s'arrête). La bande de chaque heure est dans le tableau de la taille. {% if SO.stability.flagged %}Plis dont la pente sort de la bande de plus de {{ ST.fold_factor|num(1) }} fois sa largeur : {% for x in SO.stability.flagged %}{{ x.fold }} à {{ x.hour }} h ({{ x.slope|num(0) }} MW par °C){% if not loop.last %} ; {% endif %}{% endfor %}.{% else %}Aucun pli ne sort de la bande de plus de {{ ST.fold_factor|num(1) }} fois sa largeur.{% endif %} {% if SO.stability.frozen_flagged %}Modèles figés dont la pente en sort de même : {% for x in SO.stability.frozen_flagged %}{{ x.year }} à {{ x.hour }} h ({{ x.slope|num(0) }} MW par °C){% if not loop.last %} ; {% endif %}{% endfor %}.{% else %}Aucun des deux modèles figés n'en sort ainsi.{% endif %}
+
+
+#### Les retards ({{ say.soundness_label }})
+
+| Coefficient, en MW par MW | {{ SO.first }} | {{ SO.last }} | Plis : {{ (100 * ST.spread[0])|num(0) }}ᵉ, {{ (100 * ST.spread[1])|num(0) }}ᵉ, {{ (100 * ST.spread[2])|num(0) }}ᵉ centile |
+|---|---|---|---|
+| {{ say.lag_rows[0] }} | {{ lagrow('lag24') }} |
+| {{ say.lag_rows[1] }} | {{ lagrow('lag168') }} |
+| {{ say.lag_rows[2] }} | {{ lagrow('sum') }} |
+
+Un gain de {{ (1000)|num(0) }} MW de la demande de la veille porte environ {{ LA.carry_per_1000_mw|num(0) }} MW dans la prévision du lendemain{% if LA.fades %} ; la somme des coefficients étant sous 1, un choc isolé s'efface d'une prévision à l'autre{% endif %}. {% if SO.lags.folds_not_positive or SO.lags.folds_not_fading %}Plis où un coefficient n'est pas positif : {{ SO.lags.folds_not_positive|join(', ') or '—' }} ; où leur somme n'est pas sous 1 : {{ SO.lags.folds_not_fading|join(', ') or '—' }}.{% else %}Dans chaque pli, les deux coefficients sont positifs et leur somme est sous 1.{% endif %} Mesuré sur le modèle figé pour {{ SO.last }} : sans les retards, la pente froide de {{ c1[0]|num(0) }} à {{ c1[1]|num(0) }} °C de chaque heure est plus forte de {{ SO.flat.difference.min|num(0) }} à {{ SO.flat.difference.max|num(0) }} MW par °C ; la courbe avec les retards en garde de {{ (100 * SO.flat.ratio.min)|num(0) }} à {{ (100 * SO.flat.ratio.max)|num(0) }} %. Ce sont des différences mesurées, données sans théorie{% if SO.flat.difference.min > 0 %} : à chaque heure, la courbe avec les retards est la plus plate des deux{% endif %}.
+
+#### Sensibilité au sens de SR 11-7 ({{ say.soundness_label }})
+
+**L'entrée** ({{ label(SO.input.label) }}). Le modèle figé pour {{ SO.last }}, sur ses propres lignes d'entraînement de {{ SO.input.year }} ({{ SO.input.rows|num }} heures), avec la prévision de température déplacée de ±{{ ST.shift_c|num(0) }} °C :
+
+| Déplacement | Variation moyenne | En % | Hiver | Printemps | Été | Automne | MW par °C plus chaud |
+|---|---|---|---|---|---|---|---|
+{% for k, m in SO.input.moves|dictsort %}
+| {{ k|float|signed(0) }} °C | {{ m.mean_mw|signed(0) }} MW | {{ m.mean_pct|signed(2) }} % | {% for s_ in ['winter', 'spring', 'summer', 'fall'] %}{% if s_ in m.by_season %}{{ m.by_season[s_].mean_mw|signed(0) }} MW ({{ m.by_season[s_].mean_pct|signed(2) }} %){% else %}—{% endif %} | {% endfor %}{{ m.per_c_mw|signed(0) }} |
+{% endfor %}
+
+{% if SO.input.consistent %}Chaque variation est la différence de la courbe de son heure sur le déplacement, {% if SO.input.consistency_max_abs_mw == 0 %}exactement{% else %}à {{ SO.input.consistency_max_abs_mw|sci }} MW près{% endif %} : c'est une identité d'un modèle additif, que le calcul vérifie ; elle tiendrait quelles que soient les données.{% else %}La variation de la prévision s'écarte de la différence des courbes de jusqu'à {{ SO.input.consistency_max_abs_mw|num(3) }} MW : les courbes montrées ne sont pas celles qui prévoient.{% endif %}
+
+
+**Les réglages** ({{ label(SO.parameters.label) }}). L'EAMP sur les plis et les heures de la validation, chaque réglage changé seul, à côté des réglages fixés ({{ SO.parameters.ruled.n_knots }} nœuds, alpha {{ SO.parameters.ruled.ridge_alpha|num(1) }} : {{ SO.parameters.ruled.mape|pct(3) }} sur {{ SO.parameters.ruled.hours|num }} heures). Ces variantes ne changent pas le modèle : elles disent combien le résultat dépend de chaque réglage.
+
+| Réglage ({{ label(SO.parameters.label) }}) | Valeur | EAMP | Différence | IC 95 % |
+|---|---|---|---|---|
+{% for x in SO.parameters.variants %}
+| {{ 'Nombre de nœuds' if x.setting == 'n_knots' else 'Alpha de la crête' }} | {{ x.value|num(0 if x.setting == 'n_knots' else 1) }} | {{ x.mape|pct(3) }} | {{ pp(x.difference, 3) }} | {{ ppci(x.ci95_low, x.ci95_high, 3) }} |
+{% endfor %}
+
+#### Constats ({{ say.soundness_label }})
+
+{% for x in SO.findings %}
+- {{ say.finding }} ({{ say.soundness_label }}) : {% if x.measure == 'shape' %}la courbe {{ KIND[x.kind] }} du modèle figé pour {{ x.year }} a des pas en défaut (nombre : {{ x.count }} ; {% if x.sides == ['cold'] %}sous{% elif x.sides == ['warm'] %}au-dessus de{% else %}des deux côtés de{% endif %} {{ ST.heating_base_c|num(0) }} °C), le plus grand de {{ x.worst.size_mw|signed(0) }} MW à {{ x.worst.hour }} h.{% elif x.measure == 'size' %}la pente froide {{ KIND[x.kind] }} du modèle figé pour {{ x.year }} n'est pas positive à ces heures : {{ x.hours|join(', ') }} (nombre de pentes : {{ x.count }}).{% elif x.measure == 'stability_folds' %}des pentes de plis sortent de la bande (nombre : {{ x.count }} ; plis {{ x.folds|join(', ') }}).{% elif x.measure == 'stability_freezes' %}des pentes de modèles figés sortent de la bande des plis (nombre : {{ x.count }} ; modèles figés pour {{ x.years|join(', ') }}).{% elif x.measure == 'lags' %}les retards du modèle figé pour {{ x.year }} {% if not x.positive %}ne sont pas tous deux positifs{% else %}ont une somme qui n'est pas sous 1{% endif %}.{% elif x.measure == 'lags_folds' %}des plis ont un retard qui n'est pas positif ({{ x.not_positive|join(', ') or '—' }}) ou une somme qui n'est pas sous 1 ({{ x.not_fading|join(', ') or '—' }}).{% elif x.measure == 'input' %}la variation de la prévision s'écarte de la différence des courbes de jusqu'à {{ x.max_abs_mw|num(3) }} MW.{% endif %}
+
+{% else %}
+{{ say.no_finding }}
+{% endfor %}
+
+{% if SO.findings %}{% if SO.shape[L_].production %}Les courbes avec les retards du modèle figé pour {{ SO.last }} atteignent leur plus bas entre {{ SO.reading.production.lowest.min|num(0) }} et {{ SO.reading.production.lowest.max|num(0) }} °C selon l'heure ; la base de v1 fixée d'avance est de {{ ST.heating_base_c|num(0) }} °C ; leurs pas en défaut sont tous entre {{ (SO.shape[L_].production|map(attribute='colder_c')|min)|num(0) }} et {{ (SO.shape[L_].production|map(attribute='warmer_c')|max)|num(0) }} °C. {% endif %}Ces constats ne changent ni le modèle, ni ses règles, ni le verdict de {{ HY }}.
+{% endif %}
+{% endif %}
+
 ## 4. Cas tests
 
 Aucun des deux cas tests n'a de critère d'acceptation qui pourrait échouer : ce sont des mesures, sur des années qui ont servi au choix ({{ label(v.contrasts.label) }}).
@@ -626,7 +730,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Attente | Ce que fait valiwatt | Où c'est vérifié |
 |---|---|---|
-| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Modèle, entrée et règle de décision fixés dans le plan avant tout rejeu de v2 ; courbes du GAM montrées à côté d'un ajustement sans retards. Des spécifications de rechange : forme de v1 sur la prévision, borne de la météo observée, marge de disponibilité de {{ K.late_h|num(0) }} heures, moyenne des {{ dq.sources.eccc|length }} stations, intervalle absolu, quantile par saison. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité ; celles-ci ne sont pas faites. | Plan de v2, sections 4 et 8 ; exécutions de validation et des modèles figés |
+| SR 11-7, solidité conceptuelle, y compris l'analyse de sensibilité | Modèle, entrée et règle de décision fixés dans le plan avant tout rejeu de v2 ; courbes du GAM montrées à côté d'un ajustement sans retards. Des spécifications de rechange : forme de v1 sur la prévision, borne de la météo observée, marge de disponibilité de {{ K.late_h|num(0) }} heures, moyenne des {{ dq.sources.eccc|length }} stations, intervalle absolu, quantile par saison. Ce ne sont pas les petites variations des entrées et des paramètres que SR 11-7 appelle analyse de sensibilité. {% if sound %}{{ say.sr_soundness }} : la forme et la taille de chaque courbe horaire, leur stabilité entre les plis et entre les gels, les retards lus, et une analyse de sensibilité au sens de SR 11-7, l'entrée déplacée de ±{{ sound.settings.shift_c|num(0) }} °C et le nombre de nœuds et l'alpha de la crête changés un à un ; les autres réglages ne sont pas variés.{% else %}Celles-ci ne sont pas faites.{% endif %} | Plan de v2, sections 4 et 8 ; exécutions de validation et des modèles figés{% if sound %} ; section 3.1 et son exécution de solidité{% endif %} |
 | SR 11-7, qualité et pertinence des données | {{ dq.checks.values()|selectattr('kind', 'equalto', 'gate')|list|length }} portes de qualité sur toute la fenêtre, chaque réparation documentée ; en production, un moniteur de qualité quotidien sur les enregistrements bruts, y compris un jour sans prévision. | Rapport de qualité des données ; rejeux |
 | SR 11-7, données et modèles de tiers : l'entrée de prévision de la NOAA | Couverts : ses portes de qualité, sa règle de disponibilité, son erreur contre les observations, sa dérive et la sensibilité à la disponibilité. Non couverts : la solidité et la gestion des changements du modèle de la NOAA lui-même. | Sections 2 et 8 ; rapport de qualité des données |
 | SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures, prévisions comprises ; empreintes des trois modèles vérifiées avant et après ; le rejeu refuse de tourner si les règles ou les dépendances diffèrent de l'étiquette `{{ freeze.freeze_tag }}`{% if departures %} ; l'étiquette a été déplacée par une dérogation consignée dans `AGENTS.md` (section 8){% endif %}. Chaque garde a son bris. | Section 11 |
@@ -638,13 +742,13 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | Exécutions MLflow (jeux de test, métriques, paramètres, versions) ; rejeux dans des conditions de production ; bris ; la liste « non couvert » ci-dessous. | Exécutions ; section 11 |
 | NIST MANAGE 2.2 | Recommandations hebdomadaires avec preuves ; qui agit, et comment, est hors champ. | Section 8 |
 
-**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; analyse de sensibilité au sens de SR 11-7 ; la solidité et la gestion des changements du modèle de la NOAA ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
+**Non couvert.** Validation indépendante et remise en question effective (SR 11-7, V ; NIST MEASURE 1.3) ; gouvernance, politiques et contrôles, audit interne, inventaire des modèles (SR 11-7, VI ; NIST GOVERN pour l'essentiel) ; revue périodique ; analyse des forçages (overrides) des résultats du modèle ; usage dans des décisions et matérialité ; revue indépendante d'un recalibrage ; {% if sound %}l'analyse de sensibilité au sens de SR 11-7 au-delà de l'entrée et de deux réglages (section 3.1), et sur des données réservées{% else %}analyse de sensibilité au sens de SR 11-7{% endif %} ; la solidité et la gestion des changements du modèle de la NOAA ; NIST MANAGE 2.4 (qui remplace, désengage ou désactive le modèle) ; NIST MANAGE 4.1 et 1.4 au-delà des limites de la fiche ; NIST MEASURE 2.4 (surveillance en production : simulée par le rejeu seulement) ; données en temps réel.
 
 ## 13. Provenance
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-{% for name, lbl in [('dq', 'qualité des données'), ('validation', 'validation'), ('frozen_2023', 'modèles figés pour ' ~ p.year), ('frozen_2024', 'modèles figés pour ' ~ r.year), ('pseudo_replay', 'répétition de ' ~ p.year), ('diag_pseudo_replay', 'diagnostics de la répétition de ' ~ p.year ~ ' (section 7)'), ('replay', 'rejeu de ' ~ r.year ~ ' de cette chaîne'), ('diag_replay', 'diagnostics du rejeu de ' ~ r.year ~ ' dont la section 8 montre les chiffres'), ('breaks', 'bris'), ('replay_2024_record', 'rejeu de 2024 de référence'), ('replay_2025', 'test de référence de 2025')] if name in runs %}
+{% for name, lbl in [('dq', 'qualité des données'), ('validation', 'validation'), ('frozen_2023', 'modèles figés pour ' ~ p.year), ('frozen_2024', 'modèles figés pour ' ~ r.year), ('pseudo_replay', 'répétition de ' ~ p.year), ('diag_pseudo_replay', 'diagnostics de la répétition de ' ~ p.year ~ ' (section 7)'), ('replay', 'rejeu de ' ~ r.year ~ ' de cette chaîne'), ('diag_replay', 'diagnostics du rejeu de ' ~ r.year ~ ' dont la section 8 montre les chiffres'), ('soundness', 'solidité conceptuelle, ajoutée après le gel (section 3.1)'), ('breaks', 'bris'), ('replay_2024_record', 'rejeu de 2024 de référence'), ('replay_2025', 'test de référence de 2025')] if name in runs %}
 | {{ lbl }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
 {% endfor %}
 

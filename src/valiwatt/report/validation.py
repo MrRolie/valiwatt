@@ -37,6 +37,7 @@ from valiwatt.forecast.evaluate import _weights, errors
 from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import figures as F
 from valiwatt.report import ledger
+from valiwatt.report import soundness as SN
 from valiwatt.report.lineage import Absent, Chain, RecordedReplay, Unfinished, follow, run_id_of
 from valiwatt.report.render import (
     LEAD_FINDING,
@@ -941,6 +942,9 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
         frozen[year] = {"run_id": run.info.run_id, "params": run.data.params, "tags": run.data.tags,
                         "coefficients": _frame(c, run, "coefficients.csv").to_dict("records")}
     curves = _frame(c, chain.frozen[2024], "partial_effects.csv")
+    sound = None
+    if chain.soundness is not None:
+        sound = soundness_view(_json(c, chain.soundness, "results/soundness.json"), chain.soundness, chain.frozen)
     rec24, rerun24 = view_2024(c, chain, entries)
     # The report's 2024 numbers come from the 2024 replay of record once a 2025 replay has started (its own run when
     # the store holds it); before, from the chain's own 2024 replay.
@@ -965,7 +969,7 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
     return {
         "v": v, "dq": dq, "p": p, "r": r, "r_source": r_source, "r_id": r_run.info.run_id, "b": b, "frozen": frozen,
         **derived,
-        "diag": diag, "curves": curves.to_dict("records"),
+        "diag": diag, "curves": curves.to_dict("records"), "sound": sound,
         "departures": departures,
         "departure_record": None if v2 else departure_record(departures),
         "dep_entries": v2_departures(chain.departures) if v2 else [],
@@ -979,6 +983,22 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
         "commit": chain.replay.data.tags.get("git_commit", "none"),
         "dirty": chain.replay.data.tags.get("git_dirty") != "false",
     }
+
+
+def soundness_view(results: dict, run, frozen: dict) -> dict:
+    """The soundness run's results as the report shows them (report/soundness.py `view`): its own, labelled added after
+    the freeze, every measure held, and measured on the chain's frozen models, its freezes' hashes those of the
+    chain's frozen runs. Refused otherwise."""
+    try:
+        sound = SN.view(results, run.info.run_id)
+    except SN.SoundnessError as e:
+        raise ReportRefused(str(e)) from e
+    for year, frun in frozen.items():
+        got = (sound["freezes"].get(str(year)) or {}).get("sha256")
+        if got != frun.data.tags.get("coefficient_sha256"):
+            raise ReportRefused(f"the soundness run {run.info.run_id} measured a {year} model of hash {got!r}, not the "
+                                f"chain's frozen run {frun.info.run_id}'s")
+    return sound
 
 
 def provenance(runs: dict, diag_runs: dict) -> dict:
@@ -1007,6 +1027,8 @@ def figures(ctx: dict, lang: str, folder: Path | None = None) -> dict:
              for form in ("pooled", "by_season")}, lang, path, ctx["nominal"]),
         "validation-peak-hours": lambda path: F.peak_hours(v["cases"]["peak"]["hours"], lang, path, ctx["nominal"]),
         "validation-partial-effects": lambda path: F.partial_effects(ctx["curves"], lang, path),
+        **({"validation-soundness-slopes": lambda path: F.soundness_slopes(ctx["sound"], lang, path)}
+           if ctx.get("sound") else {}),
         "pseudo-replay-2023-weekly": lambda path: F.replay_weekly(p["weeks"], p["decisions"], lang, path),
         "replay-2024-weekly": lambda path: F.replay_weekly(r["weeks"], r["decisions"], lang, path),
         "replay-2024-drift": lambda path: F.replay_drift(r["weeks"], lang, path),
@@ -1039,6 +1061,13 @@ SAY = {
         "kind": {"added": "ajouté", "removed": "retiré", "changed": "changé"},
         "unfinished": "n'a pas fini",
         "stopped": "arrêté",
+        "soundness_label": "ajouté après le gel ; ne décide rien",
+        "finding": "Constat",
+        "no_finding": "Aucune vérification de cette section n'a échoué.",
+        "to": "à",
+        "lag_rows": ("Demande de la veille", "Demande de la semaine précédente", "Somme"),
+        "story_soundness": "Les courbes elles-mêmes ont été lues et vérifiées après le gel, sans rien décider.",
+        "sr_soundness": "Ajoutées après le gel, sans rien décider",
     },
     "en": {
         "ledger_label": "Recorded in the ledger, not re-run here.",
@@ -1055,6 +1084,13 @@ SAY = {
         "kind": {"added": "added", "removed": "removed", "changed": "changed"},
         "unfinished": "did not finish",
         "stopped": "stopped",
+        "soundness_label": "added after the freeze; decides nothing",
+        "finding": "Finding",
+        "no_finding": "No check of this section failed.",
+        "to": "to",
+        "lag_rows": ("The day before's demand", "The week before's demand", "Sum"),
+        "story_soundness": "The curves themselves were read and checked after the freeze, deciding nothing.",
+        "sr_soundness": "Added after the freeze, deciding nothing",
     },
 }
 
@@ -1099,6 +1135,9 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
         raise ReportRefused(f"the {doc} does not open with " + ("the 2025 result" if status in HELD_OUT_RESULTS else
                                                                  "its status"))
     if doc != "validation":
+        if ctx.get("sound") is not None and say["story_soundness"] not in text:
+            raise ReportRefused("the story states the soundness measures without their label (added after the freeze, "
+                                "deciding nothing)")
         return
     if ctx.get("store_only"):
         if say["store_only"] not in text:
@@ -1145,19 +1184,111 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
                                     f"{rev['cap']} the report quotes as evidence")
             if f["at_or_above"] and say["lead_75"] not in nine:
                 raise ReportRefused("a 2025 lead at or above the bound of plan section 9.2 is not stated in section 9")
+    if ctx.get("sound") is not None:
+        check_soundness(text, lang, ctx)
     nbm = ctx.get("nbm") or {}
     if nbm.get("at_or_above") and say["lead_75"] not in numbered_section(text, 2):
         raise ReportRefused("a lead at or above the bound of plan section 9.2 is not stated in section 2")
 
 
-def anchors(text: str) -> dict[int, str]:
+def anchors(text: str) -> dict:
     """The anchor GitHub gives each numbered section heading of a rendered page, by its number: the heading's text
-    (emphasis markers dropped), lower case, punctuation dropped, spaces to hyphens. The story links with them."""
-    out = {}
+    (emphasis markers dropped), lower case, punctuation dropped, spaces to hyphens. The story links with them. A
+    numbered subsection (`### 3.1 ...`) is keyed by its number as text ("3.1")."""
+    out: dict = {}
     for line in re.findall(r"^## (\d+\. .+)$", text, re.M):
-        plain = re.sub(r"[_*`]", "", line).strip().lower()
-        out[int(line.split(".", 1)[0])] = re.sub(r"[^\w\- ]", "", plain).replace(" ", "-")
+        out[int(line.split(".", 1)[0])] = _slug(line)
+    for line in re.findall(r"^### (\d+\.\d+ .+)$", text, re.M):
+        out[line.split(" ", 1)[0]] = _slug(line)
     return out
+
+
+def _slug(line: str) -> str:
+    plain = re.sub(r"[_*`]", "", line).strip().lower()
+    return re.sub(r"[^\w\- ]", "", plain).replace(" ", "-")
+
+
+# --- the soundness section (report/soundness.py): its numbers its run's, every finding labelled ---------------------
+
+SOUNDNESS_HEADING = "### 3.1 "
+
+
+def soundness_section(text: str) -> str:
+    """The rendered soundness subsection, from its heading to the next second- or third-level heading; "" when the page
+    has none."""
+    at = text.find("\n" + SOUNDNESS_HEADING)
+    if at < 0:
+        return ""
+    rest = text[at + 1:]
+    nxt = re.search(r"^#{2,3} ", rest[len(SOUNDNESS_HEADING):], re.M)
+    return rest if nxt is None else rest[:len(SOUNDNESS_HEADING) + nxt.start()]
+
+
+def slope_rows(sound: dict, lang: str) -> list[str]:
+    """The rows of the soundness section's size table as the run's numbers print them: per hour, the cold slope over
+    the first cold span given the lags and without them, for the latest freeze then the earlier one, and the folds'
+    5th to 95th percentile of the slope given the lags."""
+    num = filters(lang)["num"]
+
+    def s(x):
+        return "\u2014" if x is None else num(x, 0)
+
+    key, last, first = sound["cold"], str(sound["last"]), str(sound["first"])
+    band = {r["hour"]: r for r in sound["stability"]["rows"]}
+    rows = []
+    for i, p in enumerate(sound["slopes"][last]["production"]):
+        h = p["hour"]
+        cells = [p[key], sound["slopes"][last]["no_lag"][i][key], sound["slopes"][first]["production"][i][key],
+                 sound["slopes"][first]["no_lag"][i][key]]
+        b = band.get(h)
+        spread_ = "\u2014" if b is None else f"{s(b['p5'])} {SAY[lang]['to']} {s(b['p95'])}"
+        rows.append(f"| {h} h | " + " | ".join(s(x) for x in cells) + f" | {spread_} |")
+    return rows
+
+
+def lag_rows(sound: dict, lang: str) -> list[str]:
+    """The rows of the soundness section's lag table as the run's numbers print them: each coefficient (the day
+    before's, the week before's, their sum) of the earlier freeze, of the latest, and the folds' spread."""
+    num = filters(lang)["num"]
+    first, last, L = str(sound["first"]), str(sound["last"]), sound["lags"]
+    return [f"| {name} | {num(L['freezes'][first][k], 3)} | {num(L['freezes'][last][k], 3)} | "
+            + ", ".join(num(L["folds"][k][q], 3) for q in ("p5", "p50", "p95")) + " |"
+            for name, k in zip(SAY[lang]["lag_rows"], ("lag24", "lag168", "sum"))]
+
+
+def check_soundness(text: str, lang: str, ctx: dict) -> None:
+    """The soundness section the page must carry (report/soundness.py; the owner's ruling of 2026-10-17): present,
+    naming its own run, each of its measures under a heading carrying the label (added after the freeze, deciding
+    nothing), every finding of the run stated, each with that label, the run's findings its failed checks, its size and
+    lag tables' numbers the run's, and section 12's soundness row labelled likewise."""
+    sound, say = ctx["sound"], SAY[lang]
+    try:
+        SN.check_findings(sound)
+    except SN.SoundnessError as e:
+        raise ReportRefused(str(e)) from e
+    part = soundness_section(text)
+    if not part:
+        raise ReportRefused("the soundness run's measures are not rendered: the page has no soundness section")
+    run_id = (ctx.get("runs") or {}).get("soundness", {}).get("id")
+    if run_id != sound["run_id"] or f"`{sound['run_id']}`" not in part:
+        raise ReportRefused("the soundness section does not name the soundness run its numbers come from")
+    heads = [line for line in part.splitlines() if line.startswith("#### ")]
+    if len(heads) < 5 or any(say["soundness_label"] not in h for h in heads):
+        raise ReportRefused("a soundness measure is printed without its label (added after the freeze, deciding "
+                            "nothing)")
+    stated = [line for line in part.splitlines() if line.startswith(f"- {say['finding']}")]
+    if len(stated) != len(sound["findings"]) or any(say["soundness_label"] not in line for line in stated):
+        raise ReportRefused(f"the soundness section states {len(stated)} findings, its run {len(sound['findings'])}, "
+                            "or one without its label")
+    if not sound["findings"] and say["no_finding"] not in part:
+        raise ReportRefused("the soundness section does not say that none of its checks failed")
+    lines = part.splitlines()
+    missing = [row for row in slope_rows(sound, lang) + lag_rows(sound, lang) if row not in lines]
+    if missing:
+        raise ReportRefused(f"the soundness section's numbers are not its run's: {missing[0]!r} is not printed")
+    if say["sr_soundness"] not in numbered_section(text, 12):
+        raise ReportRefused("section 12 states the soundness measures without their label (added after the freeze, "
+                            "deciding nothing)")
 
 
 def _first_point(text: str) -> str:

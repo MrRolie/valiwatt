@@ -112,7 +112,7 @@ def test_the_render_writes_its_stamp_through_make_stamp(tmp_path, monkeypatch):
     # The chain's runs, each replay followed by the diagnostic run sections 7 and 8 cite (provenance).
     runs = {"dq": "dq", "validation": "val", "frozen_2023": "f2023", "frozen_2024": "f2024", "pseudo_replay": "pseudo",
             "diag_pseudo_replay": "diag-pseudo", "replay": S.REPLAY, "diag_replay": f"diag-{S.REPLAY}",
-            "breaks": "breaks"}
+            "breaks": "breaks", "soundness": S.RP.SOUND_RUN}
     assert stamp == {"code_sha256": S.CODE, "rules_sha256": S.RULES, "freeze_commit": S.FREEZE["freeze_commit"],
                      "runs": runs, "files": RV.file_hashes(), "ledger_sha256": ledger.digest(),
                      "standing_2025": None}

@@ -659,3 +659,55 @@ def copy_chain(base: Path, dest: Path) -> None:
         con.commit()
     finally:
         con.close()
+
+
+# ------------------------------------------------------------------- conceptual soundness (report/soundness.py)
+
+@dataclass
+class SoundnessWorld:
+    frozen: dict  # {year: FrozenModel}, two freezes of the production GAM
+    tables: dict  # {year: its partial-effects table, as the frozen run logs it}
+    f: pd.DataFrame
+    folds: list
+    oos: pd.DataFrame
+    input_rows: pd.DataFrame
+
+
+@lru_cache(maxsize=1)
+def soundness_world() -> SoundnessWorld:
+    """world_v2's design table and its 2021 validation folds, with two freezes of the production GAM: world_v2's,
+    frozen for 2022 on the rows to 2021-12-24, and one fitted the same way on the rows to 2020-12-24 (frozen for 2021;
+    the world has no earlier year to calibrate its half-width, so its q is world_v2's). Each with its partial-effects
+    table as freeze.fit_frozen makes it, beside the GAM without the lags. The input rows: the 2022 freeze's own
+    training rows of 2021."""
+    from valiwatt.forecast import freeze as fz
+    from valiwatt.forecast import model as M
+
+    w = world_v2()
+    frozen, tables = {2022: w.model}, {}
+    fold = wf.folds("2021-01", "2021-01")[0]
+    train, _ = wf.split(w.f, fold)
+    m = M.GAMForecaster("forecast").fit(train)
+    frozen[2021] = fz.FrozenModel(columns=m.columns, beta=m.coef, knots=m.knots, center=m.center, scale=m.scale,
+                                  intercept=m.intercept, q=w.model.q, replay_year=2021,
+                                  train_last_day=str(fold.train_last_day.date()), n_train=m.n_train, family="gam",
+                                  scenario="forecast", calibration_folds=fz.calibration_folds(2021))
+    for year, fm in frozen.items():
+        f0 = wf.folds(f"{year}-01", f"{year}-01")[0]
+        rows, _ = wf.split(w.f, f0)
+        ok = M.usable_rows(M.design(rows, "forecast"), rows["target"])
+        tables[year] = fz.partial_effects_table(fm, *fz._no_lag_gam(rows[ok], "forecast", np.asarray(fm.knots)))
+    end = pd.Timestamp(w.model.train_last_day)
+    rows = w.f[(w.f["day"] >= pd.Timestamp(f"{end.year}-01-01")) & (w.f["day"] <= end)]
+    return SoundnessWorld(frozen=frozen, tables=tables, f=w.f, folds=wf.folds("2021-01", "2021-12"), oos=w.oos,
+                          input_rows=rows)
+
+
+@lru_cache(maxsize=1)
+def soundness_results() -> dict:
+    """report/soundness.py `measure` on soundness_world, as its run logs it (JSON-plain), with 200 bootstrap draws."""
+    from valiwatt.report import soundness as SN
+
+    s = soundness_world()
+    return json.loads(json.dumps(jsonable(SN.measure(s.frozen, s.tables, s.f, s.folds, s.oos, s.input_rows,
+                                                     n_boot=200))))

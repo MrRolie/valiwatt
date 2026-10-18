@@ -70,6 +70,12 @@ def cmd_evidence(args) -> int:
     return run_evidence(departure=args.departure)
 
 
+def cmd_soundness(args) -> int:
+    from valiwatt.report.soundness import run_soundness
+
+    return run_soundness()
+
+
 def cmd_breaks(args) -> int:
     from valiwatt.breaks import run_breaks
 
@@ -114,6 +120,8 @@ def cmd_safety(args) -> int:
 
 def cmd_all(args) -> int:
     """The 2024 chain, in order, and nothing after it: every figure in docs/report/ is regenerated from fresh runs.
+    The soundness run (added after the freeze, deciding nothing) reads the two frozen models after the 2024 replay, so
+    it can never hold up the replay the plan pre-registers.
     It never replays 2025 and never runs the evidence: the 2025 replay runs only by `valiwatt replay --year 2025`
     (docs/plan-v2.md, section 11.3.4). --departure reaches the 2024 replay, never the rehearsal."""
     from valiwatt.config import THROUGH_DEFAULT
@@ -122,7 +130,8 @@ def cmd_all(args) -> int:
 
     args.only, args.run_id, args.dq_only, args.through = None, None, False, THROUGH_DEFAULT
     steps = (cmd_fetch, cmd_dq, cmd_validate, lambda a: run_freeze(2023), lambda a: run_replay(2023),
-             lambda a: run_freeze(2024), lambda a: run_replay(2024, departure=a.departure), cmd_breaks, cmd_report)
+             lambda a: run_freeze(2024), lambda a: run_replay(2024, departure=a.departure), lambda a: cmd_soundness(a),
+             cmd_breaks, cmd_report)
     for step in steps:
         code = step(args)
         if code:
@@ -185,6 +194,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--departure", action="store_true",
                    help="the freeze tag moved and AGENTS.md records the move, as for `replay`")
     p.set_defaults(func=cmd_evidence)
+    p = command("soundness", "interpret and check the frozen models' factors (each hour's curve, its shape and size, "
+                             "their stability across folds and freezes, the lags, sensitivity in the sense of SR 11-7) "
+                             "as a tracked run: added after the freeze, it decides nothing and refits no frozen model")
+    p.set_defaults(func=cmd_soundness)
     p = command("breaks", "run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
     p = command("report", "update the replay ledger, then render the data-quality and validation "
@@ -201,7 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-private-patterns", action="store_true",
                    help="scan without the gitignored private name list (CI); private names are then not checked")
     p.set_defaults(func=cmd_safety)
-    p = command("all", "the 2024 chain: fetch, check, validate, freeze, rehearse 2023, replay 2024, break "
+    p = command("all", "the 2024 chain: fetch, check, validate, freeze, rehearse 2023, check the frozen models' "
+                       "soundness, replay 2024, break "
                        "and render every figure. It never replays 2025, which runs only by `valiwatt "
                        "replay --year 2025`, and takes no --through")
     p.add_argument("--force", action="store_true", help="fetch again the files already verified, through 2024")

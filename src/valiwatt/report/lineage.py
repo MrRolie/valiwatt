@@ -3,6 +3,7 @@ broken link.
 
 replay 2024 -> frozen model 2024 (and its comparison models) -> validation -> data quality
 rehearsal 2023 -> frozen model 2023 -> the same validation
+soundness (v2, added after the freeze, deciding nothing) -> frozen models 2023 and 2024, the same validation
 breaks run
 Every run of the chain must be finished and complete, made from the code that renders the report, under the rules
 that render it. The 2024 replay is the latest finished one whose run tag `freeze_tag` is the freeze's (a replay
@@ -109,12 +110,17 @@ class Chain:
     held: Held | None = None
     departures: list = field(default_factory=list)
     predecessors: dict = field(default_factory=dict)
+    soundness: object | None = None
 
     def own(self) -> dict:
-        """The runs the report computes from: one chain, from the code and under the rules that render it."""
-        return {"dq": self.dq, "validation": self.validation, "frozen_2023": self.frozen[2023],
-                "frozen_2024": self.frozen[2024], "pseudo_replay": self.pseudo, "replay": self.replay,
-                "breaks": self.breaks}
+        """The runs the report computes from: one chain, from the code and under the rules that render it (v2's
+        soundness run, added after the freeze, among them)."""
+        out = {"dq": self.dq, "validation": self.validation, "frozen_2023": self.frozen[2023],
+               "frozen_2024": self.frozen[2024], "pseudo_replay": self.pseudo, "replay": self.replay,
+               "breaks": self.breaks}
+        if self.soundness is not None:
+            out["soundness"] = self.soundness
+        return out
 
     def runs(self) -> dict:
         """The chain's own runs, then, once a 2025 replay has started, the two records (a run, or a RecordedReplay
@@ -547,11 +553,12 @@ def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None 
         if v2:
             _check_comparators(c, run, f, year)
         frozen[year] = f
-    chain = Chain(replay, pseudo, frozen, validation, dq, breaks, freeze, departed)
+    chain = Chain(replay, pseudo, frozen, validation, dq, breaks, freeze, departed,
+                  soundness=_soundness(frozen, val_id) if v2 else None)
     for name, run in chain.own().items():
         if name != "dq":
             _link(run, "rules_sha256", rules_sha, name)
-        if name in ("validation", "frozen_2023", "frozen_2024", "pseudo_replay", "replay"):
+        if name in ("validation", "frozen_2023", "frozen_2024", "pseudo_replay", "replay", "soundness"):
             _link(run, "dq_run_id", dq.info.run_id, name)
         _link(run, "code_sha256", code_sha, name)
     _link(replay, "freeze_commit", freeze["freeze_commit"], "replay")
@@ -563,6 +570,28 @@ def follow(code_sha: str, rules_sha: str, freeze: dict, *, recorded: str | None 
             if held:
                 _records(chain, c, entries, held, tag)
     return chain
+
+
+def _soundness(frozen: dict, val_id: str):
+    """v2's soundness run (report/soundness.py, added after the freeze, deciding nothing): the latest finished one of
+    the chain's frozen 2024 run, which must name the chain's frozen 2023 run and validation run and the hashes of both
+    frozen production models; refused otherwise, as every other link of the chain."""
+    from valiwatt.report.soundness import EXPERIMENT, FREEZES, KIND
+    from valiwatt.tracking import latest_run
+
+    try:
+        run = latest_run(EXPERIMENT, f"tags.kind = '{KIND}' and attributes.status = 'FINISHED' "
+                                     f"and tags.frozen_run_id_{max(FREEZES)} = "
+                                     f"'{frozen[max(FREEZES)].info.run_id}'")
+    except LookupError as e:
+        raise ChainBroken(f"no finished soundness run of the chain's frozen models ({e}): run `valiwatt soundness`") \
+            from e
+    _complete(run, "soundness")
+    _link(run, "validation_run_id", val_id, "soundness")
+    for year in FREEZES:
+        _link(run, f"frozen_run_id_{year}", frozen[year].info.run_id, "soundness")
+        _link(run, f"coefficient_sha256_{year}", frozen[year].data.tags.get("coefficient_sha256", ""), "soundness")
+    return run
 
 
 def _check_comparators(c, run, frozen_run, year: int) -> None:

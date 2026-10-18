@@ -486,6 +486,38 @@ def payloads(seed: int = 0):
     return v, dq, p, r, b, frozen, oos, diag
 
 
+SOUND_RUN = "50" * 16  # the soundness run (report/soundness.py)
+SOUND_YEARS = {"2021": "2023", "2022": "2024"}  # the synthetic world's two freezes, named as the chain's
+
+
+def _relabel(x):
+    """The synthetic world's freeze years renamed as the chain's: keys, the values of `year` and those of `years`."""
+    def year(v):
+        return int(SOUND_YEARS.get(str(v), v))
+
+    if isinstance(x, dict):
+        return {SOUND_YEARS.get(k, k): (year(v) if k == "year" and v is not None else
+                                        [year(y) for y in v] if k == "years" else _relabel(v)) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_relabel(v) for v in x]
+    return x
+
+
+def soundness(run_id: str = SOUND_RUN, shas: dict | None = None) -> dict:
+    """The soundness run's results.json: report/soundness.py `measure` run on replay_world's soundness world (its
+    numbers the measures' own), its two freezes named 2023 and 2024 as the chain's, their hashes `shas` (by year) or
+    those of the payloads' frozen runs."""
+    import copy
+
+    import replay_world as RW
+
+    out = _relabel(copy.deepcopy(RW.soundness_results()))
+    shas = shas or {2023: f"{2023 * 7:064x}", 2024: f"{2024 * 7:064x}"}
+    for year, sha in shas.items():
+        out["freezes"][str(year)]["sha256"] = sha
+    return out | {"run_id": run_id}
+
+
 def dq_2025(g=None, revised=3, at_or_above=(), unfed=(("2025-02-03", "no_covering_run"),)):
     """The results of the through-2025 data-quality run the test of record read, and its revisions artifact."""
     g = g or Distinct()
@@ -577,6 +609,7 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
     runs = {k: {"id": f"{i + 1:032x}", "when": f"2026-10-14 0{i}:00 UTC"} for i, k in enumerate(
         ("dq", "validation", "frozen_2023", "frozen_2024", "pseudo_replay", "diag_pseudo_replay", "replay",
          "diag_replay", "breaks"))}
+    runs["soundness"] = {"id": SOUND_RUN, "when": "2026-10-14 09:00 UTC"}
     for k, x in (("diag_pseudo_replay", diag.get("pseudo")), ("diag_replay", diag.get("replay"))):
         if x is None:  # a diagnostic run that did not finish is in no provenance
             runs.pop(k)
@@ -586,6 +619,7 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
         runs["replay_2025"] = {"id": held_view["record"]["run_id"], "when": "2026-11-11 00:00 UTC"}
     ctx = {"v": v, "dq": dq, "p": p, "r": r, "r_source": "chain" if rec24 is None else ("record" if rec24["results"] is not None else "rerun"),
            "r_id": runs["replay"]["id"], "b": b, "frozen": frozen, **derived, "diag": diag, "curves": curves(),
+           "sound": _sound_view(),
            "departures": [dict(x) for x in departures], "departure_record": None, "dep_entries": list(dep_entries),
            "v1": RV.v1_view([RecordedReplay(V1_PLAIN), RecordedReplay(V1_DEPARTED)], r),
            "weekly_error": weekly_error(),
@@ -599,7 +633,15 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
     return ctx
 
 
+def _sound_view() -> dict:
+    """The soundness view `validation.context` builds from the soundness run (report/soundness.py `view`)."""
+    from valiwatt.report import soundness as SN
+
+    return SN.view(soundness(), SOUND_RUN)
+
+
 FIG = {k: f"figures/validation/{k}.png" for k in (
+    "validation_soundness_slopes",
     "validation_monthly_mape", "validation_coverage_by_season", "validation_peak_hours", "validation_partial_effects",
     "pseudo_replay_2023_weekly", "replay_2024_weekly", "replay_2024_drift")}
 

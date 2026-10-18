@@ -26,7 +26,7 @@ HEADINGS = {
            "Le silence est-il une bonne nouvelle ?", "Le registre d'honnêteté"),
     "en": ("The question", "The forecast", None, "How much confidence does it deserve?",
            f"{R_YEAR}, replayed but already seen", "Is silence good news?", "The honesty ledger")}
-LINK = r"\[section (\d+)\]\((validation\.(?:fr|en)\.md)#([^)]+)\)"
+LINK = r"\[section (\d+(?:\.\d+)?)\]\((validation\.(?:fr|en)\.md)#([^)]+)\)"
 
 
 def context(state: str = "none", **override) -> dict:
@@ -78,9 +78,10 @@ def test_the_story_renders_in_full_seven_beats_each_ending_with_its_link(state, 
         last = [p for p in body.strip().split("\n\n") if not p.startswith("![")][-1]
         assert re.fullmatch(rf".*\({LINK}(, {LINK})*\)", last, re.S), last[-200:]
     # each beat links to the sections that carry its rest, in paragraph order
-    five = [5, 10] if ctx["sides"]["season"]["under"] else [5]
-    expected = [[1], [2, 3], [3, 4], five, [8], [7, 8], [9, 10]]
-    assert [[int(n) for n, *_ in re.findall(LINK, body)] for body in beats(text).values()] == expected
+    five = ["5", "10"] if ctx["sides"]["season"]["under"] else ["5"]
+    # the cold beat ends with the soundness paragraph (section 3.1, added after the freeze)
+    expected = [["1"], ["2", "3"], ["3", "4", "3.1"], five, ["8"], ["7", "8"], ["9", "10"]]
+    assert [[n for n, *_ in re.findall(LINK, body)] for body in beats(text).values()] == expected
 
 
 @pytest.mark.parametrize("lang", LANGS)
@@ -89,12 +90,13 @@ def test_every_link_points_at_a_heading_of_the_full_report(state, lang):
     """The anchors are GitHub's slugs of the full report's own headings, rendered from the same context."""
     ctx = context(state)
     full = RP.render(ctx, lang)
-    anchors = {slug(h): int(h.split(".")[0]) for h in re.findall(r"^## (\d+\. .+)$", full, re.M)}
+    anchors = {slug(h): h.split(".")[0] for h in re.findall(r"^## (\d+\. .+)$", full, re.M)}
+    anchors |= {slug(h): h.split(" ")[0] for h in re.findall(r"^### (\d+\.\d+ .+)$", full, re.M)}
     links = re.findall(LINK, render(ctx, lang))
     assert len(links) >= 12
     for number, target, anchor in links:
         assert target == f"validation.{lang}.md"
-        assert anchors.get(anchor) == int(number), (anchor, sorted(anchors))
+        assert anchors.get(anchor) == number, (anchor, sorted(anchors))
 
 
 def test_no_number_is_typed_in_the_story_templates():
@@ -109,7 +111,7 @@ def numbers(text: str, lang: str) -> list[str]:
     text = re.sub(r"`[^`]*`|\]\([^)]*\)|https?://[^\s)]+|CC BY-NC 4\.0", "", text.replace(" ", "").replace(" ", ""))
     if lang == "en":
         text = re.sub(r"(?<=\d),(?=\d{3})", "", text)
-    found = re.findall(r"\d+(?:,\d+)?" if lang == "fr" else r"\d+(?:\.\d+)?", text)
+    found = re.findall(r"\d+(?:[,.]\d+)?" if lang == "fr" else r"\d+(?:\.\d+)?", text)
     return sorted(x.replace(",", ".") for x in found)
 
 
@@ -443,7 +445,8 @@ def test_render_validation_writes_the_story_and_the_stamp_lists_it(tmp_path, mon
         story, full = body.decode("utf-8"), (out / f"validation.{lang}.md").read_text(encoding="utf-8")
         for line in attribution.lines(lang, retrieved=retrieved):
             assert line in story
-        anchors = {slug(h) for h in re.findall(r"^## (\d+\. .+)$", full, re.M)}
+        anchors = {slug(h) for pair in re.findall(r"^## (\d+\. .+)$|^### (\d+\.\d+ .+)$", full, re.M)
+                   for h in pair if h}
         links = re.findall(LINK, story)
         assert links and all(a in anchors for _, _, a in links)
     assert stamp["standing_2025"] == {"record_run_id": "b" * 32, "finished": True, "standing": "clean"}

@@ -2,7 +2,8 @@
 artifacts the v2 payloads of report_payloads, so that `lineage.follow` and `validation.context` run end to end on it.
 
 `World()` is the plain chain: the data-quality run (through 2024), the validation, the frozen models of 2023 and 2024
-(with their comparators' hashes), the 2023 rehearsal and the 2024 replay (each with its diagnostic run), the breaks;
+(with their comparators' hashes), the soundness run on both (report/soundness.py, its results report_payloads'
+`soundness`), the 2023 rehearsal and the 2024 replay (each with its diagnostic run), the breaks;
 the replay ledger holding v1's two entries. `add_2025()` adds a through-2025 data-quality run and a finished 2025 test
 of record on the 2024 replay's frozen artifacts, with its gate's record and its diagnostics. Each test spoils one
 thing of it. Commits are fakes: `lineage.resolve`, `lineage.is_ancestor` and `lineage.changes` read them from
@@ -141,6 +142,11 @@ class World:
                               **{f"comparator_sha256.{k}": h for k, h in digest["comparators"].items()}),
                      {"coefficients.csv": pd.DataFrame(fz["coefficients"]),
                       "partial_effects.csv": pd.DataFrame(RP.curves())})
+        shas = {2023: FROZEN23["production"], 2024: W.FROZEN["production"]}
+        self.add(fake_run(RP.SOUND_RUN, start=self.tick(), **on_dq, kind="soundness", validation_run_id="val",
+                          frozen_run_id_2023="f2023", frozen_run_id_2024="f2024",
+                          **{f"coefficient_sha256_{y}": h for y, h in shas.items()}),
+                 {"results/soundness.json": RP.soundness(RP.SOUND_RUN, shas)})
         self.add(fake_run("pseudo", start=self.tick(), **on_dq, kind="pseudo_replay", year="2023",
                           validation_run_id="val", frozen_run_id="f2023", coefficient_sha256=FROZEN23["production"],
                           evaluation="rehearsal"),

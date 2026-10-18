@@ -7,7 +7,7 @@
 {% set FAIL = {'mape_high': 'MAPE', 'bias_high': 'the bias, high side', 'bias_low': 'the bias, low side'} %}
 {# The evaluation labels, the states and the verdicts of the decision rule (forecast/evaluate.py), read from the runs
    and named here. #}
-{% set LABEL = {'in_sample_for_choice': 'in sample for the choice of family and input', 'rehearsal': 'rehearsal on a design year', 'seen_by_developers': 'seen by the developers', 'held_out': 'held-out data', 'post_hoc': 'post hoc'} %}
+{% set LABEL = {'in_sample_for_choice': 'in sample for the choice of family and input', 'in_sample_training': "in sample: the frozen model's own training rows", 'rehearsal': 'rehearsal on a design year', 'seen_by_developers': 'seen by the developers', 'held_out': 'held-out data', 'post_hoc': 'post hoc'} %}
 {% set STATE = {'better': 'better', 'not_separated': 'not separated', 'worse': 'worse'} %}
 {% set VERDICT = {'better': 'better', 'better_cold_untested': 'better on average, the cold tail untestable', 'not_shown_better': 'not shown better', 'worse': 'worse'} %}
 {% set MODEL = {'gam_forecast': 'v2, the GAM on the forecast (production)', 'forecast': "v1's form on the forecast", 'persistence': "v1 as shipped (the day before's weather)", 'gam_observed': 'the GAM on observed weather (optimistic bound)', 'observed': "v1's form on observed weather (optimistic bound)", 'gam_forecast_late': 'the GAM, a longer availability margin (sensitivity)', 'baseline': 'same hour, one week earlier (naive baseline)'} %}

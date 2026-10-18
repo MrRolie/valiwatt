@@ -40,6 +40,7 @@ SYNTHETIC_WORLD = {"drift_alarm": 1.0, "level_shift": 0.12}
 
 DQ, LOOK, CLOCK, MON, ACT, FREEZE, RENDER = ("data_quality", "lookahead", "clock", "monitors", "never_acts",
                                              "freeze", "render")
+SOUND = "soundness"  # report/soundness.py: a check that fails is a finding, never a gate
 GROUPS = {
     DQ: ("Portes de qualité des données", "Data-quality gates"),
     LOOK: ("Pas d'information future", "No lookahead"),
@@ -48,6 +49,8 @@ GROUPS = {
     ACT: ("Le moniteur n'agit jamais", "The monitor never acts"),
     FREEZE: ("Règles gelées", "Frozen rules"),
     RENDER: ("Rendu des rapports", "Report rendering"),
+    SOUND: ("Solidité conceptuelle, ajoutée après le gel (ne décide rien)",
+            "Conceptual soundness, added after the freeze (decides nothing)"),
 }
 
 T_DEM, T_WEA, T_PIPE = "tests/test_demand_gates.py", "tests/test_weather_gates.py", "tests/test_pipeline_refuses.py"
@@ -61,6 +64,7 @@ T_DEC, T_MOD, T_WF = "tests/test_decision_rule.py", "tests/test_model.py", "test
 T_FRO, T_R2, T_REND = "tests/test_frozen.py", "tests/test_replay_v2.py", "tests/test_report_render.py"
 T_E2E, T_STAMP, T_CLI = "tests/test_report_end_to_end.py", "tests/test_report_stamp.py", "tests/test_cli.py"
 T_DEP, T_TAGS, T_PLAN = "tests/test_departure_record.py", "tests/test_tags.py", "tests/test_plan_record.py"
+T_SND = "tests/test_soundness.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -1771,6 +1775,101 @@ BREAKS = [
     _b(RENDER, f"{T_SAFE}::test_the_v2_figures_and_templates_pass_the_scan",
        "Témoin : les figures et les gabarits de v2 passent l'analyse de sécurité publique",
        "Control: v2's figures and templates pass the public-safety scan", control=True),
+    _b(SOUND, f"{T_SND}::test_a_curve_that_falls_one_step_colder_below_the_base_is_a_finding",
+       "Une courbe qui baisse d'un pas plus froid sous la base de chauffage est un constat, avec son heure, son pas et "
+       "sa taille",
+       "A curve that falls one step colder below the heating base is a finding, with its hour, its step and its size"),
+    _b(SOUND, f"{T_SND}::test_a_curve_that_falls_one_step_warmer_above_the_base_is_a_finding",
+       "Une courbe qui baisse d'un pas plus chaud au-dessus de la base est un constat",
+       "A curve that falls one step warmer above the base is a finding"),
+    _b(SOUND, f"{T_SND}::test_a_clean_curve_and_a_reversal_within_the_tolerance_stay_quiet",
+       "Témoin : une courbe saine, et un retour en arrière dans la tolérance, ne donnent aucun constat de forme",
+       "Control: a sound curve, and a reversal within the tolerance, give no shape finding", control=True),
+    _b(SOUND, f"{T_SND}::test_a_cold_slope_that_is_not_positive_is_a_finding",
+       "Une pente froide qui n'est pas positive est un constat ; une pente positive n'en est pas un",
+       "A cold slope that is not positive is a finding; a positive one is not"),
+    _b(SOUND, f"{T_SND}::test_a_fold_whose_slope_leaves_the_band_is_flagged",
+       "Un pli, ou un modèle figé, dont la pente sort de la bande des plis de plus du facteur fixé est signalé ; sans "
+       "écart, rien ne l'est",
+       "A fold, or a frozen model, whose slope leaves the folds' band by more than the fixed factor is flagged; "
+       "without one, nothing is"),
+    _b(SOUND, f"{T_SND}::test_lags_that_are_not_positive_or_do_not_fade_are_findings",
+       "Des retards qui ne sont pas positifs, ou dont la somme n'est pas sous 1, sont des constats, d'un modèle figé "
+       "ou d'un pli",
+       "Lags that are not positive, or whose sum is not below 1, are findings, of a frozen model or of a fold"),
+    _b(SOUND, f"{T_SND}::test_the_refit_variant_reproduces_validation_s_forecasts",
+       "Témoin : le GAM réajusté par la mesure de solidité aux réglages fixés reproduit les prévisions hors "
+       "échantillon de la validation à chaque heure",
+       "Control: the GAM the soundness measure refits at the ruled settings reproduces validation's out-of-sample "
+       "forecasts on every hour", control=True),
+    _b(SOUND, f"{T_SND}::test_a_refit_variant_that_does_not_reproduce_validation_stops_the_run",
+       "Une variante réajustée qui ne reproduit pas la validation, ou pas sur les mêmes heures, arrête l'exécution",
+       "A refit variant that does not reproduce validation, or not on the same hours, stops the run"),
+    _b(SOUND, f"{T_SND}::test_the_soundness_folds_refuse_a_row_after_the_design_window",
+       "La mesure de solidité refuse une ligne postérieure à la fenêtre de conception",
+       "The soundness measure refuses a row after the design window"),
+    _b(SOUND, f"{T_SND}::test_curves_that_are_not_the_model_s_make_the_input_move_a_finding",
+       "Des courbes qui ne sont pas celles qui prévoient font de la sensibilité de l'entrée un constat",
+       "Curves that are not the ones that forecast make the input sensitivity a finding"),
+    _b(SOUND, f"{T_SND}::test_a_partial_effects_table_that_is_not_the_model_s_is_refused",
+       "Une table des courbes qui n'est pas celle du modèle figé est refusée",
+       "A curves table that is not the frozen model's is refused"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_run_that_is_not_the_chain_s_is_refused",
+       "Une exécution de solidité qui ne nomme pas les modèles figés, la validation, les empreintes ou le code de la "
+       "chaîne fait refuser le rapport",
+       "A soundness run that does not name the chain's frozen models, validation, hashes or code makes the report "
+       "refuse"),
+    _b(SOUND, f"{T_SND}::test_soundness_results_that_name_another_run_are_refused",
+       "Des résultats de solidité qui nomment une autre exécution que la leur font refuser le rapport",
+       "Soundness results that name another run than their own make the report refuse"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_section_that_does_not_name_its_run_is_refused[fr]",
+       "Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait "
+       "refuser le rapport, rapport français",
+       "A soundness section that does not name its run, or names another than the provenance's, makes the report "
+       "refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_a_failed_check_not_stated_as_a_finding_is_refused[fr]",
+       "Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification "
+       "a réussi, fait refuser le rapport, rapport français",
+       "A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the "
+       "report refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_the_story_and_section_12_without_the_soundness_label_are_refused[fr]",
+       "Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien "
+       "décider » fait refuser le rapport, rapport français",
+       "The story, or section 12, stating the soundness measures without the label \"added after the freeze, "
+       "deciding nothing\" makes the report refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_section_that_does_not_name_its_run_is_refused[en]",
+       "Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait "
+       "refuser le rapport, rapport anglais",
+       "A soundness section that does not name its run, or names another than the provenance's, makes the report "
+       "refuse, English report"),
+    _b(SOUND, f"{T_SND}::test_a_failed_check_not_stated_as_a_finding_is_refused[en]",
+       "Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification "
+       "a réussi, fait refuser le rapport, rapport anglais",
+       "A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the "
+       "report refuse, English report"),
+    _b(SOUND, f"{T_SND}::test_the_story_and_section_12_without_the_soundness_label_are_refused[en]",
+       "Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien "
+       "décider » fait refuser le rapport, rapport anglais",
+       "The story, or section 12, stating the soundness measures without the label \"added after the freeze, "
+       "deciding nothing\" makes the report refuse, English report"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_section_whose_numbers_are_not_its_run_s_is_refused[fr]",
+       "Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport "
+       "français",
+       "A soundness section whose numbers are not its run's makes the report refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_section_whose_numbers_are_not_its_run_s_is_refused[en]",
+       "Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport "
+       "anglais",
+       "A soundness section whose numbers are not its run's makes the report refuse, English report"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_finding_printed_without_its_label_is_refused[fr]",
+       "Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat "
+       "de l'exécution omis, fait refuser le rapport, rapport français",
+       "A soundness finding or measure without the label \"added after the freeze; decides nothing\", or a finding of "
+       "the run left out, makes the report refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_a_soundness_finding_printed_without_its_label_is_refused[en]",
+       "Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat "
+       "de l'exécution omis, fait refuser le rapport, rapport anglais",
+       "A soundness finding or measure without the label \"added after the freeze; decides nothing\", or a finding of "
+       "the run left out, makes the report refuse, English report"),
 ]
 
 

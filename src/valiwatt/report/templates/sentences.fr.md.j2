@@ -8,7 +8,7 @@
 {% set FAIL = {'mape_high': "l'EAMP", 'bias_high': 'le biais, côté haut', 'bias_low': 'le biais, côté bas'} %}
 {# Les étiquettes d'évaluation, les états et les verdicts de la règle de décision (forecast/evaluate.py), lus des
    exécutions et nommés ici. #}
-{% set LABEL = {'in_sample_for_choice': "dans l'échantillon du choix de la famille et de l'entrée", 'rehearsal': 'répétition sur une année de conception', 'seen_by_developers': 'vu par les développeurs', 'held_out': 'données réservées', 'post_hoc': 'a posteriori'} %}
+{% set LABEL = {'in_sample_for_choice': "dans l'échantillon du choix de la famille et de l'entrée", 'in_sample_training': "dans l'échantillon : les propres lignes d'entraînement du modèle figé", 'rehearsal': 'répétition sur une année de conception', 'seen_by_developers': 'vu par les développeurs', 'held_out': 'données réservées', 'post_hoc': 'a posteriori'} %}
 {% set STATE = {'better': 'meilleur', 'not_separated': 'non séparé', 'worse': 'pire'} %}
 {% set VERDICT = {'better': 'meilleur', 'better_cold_untested': 'meilleur en moyenne, la queue froide non testable', 'not_shown_better': 'pas montré meilleur', 'worse': 'pire'} %}
 {% set MODEL = {'gam_forecast': 'v2, le GAM sur la prévision (production)', 'forecast': 'la forme de v1 sur la prévision', 'persistence': 'v1 tel que livré (météo de la veille)', 'gam_observed': 'le GAM sur la météo observée (borne optimiste)', 'observed': 'la forme de v1 sur la météo observée (borne optimiste)', 'gam_forecast_late': 'le GAM, marge de disponibilité plus longue (sensibilité)', 'baseline': 'même heure, une semaine avant (référence naïve)'} %}

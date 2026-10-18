@@ -238,3 +238,42 @@ def replay_drift(weeks: list[dict], lang: str, path: Path):
         _style(ax)
     axes[0].legend(frameon=False, fontsize=8, labelcolor=INK)
     _save(fig, path)
+
+
+SOUNDNESS_LABELS = {
+    "fr": {"slope": "Pente froide (MW par °C plus froid)", "hour": "Heure locale", "with": "avec les retards",
+           "without": "sans les retards", "band": "plis, 5ᵉ–95ᵉ centile (avec les retards)",
+           "title": "De {} à {} °C, ajouté après le gel ; ne décide rien"},
+    "en": {"slope": "Cold slope (MW per °C colder)", "hour": "Local hour", "with": "with the lags",
+           "without": "without the lags", "band": "folds, 5th–95th percentile (with the lags)",
+           "title": "From {} to {} °C, added after the freeze; decides nothing"},
+}
+
+
+def soundness_slopes(sound: dict, lang: str, path: Path):
+    """Each hour's cold slope over the first cold span (report/soundness.py), for both curve kinds and both freezes,
+    with the folds' 5th–95th percentile of the slope given the lags as a band. Its table twin: the soundness section's
+    size table."""
+    L = SOUNDNESS_LABELS[lang]
+    key = sound["cold"]
+    a, b = (float(x) for x in sound["settings"]["cold_spans"][0])
+    fig, ax = plt.subplots(figsize=(8, 3.4))
+    band = sorted(sound["stability"]["rows"], key=lambda r: r["hour"])
+    if band:
+        ax.fill_between([r["hour"] for r in band], [r["p5"] for r in band], [r["p95"] for r in band],
+                        color=SERIES_1, alpha=0.15, linewidth=0, label=L["band"])
+    for kind, color in (("production", SERIES_1), ("no_lag", SERIES_2)):
+        for year, style in ((sound["last"], "-"), (sound["first"], "--")):
+            rows = sound["slopes"][str(year)][kind]
+            pts = [(r["hour"], r[key]) for r in rows if r[key] is not None]
+            ax.plot([h for h, _ in pts], [y for _, y in pts], color=color, linestyle=style, linewidth=1.4, marker="o",
+                    markersize=2.5, label=f"{L['with'] if kind == 'production' else L['without']}, {year}")
+    ax.set_xticks(range(0, 24, 3))
+    ax.set_xlabel(L["hour"], fontsize=9)
+    ax.set_ylabel(L["slope"], fontsize=9)
+    ax.set_title(L["title"].format(_num(lang, 0)(a, None), _num(lang, 0)(b, None)), fontsize=9, color=INK)
+    ax.yaxis.set_major_formatter(_num(lang, 0))
+    _style(ax)
+    # Outside the axes, on the right: inside, it covers the folds' band.
+    ax.legend(frameon=False, fontsize=8, labelcolor=INK, loc="upper left", bbox_to_anchor=(1.01, 1.0))
+    _save(fig, path)

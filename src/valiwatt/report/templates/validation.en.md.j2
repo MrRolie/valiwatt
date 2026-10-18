@@ -232,6 +232,110 @@ On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 
 | {{ h }} h | {{ row.temp_c|num(0) }} °C | {{ row.effect_mw|signed(0) }} MW | {{ row.effect_mw_nolag|signed(0) }} MW |
 {% endfor %}
 
+{% if sound %}
+{% set SO = sound %}
+{% set ST = SO.settings %}
+{% set L_, F_ = SO.last|string, SO.first|string %}
+{% set c1, c2 = ST.cold_spans[0], ST.cold_spans[1] %}
+{% set KIND = {'production': 'with the lags', 'no_lag': 'without the lags'} %}
+{% macro steps(bs) %}{% for b in bs %}{% if b.side == 'cold' %}{{ b.warmer_c|num(0) }}→{{ b.colder_c|num(0) }}{% else %}{{ b.colder_c|num(0) }}→{{ b.warmer_c|num(0) }}{% endif %} °C: {{ b.size_mw|signed(0) }} MW{% if not loop.last %}; {% endif %}{% else %}—{% endfor %}{% endmacro %}
+{% macro s0(x) %}{% if x is none %}—{% else %}{{ x|num(0) }}{% endif %}{% endmacro %}
+{% macro lagrow(k) %}{{ SO.lags.freezes[F_][k]|num(3) }} | {{ SO.lags.freezes[L_][k]|num(3) }} | {{ SO.lags.folds[k].p5|num(3) }}, {{ SO.lags.folds[k].p50|num(3) }}, {{ SO.lags.folds[k].p95|num(3) }}{% endmacro %}
+{% set RS = SO.slope_stats[L_] %}
+{% set LA = SO.lags.freezes[L_] %}
+### 3.1 Conceptual soundness, added after the freeze
+
+_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for {{ SO.first }} and for {{ SO.last }} and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the {{ HY }} verdict stays as the plan pre-registers it. Run `{{ SO.run_id }}`._
+
+The settings were fixed before these measures were computed on the real runs: the heating base, {{ ST.heating_base_c|num(0) }} °C, is v1's, fixed before any v2 curve existed and the temperature at which every curve is zero (a base read off these curves would fit the check to what it checks); the tolerance is {{ ST.tolerance_mw|num(0) }} MW per {{ ST.grid_step_c|num(0) }} °C step, one unit of the whole MW the report prints the curves in, so that the check is no finer than the page that states it; a fold is flagged when its slope leaves the folds' {{ (100 * ST.spread[0])|num(0) }}th to {{ (100 * ST.spread[2])|num(0) }}th percentile band by more than {{ ST.fold_factor|num(1) }} times its width ({{ (100 * (ST.spread[0] + 1 - ST.spread[2]))|num(0) }}% of the folds lie outside the band by construction, so a flag needs a distance past its edge, and one measured in the band's own width holds at every hour whatever its spread). The developers had, however, already looked at the curves table of the model frozen for {{ SO.last }} before fixing them.
+
+**The reading.** Given the demand of the day before and of the week before, each degree colder between {{ c1[0]|num(0) }} and {{ c1[1]|num(0) }} °C adds {{ RS.production[SO.cold].min|num(0) }} to {{ RS.production[SO.cold].max|num(0) }} MW to the forecast depending on the hour ({{ RS.production[SO.cold].median|num(0) }} at the median): the most at {{ SO.reading.production.most }} h, the least at {{ SO.reading.production.least }} h. Without the lags, the same slope runs from {{ RS.no_lag[SO.cold].min|num(0) }} to {{ RS.no_lag[SO.cold].max|num(0) }} MW ({{ RS.no_lag[SO.cold].median|num(0) }} at the median). Between {{ c2[0]|num(0) }} and {{ c2[1]|num(0) }} °C, it runs from {{ RS.production[SO.cold2].min|num(0) }} to {{ RS.production[SO.cold2].max|num(0) }} MW with the lags. On the warm side, each degree warmer between {{ ST.warm_span[0]|num(0) }} and {{ ST.warm_span[1]|num(0) }} °C adds {{ RS.production[SO.warm].min|num(0) }} to {{ RS.production[SO.warm].max|num(0) }} MW with the lags: cooling. Depending on the hour, the curve with the lags is lowest between {{ SO.reading.production.lowest.min|num(0) }} and {{ SO.reading.production.lowest.max|num(0) }} °C. The sum of the two lag coefficients, {{ LA.sum|num(3) }}, {% if LA.fades %}is below 1: a one-off shock fades{% else %}is not below 1: a one-off shock does not fade{% endif %}.
+
+#### Shape ({{ say.soundness_label }})
+
+Over each frozen model's training range, in {{ ST.grid_step_c|num(0) }} °C steps: below {{ ST.heating_base_c|num(0) }} °C, a step colder must not lower the curve by more than {{ ST.tolerance_mw|num(0) }} MW (heating); above it, a step warmer must not lower it by more than {{ ST.tolerance_mw|num(0) }} MW (cooling). Each step that breaks its side, with its change:
+
+| Hour | With the lags, {{ SO.last }} | Without the lags, {{ SO.last }} | With the lags, {{ SO.first }} | Without the lags, {{ SO.first }} |
+|---|---|---|---|---|
+{% for h in range(24) %}
+| {{ h }} h | {{ steps(SO.breaks_by_hour[L_].production.get(h, [])) }} | {{ steps(SO.breaks_by_hour[L_].no_lag.get(h, [])) }} | {{ steps(SO.breaks_by_hour[F_].production.get(h, [])) }} | {{ steps(SO.breaks_by_hour[F_].no_lag.get(h, [])) }} |
+{% endfor %}
+
+#### Size ({{ say.soundness_label }})
+
+The cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C, in MW per °C colder, by hour, and the band of the {{ SO.stability.folds }} refitted folds (with the lags):
+
+| Hour | With the lags, {{ SO.last }} | Without the lags, {{ SO.last }} | With the lags, {{ SO.first }} | Without the lags, {{ SO.first }} | Folds, {{ (100 * ST.spread[0])|num(0) }}th {{ say.to }} {{ (100 * ST.spread[2])|num(0) }}th percentile |
+|---|---|---|---|---|---|
+{% for p in SO.slopes[L_].production %}
+{% set i = loop.index0 %}
+{% set b = SO.stability.rows|selectattr('hour', 'equalto', p.hour)|first %}
+| {{ p.hour }} h | {{ s0(p[SO.cold]) }} | {{ s0(SO.slopes[L_].no_lag[i][SO.cold]) }} | {{ s0(SO.slopes[F_].production[i][SO.cold]) }} | {{ s0(SO.slopes[F_].no_lag[i][SO.cold]) }} | {% if b is defined and b %}{{ s0(b.p5) }} {{ say.to }} {{ s0(b.p95) }}{% else %}—{% endif %} |
+{% endfor %}
+
+{% for y in [L_, F_] %}{% set fz_ = SO.freezes[y] %}Model frozen for {{ y }}: training range from {{ fz_.training_range[0]|num(1) }} to {{ fz_.training_range[1]|num(1) }} °C{% if not fz_.spans_inside[SO.cold] %}, the slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C partly extrapolated there{% endif %}. {% endfor %}Over every hour, the slopes from {{ c2[0]|num(0) }} to {{ c2[1]|num(0) }} °C of the model frozen for {{ SO.last }}: with the lags, {{ RS.production[SO.cold2].min|num(0) }} to {{ RS.production[SO.cold2].max|num(0) }} MW; without, {{ RS.no_lag[SO.cold2].min|num(0) }} to {{ RS.no_lag[SO.cold2].max|num(0) }} MW. Warm slope from {{ ST.warm_span[0]|num(0) }} to {{ ST.warm_span[1]|num(0) }} °C: with the lags, {{ RS.production[SO.warm].min|num(0) }} to {{ RS.production[SO.warm].max|num(0) }} MW per °C warmer; without, {{ RS.no_lag[SO.warm].min|num(0) }} to {{ RS.no_lag[SO.warm].max|num(0) }} MW. A cold slope that is not positive would be a finding.
+
+**An independent public figure.** Radio-Canada ({{ SO.public.author }}, « {{ SO.public.title }} », published {{ SO.public.published }}, read {{ SO.public.read }}, <{{ SO.public.url }}>), in French: « {{ SO.public.quote }} » ("A one-degree Celsius change represents a {{ SO.public.mw_per_c|num(0) }} MW impact on the load to be supplied, says the Crown corporation's spokesperson, Caroline Des Rosiers.") The figure gives neither the temperature it is a change of, nor the hours, nor the year, nor whether it allows for the day before's demand: the comparison with the slopes above is not like for like. The slope without the lags from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C, the closest to a sensitivity of demand itself, has a median of {{ RS.no_lag[SO.cold].median|num(0) }} MW per °C, beside the figure quoted: setting them side by side validates nothing.
+
+![Cold slopes by hour]({{ fig.validation_soundness_slopes }})
+
+#### Stability ({{ say.soundness_label }})
+
+**Between the two freezes.** Over their common training range ({{ SO.between_freezes.production.common_range[0]|num(1) }} to {{ SO.between_freezes.production.common_range[1]|num(1) }} °C), the curves with the lags of the model frozen for {{ SO.last }} differ from those of the model frozen for {{ SO.first }} by at most {{ SO.between.production.max_abs_mw|num(0) }} MW, and their cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C changes by {{ SO.between.production.change_pct.min|signed(1) }}% to {{ SO.between.production.change_pct.max|signed(1) }}% depending on the hour; without the lags, by at most {{ SO.between.no_lag.max_abs_mw|num(0) }} MW and by {{ SO.between.no_lag.change_pct.min|signed(1) }}% to {{ SO.between.no_lag.change_pct.max|signed(1) }}%. The curves are zero at {{ ST.ref_c|num(0) }} °C: their difference grows away from that temperature.
+
+| Hour | Largest difference (MW) | At (°C) | Cold slope, {{ SO.first }} | Cold slope, {{ SO.last }} | Change |
+|---|---|---|---|---|---|
+{% for x in SO.between_freezes.production.rows %}
+| {{ x.hour }} h | {{ x.max_abs_mw|num(0) }} | {{ x.at_c|num(0) }} | {{ s0(x.slope_first) }} | {{ s0(x.slope_last) }} | {% if x.slope_change_pct is none %}—{% else %}{{ x.slope_change_pct|signed(1) }}%{% endif %} |
+{% endfor %}
+
+**Across the folds.** The GAM refitted at the ruled settings on each of validation's {{ SO.stability.folds }} folds reproduces its out-of-sample forecasts {% if SO.control.max_abs_mw == 0 %}exactly{% else %}to within {{ SO.control.max_abs_mw|sci }} MW{% endif %} on its {{ SO.control.hours|num }} hours (the control: beyond {{ ST.control_mw|sci(0) }} MW, the run stops). Each hour's band is in the size table. {% if SO.stability.flagged %}Folds whose slope leaves the band by more than {{ ST.fold_factor|num(1) }} times its width: {% for x in SO.stability.flagged %}{{ x.fold }} at {{ x.hour }} h ({{ x.slope|num(0) }} MW per °C){% if not loop.last %}; {% endif %}{% endfor %}.{% else %}No fold leaves the band by more than {{ ST.fold_factor|num(1) }} times its width.{% endif %} {% if SO.stability.frozen_flagged %}Frozen models whose slope leaves it likewise: {% for x in SO.stability.frozen_flagged %}{{ x.year }} at {{ x.hour }} h ({{ x.slope|num(0) }} MW per °C){% if not loop.last %}; {% endif %}{% endfor %}.{% else %}Neither frozen model leaves it so.{% endif %}
+
+
+#### The lags ({{ say.soundness_label }})
+
+| Coefficient, in MW per MW | {{ SO.first }} | {{ SO.last }} | Folds: {{ (100 * ST.spread[0])|num(0) }}th, {{ (100 * ST.spread[1])|num(0) }}th, {{ (100 * ST.spread[2])|num(0) }}th percentile |
+|---|---|---|---|
+| {{ say.lag_rows[0] }} | {{ lagrow('lag24') }} |
+| {{ say.lag_rows[1] }} | {{ lagrow('lag168') }} |
+| {{ say.lag_rows[2] }} | {{ lagrow('sum') }} |
+
+A {{ (1000)|num(0) }} MW rise in the day before's demand carries about {{ LA.carry_per_1000_mw|num(0) }} MW into the next day's forecast{% if LA.fades %}; with the coefficients summing to less than 1, a one-off shock fades from one forecast to the next{% endif %}. {% if SO.lags.folds_not_positive or SO.lags.folds_not_fading %}Folds where a coefficient is not positive: {{ SO.lags.folds_not_positive|join(', ') or '—' }}; where their sum is not below 1: {{ SO.lags.folds_not_fading|join(', ') or '—' }}.{% else %}In every fold, both coefficients are positive and their sum is below 1.{% endif %} Measured on the model frozen for {{ SO.last }}: without the lags, each hour's cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C is steeper by {{ SO.flat.difference.min|num(0) }} to {{ SO.flat.difference.max|num(0) }} MW per °C; the curve with the lags keeps {{ (100 * SO.flat.ratio.min)|num(0) }} to {{ (100 * SO.flat.ratio.max)|num(0) }}% of it. These are measured differences, given without a theory{% if SO.flat.difference.min > 0 %}: at every hour, the curve with the lags is the flatter of the two{% endif %}.
+
+#### Sensitivity in the sense of SR 11-7 ({{ say.soundness_label }})
+
+**The input** ({{ label(SO.input.label) }}). The model frozen for {{ SO.last }}, on its own training rows of {{ SO.input.year }} ({{ SO.input.rows|num }} hours), with the temperature forecast moved by ±{{ ST.shift_c|num(0) }} °C:
+
+| Move | Mean change | In % | Winter | Spring | Summer | Fall | MW per °C warmer |
+|---|---|---|---|---|---|---|---|
+{% for k, m in SO.input.moves|dictsort %}
+| {{ k|float|signed(0) }} °C | {{ m.mean_mw|signed(0) }} MW | {{ m.mean_pct|signed(2) }}% | {% for s_ in ['winter', 'spring', 'summer', 'fall'] %}{% if s_ in m.by_season %}{{ m.by_season[s_].mean_mw|signed(0) }} MW ({{ m.by_season[s_].mean_pct|signed(2) }}%){% else %}—{% endif %} | {% endfor %}{{ m.per_c_mw|signed(0) }} |
+{% endfor %}
+
+{% if SO.input.consistent %}Each change is its hour's curve difference over the move, {% if SO.input.consistency_max_abs_mw == 0 %}exactly{% else %}to within {{ SO.input.consistency_max_abs_mw|sci }} MW{% endif %}: an identity of an additive model, which the computation checks; it would hold whatever the data.{% else %}The forecast's change differs from the curves' difference by up to {{ SO.input.consistency_max_abs_mw|num(3) }} MW: the curves shown are not the ones that forecast.{% endif %}
+
+
+**The settings** ({{ label(SO.parameters.label) }}). The MAPE on validation's folds and hours, each setting changed alone, beside the ruled settings ({{ SO.parameters.ruled.n_knots }} knots, alpha {{ SO.parameters.ruled.ridge_alpha|num(1) }}: {{ SO.parameters.ruled.mape|pct(3) }} on {{ SO.parameters.ruled.hours|num }} hours). These variants do not change the model: they say how much the result leans on each setting.
+
+| Setting ({{ label(SO.parameters.label) }}) | Value | MAPE | Difference | 95% CI |
+|---|---|---|---|---|
+{% for x in SO.parameters.variants %}
+| {{ 'Number of knots' if x.setting == 'n_knots' else 'Ridge alpha' }} | {{ x.value|num(0 if x.setting == 'n_knots' else 1) }} | {{ x.mape|pct(3) }} | {{ pp(x.difference, 3) }} | {{ ppci(x.ci95_low, x.ci95_high, 3) }} |
+{% endfor %}
+
+#### Findings ({{ say.soundness_label }})
+
+{% for x in SO.findings %}
+- {{ say.finding }} ({{ say.soundness_label }}): {% if x.measure == 'shape' %}the curve {{ KIND[x.kind] }} of the model frozen for {{ x.year }} has steps that break their side (count: {{ x.count }}; {% if x.sides == ['cold'] %}below{% elif x.sides == ['warm'] %}above{% else %}on both sides of{% endif %} {{ ST.heating_base_c|num(0) }} °C), the largest {{ x.worst.size_mw|signed(0) }} MW at {{ x.worst.hour }} h.{% elif x.measure == 'size' %}the cold slope {{ KIND[x.kind] }} of the model frozen for {{ x.year }} is not positive at these hours: {{ x.hours|join(', ') }} (count of slopes: {{ x.count }}).{% elif x.measure == 'stability_folds' %}fold slopes leave the band (count: {{ x.count }}; folds {{ x.folds|join(', ') }}).{% elif x.measure == 'stability_freezes' %}frozen models' slopes leave the folds' band (count: {{ x.count }}; models frozen for {{ x.years|join(', ') }}).{% elif x.measure == 'lags' %}the lags of the model frozen for {{ x.year }} {% if not x.positive %}are not both positive{% else %}sum to 1 or more{% endif %}.{% elif x.measure == 'lags_folds' %}folds have a lag that is not positive ({{ x.not_positive|join(', ') or '—' }}) or lags that sum to 1 or more ({{ x.not_fading|join(', ') or '—' }}).{% elif x.measure == 'input' %}the forecast's change differs from the curves' difference by up to {{ x.max_abs_mw|num(3) }} MW.{% endif %}
+
+{% else %}
+{{ say.no_finding }}
+{% endfor %}
+
+{% if SO.findings %}{% if SO.shape[L_].production %}The curves with the lags of the model frozen for {{ SO.last }} are lowest between {{ SO.reading.production.lowest.min|num(0) }} and {{ SO.reading.production.lowest.max|num(0) }} °C depending on the hour; v1's base, fixed in advance, is {{ ST.heating_base_c|num(0) }} °C; their steps that break their side all lie between {{ (SO.shape[L_].production|map(attribute='colder_c')|min)|num(0) }} and {{ (SO.shape[L_].production|map(attribute='warmer_c')|max)|num(0) }} °C. {% endif %}These findings change neither the model, nor its rules, nor the {{ HY }} verdict.
+{% endif %}
+{% endif %}
+
 ## 4. Test cases
 
 Neither test case has an acceptance criterion that could fail: they are measurements, on years that served the choice ({{ label(v.contrasts.label) }}).
@@ -627,7 +731,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Expectation | What valiwatt does | Where it is checked |
 |---|---|---|
-| SR 11-7, conceptual soundness, including sensitivity analysis | Model, input and decision rule fixed in the plan before any v2 replay; the GAM's curves shown beside a fit without the lags. Alternative specifications: v1's form on the forecast, the observed-weather bound, a {{ K.late_h|num(0) }}-hour availability margin, the mean of the {{ dq.sources.eccc|length }} stations, an absolute interval, one quantile per season. These are not the small changes to inputs and parameters SR 11-7 calls sensitivity analysis; those are not made. | v2's plan, sections 4 and 8; the validation and frozen-model runs |
+| SR 11-7, conceptual soundness, including sensitivity analysis | Model, input and decision rule fixed in the plan before any v2 replay; the GAM's curves shown beside a fit without the lags. Alternative specifications: v1's form on the forecast, the observed-weather bound, a {{ K.late_h|num(0) }}-hour availability margin, the mean of the {{ dq.sources.eccc|length }} stations, an absolute interval, one quantile per season. These are not the small changes to inputs and parameters SR 11-7 calls sensitivity analysis. {% if sound %}{{ say.sr_soundness }}: each hourly curve's shape and size, their stability across folds and freezes, the lags read, and a sensitivity analysis in SR 11-7's sense, the input moved by ±{{ sound.settings.shift_c|num(0) }} °C and the number of knots and the ridge alpha changed one at a time; the other settings are not varied.{% else %}Those are not made.{% endif %} | v2's plan, sections 4 and 8; the validation and frozen-model runs{% if sound %}; section 3.1 and its soundness run{% endif %} |
 | SR 11-7, data quality and relevance | {{ dq.checks.values()|selectattr('kind', 'equalto', 'gate')|list|length }} quality gates over the whole window, every repair documented; in production, a daily quality monitor on the raw records, a day without a forecast included. | Data-quality report; replays |
 | SR 11-7, third-party data and models: NOAA's forecast input | Covered: its quality gates, its availability rule, its error against the observations, its drift and the sensitivity to availability. Not covered: the soundness and change management of NOAA's model itself. | Sections 2 and 8; data-quality report |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards; a clock that refuses later data, forecasts included; the three models' hashes checked before and after; the replay refuses to run if the rules or the dependencies differ from tag `{{ freeze.freeze_tag }}`{% if departures %}; the tag was moved by a departure recorded in `AGENTS.md` (section 8){% endif %}. Each guard has its break. | Section 11 |
@@ -639,13 +743,13 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | NIST MEASURE 1.1, 2.1, 2.3, 2.5, 2.13 | MLflow runs (test sets, metrics, parameters, versions); replays under production conditions; breaks; the "not covered" list below. | Runs; section 11 |
 | NIST MANAGE 2.2 | Weekly recommendations with evidence; who acts, and how, is out of scope. | Section 8 |
 
-**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; NIST GOVERN for the most part); periodic review; analysis of overrides of the model's outputs; use in decisions and materiality; independent review of a recalibration; sensitivity analysis in SR 11-7's sense; the soundness and change management of NOAA's model; NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the card's limitations; NIST MEASURE 2.4 (monitoring in production: simulated by the replay only); real-time data.
+**Not covered.** Independent validation and effective challenge (SR 11-7, V; NIST MEASURE 1.3); governance, policies and controls, internal audit, model inventory (SR 11-7, VI; NIST GOVERN for the most part); periodic review; analysis of overrides of the model's outputs; use in decisions and materiality; independent review of a recalibration; {% if sound %}sensitivity analysis in SR 11-7's sense beyond the input and two settings (section 3.1), and on held-out data{% else %}sensitivity analysis in SR 11-7's sense{% endif %}; the soundness and change management of NOAA's model; NIST MANAGE 2.4 (who supersedes, disengages or deactivates the model); NIST MANAGE 4.1 and 1.4 beyond the card's limitations; NIST MEASURE 2.4 (monitoring in production: simulated by the replay only); real-time data.
 
 ## 13. Provenance
 
 | Run | Identifier | Date |
 |---|---|---|
-{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('diag_pseudo_replay', 'the ' ~ p.year ~ ' rehearsal\'s diagnostics (section 7)'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('diag_replay', 'the diagnostics of the ' ~ r.year ~ ' replay whose numbers section 8 shows'), ('breaks', 'breaks'), ('replay_2024_record', 'the 2024 replay of record'), ('replay_2025', 'the 2025 test of record')] if name in runs %}
+{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('diag_pseudo_replay', 'the ' ~ p.year ~ ' rehearsal\'s diagnostics (section 7)'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('diag_replay', 'the diagnostics of the ' ~ r.year ~ ' replay whose numbers section 8 shows'), ('soundness', 'conceptual soundness, added after the freeze (section 3.1)'), ('breaks', 'breaks'), ('replay_2024_record', 'the 2024 replay of record'), ('replay_2025', 'the 2025 test of record')] if name in runs %}
 | {{ lbl }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
 {% endfor %}
 

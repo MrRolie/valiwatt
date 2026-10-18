@@ -44,6 +44,8 @@ def chain(monkeypatch):
     monkeypatch.setattr(cli, "cmd_dq", lambda a: seen["dq"].append(a.through) or 0)
     for name in ("cmd_validate", "cmd_breaks", "cmd_report"):
         monkeypatch.setattr(cli, name, lambda a: 0)
+    seen["soundness"] = []
+    monkeypatch.setattr(cli, "cmd_soundness", lambda a: seen["soundness"].append(list(seen["freeze"])) or 0)
     monkeypatch.setattr(freeze, "run_freeze", lambda year: seen["freeze"].append(year) or 0)
     monkeypatch.setattr(run, "run_replay", lambda year, departure=False: seen["replay"].append((year, departure)) or 0)
     monkeypatch.setattr(run, "run_evidence", lambda departure=False: seen["evidence"].append(departure) or 0)
@@ -56,6 +58,19 @@ def test_all_passes_departure_to_the_2024_replay_only(chain):
     chain["replay"].clear()
     assert cli.main(["all"]) == 0
     assert chain["replay"] == [(2023, False), (2024, False)]
+
+
+def test_all_runs_the_soundness_run_once_after_the_2024_replay(chain, monkeypatch):
+    """The soundness run (report/soundness.py, added after the freeze, deciding nothing) reads both frozen models: `all`
+    runs it once, after the 2024 replay, so it can never hold up that pre-registered replay, and before the breaks and
+    the report."""
+    order = []
+    monkeypatch.setattr(run, "run_replay", lambda year, departure=False: order.append(("replay", year)) or 0)
+    monkeypatch.setattr(cli, "cmd_soundness", lambda a: order.append(("soundness", list(chain["freeze"]))) or 0)
+    monkeypatch.setattr(cli, "cmd_breaks", lambda a: order.append(("breaks",)) or 0)
+    assert cli.main(["all"]) == 0
+    assert order == [("replay", 2023), ("replay", 2024), ("soundness", [2023, 2024]), ("breaks",)]
+    assert "decides nothing" in " ".join(subparsers()["soundness"].format_help().split())
 
 
 def test_all_never_runs_the_2025_replay(chain):

@@ -83,8 +83,19 @@ def filters(lang: str) -> dict:
         blank, sep = {"fr": ("vide", " ; "), "en": ("blank", "; ")}[lang]
         return sep.join(fmt_num(float(v), d, lang) if v.strip() else blank for v in str(values).split(";"))
 
+    def sci(x, d=1):
+        """A small positive number in scientific form, its mantissa as `num` prints it: 1.1 × 10⁻¹¹ (1,1 × 10⁻¹¹ in
+        French); refused when it is not positive, which the sentence then states another way."""
+        if x is None or not x > 0:
+            raise ReportRefused(f"a number the report prints in scientific form is not positive: {x!r}")
+        mantissa, exponent = f"{x:.{d}e}".split("e")
+        return f"{fmt_num(float(mantissa), d, lang)} \u00d7 10" + str(int(exponent)).translate(SUPERSCRIPT)
+
     return {"num": num, "pct": pct, "signed": signed, "utc": utc, "lst": lst, "day": day, "verdict": verdict,
-            "short": short, "reason": reason, "holds": holds, "mw": mw}
+            "short": short, "reason": reason, "holds": holds, "mw": mw, "sci": sci}
+
+
+SUPERSCRIPT = str.maketrans("-0123456789", "\u207b\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079")
 
 
 def environment(lang: str) -> jinja2.Environment:
