@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `121b2888c89b4d93b4ff030620b1a46c` (2026-10-19 00:27 UTC), code `908535a0f5a6`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `f3cddb2e81164f20bea8603c409a7aea` (2026-10-19 04:27 UTC), code `93552854e9b5`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -70,8 +70,8 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 
 | Contrôle | Résultat | Mesure | Seuil |
 |---|---|---|---|
-| Fenêtre attendue, aucun enregistrement hors fenêtre | réussi | 0 hors fenêtre | aucun |
-| Chaque doublon correspond à une forme connue | réussi | 0 non résolu | aucun |
+| Fenêtre attendue, aucun enregistrement hors fenêtre | réussi | 0 hors fenêtre | un seul enregistrement le fait échouer |
+| Chaque doublon correspond à une forme connue | réussi | 0 non résolu | un seul doublon non résolu le fait échouer |
 | Valeurs dans des bornes physiques larges (2019–2024) | réussi | 13 294 à 42 473 MW | 5 000 à 60 000 MW |
 | Part des heures utilisables | réussi | 99,89 % | ≥ 99 % |
 

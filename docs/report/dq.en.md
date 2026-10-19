@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `121b2888c89b4d93b4ff030620b1a46c` (2026-10-19 00:27 UTC), code `908535a0f5a6`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `f3cddb2e81164f20bea8603c409a7aea` (2026-10-19 04:27 UTC), code `93552854e9b5`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -70,8 +70,8 @@ A gate that fails stops the chain: no canonical data is written and the command 
 
 | Check | Result | Measure | Threshold |
 |---|---|---|---|
-| Expected window, no record outside it | passed | 0 outside | none |
-| Every duplicate matches a known shape | passed | 0 unresolved | none |
+| Expected window, no record outside it | passed | 0 outside | a single record fails it |
+| Every duplicate matches a known shape | passed | 0 unresolved | a single unresolved duplicate fails it |
 | Values within loose physical bounds (2019–2024) | passed | 13,294 to 42,473 MW | 5,000 to 60,000 MW |
 | Share of usable hours | passed | 99.89% | ≥ 99% |
 
