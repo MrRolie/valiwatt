@@ -14,7 +14,7 @@ _La version courte du rapport de validation, en sept points : à lire d'abord._
 >
 > Construit avec Claude Code sous la direction du propriétaire du dépôt.
 
-Le [rapport complet](validation.fr.md) est la référence, et chaque point renvoie à sa section. Chaque valeur mesurée ici vient des mêmes exécutions MLflow : code `7843d8a9c190`, rejeu de 2024 `69298e9f4bb04edb8363139bed160f4e`. Les constantes de conception viennent de ces exécutions ou du code. La version anglaise est dérivée de celle-ci.
+Le [rapport complet](validation.fr.md) est la référence, et chaque point renvoie à sa section. Chaque valeur mesurée ici vient des mêmes exécutions MLflow : code `d9c4da0ab203`, rejeu de 2024 `daea4f58e6e64bc5a4ea6a5958acd215`. Les constantes de conception viennent de ces exécutions ou du code. La version anglaise est dérivée de celle-ci.
 
 ## La question
 
