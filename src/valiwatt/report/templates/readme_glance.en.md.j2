@@ -1,0 +1,33 @@
+{# The README's "At a glance" box: the headline figures of the validation report, rendered by the same pass and from the
+   same context (report/validation.py `render_glance`), each with its evaluation label as the report prints it, and
+   written between the README's two markers (`write_glance`); the stamp holds its hash. Each row says what the report
+   says, from the same branches and the same macros: the status follows the 2025 test of record, and the 2025 row
+   appears once that test has finished (before, the status says where it stands). The caveats go once, under the
+   table. English only, as the README is. #}
+{% from 'sentences.en.md.j2' import status_line, withdrawn, label, span, recs, bias_limit, coverage_line, VERDICT, OUTCOME %}
+{% set prod, fam, ship = sel.models.production, sel.models.family, sel.models.shipped %}
+{% set vy = K.validation_years %}
+{% set HY = K.held_out_year %}
+{% set R = held.record if held else none %}
+{% set finished = R is not none and R.finished %}
+{% set LR = limits.replay %}
+{% set n_recs = r.summary.recommendations.values()|sum %}
+{% set controls = b.breaks|selectattr('control')|list %}
+{% set tests = b.breaks|rejectattr('control')|list %}
+{% set not_better = r.verdict.shipped in ('not_shown_better', 'worse') or r.verdict.family in ('not_shown_better', 'worse') %}
+> **At a glance.** Rendered by `valiwatt report`: every measured value comes from the tracked runs, every design constant from the runs or the code, and each result carries its evaluation label as the validation report prints it.
+>
+> {{ status_line(status, R, say, vy, r.year, HY) }}{% if recommendation %} The claims this result touches are withdrawn: {{ withdrawn(recommendation.withdrawn) }}. Recommendation to the owner, in the monitor's form: **{{ say.recommendation[recommendation.kind] }}**; the model in use next is his decision.{% endif +%}
+>
+> | | |
+> |---|---|
+> | **Validation, {{ span(vy) }}** ({{ label(v.contrasts.label) }}) | MAPE {{ sel.mape[prod]|pct(2) }} for v2, {{ sel.mape[fam]|pct(2) }} for v1's form on the same forecast, {{ sel.mape[ship]|pct(2) }} for v1 as shipped, over {{ sel.hours|num }} common hours. {{ coverage_line(nominal, C.relative.overall.mean, v.conformal.first_fold, sides, v.folds.last, "v2's") }} |
+> | **{{ r.year }} replay** ({{ label(r.contrasts.label) }}) | MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}, {{ recs(n_recs) }}. Verdicts against v1 as shipped / against v1's form: "{{ VERDICT[r.verdict.shipped] }}" / "{{ VERDICT[r.verdict.family] }}". |
+{% if finished %}
+> | **{{ HY }}** ({{ label(R.evaluation) }}) | Test of record `{{ R.run_id }}`, standing "{{ OUTCOME[R.standing] }}". Verdicts against v1 as shipped / against v1's form: "{{ VERDICT[R.verdict.shipped] }}" / "{{ VERDICT[R.verdict.family] }}". |
+{% endif %}
+> | **What the monitor can miss** | On {{ r.year }} ({{ label(r.contrasts.label) }}), {{ bias_limit(LR, K.power_horizon) }}. |
+> | **Checks** | {{ tests|selectattr('outcome', 'equalto', 'passed')|list|length }} of {{ tests|length }} breaks passed, {{ controls|selectattr('outcome', 'equalto', 'passed')|list|length }} of {{ controls|length }} controls stayed quiet (synthetic data). Rules frozen at tag `{{ freeze.freeze_tag }}`{% if departures %}, now at commit `{{ freeze.freeze_commit|short }}` after a departure recorded in `AGENTS.md`{% else %}, commit `{{ freeze.freeze_commit|short }}`{% endif %}. |
+> | **Read next** | The story, read first: [French](docs/report/story.fr.md), the reference; [English](docs/report/story.en.md). The full validation report: [French](docs/report/validation.fr.md); [English](docs/report/validation.en.md). |
+>
+> {{ r.year }} is not a test: the developers had seen it through v1 before choosing v2{% if not_better %}, and a verdict that is not "better" there is a finding against v2{% else %}, so it supports no claim{% endif %}{% if departures %}; replayed again after a departure from v2's frozen rules, it is post hoc{% endif %}. The breaks run on synthetic data: a break shows that a check can fire, not that it would see the same fault in real demand.

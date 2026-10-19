@@ -346,8 +346,9 @@ def test_the_readme_dates_the_freeze_and_says_what_the_choices_were_made_on():
     order and how to check it from a clone, the rehearsal needing no tag; the ledger without the rehearsal; the
     choices made after 2024 had been seen through v1; the post-hoc case of the status; CI on pull requests."""
     from valiwatt.paths import REPO_ROOT
+    from valiwatt.report.validation import hand_written
 
-    readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+    readme = " ".join(hand_written((REPO_ROOT / "README.md").read_text(encoding="utf-8")).split())  # the box aside
     for said in ("before v2's 2024 replay", "the 2023 rehearsal does not need it", "(the 2023 rehearsal has none)",
                  "v2 was nevertheless chosen after 2024 had been seen through v1", "is not a held-out test",
                  "what each choice was made on", "on every pull request, a fork's included",

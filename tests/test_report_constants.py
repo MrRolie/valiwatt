@@ -1,15 +1,15 @@
 """The report templates type no design constant in numerals.
 
-Every number the templates of the validation and data-quality reports write is measured in a run, or is a design
-constant read from the runs or from the code (`validation.constants`, `render.design`). Three parts of each template are
-scanned: its own text, the quoted strings inside its Jinja (which can be printed), and the numbers its printed
-expressions write. The only numerals left in them are those ALLOWED names below, each with the reason it is not a
-constant, and, inside the Jinja, the few NAMES and EXPRESSION forms that follow. A numeral typed anywhere else fails
-this test, so the reports' opening claim stays as wide as what is checked. Not scanned: the numbers the templates'
-logic compares against inside `{% %}` (a rule's number, the one of a plural), the arguments a filter or macro takes
-(its decimals), and the break labels section 11 prints, which are hand-written in `valiwatt.breaks`. The story has its
-own, stricter test (tests/test_report_story.py). Numbers written out in words are not checked here, and the claim the
-reports make is about numerals only.
+Every number the templates of the validation and data-quality reports, and of the README's "At a glance" box, write is
+measured in a run, or is a design constant read from the runs or from the code (`validation.constants`,
+`render.design`). Three parts of each template are scanned: its own text, the quoted strings inside its Jinja (which can
+be printed), and the numbers its printed expressions write. The only numerals left in them are those ALLOWED names
+below, each with the reason it is not a constant, and, inside the Jinja, the few NAMES and EXPRESSION forms that follow.
+A numeral typed anywhere else fails this test, so the reports' opening claim stays as wide as what is checked; a number
+a `{% set %}` assigns is scanned as printed, since its name can print it. Not scanned: the numbers the templates' logic compares against inside `{% %}` (a rule's number, the one of a plural), the
+arguments a filter or macro takes (its decimals), and the break labels section 11 prints, which are hand-written in
+`valiwatt.breaks`. The story has its own, stricter test (tests/test_report_story.py). Numbers written out in words are
+not checked here, and the claim the reports make is about numerals only.
 """
 
 from __future__ import annotations
@@ -24,6 +24,9 @@ from valiwatt.forecast import evaluate
 from valiwatt.report.render import TEMPLATES, ReportRefused, bootstrap_quantiles, design
 
 CHECKED = ("validation", "sentences", "season_coverage", "ledger_recorded", "repair", "dq")
+# The README's "At a glance" box, rendered from the validation report's context (report/validation.py
+# `render_glance`), in English only, as the README is.
+CHECKED_EN = ("readme_glance",)
 REF = r"\d+(?:\.\d+)*(?: \([^)\d]*\))?"  # a section, and what it holds in words
 LIST = rf"{REF}(?:(?:, | and | et | or | ou ){REF})*"
 # What a numeral may be in these templates, and why it is not a design constant.
@@ -97,6 +100,14 @@ def expressions(path) -> list[str]:
     return re.findall(r"\{\{.*?\}\}", _source(path), flags=re.S)
 
 
+def assigned(path) -> list[str]:
+    """The value of each `{% set ... = ... %}` of a template, as a printed expression: a number assigned there can be
+    printed through its name, so it is scanned as printed. A dict's integer keys are set aside: they are looked up,
+    never printed (the months of the calendar, by number)."""
+    values = re.findall(r"\{%-?\s*set\s+[\w\s,]+=(.*?)-?%\}", _source(path), flags=re.S)
+    return ["{{ " + re.sub(r"(?<=[{,])\s*\d+\s*:", " k:", e) + " }}" for e in values]
+
+
 def typed_numerals(text: str) -> list[str]:
     """Each numeral `text` types outside ALLOWED, with its context."""
     for pattern in ALLOWED.values():
@@ -104,29 +115,32 @@ def typed_numerals(text: str) -> list[str]:
     return [text[max(0, m.start() - 30):m.end() + 20] for m in re.finditer(r"\d", text)]
 
 
-@pytest.mark.parametrize("doc", CHECKED)
-@pytest.mark.parametrize("lang", ("fr", "en"))
+@pytest.mark.parametrize("doc, lang", [(d, lang) for d in CHECKED for lang in ("fr", "en")]
+                         + [(d, "en") for d in CHECKED_EN])
 def test_the_templates_type_no_design_constant(doc, lang):
     path = TEMPLATES / f"{doc}.{lang}.md.j2"
     assert typed_numerals(literal_text(path)) == []
     assert [s for s in jinja_strings(path) if typed_numerals(s)] == []
     assert [e for e in expressions(path) if printed_numbers(e)] == []
+    assert [e for e in assigned(path) if printed_numbers(e)] == []
 
 
 def test_a_constant_typed_inside_the_jinja_is_caught(tmp_path):
     for typed in ("{{ 95 }}", "{{ (95) }}", "{{ (1000)|num(0) }}", "{{ ((a - b) / 18)|num }}", "{{ x * 100 }}",
                   "{{ 'shown on 2024' }}", "{% set y = 'the 2025 test' %}", "{{ 'v2 at 18 °C' if a else b }}",
-                  "{{ x ~ ' in 2024' }}"):
+                  "{{ x ~ ' in 2024' }}", "{% set typed_coverage = 0.99 %}{{ typed_coverage|pct(1) }}",
+                  "{% set a, b = x, 18 %}{{ b }}", "{%- set k = (95) -%}{{ k }}", "{% set M = {1: 18} %}"):
         path = tmp_path / "t.md.j2"
         path.write_text(f"A sentence {typed}.", encoding="utf-8")
         assert [s for s in jinja_strings(path) if typed_numerals(s)] or \
-            [e for e in expressions(path) if printed_numbers(e)], typed
+            [e for e in expressions(path) + assigned(path) if printed_numbers(e)], typed
     for fine in ("{{ x|pct(2) }}", "{{ vy[1] + 1 }}", "{{ 's' if n != 1 }}", "{{ 'lag24' }}", "{{ ', 8 and 9' }}",
-                 "{% from 'sentences.en.md.j2' import x %}", "{{ year - 1 }}"):
+                 "{% from 'sentences.en.md.j2' import x %}", "{{ year - 1 }}", "{% set n = r.recs.values()|sum %}",
+                 "{% set top = rep.top_hours[0] %}", "{% set M = {1: 'January', 12: 'December'} %}"):
         path = tmp_path / "t.md.j2"
         path.write_text(f"A sentence {fine}.", encoding="utf-8")
         assert not [s for s in jinja_strings(path) if typed_numerals(s)], fine
-        assert not [e for e in expressions(path) if printed_numbers(e)], fine
+        assert not [e for e in expressions(path) + assigned(path) if printed_numbers(e)], fine
 
 
 def test_a_typed_constant_is_caught():

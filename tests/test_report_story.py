@@ -454,7 +454,10 @@ def test_render_validation_writes_the_story_and_the_stamp_lists_it(tmp_path, mon
 
 
 def test_the_readme_points_to_the_story_first():
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+    """In the README's own words, the generated box set aside (its links are the render's)."""
+    from valiwatt.report.validation import hand_written
+
+    readme = hand_written((Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8"))
     story, full = readme.index("docs/report/story.fr.md"), readme.index("docs/report/validation.fr.md")
     assert story < full and "docs/report/story.en.md" in readme
 
