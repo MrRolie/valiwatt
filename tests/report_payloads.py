@@ -596,9 +596,12 @@ def clean_record(verdict=("better", "better"), **kw):
 _BASE: dict = {}
 
 
-def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries=(), diag=None, **override) -> dict:
+def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries=(), diag=None, first24="rerun",
+            **override) -> dict:
     """A context as `validation.context` builds it, from the payloads above through the real `derive`, the real
-    2025 view (`assemble_held`) and the real v1 view."""
+    2025 view (`assemble_held`) and the real v1 view. first24: v2's first 2024 replay as `validation.first_2024`
+    names it from the ledger, beside the chain's own replay: "rerun" (FIRST_2024, and the chain's replay a rerun with
+    the same printed results), "same" (the chain's replay is the first), or a view given whole."""
     v, dq, p, r, b, frozen, oos, d = payloads()
     diag = d if diag is None else diag
     key = tuple(sorted((k, x is None) for k, x in diag.items()))
@@ -623,7 +626,8 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
            "departures": [dict(x) for x in departures], "departure_record": None, "dep_entries": list(dep_entries),
            "v1": RV.v1_view([RecordedReplay(V1_PLAIN), RecordedReplay(V1_DEPARTED)], r),
            "weekly_error": weekly_error(),
-           "rec24": rec24, "rerun24": rerun24, "held": held_view, "status": status,
+           "rec24": rec24, "rerun24": rerun24, "first24": first24_view(first24, runs["replay"]["id"]),
+           "held": held_view, "status": status,
            "recommendation": held_view["recommendation"] if held_view else None,
            "store_only": bool((rec24 or {}).get("recorded")) or bool(held_view and held_view["recorded"]),
            "runs": runs, "code_sha": "c" * 64, "rules_sha": "d" * 64,
@@ -631,6 +635,16 @@ def context(held_view=None, rec24=None, rerun24=None, departures=(), dep_entries
     ctx.update(override)
     RV.check_held_diagnostics(ctx["held"], ctx["sens"])
     return ctx
+
+
+def first24_view(kind, chain_id: str):
+    """v2's first 2024 replay, through the real `first_2024` on a ledger holding FIRST_2024 and the chain's own
+    replay's entry (the same printed results, or, for "same", the chain's replay itself the first)."""
+    if not isinstance(kind, str):
+        return kind
+    chain = {**FIRST_2024, "run_id": chain_id, "started_utc": W.utc(1) if kind == "rerun" else W.utc(0)}
+    entries = [chain] if kind == "same" else [FIRST_2024, chain]
+    return RV.first_2024(entries, W.FREEZE_TAG, chain)
 
 
 def _sound_view() -> dict:

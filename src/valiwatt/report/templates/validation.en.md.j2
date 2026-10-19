@@ -1,6 +1,6 @@
 {% from 'season_coverage.en.md.j2' import season_sentence %}
 {% from 'sentences.en.md.j2' import level_shift_note_replay, set_aside, episode_limit, level_limit, level_why, recs_list, one_day_alarms, predecessor %}
-{% from 'sentences.en.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_coverage, brief_peak, brief_misses, break_result, level_shift_note %}
+{% from 'sentences.en.md.j2' import and_list, months, groups, coverage_sides, power_limit, week_ev, near_list, near_why, pct_sign, sp, pp, ppci, span, recs, diff_verdict, spring_card, brief_coverage, brief_peak, brief_misses, break_result, level_shift_note, card_limits, weekly_cov %}
 {% from 'sentences.en.md.j2' import choice_bias, status_line, withdrawn, label, LABEL, STATE, VERDICT, MODEL, COMPARISON, STAGE, OUTCOME %}
 {% from 'ledger_recorded.en.md.j2' import recorded_block, record_block %}
 {% macro ci(lo, hi, d=2) %}[{{ lo|pct(d) }}, {{ hi|pct(d) }}]{% endmacro %}
@@ -11,7 +11,7 @@
 {% set SEASON = {'winter': 'winter', 'spring': 'spring', 'summer': 'summer', 'fall': 'fall'} %}
 {% set MONTH = {1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December'} %}
 {% set REASON = {'no_run_available': 'no forecast available before the origin', 'no_covering_run': 'none of the ' ~ K.max_runs_back ~ ' freshest available forecasts covers the day', 'temp_forecast': 'forecast temperature missing', 'temp_persistence': "the day before's temperature missing", 'lag24': "the day before's demand unavailable", 'lag168': "the week before's demand unavailable", 'no forecast': 'no forecast'} %}
-{% set DIFF = {'mape': 'MAPE', 'coverage': 'coverage', 'recommendations': 'the recommendations', 'verdict': 'the verdicts'} %}
+{% set DIFF = {'mape': 'MAPE', 'coverage': 'coverage', 'recommendations': 'the recommendations', 'verdict': 'the verdicts', 'model_sha256': "the frozen model's hash", 'frozen_sha256': 'the hash of the frozen artifacts that judged it'} %}
 {% macro diffs(keys) %}{% set parts = [] %}{% for k in keys %}{% set _ = parts.append(DIFF[k]) %}{% endfor %}{{ and_list(parts) }}{% endmacro %}
 {% macro why(text) %}{% set parts = [] %}{% for one in text.split(', ') %}{% set _ = parts.append(REASON.get(one, one)) %}{% endfor %}{{ parts|join(', ') }}{% endmacro %}
 {% macro power_table(rows, key) %}
@@ -25,7 +25,7 @@
 {% endfor %}
 {% endmacro %}
 {% macro contrast_table(c, lbl) %}
-| Comparison ({{ label(lbl) }}) | MAPE difference | 95% CI | State |
+| Comparison ({{ label(lbl) }}) | MAPE difference | {{ design.ci_level|pct(0) }} CI | State |
 |---|---|---|---|
 {% for k in ['shipped', 'family', 'input'] %}
 | {{ COMPARISON[k] }}{% if k == 'input' %} (reported, never judged){% endif %} | {{ pp(c[k].difference) }} | {{ ppci(c[k].ci95_low, c[k].ci95_high) }} | {{ STATE[c[k].state] }} |
@@ -81,7 +81,7 @@
    store (a record read from the ledger has none). #}
 {% set C9 = R is not none and R.finished %}
 {% set B9 = C9 and R.results is not none %}
-{% set status_text = status_line(status, R, say, vy) %}
+{% set status_text = status_line(status, R, say, vy, r.year, HY) %}
 {% set lag = r.model.lag_coefficients %}
 {% set fin = v.forecast_input %}
 {% set late = v.sensitivity.availability_6h %}
@@ -91,7 +91,7 @@
 {% set S24 = sens.replay %}
 # Validating and monitoring a forecast of Québec's electricity demand, v2
 
-_Report generated from a chain of MLflow runs followed from the {{ r.year }} replay (section 8), code `{{ commit|short }}`{% if dirty %} **with uncommitted changes**{% endif %}, code hash `{{ code_sha|short }}`, rules frozen at commit `{{ freeze.freeze_commit|short }}` (tag `{{ freeze.freeze_tag }}`){% if departures %}, **after a departure from v2's frozen rules: the {{ r.year }} replay is post hoc (section 8)**{% endif %}. Every measured value comes from these runs, and every design constant from the runs or from the code that produced them; none is typed by hand. Every result carries its evaluation label, read from the runs: {{ label('in_sample_for_choice') }} for {{ span(vy) }}, {{ label('rehearsal') }} for {{ p.year }}, {{ label('seen_by_developers') }} for {{ r.year }}, and for {{ HY }} {{ label('held_out') }} only when its test of record is clean. This English version is derived from the French one._
+_Report generated from a chain of MLflow runs followed from the {{ r.year }} replay (section 8), code `{{ commit|short }}`{% if dirty %} **with uncommitted changes**{% endif %}, code hash `{{ code_sha|short }}`, rules frozen at commit `{{ freeze.freeze_commit|short }}` (tag `{{ freeze.freeze_tag }}`){% if departures %}, **after a departure from v2's frozen rules: the {{ r.year }} replay is post hoc (section 8)**{% endif %}. Every measured value comes from these runs. The design constants its templates write in numerals are read from the runs or from the code that produced them: a test holds the templates' text, the strings their code prints and the numbers their printed expressions write to the few numerals they may type: section, plan and standard references, version names, the dates of the owner's rulings, facts of the calendar, the constants of a formula and the numbering of a list. The break labels of section 11 are hand-written descriptions of the tests, numerals included, and that test does not read them. "The developers" are the AI agents that built this project and the owner who directs them. Every result carries its evaluation label, read from the runs: {{ label('in_sample_for_choice') }} for {{ span(vy) }}, {{ label('rehearsal') }} for {{ p.year }}, {{ label('seen_by_developers') }} for {{ r.year }}, and for {{ HY }} {{ label('held_out') }} only when its test of record is clean. This English version is derived from the French one._
 
 {% for line in attribution %}
 > {{ line }}
@@ -122,7 +122,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 | **Model** | An additive model of the GAM family, fitted by penalized least squares: one temperature curve per local hour (splines, {{ v.config.n_knots }} knots at the quantiles of the training rows, degree {{ v.config.degree }}, continued as a straight line outside the training range), v1's {{ K.cells }} constants per hour and day type, the demand of the day before and of the week before; standardized, then ridge, alpha {{ v.config.ridge_alpha|num(1) }}. Frozen on the data up to {{ f24.params.train_last_day }}; hash `{{ f24.tags.coefficient_sha256|short }}`, that of this chain's frozen model, from which this date, the interval below and the curves of section 3 come{% if rec24 %}; {{ HY }} is judged by the frozen model of the {{ r.year }} replay of record, hash `{{ rec24.model_sha256|short }}`{% if rec24.model_sha256 == f24.tags.coefficient_sha256 %}, the same{% else %}, another (section 8){% endif %}{% endif %}. Compared with v1 as shipped and with v1's form on the same forecast, which never recommend anything. |
 | **Interval** | Forecast × (1 ± {{ f24.params.q|float|pct(2) }}). The half-width is a quantile of the {{ K.calibration_scores|num }} out-of-sample relative errors from {{ f24.params.calibration_first_fold }} to {{ f24.params.calibration_last_fold }} already scored when the frozen model is fitted: the form of a split conformal interval, without its finite-sample guarantee. The measured coverage is the evidence (sections 5 and 8). |
 | **Validation error** | MAPE {{ P[prod].overall.mean|pct(2) }} {{ ci(P[prod].overall.ci95_low, P[prod].overall.ci95_high) }} over its hours of {{ span(vy) }} ({{ label(v.contrasts.label) }}), against {{ P.baseline.overall.mean|pct(2) }} for the naive baseline (section 3). |
-| **{{ r.year }} replay** | {{ label(r.contrasts.label) }}: MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ recs(n_recs) }}; verdicts "{{ VERDICT[r.verdict.shipped] }}" against v1 as shipped and "{{ VERDICT[r.verdict.family] }}" against v1's form (section 8). |
+| **{{ r.year }} replay** | {{ label(r.contrasts.label) }}: MAPE {{ r.summary.mape.mean|pct(2) }}, coverage {{ r.summary.coverage.mean|pct(1) }}; {{ recs(n_recs) }}, beside what the rules can miss that year: {{ card_limits(LR, K.power_horizon) }}; verdicts "{{ VERDICT[r.verdict.shipped] }}" against v1 as shipped and "{{ VERDICT[r.verdict.family] }}" against v1's form (section 8). |
 | **{{ HY }}** | {% if not held %}Pending (section 9).{% elif not R.finished %}The test of record {{ say.unfinished }} (section 9).{% else %}Test of record `{{ R.run_id }}`, standing "{{ OUTCOME[R.standing] }}" ({{ label(R.evaluation) }}), verdicts "{{ VERDICT[R.verdict.shipped] }}" and "{{ VERDICT[R.verdict.family] }}" (section 9).{% endif %} |
 | **Weather caveat** | The temperature forecast is available, by assumption, {{ K.lag_h|num(0) }} hours after its issue time; every result that depends on it rests on that assumption (section 2). The observed temperature of the target hour is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 10. |
@@ -132,8 +132,8 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 
 - **Walk-forward validation.** Each month from {{ vy[0] }} to {{ vy[1] }} is forecast by models refitted on the hours before it only, less the last {{ K.embargo_days }} days (the embargo). The three models compared are fitted on the same folds: v2, v1's form on the same forecast and v1 as shipped, rebuilt in v2's harness.
 - **The error.** The mean absolute percentage error (MAPE): on average, by how much the forecast misses actual demand. The signed bias says in which direction: bias = (demand − forecast) / demand, positive when the forecast is too low.
-- **The uncertainty of a mean.** Neighbouring hours share the weather; so whole weeks are resampled, {{ K.n_boot|num }} times, to get a 95% interval around each mean.
-- **The decision rule, fixed in the plan before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a 95% interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the {{ ordinal(100 * K.cold_quantile) }} percentile of those of {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than {{ K.min_cold_hours }} cold hours or fewer than {{ K.min_cold_weeks }} weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
+- **The uncertainty of a mean.** Neighbouring hours share the weather; so whole weeks are resampled, {{ K.n_boot|num }} times, to get a {{ design.ci_level|pct(0) }} interval around each mean.
+- **The decision rule, fixed in the plan before any v2 replay.** On the common hours (those where demand and the three forecasts exist), v2's error is compared with each other model's, hour by hour, with a {{ design.ci_level|pct(0) }} interval over whole weeks. A comparison is **better** when the upper bound of its interval is below zero, **worse** when the lower bound is above it, **not separated** otherwise; the bounds are judged as printed, to a hundredth of a point. The comparisons are made again on the cold hours, those whose temperature forecast is below the {{ ordinal(100 * K.cold_quantile) }} percentile of those of {{ span(K.design_years) }} ({{ v.config.cold_c|num(1) }} °C): chosen on the input known at issue, never on the outcome. The verdict of each comparison: *better* (the comparison is better and its cold tail is not worse); *better on average, the cold tail untestable* (fewer than {{ K.min_cold_hours }} cold hours or fewer than {{ K.min_cold_weeks }} weeks); *not shown better*; *worse*. "v2 is better than v1" is said only of the verdict against v1 as shipped, and only on held-out data; "the GAM earns its place" only of the verdict against v1's form. The input's comparison (v1's form on the forecast against v1 as shipped) is reported, never judged.
 - **Beside, never judged.** The {{ K.peak_hours }} busiest hours of each period judged, {{ span(vy) }} as one period, then each replayed year (by actual demand, among all the hours that have one): each model's signed error, or why it has no forecast. The coverage of v2's intervals, with the sentence on its {{ nominal|pct(0) }} (section 5).
 - **The prediction interval.** Its half-width is a quantile of the relative errors |demand − forecast| / forecast. For each validation month, it is the quantile of rank ⌈(n + 1) × {{ nominal|num(2) }}⌉ of the n out-of-sample errors of the {{ K.calibration_folds }} months before, already scored when that month's model is fitted; for the frozen model, the same quantile over the errors of the {{ K.calibration_folds }} months before the replayed year, already scored when it is fitted. It is the form of a split conformal interval, without its finite-sample coverage guarantee: these hourly errors are autocorrelated and come from other models. The only evidence is the coverage measured out of sample.
 - **The frozen model.** In production the model is not refitted: it is fitted once, frozen with its hash, then replayed hour by hour.
@@ -145,7 +145,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 
 **The source.** The temperature is the NOAA National Blend of Models (NBM), its NBS product for station CYUL (Montréal-Trudeau, the airport of v1's primary station), as archived by the Iowa Environmental Mesonet: points every three hours, in degrees Fahrenheit, which this project interpolates to the hour and converts to degrees Celsius. The files are downloaded by script, never committed.
 
-**The feeding rule.** A forecast is **available** {{ fin.availability_lag_h|num(0) }} hours after its issue time: this is an **assumption**, since the archive records no arrival time, and every result that depends on the forecast rests on it. For day D, among the {{ K.max_runs_back }} freshest forecasts available at D's origin (D {{ K.origin_utc }} UTC), the freshest whose own points bracket each of D's 24 hours is taken, each of those points finite and inside the data-quality bounds. Interpolation is linear in time, inside a single forecast; two forecasts are never mixed. Each training day carries the forecast issued for it by the same rule, never an observation.
+**The feeding rule.** A forecast is **available** {{ fin.availability_lag_h|num(0) }} hours after its issue time: this is an **assumption**, since the archive records no arrival time, and every result that depends on the forecast rests on it. It rests on the delivery times NOAA's cloud bucket shows for a related product, measured outside the tracked runs (plan section 3.2 gives the counts); those times also cover {{ r.year }}, and the sensitivity to a longer margin below runs on the validation years only, not on the {{ r.year }} replay. For day D, among the {{ K.max_runs_back }} freshest forecasts available at D's origin (D {{ K.origin_utc }} UTC), the freshest whose own points bracket each of D's 24 hours is taken, each of those points finite and inside the data-quality bounds. Interpolation is linear in time, inside a single forecast; two forecasts are never mixed. Each training day carries the forecast issued for it by the same rule, never an observation.
 
 **On {{ span(K.design_years) }}.** {{ fin.fed_days|num }} days fed out of {{ fin.days|num }}; {% if fin.days_not_fed %}the days no forecast fed, with their reason: {% for d in fin.days_not_fed %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% endfor %}. Such a day has no forecast from v2 nor from v1's form on the forecast; v1 as shipped has one, and the common hours leave it out{% else %}no day was left without a forecast{% endif %}. Ranks of the forecast used (0: the freshest): {% for k, n in fin.rank_counts.items() %}rank {{ k }}, {{ n|num }} days{% if not loop.last %}; {% endif %}{% endfor %}. Hour of the forecast used, by year: {% for y, hours in fin.run_hour_by_year.items() %}{{ y }}: {% for h, n in hours.items() %}{{ h }} h UTC ({{ n|num }} days){% if not loop.last %}, {% endif %}{% endfor %}{% if not loop.last %}; {% endif %}{% endfor %}.
 
@@ -161,7 +161,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 
 **The sensitivity to the availability margin.** Validated also with forecasts available {{ K.late_h|num(0) }} hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by {{ pp(late.difference) }} {{ ppci(late.ci95_low, late.ci95_high) }} ({{ K.late_h|num(0) }} hours minus {{ K.lag_h|num(0) }}, over {{ late.hours|num }} hours): this is what an availability of {{ K.late_h|num(0) }} hours instead of {{ K.lag_h|num(0) }} would cost; a longer delay is not measured. This variant is labelled and chooses nothing.
 
-**31 December {{ vy[1] }}.** Its last two hours need the {{ vy[1] + 1 }}-01-01 06:00 UTC point of a forecast issued on 31 December and available before that day's origin: the information is {{ vy[1] }}'s, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of {{ span(vy) }} hold 24 more than the trial's.
+**The last day of {{ vy[1] }}.** Its last two hours need a point valid early on the first day of {{ vy[1] + 1 }}, of a forecast issued that last day and available before its origin: the information is {{ vy[1] }}'s, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of {{ span(vy) }} hold that day's hours, which the trial's lack.
 
 **The forecast leads.** The longest lead of a forecast point, by issue year: {% for y, hrs in nbm.longest.items() %}{{ y }}, {{ hrs|num(0) }} h{% if not loop.last %}; {% endif %}{% endfor %}. The argument of plan section 9.2 (a bad forecast spoils at most two consecutive days) holds as long as no point reaches {{ nbm.runs.reuse_lead_h|num(0) }} hours. {% if nbm.at_or_above %}**The years {{ and_list(nbm.at_or_above) }} have a lead of {{ nbm.runs.reuse_lead_h|num(0) }} hours or more: a {{ say.lead_75 }}, and the trigger of a plan section 18 entry** (a measure of one forecast feeding three days, designed and then put to the owner).{% else %}No year reaches it.{% endif %} The NBM's model changes over the years are not tracked: the forecast series is not homogeneous, and the drift monitor watches it.
 
@@ -171,7 +171,7 @@ _Report generated from a chain of MLflow runs followed from the {{ r.year }} rep
 
 {{ v.folds.count }} monthly folds, from {{ v.folds.first }} to {{ v.folds.last }}, a {{ v.folds.embargo_days }}-day embargo. Each model on its own hours:
 
-| Forecast ({{ label(v.contrasts.label) }}) | MAPE | 95% CI | Signed bias | Hours |
+| Forecast ({{ label(v.contrasts.label) }}) | MAPE | {{ design.ci_level|pct(0) }} CI | Signed bias | Hours |
 |---|---|---|---|---|
 {% for name in [prod, fam, ship, 'gam_observed', 'observed', 'baseline'] %}
 | {{ MODEL[name] }} | {{ P[name].overall.mean|pct(2) }} | {{ ci(P[name].overall.ci95_low, P[name].overall.ci95_high) }} | {{ sp(P[name].overall.bias.mean, 2) }} | {{ P[name].overall.hours|num }} |
@@ -193,7 +193,7 @@ On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 
 
 **v2 by season and by year** ({{ label(v.contrasts.label) }}):
 
-| Group | MAPE | 95% CI | Bias | Bias 95% CI |
+| Group | MAPE | {{ design.ci_level|pct(0) }} CI | Bias | Bias {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for row in P[prod].season %}
 | {{ SEASON[row.key] }} | {{ row.ape|pct(2) }} | {{ ci(row.ape_low, row.ape_high) }} | {{ sp(row.rel_bias, 2) }} | {{ sci(row.rel_bias_low, row.rel_bias_high) }} |
@@ -204,7 +204,7 @@ On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 
 
 **By decile of the load v2 forecasts** (the deciles are taken on the forecast, never on actual demand):
 
-| Decile | MAPE | 95% CI | Bias | Bias 95% CI |
+| Decile | MAPE | {{ design.ci_level|pct(0) }} CI | Bias | Bias {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for row in P[prod].decile %}
 | {{ row.key }} | {{ row.ape|pct(2) }} | {{ ci(row.ape_low, row.ape_high) }} | {{ sp(row.rel_bias, 2) }} | {{ sci(row.rel_bias_low, row.rel_bias_high) }} |
@@ -212,7 +212,7 @@ On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 
 
 **By hour of the day** (the local hour at which the demand hour begins):
 
-| Hour | MAPE | 95% CI | Bias | Bias 95% CI |
+| Hour | MAPE | {{ design.ci_level|pct(0) }} CI | Bias | Bias {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for h in P[prod].hour %}
 | {{ h.key }} h | {{ h.ape|pct(2) }} | {{ ci(h.ape_low, h.ape_high) }} | {{ sp(h.rel_bias, 2) }} | {{ sci(h.rel_bias_low, h.rel_bias_high) }} |
@@ -221,7 +221,7 @@ On one set of hours the three comparisons add up: v2 against v1 as shipped = v2 
 {% set outside = v.extrapolation|map(attribute='hours_below')|sum + v.extrapolation|map(attribute='hours_above')|sum %}
 **Outside the training range.** Beyond each fold's training temperatures, each curve continues as a straight line. Over the {{ v.extrapolation|length }} folds, {{ outside|num }} hours v2 forecast had a temperature forecast outside their fold's range ({{ v.extrapolation|map(attribute='hours_below')|sum|num }} below, {{ v.extrapolation|map(attribute='hours_above')|sum|num }} above).
 
-**The curves of the GAM frozen for {{ r.year }}**, this chain's (hash `{{ f24.tags.coefficient_sha256|short }}`). Each curve says what the temperature forecast adds to its hour *given* the demand of the day before and of the week before, relative to its value at 18 °C: solid over the training range, dashed where it is extrapolated. Beside them, the same curves of a GAM fitted without the lags, for interpretation only. These curves replace v1's coefficient table. The two lag coefficients, in MW per MW, of the model of the {{ r.year }} replay whose numbers section 8 shows: the day before's demand {{ lag.lag24|num(3) }}, the week before's demand {{ lag.lag168|num(3) }}; both are positive, which the echo rule assumes and the freeze checks. No standard error is given: the errors are autocorrelated and the fit is penalized.
+**The curves of the GAM frozen for {{ r.year }}**, this chain's (hash `{{ f24.tags.coefficient_sha256|short }}`). Each curve says what the temperature forecast adds to its hour *given* the demand of the day before and of the week before, relative to its value at {{ design.ref_c|num(0) }} °C: solid over the training range, dashed where it is extrapolated. Beside them, the same curves of a GAM fitted without the lags, for interpretation only. These curves replace v1's coefficient table. The two lag coefficients, in MW per MW, of the model of the {{ r.year }} replay whose numbers section 8 shows: the day before's demand {{ lag.lag24|num(3) }}, the week before's demand {{ lag.lag168|num(3) }}; both are positive, which the echo rule assumes and the freeze checks. No standard error is given: the errors are autocorrelated and the fit is penalized.
 
 ![GAM curves]({{ fig.validation_partial_effects }})
 
@@ -300,7 +300,7 @@ The cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C, in MW per °C 
 | {{ say.lag_rows[1] }} | {{ lagrow('lag168') }} |
 | {{ say.lag_rows[2] }} | {{ lagrow('sum') }} |
 
-A {{ (1000)|num(0) }} MW rise in the day before's demand carries about {{ LA.carry_per_1000_mw|num(0) }} MW into the next day's forecast{% if LA.fades %}; with the coefficients summing to less than 1, a one-off shock fades from one forecast to the next{% endif %}. {% if SO.lags.folds_not_positive or SO.lags.folds_not_fading %}Folds where a coefficient is not positive: {{ SO.lags.folds_not_positive|join(', ') or '—' }}; where their sum is not below 1: {{ SO.lags.folds_not_fading|join(', ') or '—' }}.{% else %}In every fold, both coefficients are positive and their sum is below 1.{% endif %} Measured on the model frozen for {{ SO.last }}: without the lags, each hour's cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C is steeper by {{ SO.flat.difference.min|num(0) }} to {{ SO.flat.difference.max|num(0) }} MW per °C; the curve with the lags keeps {{ (100 * SO.flat.ratio.min)|num(0) }} to {{ (100 * SO.flat.ratio.max)|num(0) }}% of it. These are measured differences, given without a theory{% if SO.flat.difference.min > 0 %}: at every hour, the curve with the lags is the flatter of the two{% endif %}.
+A {{ design.carry_rise_mw|num(0) }} MW rise in the day before's demand carries about {{ LA.carry_per_1000_mw|num(0) }} MW into the next day's forecast{% if LA.fades %}; with the coefficients summing to less than 1, a one-off shock fades from one forecast to the next{% endif %}. {% if SO.lags.folds_not_positive or SO.lags.folds_not_fading %}Folds where a coefficient is not positive: {{ SO.lags.folds_not_positive|join(', ') or '—' }}; where their sum is not below 1: {{ SO.lags.folds_not_fading|join(', ') or '—' }}.{% else %}In every fold, both coefficients are positive and their sum is below 1.{% endif %} Measured on the model frozen for {{ SO.last }}: without the lags, each hour's cold slope from {{ c1[0]|num(0) }} to {{ c1[1]|num(0) }} °C is steeper by {{ SO.flat.difference.min|num(0) }} to {{ SO.flat.difference.max|num(0) }} MW per °C; the curve with the lags keeps {{ (100 * SO.flat.ratio.min)|num(0) }} to {{ (100 * SO.flat.ratio.max)|num(0) }}% of it. These are measured differences, given without a theory{% if SO.flat.difference.min > 0 %}: at every hour, the curve with the lags is the flatter of the two{% endif %}.
 
 #### Sensitivity in the sense of SR 11-7 ({{ say.soundness_label }})
 
@@ -317,7 +317,7 @@ A {{ (1000)|num(0) }} MW rise in the day before's demand carries about {{ LA.car
 
 **The settings** ({{ label(SO.parameters.label) }}). The MAPE on validation's folds and hours, each setting changed alone, beside the ruled settings ({{ SO.parameters.ruled.n_knots }} knots, alpha {{ SO.parameters.ruled.ridge_alpha|num(1) }}: {{ SO.parameters.ruled.mape|pct(3) }} on {{ SO.parameters.ruled.hours|num }} hours). These variants do not change the model: they say how much the result leans on each setting.
 
-| Setting ({{ label(SO.parameters.label) }}) | Value | MAPE | Difference | 95% CI |
+| Setting ({{ label(SO.parameters.label) }}) | Value | MAPE | Difference | {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for x in SO.parameters.variants %}
 | {{ 'Number of knots' if x.setting == 'n_knots' else 'Ridge alpha' }} | {{ x.value|num(0 if x.setting == 'n_knots' else 1) }} | {{ x.mape|pct(3) }} | {{ pp(x.difference, 3) }} | {{ ppci(x.ci95_low, x.ci95_high, 3) }} |
@@ -364,30 +364,30 @@ Neither test case has an acceptance criterion that could fail: they are measurem
 
 Nominal {{ nominal|pct(0) }}, from {{ v.conformal.first_fold }} to {{ v.folds.last }} ({{ label(v.contrasts.label) }}). Only v2's intervals feed the monitor; v1 as shipped's are shown for comparison.
 
-| Form | Coverage | 95% CI | Mean half-width |
+| Form | Coverage | {{ design.ci_level|pct(0) }} CI | Mean half-width |
 |---|---|---|---|
 {% for key, name, lbl in [(prod, 'relative', 'v2, relative, one quantile (production)'), (prod, 'relative_by_season', 'v2, relative, one quantile per season (sensitivity)'), (prod, 'absolute', 'v2, absolute (sensitivity)'), (ship, 'relative', 'v1 as shipped, relative')] %}
 | {{ lbl }} | {{ Cv[key][name].overall.mean|pct(1) }} | {{ ci(Cv[key][name].overall.ci95_low, Cv[key][name].overall.ci95_high, 1) }} | {{ Cv[key][name].mean_half_width_pct|num(2) }}{{ pct_sign }} |
 {% endfor %}
 
-{% if not sides.overall.under and not sides.overall.over %}The 95% CI of v2's overall coverage contains the {{ nominal|pct(0) }} nominal{% elif sides.overall.under %}v2's overall coverage is below the {{ nominal|pct(0) }} nominal, 95% CI included{% else %}v2's overall coverage is above the {{ nominal|pct(0) }} nominal, 95% CI included{% endif %}. Coverage is reported, never judged by the decision rule. Conditional coverage is read on the 95% CIs of the tables below, as printed. {{ coverage_sides(sides.season, sides.decile, nominal, HBS) }} One quantile per season is a sensitivity analysis. {{ season_sentence(seasons, nominal) }}
+{% if not sides.overall.under and not sides.overall.over %}The {{ design.ci_level|pct(0) }} CI of v2's overall coverage contains the {{ nominal|pct(0) }} nominal{% elif sides.overall.under %}v2's overall coverage is below the {{ nominal|pct(0) }} nominal, {{ design.ci_level|pct(0) }} CI included{% else %}v2's overall coverage is above the {{ nominal|pct(0) }} nominal, {{ design.ci_level|pct(0) }} CI included{% endif %}. Coverage is reported, never judged by the decision rule. Conditional coverage is read on the {{ design.ci_level|pct(0) }} CIs of the tables below, as printed. {{ coverage_sides(sides.season, sides.decile, nominal, HBS) }} One quantile per season is a sensitivity analysis. {{ season_sentence(seasons, nominal) }}
 
 ![Coverage by season]({{ fig.validation_coverage_by_season }})
 
-| Season | One quantile | 95% CI | One quantile per season | 95% CI |
+| Season | One quantile | {{ design.ci_level|pct(0) }} CI | One quantile per season | {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for row in seasons %}
 | {{ SEASON[row.key] }} | {{ row.pooled.covered|pct(1) }} | {{ ci(row.pooled.low, row.pooled.high, 1) }} | {{ row.by_season.covered|pct(1) }} | {{ ci(row.by_season.low, row.by_season.high, 1) }} |
 {% endfor %}
 
-| Hour block | Coverage (one quantile) | 95% CI |
+| Hour block | Coverage (one quantile) | {{ design.ci_level|pct(0) }} CI |
 |---|---|---|
 {% for b in ['night', 'morning', 'day', 'evening', 'late'] %}
 {% set row = C.relative.hour_group|selectattr('key', 'equalto', b)|first %}
 | {{ block(b) }} | {{ row.covered|pct(1) }} | {{ ci(row.covered_low, row.covered_high, 1) }} |
 {% endfor %}
 
-| Forecast-load decile | Coverage (one quantile) | 95% CI | One quantile per season | 95% CI |
+| Forecast-load decile | Coverage (one quantile) | {{ design.ci_level|pct(0) }} CI | One quantile per season | {{ design.ci_level|pct(0) }} CI |
 |---|---|---|---|---|
 {% for row in C.relative.decile %}
 {% set ps = C.relative_by_season.decile|selectattr('key', 'equalto', row.key)|first %}
@@ -508,13 +508,19 @@ Verdicts ({{ label(p.verdict.label) }}): "{{ VERDICT[p.verdict.shipped] }}" agai
 
 _Every number in this section is of {{ r.year }}, {{ LABEL[r.contrasts.label] }}: seen through v1 and its departure before v2 was chosen, it proves nothing. A success there is weak evidence; a verdict that is not "better" there is a finding against v2. Whatever it shows, v2 goes to {{ HY }} as frozen._
 
+The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 tuned them on its {{ p.year }} rehearsal, and v1's departure, which changed how the thresholds are calibrated and how design code sees each decision time, came after v1's {{ r.year }} results had been seen. v2 re-derived what its new model and input touch (plan section 9.3): every threshold and alarm level, and the intervals' half-width, from v2's own validation weeks; temperature drift, which reads the issued weather forecast where v1 read the station's observation; forecast drift, which reads v2's forecasts; and the day-level quality check, which also fails a day with no forecast in view. The rules v2 froze before its {{ r.year }} replay therefore include changes made after {{ r.year }} had been seen through v1.
+
 {% if departures %}
 **Post hoc.** This {{ r.year }} replay ran after a departure from v2's frozen rules, recorded in `AGENTS.md` (section "Departures from the v2 frozen rules"). {% for e in dep_entries %}The departure of {{ e.date }} ("{{ e.head }}") moved the tag to commit `{{ e.to }}` and names {% for c in e.named %}`{{ c }}`{% if not loop.last %}, {% endif %}{% endfor %}. {% endfor %}It departs from: {% for d in departures %}{{ predecessor(d, say) }}{% if not loop.last %}; {% endif %}{% endfor %}.
 
 {{ recorded_block(departures) }}
 {% endif %}
 {% if rec24 %}
-**The {{ r.year }} replay of record** is v2's first {{ r.year }} replay, `{{ rec24.run_id }}` (code `{{ rec24.code_sha256|short }}`, rules `{{ rec24.rules_sha256|short }}`, freeze `{{ rec24.freeze_commit|short }}`): its frozen artifacts judge {{ HY }}{% if r_source == 'record' %}, and this section's figures come from its run{% else %}; what this section shows of it comes from its ledger entry (below); all its other figures come from this copy's replay `{{ r_id }}`, rerun, the replay of record's detail being only in the original store{% endif %}.{% if rec24.recorded %} {{ record_block(rec24, say) }}{% endif %}{% if rerun24 %} This chain's replay, `{{ rerun24.run_id }}` (code `{{ rerun24.code_sha256|short }}`), is a **rerun**: shown beside it, it changes nothing{% if rerun24.differences %}; it differs on: {{ diffs(rerun24.differences) }}{% else %}, and it gives the same printed results{% endif %}.{% endif +%}
+**The {{ r.year }} replay of record** is v2's first {{ r.year }} replay, `{{ rec24.run_id }}` (code `{{ rec24.code_sha256|short }}`, rules `{{ rec24.rules_sha256|short }}`, freeze `{{ rec24.freeze_commit|short }}`): its frozen artifacts judge {{ HY }}{% if r_source == 'record' %}, and this section's figures come from its run{% else %}; what this section shows of it comes from its ledger entry (below); all its other figures come from this copy's replay `{{ r_id }}`, rerun, the replay of record's detail being only in the original store{% endif %}.{% if rec24.recorded %} {{ record_block(rec24, say) }}{% endif %}{% if rerun24 %} This chain's replay, `{{ rerun24.run_id }}` (code `{{ rerun24.code_sha256|short }}`), is a **rerun**: shown beside the replay of record, it does not replace it, and {{ HY }} is judged on the record's frozen artifacts{% if rerun24.differences %}; it differs from the record on: {{ diffs(rerun24.differences) }}{% else %}, and it gives the same printed results{% endif %}.{% endif +%}
+
+{% endif %}
+{% if first24 and not rec24 %}
+**v2's first {{ r.year }} replay** is `{{ first24.run_id }}`, started on {{ first24.started_utc }} (code `{{ first24.code_sha256|short }}`, rules `{{ first24.rules_sha256|short }}`, freeze `{{ first24.freeze_commit|short }}`), named from its entry in the replay ledger: its frozen artifacts, hash `{{ first24.frozen_sha256|short }}`, are those {{ HY }} will be judged on. {% if first24.same %}This section's figures come from that replay's own run.{% else %}This section's figures come from this chain's replay, `{{ first24.chain.run_id }}`, started on {{ first24.chain.started_utc }} (code `{{ first24.chain.code_sha256|short }}`): a **rerun** of the first; it does not replace it, and {{ HY }} will be judged on the first's frozen artifacts{% if first24.differences %}; it differs from the first on: {{ diffs(first24.differences) }}{% else %}; its printed results are the same as the first's: MAPE, coverage, recommendations, verdicts, the frozen model's hash and the hash of the frozen artifacts that judged it{% endif %}.{% endif %}
 
 {% endif %}
 **{{ r.year }} side by side.** v1's replays come from their entries in the replay ledger: recorded, not re-run here.
@@ -530,13 +536,18 @@ _Every number in this section is of {{ r.year }}, {{ LABEL[r.contrasts.label] }}
 | v2, rerun, `{{ rerun24.run_id }}` | {{ label(rerun24.evaluation) }} | {{ rerun24.mape|pct(2) }} | {{ rerun24.coverage|pct(1) }} | {{ recs_list(rerun24.recommendations) }} |
 {% endif %}
 {% else %}
+{% if first24 and not first24.same %}
+| v2, first, `{{ first24.run_id }}`, recorded in the ledger | {{ label(first24.evaluation) }} | {{ first24.mape|pct(2) }} | {{ first24.coverage|pct(1) }} | {{ recs_list(first24.recommendations) }} |
+| v2, rerun, `{{ r_id }}` | {{ label(r.contrasts.label) }} | {{ r.summary.mape.mean|pct(2) }} | {{ r.summary.coverage.mean|pct(1) }} | {{ recs_list(r.decisions|selectattr('recommendation')|list) }} |
+{% else %}
 | v2, `{{ r_id }}` | {{ label(r.contrasts.label) }} | {{ r.summary.mape.mean|pct(2) }} | {{ r.summary.coverage.mean|pct(1) }} | {{ recs_list(r.decisions|selectattr('recommendation')|list) }} |
+{% endif %}
 {% endif %}
 
 {% set rc = v1.reconciliation %}
 **v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `{{ rc.ledger_run_id }}`: MAPE {{ rc.mape|pct(2) }} against {{ rc.ledger_mape|pct(2) }} (relative gap {{ '%.1e'|format(rc.mape_rel_diff) }}), coverage {{ rc.coverage|pct(2) }} against {{ rc.ledger_coverage|pct(2) }} ({{ ((100 * rc.coverage)|round(2) - (100 * rc.ledger_coverage)|round(2))|signed(2) }} pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
-| Model ({{ label(r.contrasts.label) }}) | MAPE | 95% CI | Coverage | Hours |
+| Model ({{ label(r.contrasts.label) }}) | MAPE | {{ design.ci_level|pct(0) }} CI | Coverage | Hours |
 |---|---|---|---|---|
 | {{ MODEL[prod] }} | {{ r.summary.mape.mean|pct(2) }} | {{ ci(r.summary.mape.ci95_low, r.summary.mape.ci95_high) }} | {{ r.summary.coverage.mean|pct(1) }} | {{ r.summary.hours_scored|num }} |
 {% for k, x in r.comparators|dictsort %}
@@ -562,6 +573,8 @@ The clock steps hour by hour from {{ r.days[0].day|day }} to {{ r.days[-1].day|d
 | Hours of the year / forecast / scored | {{ (24 * r.summary.days)|num }} / {{ r.summary.hours_issued|num }} / {{ r.summary.hours_scored|num }} |
 | Days failing data quality | {{ r.summary.days_failed }} of {{ r.summary.days }} |
 | Weeks judged | {{ r.summary.weeks_evaluated }} of {{ r.summary.weeks }} |
+
+**Coverage on {{ r.year }}.** Only the overall coverage is measured with an interval on {{ r.year }}: no coverage by season, hour block or load decile is computed on it, as section 5 does on {{ span(vy) }}. {{ weekly_cov(weekly_coverage, nominal, r.year) }} (the weekly figure below); these weekly shares carry no interval and decide nothing.
 
 {% set missing = [] %}{% for d in r.days %}{% for w in (d.not_predicted or {}).values() %}{% for one in w.split(', ') %}{% set _ = missing.append(one) %}{% endfor %}{% endfor %}{% endfor %}
 {% if missing %}Hours not forecast, by missing input (an hour can lack several): {% for w in missing|unique|sort %}{{ REASON.get(w, w) }} ({{ missing|select('equalto', w)|list|length }}){% if not loop.last %}, {% endif %}{% endfor %}.
@@ -595,7 +608,11 @@ No week of {{ r.year }} triggered a recommendation.
 {{ episode_table(S24.episodes.rows) }}
 {{ one_day(E24, r.year) }}{% if S is none %} {{ several_days() }}{% endif +%}
 
+**A level shift in demand on {{ r.year }}**, from the first judged week of {{ months(level24.months) }}, for {{ K.step_horizon }} weeks (weeks before "retrain"; —: nothing within {{ K.step_horizon }} weeks){% if S is not none %}, measured as in section 7{% endif %}:
+
 {{ power_table(S24.level_shifts, 'shift') }}
+**What the echo exclusion costs on {{ r.year }}** (a random daily error over {{ S24.echo_exclusion_cost.horizon_weeks }} weeks){% if S is not none %}, measured as in section 7{% endif %}:
+
 {{ echo_table(S24.echo_exclusion_cost.rows) }}
 {{ reuse(diag.replay, r.year) }}{% endif %}
 
@@ -604,13 +621,13 @@ No week of {{ r.year }} triggered a recommendation.
 ![{{ r.year }} replay's drift, {{ LABEL[r.contrasts.label] }}]({{ fig.replay_2024_drift }})
 
 {% if r.evidently_checks %}
-For each week in drift alarm, the Evidently report is kept in the run, and Evidently's value is compared with the monitor's: {% if r.evidently_checks|length == 1 %}1 comparison, equal.{% else %}{{ r.evidently_checks|length }} comparisons, all equal.{% endif +%}
+For each week in drift alarm, the Evidently report is kept in the run, and Evidently's value is compared with the monitor's: {% if r.evidently_checks|length == 1 %}{{ r.evidently_checks|length }} comparison, equal.{% else %}{{ r.evidently_checks|length }} comparisons, all equal.{% endif +%}
 {% endif %}
 
 ## 9. {{ HY }}, the test of record
 
 {% if not held %}
-**Pending.** No {{ HY }} replay has started. The test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What {{ HY }} will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year {{ HY }} is rendered before that first start.
+**Pending.** No {{ HY }} replay has started. The test of record will be the first {{ HY }} replay started under `{{ freeze.freeze_tag }}`, on exactly the artifacts frozen for v2's first {{ r.year }} replay{% if first24 %}, `{{ first24.run_id }}`{% endif %}, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What {{ HY }} will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year {{ HY }} is rendered before that first start.
 {% else %}
 {% for s in held.stopped %}
 - **Start {{ say.stopped }}** `{{ s.run_id }}`, started on {{ s.started_utc }}: stopped at "{{ STAGE[s.stage] }}"{% if s.error %}, error `{{ s.error }}`{% endif %}; its run {% if s.holds_results %}holds results{% else %}holds no result{% endif %}. It is not a result. The next start ran under the owner's ruling "{{ s.ruling.head }}" (commit `{{ s.ruling.commit|short }}`, outcome {{ OUTCOME[s.ruling.outcome] }}), which names this start by its start time.
@@ -625,7 +642,7 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 
 {% if not R.recorded %}
 {% set RC = R.results.summary.coverage %}
-{{ HY }} ({{ label(R.evaluation) }}): MAPE {{ R.mape|pct(2) }}, coverage {{ R.coverage|pct(1) }} (95% interval {{ ci(RC.ci95_low, RC.ci95_high, 1) }}, which {{ 'holds' if RC|holds(nominal) else 'does not hold' }} the {{ nominal|pct(0) }} nominal; reported, never judged), {{ recs(R.recommendations|length) }}; verdicts: v2 against v1 as shipped, "{{ VERDICT[R.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[R.verdict.family] }}".
+{{ HY }} ({{ label(R.evaluation) }}): MAPE {{ R.mape|pct(2) }}, coverage {{ R.coverage|pct(1) }} ({{ design.ci_level|pct(0) }} interval {{ ci(RC.ci95_low, RC.ci95_high, 1) }}, which {{ 'holds' if RC|holds(nominal) else 'does not hold' }} the {{ nominal|pct(0) }} nominal; reported, never judged), {{ recs(R.recommendations|length) }}; verdicts: v2 against v1 as shipped, "{{ VERDICT[R.verdict.shipped] }}"; v2 against v1's form, "{{ VERDICT[R.verdict.family] }}".
 {% endif %}
 
 {% if R.results %}
@@ -685,6 +702,10 @@ The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year 
 {% endif %}
 {% endif %}
 {% endif %}
+
+**What the {{ HY }} gate cannot enforce** (plan section 11.3): that nobody looks at {{ HY }} demand on Hydro-Québec's portal before the test of record, nor in diagnosing a refused fetch, a failed data-quality run or a stopped start; that nobody computes on {{ HY }} records outside the replay command, in an interpreter say, which leaves no started run; that a ruling entry is committed only from the owner's own decision, since the gate cannot tell who wrote it; and that the run store, which lists the starts that did not finish, is kept until the render, since it is not committed. These rest on the developers' conduct, not on code.
+
+**The model's age.** {{ HY }} is judged by the model frozen on the data up to {{ f24.params.train_last_day }}, never refitted on {{ r.year }}: by design, a level drift in demand accepted since then shows in {{ HY }} as bias (plan section 16). The comparisons stay fair, v1 as shipped and v1's form being frozen on the same data.
 {% if store_only %}
 
 {{ say.store_only }}
@@ -693,10 +714,12 @@ The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year 
 ## 10. Limitations
 
 {% set high_thr = [] %}{% for s in ['winter', 'spring', 'summer', 'fall'] %}{% if th24.performance[s].coverage_low|round(3) > nominal|round(3) %}{% set _ = high_thr.append(s) %}{% endif %}{% endfor %}
-- **The choice and 2024.** v2's family and input were chosen on {{ span(vy) }}; {{ r.year }} had been seen through v1. Neither proves v2 better: only a clean {{ HY }} test of record can (section 9).
-- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed ({{ fin.availability_lag_h|num(0) }} hours after issue), and the sensitivity of section 2 measures what an availability of {{ K.late_h|num(0) }} hours instead of {{ K.lag_h|num(0) }} would cost; a longer delay is not measured. The NBM's model changes over the years without being tracked.
+- **The choice and {{ r.year }}.** v2's family and input were chosen on {{ span(vy) }}; {{ r.year }} had been seen through v1. Neither proves v2 better: only a clean {{ HY }} test of record can (section 9).
+- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed ({{ fin.availability_lag_h|num(0) }} hours after issue), and the sensitivity of section 2 measures what an availability of {{ K.late_h|num(0) }} hours instead of {{ K.lag_h|num(0) }} would cost; a longer delay is not measured. The assumption rests on a related NOAA product's delivery times, measured outside the tracked runs (section 2), and the sensitivity ran on the validation years only. The NBM's model changes over the years without being tracked.
 - **One forecast for a province.** A single forecast point stands for Québec's weather, as a single station did in v1.
 - **Conditional coverage.** {% if sides.season.under or sides.decile.under or HBS.under %}v2's interval under-covers {{ groups(sides.season.under, sides.decile.under, HBS.under) }} (section 5).{% if sides.season.under %} The coverage thresholds of {{ groups(sides.season.under, []) }} are drawn from weeks that already had this under-coverage: the monitor does not flag it as a degradation.{% endif %}{% else %}No season, no hour block and no decile is under-covered in the sense of section 5.{% endif %}{% if high_thr %} Conversely, the coverage threshold of {{ groups(high_thr, []) }} ({% for s in high_thr %}{{ th24.performance[s].coverage_low|pct(1) }}{% if not loop.last %}, {% endif %}{% endfor %}) exceeds the {{ nominal|pct(0) }} nominal: a week covered beyond nominal can be flagged low there.{% endif %}{{ '' }}
+- **Detection power** (measured on {{ p.year }}, the rehearsal year, and on {{ r.year }}, seen by the developers, at a few fixed starts). {{ power_limit(LP, p.year, K.power_horizon) }} {{ power_limit(LR, r.year, K.power_horizon) }} A replay without a recommendation is therefore no proof that nothing changed (sections 7 and 8).
+- **Coverage on {{ r.year }}.** Only the overall coverage is measured with an interval on {{ r.year }}; whether section 5's conditional coverage held there is not measured. {{ weekly_cov(weekly_coverage, nominal, r.year) }} (section 8).
 - **Extrapolation.** Below the training range, the curves are straight lines; the decision rule's cold tail and section 3's count of hours outside the range measure what that costs.
 {% set MEASURED = '(measured on ' ~ p.year ~ ', the rehearsal year, and on ' ~ r.year ~ ', seen by the developers)' %}
 {% if E23 is not none and E24 is not none %}
@@ -714,7 +737,7 @@ The {{ HY }} export revises no record from {{ K.design_years[0] }} to {{ r.year 
 
 ## 11. The breaks, on synthetic data
 
-Each gate and each monitor has a test that injects the fault it must catch; a control injects nothing and must stay quiet. The `breaks` run runs them all; the report refuses to be generated if any failed. No break reads the real data: the quality gates, the guards and the render are tested on small fabricated data, and the clock and the monitors in a synthetic world (`tests/replay_world.py`), with a drift alarm level set by hand at {{ world.drift_alarm|num(1) }}. That a break fires in that world shows the check can fire, not that it would see the same fault in real demand.
+Each gate and each monitor has a test that injects the fault it must catch; a control injects nothing and must stay quiet. Each label says what its test checks: most say what the check does with the fault it is given, and some say what it must not do with an input it must leave alone (a one-day shock, an echo, a week too short to judge). The result is "passed" when the test found what its label says, "stayed quiet" for a control, and "FAILED" otherwise. The `breaks` run runs them all; the report refuses to be generated if any failed. No break reads the real data: the quality gates, the guards and the render are tested on small fabricated data, and the clock and the monitors in a synthetic world (`tests/replay_world.py`), with a drift alarm level set by hand at {{ world.drift_alarm|num(1) }}. That a break fires in that world shows the check can fire, not that it would see the same fault in real demand.
 
 | Control | Break | Result |
 |---|---|---|
@@ -749,7 +772,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Run | Identifier | Date |
 |---|---|---|
-{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('diag_pseudo_replay', 'the ' ~ p.year ~ ' rehearsal\'s diagnostics (section 7)'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('diag_replay', 'the diagnostics of the ' ~ r.year ~ ' replay whose numbers section 8 shows'), ('soundness', 'conceptual soundness, added after the freeze (section 3.1)'), ('breaks', 'breaks'), ('replay_2024_record', 'the 2024 replay of record'), ('replay_2025', 'the 2025 test of record')] if name in runs %}
+{% for name, lbl in [('dq', 'data quality'), ('validation', 'validation'), ('frozen_2023', 'models frozen for ' ~ p.year), ('frozen_2024', 'models frozen for ' ~ r.year), ('pseudo_replay', p.year ~ ' rehearsal'), ('diag_pseudo_replay', 'the ' ~ p.year ~ ' rehearsal\'s diagnostics (section 7)'), ('replay', 'this chain\'s ' ~ r.year ~ ' replay'), ('diag_replay', 'the diagnostics of the ' ~ r.year ~ ' replay whose numbers section 8 shows'), ('soundness', 'conceptual soundness, added after the freeze (section 3.1)'), ('breaks', 'breaks'), ('replay_2024_record', 'the ' ~ r.year ~ ' replay of record'), ('replay_2025', 'the ' ~ HY ~ ' test of record')] if name in runs %}
 | {{ lbl }} | `{{ runs[name].id }}` | {{ runs[name].when }} |
 {% endfor %}
 

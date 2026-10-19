@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from valiwatt import attribution
+from valiwatt.config import DEMAND_FIRST, EVALUATION, HELD_OUT_YEAR
 from valiwatt.forecast.evaluate import _weights, errors
 from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import figures as F
@@ -44,8 +45,10 @@ from valiwatt.report.render import (
     ReportRefused,
     assert_attributed,
     assert_public_safe,
+    design,
     environment,
     filters,
+    local_year,
     nbm_findings,
     render,
 )
@@ -53,7 +56,11 @@ from valiwatt.report.render import (
 OUT = REPORTS
 STAMP = OUT / "stamp.json"
 LANGS = ("fr", "en")
-HELD_OUT = 2025
+# The years the report's fixed sentences name, read from the configuration: the held-out year, the year seen by the
+# developers, and the first year of the data window (the local year of its first hour).
+HELD_OUT = HELD_OUT_YEAR
+SEEN_YEAR = next(y for y, x in EVALUATION.items() if x == "seen_by_developers")
+FIRST_YEAR = local_year(DEMAND_FIRST)
 # The statuses that state a result on held-out data (plan section 8.5); the others state none.
 HELD_OUT_RESULTS = ("confirmed", "input_only", "not_confirmed")
 
@@ -262,10 +269,10 @@ def shift_verdict(lo: float, hi: float, se_lo: float, se_hi: float, multiple: fl
 def shift_difference(oos: pd.DataFrame, pred_col: str, seeds=SHIFT_DIFF_SEEDS,
                      batch_draws: int = SHIFT_DIFF_BATCH_DRAWS) -> dict:
     """Spring of SHIFT_YEAR minus the same months of the other validation years: the difference of the mean signed
-    bias, with a 95 % interval from the code's week-block bootstrap, each side resampled on its own weeks (the two
-    sides share no hour, so no paired difference exists), in independent batches (`seeds`, one pair per batch). The
-    bounds are the quantiles of all the draws; their Monte Carlo standard errors come from the spread of the batches'
-    own bounds. Computed at render time, after the results."""
+    bias, with an interval at the level of the code's week-block bootstrap (`design`), each side resampled on its own
+    weeks (the two sides share no hour, so no paired difference exists), in independent batches (`seeds`, one pair per
+    batch). The bounds are the quantiles of all the draws; their Monte Carlo standard errors come from the spread of the
+    batches' own bounds. Computed at render time, after the results."""
     from valiwatt.forecast.validate import SHIFT_MONTHS, SHIFT_YEAR
 
     flat = [s for pair in seeds for s in pair]
@@ -279,8 +286,9 @@ def shift_difference(oos: pd.DataFrame, pred_col: str, seeds=SHIFT_DIFF_SEEDS,
         raise ReportRefused(f"the validation frame holds no spring {SHIFT_YEAR} hours or no other spring")
     batches = [_boot_means(a, "rel_bias", batch_draws, sa) - _boot_means(b, "rel_bias", batch_draws, sb)
                for sa, sb in seeds]
-    per = np.array([np.quantile(d, [0.025, 0.975]) for d in batches])
-    lo, hi = (float(x) for x in np.quantile(np.concatenate(batches), [0.025, 0.975]))
+    q = list(design()["ci_quantiles"])  # the code's own interval (evaluate.mean_with_ci), whose level the report states
+    per = np.array([np.quantile(d, q) for d in batches])
+    lo, hi = (float(x) for x in np.quantile(np.concatenate(batches), q))
     se_lo, se_hi = (float(x) for x in per.std(axis=0, ddof=1) / np.sqrt(len(seeds)))
     return {"difference": float(a["rel_bias"].mean() - b["rel_bias"].mean()), "ci95_low": lo, "ci95_high": hi,
             "mc_se_low": se_lo, "mc_se_high": se_hi, "draws": len(seeds) * batch_draws, "batches": len(seeds),
@@ -530,6 +538,7 @@ def derive(v: dict, dq: dict, p: dict, r: dict, b: dict, frozen: dict, oos: pd.D
                   "overall": coverage_sides([{"key": "all", "covered_low": C["relative"]["overall"]["ci95_low"],
                                               "covered_high": C["relative"]["overall"]["ci95_high"]}], nominal)},
         "limits": {"replay": detection_limits(r["power"]), "pseudo": detection_limits(p["power"])},
+        "weekly_coverage": weekly_coverage(r["weeks"], nominal),
         "near": {k: near_misses(x["summary"]["retrain_under_two_week_rule_alone"], x["weeks"], x["decisions"])
                  for k, x in (("replay", r), ("pseudo", p))},
         "shift_diff": {"production": shift_difference(oos, f"pred_{prod}"),
@@ -772,6 +781,52 @@ def differences(a: dict, b: dict) -> list[str]:
     return out
 
 
+# What a rerun of v2's first 2024 replay is held to beside `differences`: the frozen model it ran and the digest of the
+# frozen artifacts that judged it.
+HASHES = ("model_sha256", "frozen_sha256")
+
+
+def first_2024(entries: list[dict], tag: str, chain_entry: dict) -> dict | None:
+    """v2's first 2024 replay as the report names it before any 2025 start, from the committed ledger alone: the
+    earliest entry of the freeze's first replayed year (`lineage.first_replays`, the walk that names the 2024 replay of
+    record once 2025 has started). `chain_entry` is the ledger entry of the chain's own 2024 replay (`chain.replay`,
+    deliberately: once 2025 has started, section 8 shows the replay of record through `rec24` instead): the same run,
+    or a rerun, with what its printed results and hashes change (`differences`, then HASHES). None for a v1 chain,
+    and for a ledger that holds no entry of the freeze yet (`valiwatt report` appends the chain's replay before it
+    renders). A ledger holding entries of the freeze but none of its first replayed year is refused: the report would
+    not name the replay whose frozen artifacts judge 2025."""
+    from valiwatt.report.lineage import first_replays
+
+    if not ledger.is_v2(tag) or not any(e["freeze_tag"] == tag for e in entries):
+        return None
+    first = first_replays(entries, tag)
+    if not first:
+        raise ReportRefused(f"the replay ledger holds no {tag} entry of its first replayed year: the report names v2's "
+                            "first 2024 replay, whose frozen artifacts judge 2025")
+    e = dict(first[0])
+    same = e["run_id"] == chain_entry["run_id"]
+    found = [] if same else differences(chain_entry, e) + [k for k in HASHES if chain_entry.get(k) != e.get(k)]
+    return {**e, "same": same, "chain": dict(chain_entry), "differences": found}
+
+
+def weekly_coverage(weeks: list[dict], nominal: float) -> dict:
+    """A replay's judged weeks whose coverage falls below the nominal, in all and by season (the monitor's season of a
+    week, that of its Thursday): on a replayed year, only the overall coverage has an interval."""
+    from valiwatt.forecast.evaluate import SEASONS
+
+    out = {"judged": 0, "below": 0, "seasons": {s: {"judged": 0, "below": 0} for s in F.SEASON_ORDER}}
+    for w in weeks:
+        if not w["evaluated"]:
+            continue
+        season = w.get("season") or SEASONS[(pd.Timestamp(w["week_start"]) + pd.Timedelta(days=3)).month]
+        below = w["stats"]["covered"] < nominal
+        for row in (out, out["seasons"][season]):
+            row["judged"] += 1
+            row["below"] += int(below)
+    out["seasons"] = {s: x for s, x in out["seasons"].items() if x["judged"]}
+    return out
+
+
 def status_of(record: dict | None) -> str:
     """The model card's status, `evaluate.status` of the 2025 test of record (None before any start): whether it
     finished, the standing its gate logged, its verdict. Never computed from another start."""
@@ -955,6 +1010,11 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
     if r_run.data.tags.get("evaluation") != "seen_by_developers":
         raise ReportRefused(f"the 2024 replay {r_run.info.run_id} is tagged {r_run.data.tags.get('evaluation')!r}, "
                             "not seen_by_developers: no v2 number on 2024 is rendered without its label")
+    try:
+        chain_entry = ledger.lookup(chain.replay.info.run_id, entries) or ledger.entry(chain.replay, r_chain)
+    except ledger.LedgerError as e:
+        raise ReportRefused(f"the chain's 2024 replay {chain.replay.info.run_id} has no ledger entry: {e}") from e
+    first24 = first_2024(entries, chain.freeze.get("freeze_tag") or ledger.V1_TAG, chain_entry)
     diag_runs = {"pseudo": diagnostic_run(chain.pseudo), "replay": diagnostic_run(r_run)}
     diag = {k: None if d is None else {**_json(c, d, "results/diagnostics.json"), "run_id": d.info.run_id}
             for k, d in diag_runs.items()}
@@ -974,7 +1034,7 @@ def context(chain: Chain, code_sha: str, rules_sha: str, entries: list[dict] | N
         "departure_record": None if v2 else departure_record(departures),
         "dep_entries": v2_departures(chain.departures) if v2 else [],
         "v1": v1_view(chain.v1_history, r),
-        "rec24": rec24, "rerun24": rerun24, "held": held, "status": status,
+        "rec24": rec24, "rerun24": rerun24, "first24": first24, "held": held, "status": status,
         "recommendation": held["recommendation"] if held else None,
         "store_only": bool((rec24 or {}).get("recorded")) or bool(held and held["recorded"]),
         "weekly_error": weekly,
@@ -1020,18 +1080,23 @@ def figures(ctx: dict, lang: str, folder: Path | None = None) -> dict:
     folder = OUT / "figures" / "validation" if folder is None else folder
     out = {}
     v, p, r = ctx["v"], ctx["p"], ctx["r"]
+    # The replayed year's evaluation label, in the words the templates print it (sentences.<lang>.md.j2 LABEL), drawn
+    # inside its two figures: an image read alone still says the year had been seen.
+    labels = environment(lang).get_template(f"sentences.{lang}.md.j2").make_module({"say": SAY[lang]}).LABEL
+    seen = f"{r['year']}{' :' if lang == 'fr' else ':'} {labels[r['contrasts']['label']]}"
     jobs = {
         "validation-monthly-mape": lambda path: F.monthly_mape(ctx["monthly"], lang, path),
         "validation-coverage-by-season": lambda path: F.coverage_by_season(
             {form: {x["key"]: (x[form]["covered"], x[form]["low"], x[form]["high"]) for x in ctx["seasons"]}
              for form in ("pooled", "by_season")}, lang, path, ctx["nominal"]),
         "validation-peak-hours": lambda path: F.peak_hours(v["cases"]["peak"]["hours"], lang, path, ctx["nominal"]),
-        "validation-partial-effects": lambda path: F.partial_effects(ctx["curves"], lang, path),
+        "validation-partial-effects": lambda path: F.partial_effects(ctx["curves"], lang, path,
+                                                                     v["config"]["hour_blocks"]),
         **({"validation-soundness-slopes": lambda path: F.soundness_slopes(ctx["sound"], lang, path)}
            if ctx.get("sound") else {}),
         "pseudo-replay-2023-weekly": lambda path: F.replay_weekly(p["weeks"], p["decisions"], lang, path),
-        "replay-2024-weekly": lambda path: F.replay_weekly(r["weeks"], r["decisions"], lang, path),
-        "replay-2024-drift": lambda path: F.replay_drift(r["weeks"], lang, path),
+        "replay-2024-weekly": lambda path: F.replay_weekly(r["weeks"], r["decisions"], lang, path, seen),
+        "replay-2024-drift": lambda path: F.replay_drift(r["weeks"], lang, path, seen),
     }
     for name, job in jobs.items():
         path = folder / f"{name}.{lang}.png"
@@ -1047,17 +1112,17 @@ def figures(ctx: dict, lang: str, folder: Path | None = None) -> dict:
 SAY = {
     "fr": {
         "ledger_label": "Consigné dans le registre, non rejoué ici.",
-        "store_only": ("Ce que seul le magasin d'exécutions contient n'est pas montré ici : le registre de la barrière "
-                       "de 2025 et la décision du propriétaire qu'elle a lue, les enregistrements révisés, les "
-                       "constats de qualité des données de 2025 et leurs délais, les diagnostics, les chiffres "
-                       "horaires de ces rejeux et tout départ qui s'est arrêté sont dans le magasin MLflow de la "
-                       "machine qui a rejoué 2025, et dans le rapport rendu là-bas."),
-        "held_out": "sur des données réservées (2025)",
+        "store_only": ("Ce que seul le magasin d'exécutions contient n'est pas montré ici : le registre de la "
+                       f"barrière de {HELD_OUT} et la décision du propriétaire qu'elle a lue, les enregistrements "
+                       f"révisés, les constats de qualité des données de {HELD_OUT} et leurs délais, les "
+                       "diagnostics, les chiffres horaires de ces rejeux et tout départ qui s'est arrêté sont dans le "
+                       f"magasin MLflow de la machine qui a rejoué {HELD_OUT}, et dans le rapport rendu là-bas."),
+        "held_out": f"sur des données réservées ({HELD_OUT})",
         "lead_75": LEAD_FINDING["fr"],
         "diag_unfinished": "Ses diagnostics n'ont pas fini : leurs mesures ne sont pas montrées, et elles ne décident jamais rien.",
         "recommendation": {"return_or_rule": "revenir à v1 tel que livré ou décider d'un autre modèle",
                            "keep_input_review_family": "garder l'entrée de prévision et revoir la famille"},
-        "revised": "enregistrements de 2019 à 2024 révisés par Hydro-Québec",
+        "revised": f"enregistrements de {FIRST_YEAR} à {SEEN_YEAR} révisés par Hydro-Québec",
         "kind": {"added": "ajouté", "removed": "retiré", "changed": "changé"},
         "unfinished": "n'a pas fini",
         "stopped": "arrêté",
@@ -1071,16 +1136,16 @@ SAY = {
     },
     "en": {
         "ledger_label": "Recorded in the ledger, not re-run here.",
-        "store_only": ("What only the run store holds is not shown here: the 2025 gate's record and the owner's ruling "
-                       "it read, the revised records, 2025's data-quality findings and leads, the diagnostics, those "
-                       "replays' hourly figures and any start that stopped are in the MLflow store of the machine "
-                       "that replayed 2025, and in the report rendered there."),
-        "held_out": "on held-out data (2025)",
+        "store_only": (f"What only the run store holds is not shown here: the {HELD_OUT} gate's record and the owner's "
+                       f"ruling it read, the revised records, {HELD_OUT}'s data-quality findings and leads, the "
+                       "diagnostics, those replays' hourly figures and any start that stopped are in the MLflow store "
+                       f"of the machine that replayed {HELD_OUT}, and in the report rendered there."),
+        "held_out": f"on held-out data ({HELD_OUT})",
         "lead_75": LEAD_FINDING["en"],
         "diag_unfinished": "Its diagnostics did not finish: their measures are not shown, and they never decide anything.",
         "recommendation": {"return_or_rule": "return to v1 as shipped or rule another model",
                            "keep_input_review_family": "keep the forecast input and review the family"},
-        "revised": "2019–2024 records revised by Hydro-Québec",
+        "revised": f"{FIRST_YEAR}–{SEEN_YEAR} records revised by Hydro-Québec",
         "kind": {"added": "added", "removed": "removed", "changed": "changed"},
         "unfinished": "did not finish",
         "stopped": "stopped",
@@ -1139,6 +1204,11 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
             raise ReportRefused("the story states the soundness measures without their label (added after the freeze, "
                                 "deciding nothing)")
         return
+    first24 = ctx.get("first24")
+    if first24 is not None and (first24["run_id"] not in numbered_section(text, 8)
+                                or (held is None and first24["run_id"] not in numbered_section(text, 9))):
+        raise ReportRefused(f"v2's first 2024 replay {first24['run_id']}, whose frozen artifacts judge 2025, is not "
+                            "named in section 8, and before any 2025 start in section 9")
     if ctx.get("store_only"):
         if say["store_only"] not in text:
             raise ReportRefused("a record read from the ledger without the sentence on what only the store holds")
@@ -1377,4 +1447,5 @@ def status_sentence(env, ctx: dict, lang: str) -> str:
     """The status sentence as the templates print it (sentences.{lang}.md.j2 `status_line`)."""
     module = env.get_template(f"sentences.{lang}.md.j2").make_module({"say": SAY[lang]})
     return str(module.status_line(ctx.get("status"), (ctx.get("held") or {}).get("record"), SAY[lang],
-                                  ctx["K"]["validation_years"])).strip()
+                                  ctx["K"]["validation_years"], ctx["r"]["year"],
+                                  ctx["K"]["held_out_year"])).strip()

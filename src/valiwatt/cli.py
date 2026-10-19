@@ -214,8 +214,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-private-patterns", action="store_true",
                    help="scan without the gitignored private name list (CI); private names are then not checked")
     p.set_defaults(func=cmd_safety)
-    p = command("all", "the 2024 chain: fetch, check, validate, freeze, rehearse 2023, check the frozen models' "
-                       "soundness, replay 2024, break "
+    p = command("all", "the 2024 chain: fetch, check, validate, freeze, rehearse 2023, replay 2024, check the frozen "
+                       "models' soundness (after the replay, deciding nothing), break "
                        "and render every figure. It never replays 2025, which runs only by `valiwatt "
                        "replay --year 2025`, and takes no --through")
     p.add_argument("--force", action="store_true", help="fetch again the files already verified, through 2024")

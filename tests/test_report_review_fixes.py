@@ -340,22 +340,29 @@ def test_the_story_dates_the_freeze_and_scopes_the_ledger(lang):
 
 
 def test_the_readme_dates_the_freeze_and_says_what_the_choices_were_made_on():
-    """The README, hand-written, says what the report says: the rules frozen before v2's 2024 replay, tuned on
-    rehearsals run before the freeze while the rehearsal the report shows ran on the frozen code (run a3ad248e, at
-    c778e08, after the tag), the rehearsal needing no tag; the ledger without the rehearsal; the choices made after 2024 had been seen through v1; the
-    post-hoc case of the status; CI on pull requests."""
+    """The README, hand-written, says what the report says: the rules frozen before v2's 2024 replay, v1's rule logic
+    kept and what v2 re-derived, the rehearsal the report shows run on the frozen rules (the code hash moved after the
+    tag, only in files outside the rules, and the model hash tied only for the 2024 replays), what backs the freeze's
+    order and how to check it from a clone, the rehearsal needing no tag; the ledger without the rehearsal; the
+    choices made after 2024 had been seen through v1; the post-hoc case of the status; CI on pull requests."""
     from valiwatt.paths import REPO_ROOT
 
     readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
     for said in ("before v2's 2024 replay", "the 2023 rehearsal does not need it", "(the 2023 rehearsal has none)",
                  "v2 was nevertheless chosen after 2024 had been seen through v1", "is not a held-out test",
                  "what each choice was made on", "on every pull request, a fork's included",
-                 "the rehearsal the report shows, like the 2024 replay, ran on the frozen code",
+                 "The rehearsal the report shows, like the 2024 replay, ran on the frozen rules",
+                 "v2's monitoring rules keep v1's logic", "v2 re-derived the thresholds",
+                 "nothing recorded at the freeze ties the rehearsal's model to it",
+                 "Checking the freeze from a clone",
+                 "Nothing outside the repository anchors that order",
                  "a longer delay is not measured"):
         assert said in readme, said
     for gone in ("tag before any v2 replay", "before either replay", "before any v2 result was seen",
                  "Design choices use 2019 to 2023 only", "not on pull requests",
-                 "the 2023 rehearsal ran before the freeze", "and no longer delay"):
+                 "the 2023 rehearsal ran before the freeze", "and no longer delay", "ran on the frozen code",
+                 "as plan section 10.6 allows", "no number in them is typed by hand", "carried over unchanged",
+                 "only report code", "the model hash are unchanged"):
         assert gone not in readme, gone
 
 

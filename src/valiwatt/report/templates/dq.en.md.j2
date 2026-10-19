@@ -68,7 +68,7 @@ Data never enters the repository: `valiwatt fetch` downloads it, and every file 
 
 - **Demand.** Each value is the mean demand over the hour that **ends** at the timestamp, in UTC. The first hour of the series is stamped {{ c['demand_window'].metrics.first_utc|utc }}: midnight to 1 a.m. Eastern Standard Time.
 - **Weather.** The temperature at a UTC hour is the observation made at that instant; it is requested from ECCC in UTC. Without an explicit time zone the service returns rows with no values, so the download refuses any response whose header is not in UTC.
-- **Days.** For daily aggregates, an hour belongs to the day (Eastern Standard Time, UTC−5) in which it **starts**.
+- **Days.** For daily aggregates, an hour belongs to the day (Eastern Standard Time, UTC{{ design.utc_offset_h|signed(0) }}) in which it **starts**.
 - **Daylight saving.** Everything is kept in UTC, where each hour exists once. {% if dm.missing_record_hours == 0 %}Outside the cases in sections 3.1 and 3.2, no UTC hour is absent from the export (blank values are in section 3.3): the spring change leaves no gap in it.{% else %}Outside the cases in sections 3.1 and 3.2, {{ dm.missing_record_hours }} UTC hours are absent from the export (section 3.3).{% endif +%}
 
 ## 3. Demand: checks and anomalies
@@ -83,8 +83,8 @@ A gate that fails stops the chain: no canonical data is written and the command 
 
 | Check | Result | Measure | Threshold |
 |---|---|---|---|
-| Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | 0 |
-| Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | 0 |
+| Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | none |
+| Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | none |
 | Values within loose physical bounds ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Share of usable hours | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
@@ -184,6 +184,8 @@ This run also reads {{ held_out_year }}. This section's counts cover the whole w
 | Bounds, the whole window ({{ nb.low_c|num }} to {{ nb.high_c|num }} °C) | {{ nbm.bounds.passed|verdict }} | {{ nb.violations|num }} points outside the bounds out of {{ nb.points|num }}; from {{ nb.min_c|num(1) }} to {{ nb.max_c|num(1) }} °C; {{ nb.blank_points|num }} blank points |
 | Days fed, the whole window (threshold {{ nc.threshold|pct(0) }}) | {{ nbm.coverage.passed|verdict }} | {{ nc.fed_days|num }} days out of {{ nc.days|num }} ({{ nc.share|pct(2) }}) |
 
+The {{ nc.threshold|pct(0) }} threshold was set after the archive's day counts for {{ window_years[0] }}–{{ seen_year }} had been seen (plan section 3.4): on those years, its gate is no test.
+
 **The days no forecast fed**: {% for d in nbm.not_fed if (d.day|string)[:4]|int < held_out_year %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% else %}none{% endfor %}. Such a day fails the replay's day data-quality check ("investigate the data"). {{ nr.days_fed_by_the_previous_days_run|num }} days were fed by the same forecast as the day before.
 
 **Ranks of the forecast used** (0: the freshest): {% for k, n in nr.rank_counts.items() %}rank {{ k }}, {{ n|num }} days{% if not loop.last %}; {% endif %}{% endfor %}. **Age of the forecast at the day's origin**: {% for k, n in nr.lead_counts.items() %}{{ k|float|num(0) }} h, {{ n|num }} days{% if not loop.last %}; {% endif %}{% endfor %}. **Hour of the forecast used, by year**: {% for y, hours in nr.run_hour_by_year.items() if y|int < held_out_year %}{{ y }}: {% for h, n in hours.items() %}{{ h }} h UTC ({{ n|num }} days){% if not loop.last %}, {% endif %}{% endfor %}{% if not loop.last %}; {% endif %}{% endfor %}.
@@ -224,7 +226,7 @@ _Daily demand against the day's mean temperature in {{ primary.centre }}, {{ yea
 
 **What the numbers show.** To tell whether a gap in R² exceeds sampling chance, whole weeks are resampled {{ dyear.resamples|num }} times (neighbouring days resemble each other; drawing single days would understate the uncertainty) and both models are refitted on every draw.
 
-| Comparison | R² gap (mean − {{ primary.centre }}) | 95% interval | Weeks |
+| Comparison | R² gap (mean − {{ primary.centre }}) | {{ design.dq_ci_level|pct(0) }} interval | Weeks |
 |---|---|---|---|
 | Whole year | {{ dyear.difference|signed(3) }} | {{ dyear.ci95_low|signed(3) }} to {{ dyear.ci95_high|signed(3) }} | {{ dyear.blocks }} |
 | Winter | {{ dwin.difference|signed(3) }} | {{ dwin.ci95_low|signed(3) }} to {{ dwin.ci95_high|signed(3) }} | {{ dwin.blocks }} |

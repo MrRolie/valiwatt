@@ -562,10 +562,12 @@ def test_the_synthetic_world_takes_its_drift_alarm_from_the_registry(monkeypatch
 @pytest.mark.parametrize("lang", LANGS)
 def test_the_breaks_table_has_a_word_for_a_control_that_stayed_quiet(lang):
     word = macros(lang).break_result
-    quiet, fired, failed = ("resté silencieux", "déclenché", "ÉCHEC") if lang == "fr" else ("stayed quiet", "fired",
-                                                                                           "FAILED")
+    """One word for every break that passes, whatever its label asserts (a fault caught or a nuisance left alone): the
+    label says what the test checks, and the word says only that it held. A control has its own word."""
+    quiet, passed, failed = (("resté silencieux", "réussi", "ÉCHEC") if lang == "fr" else
+                             ("stayed quiet", "passed", "FAILED"))
     assert str(word({"outcome": "passed", "control": True})) == quiet
-    assert str(word({"outcome": "passed", "control": False})) == fired
+    assert str(word({"outcome": "passed", "control": False})) == passed
     for control in (True, False):
         for outcome in ("failed", "not_run", "skipped"):
             assert str(word({"outcome": outcome, "control": control})) == failed

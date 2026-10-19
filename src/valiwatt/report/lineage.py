@@ -621,8 +621,7 @@ def _check_comparators(c, run, frozen_run, year: int) -> None:
 def _records(chain: Chain, c, entries: list[dict], starts: list[dict], tag: str) -> None:
     """The two records a started 2025 adds: v2's first 2024 replay, of record, and the 2025 test of record with every
     rerun and every start it passed over."""
-    first = sorted((e for e in entries if e["freeze_tag"] == tag and e["year"] == min(ledger_years(tag))),
-                   key=lambda e: (e["started_utc"], e["run_id"]))
+    first = first_replays(entries, tag)
     if not first:
         raise ChainBroken("a 2025 replay has started, but the replay ledger holds no v2 2024 entry: the 2024 replay "
                           "of record is v2's first 2024 replay, whose artifacts judge 2025")
@@ -636,6 +635,13 @@ def _records(chain: Chain, c, entries: list[dict], starts: list[dict], tag: str)
     chain.record_2024 = record_2024
     digest = first[0]["frozen_sha256"]
     chain.held = _held(c, entries, starts, record_2024, tag, digest, chain.departures, chain.predecessors)
+
+
+def first_replays(entries: list[dict], tag: str) -> list[dict]:
+    """The ledger's entries of `tag`'s first replayed year (2024 for v2), earliest start first: the first is v2's first
+    2024 replay, whose frozen artifacts judge 2025."""
+    return sorted((e for e in entries if e["freeze_tag"] == tag and e["year"] == min(ledger_years(tag))),
+                  key=lambda e: (e["started_utc"], e["run_id"]))
 
 
 def ledger_years(tag: str) -> tuple:

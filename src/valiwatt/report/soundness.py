@@ -361,6 +361,10 @@ def spread(folds: list[dict], frozen_slopes: dict, factor: float = FOLD_FACTOR) 
 
 # ---------------------------------------------------------------------------------------------------- the lags
 
+# The rise in yesterday's demand, in MW, whose carry into today's forecast the report states: an illustration's scale.
+CARRY_RISE_MW = 1000
+
+
 def lag_reading(lags: dict, folds: list[dict]) -> dict:
     """Each freeze's lags in MW per MW, their sum, what a 1,000 MW rise in yesterday's demand carries into today's
     forecast, and the findings: a lag that is not positive, or lags whose sum is not below 1 (a one-off shock would not
@@ -368,7 +372,7 @@ def lag_reading(lags: dict, folds: list[dict]) -> dict:
     out = {}
     for year, lag in lags.items():
         total = lag["lag24"] + lag["lag168"]
-        out[str(year)] = {**lag, "sum": total, "carry_per_1000_mw": 1000 * lag["lag24"],
+        out[str(year)] = {**lag, "sum": total, "carry_per_1000_mw": CARRY_RISE_MW * lag["lag24"],
                           "positive": bool(lag["lag24"] > 0 and lag["lag168"] > 0), "fades": bool(total < 1)}
     neg = [f["fold"] for f in folds if not (f["lag24"] > 0 and f["lag168"] > 0)]
     keep = [f["fold"] for f in folds if f["lag24"] + f["lag168"] >= 1]

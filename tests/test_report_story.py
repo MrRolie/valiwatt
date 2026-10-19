@@ -321,18 +321,18 @@ def sided(season=((), ()), decile=((), ()), hour=((), ()), overall=((), ())):
                           "overall": side(overall)})
 
 
-SIDES = {"fr": {"under": "Elle promet trop là où", "over": "Elle est plus large qu'il ne faut là où",
+SIDES = {"fr": {"under": "Elle reste en deçà là où", "over": "Elle est plus large qu'il ne faut là où",
                 "no_under": "Aucune saison, aucun bloc horaire ni aucun décile de charge prévue n'en sort",
                 "no_over": "Dans aucun groupe la demande ne reste dedans",
                 "caveat": "le moniteur ne le signale pas comme une dégradation",
-                "o_under": ": moins que promis,", "o_over": ": plus que promis,",
-                "o_in": ": l'écart à la promesse reste dans l'incertitude de la mesure"},
-         "en": {"under": "It promises too much where", "over": "It is wider than needed where",
+                "o_under": ": moins que le nominal,", "o_over": ": plus que le nominal,",
+                "o_in": ": l'écart au nominal reste dans l'incertitude de la mesure"},
+         "en": {"under": "It falls short where", "over": "It is wider than needed where",
                 "no_under": "No season, no hour block and no forecast-load decile leaves it",
                 "no_over": "In no group does demand stay inside",
                 "caveat": "the monitor does not flag it as a degradation",
-                "o_under": ": less than promised,", "o_over": ": more than promised,",
-                "o_in": ": the gap to the promise stays within the uncertainty of the measurement"}}
+                "o_under": ": less than the nominal,", "o_over": ": more than the nominal,",
+                "o_in": ": the gap to the nominal stays within the uncertainty of the measurement"}}
 
 
 @pytest.mark.parametrize("lang", LANGS)

@@ -1017,3 +1017,17 @@ None yet.
   to the number of knots and the ridge penalty. A failed check is a finding the report states, never a gate; the 2025
   verdict stays as this page pre-registers it. The developers had looked at the 2024 freeze's curves before fixing its
   base and tolerances, and the report says so.
+- 2026-10-18, report and README text after the freeze, deciding nothing; no rule file changed, and the rules hash is
+  the one the freeze tag carries. The model card sets the 2024 replay's detection limits beside its recommendations,
+  and the limitations gain the detection power and the 2024 coverage, measured only overall with an interval. Section
+  8 names v2's first 2024 replay from the ledger and says whether the chain's replay is a rerun with the same printed
+  results and hashes; it states which parts of the monitoring rules keep v1's logic and which v2 re-derived (section
+  9). Section 9 states what the 2025 gate cannot enforce (section 11.3, item 6) and the model's age (section 16). The
+  interval level, the curves' reference temperature, the years of the status line and the offset of local standard
+  time, and the scale of the lags' illustration, are read from the code, and a test holds the templates' text, the
+  strings their code prints and their printed expressions to the numerals they may type; the break labels of section
+  11 are hand-written and the report says so. Section 11 gives every break that passes one result word, whatever its
+  label asserts. The story says the interval aims at its nominal level without a guarantee, labels its in-sample
+  figures, and says the cold-peak advantage is an outcome of the choice. The README says what backs the freeze's order
+  and how to check it from a clone, and tests tie each v2 ledger entry to the tag's commit and rules hash, and v2's
+  2024 entries to one model hash and one frozen-artifact hash.

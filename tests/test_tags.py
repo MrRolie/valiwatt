@@ -111,3 +111,61 @@ def test_a_lightweight_tag_fails(tmp_path):
     clone, pins = tagged(tmp_path)
     retag(clone, "v1", pins["v1"], annotated=False)
     assert tag_problems(clone, pins) == ["tag v1 is not annotated"]
+
+
+def ledger_freeze_problems(entries: list[dict], root: Path = REPO_ROOT, tag: str = "rules-frozen-v2") -> list[str]:
+    """What ties a committed replay-ledger entry of `tag` to the tag itself, and fails: its freeze commit is not the
+    tag's commit, or its rules hash is not the hash of the rule files at the tag (monitor/rules.py `rules_sha256`)."""
+    from valiwatt.monitor.rules import rules_sha256
+
+    require_full_history(root)
+    commit = tag_commit(root, tag)
+    if commit is None:
+        return [f"tag {tag} is missing"]
+    rules = rules_sha256(commit)
+    problems = []
+    for e in entries:
+        if e["freeze_tag"] != tag:
+            continue
+        if e["freeze_commit"] != commit:
+            problems.append(f"entry {e['run_id']} names freeze commit {e['freeze_commit']}, not {tag}'s {commit}")
+        if e["rules_sha256"] != rules:
+            problems.append(f"entry {e['run_id']} carries rules hash {e['rules_sha256']}, not the rules at {tag}")
+    return problems
+
+
+def test_every_committed_v2_ledger_entry_ran_on_the_rules_at_the_freeze_tag():
+    """Checkable from a clone, without data or a run store: each replay the committed ledger lists under
+    rules-frozen-v2 names the tag's commit and the hash of the rule files at the tag."""
+    from valiwatt.report import ledger
+
+    entries = ledger.read()
+    assert [e for e in entries if e["freeze_tag"] == "rules-frozen-v2"], "the ledger lists no v2 replay"
+    assert ledger_freeze_problems(entries) == []
+
+
+def test_a_ledger_entry_off_the_tag_fails():
+    from valiwatt.report import ledger
+
+    entries = [e for e in ledger.read() if e["freeze_tag"] == "rules-frozen-v2"]
+    moved = [{**entries[0], "freeze_commit": "0" * 40}, {**entries[-1], "rules_sha256": "0" * 64}]
+    problems = ledger_freeze_problems(moved)
+    assert len(problems) == 2 and "freeze commit" in problems[0] and "rules hash" in problems[1]
+
+
+def model_problems(entries: list[dict], tag: str = "rules-frozen-v2", year: int = 2024) -> list[str]:
+    """What the README says of v2's 2024 replays in the committed ledger, and fails: they do not all carry one model
+    hash and one hash of the frozen artifacts."""
+    mine = [e for e in entries if e["freeze_tag"] == tag and e["year"] == year]
+    return [f"the {tag} {year} entries carry {len(set(e[k] for e in mine))} values of {k}"
+            for k in ("model_sha256", "frozen_sha256") if len({e[k] for e in mine}) != 1]
+
+
+def test_every_committed_v2_2024_replay_carries_one_model_and_one_set_of_frozen_artifacts():
+    from valiwatt.report import ledger
+
+    entries = ledger.read()
+    assert model_problems(entries) == []
+    first = next(e for e in entries if e["freeze_tag"] == "rules-frozen-v2" and e["year"] == 2024)
+    assert len(model_problems([*entries, {**first, "run_id": "0" * 32, "model_sha256": "0" * 64}])) == 1
+    assert len(model_problems([*entries, {**first, "run_id": "0" * 32, "frozen_sha256": "0" * 64}])) == 1

@@ -544,7 +544,7 @@ def test_the_partial_effects_figure_marks_the_extrapolated_range(monkeypatch, tm
     figs = []
     monkeypatch.setattr(F, "_save", lambda fig, path: figs.append(fig))
     rows = RP.curves()
-    F.partial_effects(rows, "fr", tmp_path / "x.png")
+    F.partial_effects(rows, "fr", tmp_path / "x.png", RP.payloads()[0]["config"]["hour_blocks"])
     (fig,) = figs
     axes = fig.axes
     assert len(axes) == 2

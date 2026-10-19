@@ -148,7 +148,12 @@ the gap goes to the owner as a question.
   never a gate, and the 2025 verdict stays as `docs/plan-v2.md` pre-registers it.
 - **Hydro-Québec's general terms of use** (2026-10-17): publish as ruled on 2026-10-13. The dataset's own licence, CC
   BY-NC 4.0, governs this NonCommercial use; the general terms of use of Hydro-Québec's digital platforms, which the
-  portal's footer links and a script loads, are not checked further.
+  portal's footer links and a script loads, are not checked further. Re-ruled 2026-10-18 on a corrected record: the
+  card of 2026-10-17 said those terms had never been read, but they were read on 2026-10-13, before that day's
+  ruling. With that corrected, the owner kept the ruling: the dataset's own CC BY-NC 4.0 licence is the specific
+  indication those terms allow for, and it governs.
+- **A private date in `docs/plan.md`** (2026-10-18): one milestone date, private, is blanked in the current tree;
+  its earlier versions stay reachable in the history, which the owner accepted, knowing it.
 
 ## Departures from the brief
 

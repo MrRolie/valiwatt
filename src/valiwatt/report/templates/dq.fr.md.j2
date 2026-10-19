@@ -68,7 +68,7 @@ Les données ne sont jamais versées dans le dépôt : `valiwatt fetch` les tél
 
 - **Demande.** Chaque valeur est la demande moyenne de l'heure qui **se termine** à l'horodatage, en UTC. La première heure de la série porte l'horodatage {{ c['demand_window'].metrics.first_utc|utc }}, soit l'heure de minuit à 1 h, heure normale de l'Est.
 - **Météo.** La température d'une heure UTC est l'observation faite à cet instant ; elle est demandée en UTC à ECCC. Sans fuseau explicite, le service renvoie des lignes sans valeurs : le téléchargement refuse toute réponse dont l'en-tête n'est pas en UTC.
-- **Jours.** Pour les agrégats journaliers, une heure appartient au jour (heure normale de l'Est, UTC−5) où elle **commence**.
+- **Jours.** Pour les agrégats journaliers, une heure appartient au jour (heure normale de l'Est, UTC{{ design.utc_offset_h|signed(0) }}) où elle **commence**.
 - **Heure avancée.** Tout est tenu en UTC, où chaque heure existe une seule fois. {% if dm.missing_record_hours == 0 %}Hors des cas des sections 3.1 et 3.2, aucune heure UTC n'est absente de l'export (les valeurs vides sont à la section 3.3) : le passage à l'heure avancée, au printemps, n'y laisse pas de trou.{% else %}Hors des cas des sections 3.1 et 3.2, {{ dm.missing_record_hours }} heures UTC sont absentes de l'export (section 3.3).{% endif +%}
 
 ## 3. Demande : contrôles et anomalies
@@ -83,8 +83,8 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 
 | Contrôle | Résultat | Mesure | Seuil |
 |---|---|---|---|
-| Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | 0 |
-| Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | 0 |
+| Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | aucun |
+| Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | aucun |
 | Valeurs dans des bornes physiques larges ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Part des heures utilisables | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 
@@ -184,6 +184,8 @@ Cette exécution lit aussi {{ held_out_year }}. Les comptes de cette section por
 | Bornes, toute la fenêtre ({{ nb.low_c|num }} à {{ nb.high_c|num }} °C) | {{ nbm.bounds.passed|verdict }} | {{ nb.violations|num }} points hors bornes sur {{ nb.points|num }} ; de {{ nb.min_c|num(1) }} à {{ nb.max_c|num(1) }} °C ; {{ nb.blank_points|num }} points vides |
 | Jours alimentés, toute la fenêtre (seuil {{ nc.threshold|pct(0) }}) | {{ nbm.coverage.passed|verdict }} | {{ nc.fed_days|num }} jours sur {{ nc.days|num }} ({{ nc.share|pct(2) }}) |
 
+Le seuil de {{ nc.threshold|pct(0) }} a été fixé après que les décomptes de jours de l'archive pour {{ window_years[0] }}–{{ seen_year }} eurent été vus (section 3.4 du plan) : sur ces années, sa porte n'est pas un test.
+
 **Les jours qu'aucune prévision n'a alimentés** : {% for d in nbm.not_fed if (d.day|string)[:4]|int < held_out_year %}{{ d.day|day }} ({{ REASON.get(d.reason, d.reason) }}){% if not loop.last %}, {% endif %}{% else %}aucun{% endfor %}. Un tel jour échoue au contrôle de qualité du jour dans le rejeu (« examiner les données »). {{ nr.days_fed_by_the_previous_days_run|num }} jours ont été alimentés par la même prévision que la veille.
 
 **Rangs de la prévision utilisée** (0 : la plus fraîche) : {% for k, n in nr.rank_counts.items() %}rang {{ k }}, {{ n|num }} jours{% if not loop.last %} ; {% endif %}{% endfor %}. **Âge de la prévision à l'origine du jour** : {% for k, n in nr.lead_counts.items() %}{{ k|float|num(0) }} h, {{ n|num }} jours{% if not loop.last %} ; {% endif %}{% endfor %}. **Heure de la prévision utilisée, par année** : {% for y, hours in nr.run_hour_by_year.items() if y|int < held_out_year %}{{ y }} : {% for h, n in hours.items() %}{{ h }} h UTC ({{ n|num }} jours){% if not loop.last %}, {% endif %}{% endfor %}{% if not loop.last %} ; {% endif %}{% endfor %}.
@@ -225,7 +227,7 @@ _La demande journalière selon la température moyenne du jour à {{ primary.cen
 
 **Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne {{ dyear.resamples|num }} fois les semaines complètes (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
 
-| Comparaison | Écart de R² (moyenne − {{ primary.centre }}) | Intervalle à 95 % | Semaines |
+| Comparaison | Écart de R² (moyenne − {{ primary.centre }}) | Intervalle à {{ design.dq_ci_level|pct(0) }} | Semaines |
 |---|---|---|---|
 | Toute l'année | {{ dyear.difference|signed(3) }} | {{ dyear.ci95_low|signed(3) }} à {{ dyear.ci95_high|signed(3) }} | {{ dyear.blocks }} |
 | Hiver | {{ dwin.difference|signed(3) }} | {{ dwin.ci95_low|signed(3) }} à {{ dwin.ci95_high|signed(3) }} | {{ dwin.blocks }} |

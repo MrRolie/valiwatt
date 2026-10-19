@@ -624,3 +624,52 @@ def test_a_finished_v2_replay_in_the_store_round_trips_with_its_starts(store, tm
     with pytest.raises(ledger.LedgerError, match="ruling naming it"):
         ledger.sync(path, root=tmp_path)
     assert not path.exists()
+
+
+# v2's first 2024 replay, named from the committed ledger before any 2025 start (validation.first_2024).
+def test_v2s_first_2024_replay_is_named_and_a_rerun_held_to_its_printed_results_and_hashes():
+    first = W.v2_entry("1" * 32, 2024, W.utc(0))
+    same = W.v2_entry("2" * 32, 2024, W.utc(1))
+    view = RV.first_2024([first, same], W.FREEZE_TAG, same)
+    assert view["run_id"] == first["run_id"] and not view["same"] and view["differences"] == []
+    other = W.v2_entry("2" * 32, 2024, W.utc(1), mape=0.0399, model_sha256="9" * 64, frozen_sha256="8" * 64)
+    view = RV.first_2024([other, first], W.FREEZE_TAG, other)  # the earliest start, whatever the order
+    assert view["run_id"] == first["run_id"]
+    assert view["differences"] == ["mape", "model_sha256", "frozen_sha256"]
+    view = RV.first_2024([first], W.FREEZE_TAG, first)
+    assert view["same"] and view["differences"] == []
+
+
+def test_a_v2_ledger_with_v2_entries_but_no_v2_2024_entry_is_refused():
+    chain = W.v2_entry("2" * 32, 2024, W.utc(1))
+    with pytest.raises(ReportRefused, match="first replayed year"):
+        RV.first_2024([RP.V1_PLAIN, W.v2_entry("3" * 32, 2025)], W.FREEZE_TAG, chain)
+    assert RV.first_2024([RP.V1_PLAIN], W.FREEZE_TAG, chain) is None  # no v2 entry yet: `valiwatt report` syncs first
+    assert RV.first_2024([RP.V1_PLAIN], ledger.V1_TAG, RP.V1_PLAIN) is None  # v1 names no first v2 replay
+
+
+@pytest.mark.parametrize("lang", ("fr", "en"))
+def test_the_report_names_v2s_first_2024_replay_in_sections_8_and_9(lang):
+    ctx = RP.state("none")
+    text = RP.render(ctx, lang)
+    first = ctx["first24"]["run_id"]
+    assert first in RV.numbered_section(text, 8) and first in RV.numbered_section(text, 9)
+    assert ctx["first24"]["chain"]["run_id"] in RV.numbered_section(text, 8)
+    with pytest.raises(ReportRefused, match="first 2024 replay"):
+        RV.check_rendered(text.replace(first, "0" * 32), lang, ctx, "validation",
+                          RV.status_sentence(environment(lang), ctx, lang))
+    same = RP.context(first24="same")
+    text = RP.render(same, lang)
+    assert same["first24"]["run_id"] in RV.numbered_section(text, 8)
+    assert ("rerun" if lang == "en" else "refait") not in RV.numbered_section(text, 8).split("|")[0]
+
+
+def test_a_replayed_years_weekly_coverage_counts_its_judged_weeks_below_the_nominal_by_season():
+    def week(start, covered, evaluated=True):
+        return {"week_start": start, "evaluated": evaluated, "stats": {"covered": covered}}
+
+    weeks = [week("2024-01-01", 0.70), week("2024-01-08", 0.95), week("2024-07-01", 0.89),
+             week("2024-07-08", 0.50, evaluated=False), week("2024-02-26", 0.80)]  # Thursday 29 February: winter
+    got = RV.weekly_coverage(weeks, 0.9)
+    assert got == {"judged": 4, "below": 3, "seasons": {"winter": {"judged": 3, "below": 2},
+                                                        "summer": {"judged": 1, "below": 1}}}

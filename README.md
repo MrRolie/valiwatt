@@ -7,18 +7,25 @@ once it runs, and what it says when it should no longer be trusted.
 **What it measures.** The validation report measures the forecast's error on 2020–2023, out of sample, against the
 model v1 shipped and against v1's form on the same weather forecast, under a decision rule fixed in the plan before
 any v2 replay; how often its prediction intervals cover the actual demand, overall and group by group; what the
-monitor recommended when 2023 was rehearsed and 2024 replayed hour by hour, under rules frozen before v2's 2024 replay
-(the rules were tuned on 2023 rehearsals run before the freeze, as plan section 10.6 allows; the rehearsal the report
-shows, like the 2024 replay, ran on the frozen code); and how often the rules raise a false alarm or miss a real
-change. Every number comes from a tracked run, and every result carries its
-evaluation label: 2020–2023 served to choose the model, and 2024 had been seen by the developers through v1 before v2
-was chosen, so neither proves v2 better. Only 2025, held out, can.
+monitor recommended when 2023 was rehearsed and 2024 replayed hour by hour, under rules frozen before v2's 2024
+replay; and how often the rules raise a false alarm or miss a real change. Every measured number comes from a tracked
+run, and every result carries its evaluation label: 2020–2023 served to choose the model, and 2024 had been seen by
+the developers through v1 before v2 was chosen, so neither proves v2 better. Only 2025, held out, can.
 
-**Status: v2.** The model card's status is in the validation report, never here: it reads *candidate* until a 2025
-replay starts; then that the 2025 test of record did not finish, while it has not; then what that test showed, under
-the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md), or, if the owner ruled the 2025 start post hoc, that 2025
-is not a held-out test. v1, the first version, stays in the history at the tag
-`v1`, its report as published included. What is built:
+**What the freeze covers.** v2's monitoring rules keep v1's logic: v1 tuned them on its 2023 rehearsal, and v1's
+departure, made after v1's 2024 results had been seen, changed some of them. v2 re-derived the thresholds, the alarm
+levels and the drift inputs for its own model and weather input, and added a day-level criterion for a missing
+forecast (plan section 9.3). The rehearsal the report shows, like the 2024 replay, ran on the frozen rules: the rules
+hash is unchanged since the freeze, and only files outside the rules (the `NOT_RULES` list: the report code, the break
+registry, the command line) changed after it. v2's 2024 replays in the replay ledger carry one model hash and one
+frozen-artifact hash (`tests/test_tags.py` checks it); nothing recorded at the freeze ties the rehearsal's model to
+it. What backs the order of freeze and replay, and how to check it, is below.
+
+**Status: v2, a candidate until its held-out 2025 test.** The model card's status is in the validation report, the
+reference: it reads *candidate* until a 2025 replay starts; then that the 2025 test of record did not finish, while
+it has not; then what that test showed, under the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md), or, if the
+owner ruled the 2025 start post hoc, that 2025 is not a held-out test. v1, the first version, stays in the history at
+the tag `v1`, its report as published included. What is built:
 
 - the data layer and its gates, the weather forecast included;
 - a day-ahead forecast: an additive model of the GAM family on NOAA's National Blend of Models temperature forecast,
@@ -27,12 +34,13 @@ is not a held-out test. v1, the first version, stays in the history at the tag
   shape (without that method's finite-sample coverage guarantee: their coverage is measured out of sample);
 - frozen models registered in MLflow;
 - a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
-  rules frozen by the `rules-frozen-v2` tag before v2's 2024 replay;
+  rules frozen by the `rules-frozen-v2` tag before v2's 2024 replay (what backs that order, and how to check it: below);
 - the rules' false alarms and blind spots, measured after each replay in a diagnostic run of their own;
 - a gate in front of the 2025 replay that finds it clean or refuses it; only a dated ruling of the owner, recorded in
   `AGENTS.md`, lifts a refusal.
 
-Every gate and monitor has a break that makes it fire.
+Every gate and monitor has a break that makes it fire. The monitor's breaks run in a small synthetic world: they show
+that a check can fire, not that it would catch the same fault in real demand.
 
 Read the short version first: the findings told in seven plain points (the question, the forecast, the cold, how
 sure it is, 2024 replayed but already seen, what the monitor's silence is worth, and what changed since v1 with the
@@ -58,24 +66,33 @@ forecast; that bound is optimistic, and it issues no recommendation.
 uv sync
 uv run valiwatt all              # fetch the data, run every check, render the report (see below)
 uv run pytest -m "not network"   # the offline tests, every injected break included
-uv run pytest -m network         # the live tests only: the public endpoints and the quoted licence and standard texts
+uv run pytest -m network         # the live tests only (see below)
 ```
+
+The live tests check the public endpoints, the quoted licence and standard texts, and that the public figure the
+report's section 3.1 quotes is still on its page.
 
 A plain `uv run pytest` runs both sets.
 
 `valiwatt all` downloads the public data into `data/`, then runs the 2024 chain as tracked MLflow runs (stored in
 `mlruns/`): data quality, walk-forward validation on 2020–2023 with models fitted from 2019, the frozen models, the
-2023 rehearsal and the 2024 replay, and the breaks. It renders the reports into `docs/report/` (French, the reference,
-and English), stamped with the IDs of the runs they come from and the hash of the code that made them; a test fails
-when the code no longer matches the stamp. It never replays 2025. Neither `data/` nor `mlruns/` is in git: anyone can
-regenerate every figure, and the runs, not the rendered files, are the source of truth.
+2023 rehearsal and the 2024 replay, the conceptual-soundness run (after the replay, deciding nothing), and the breaks.
+It renders the reports into `docs/report/` (French, the reference, and English), stamped with the IDs of the runs they
+come from and the hash of the code that made them; a test fails when the code no longer matches the stamp. It never
+replays 2025. Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure, and the runs, not the
+rendered files, are the source of truth.
 
-Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`, `breaks`,
-`ledger`, `report`. The 2024 and 2025 replays refuse to run until the monitoring rules are frozen by the
-`rules-frozen-v2` tag; the 2023 rehearsal does not need it.
+Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`,
+`soundness`, `breaks`, `ledger`, `report`. The 2024 and 2025 replays refuse to run until the monitoring rules are
+frozen by the `rules-frozen-v2` tag; the 2023 rehearsal does not need it.
 `valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
 
-**2025, once Hydro-Québec publishes it.** No 2025 demand is read before then. Afterwards: `valiwatt fetch --through
+**2025, once Hydro-Québec publishes it.** No 2025 demand is to be read before then. The gate cannot enforce all of
+it; these rest on the developers' conduct (plan section 11.3; report section 9): that nobody looks at 2025 demand on
+the portal before the test of record, nor computes on 2025 records outside the replay command; that a ruling entry
+comes only from the owner; and that the run store, which lists the starts that did not finish, is kept until the
+render. The 2025 test uses the model frozen on data up to the end of 2023, two years old by the end of 2025 by design:
+a level drift in demand accepted since then shows as bias (plan section 16). Afterwards: `valiwatt fetch --through
 2025` and `valiwatt dq --through 2025`, then `valiwatt replay --year 2025`, which runs only by that command and only
 behind its gate. The gate finds the start clean or refuses it with its evidence; no flag lifts a refusal, only the
 owner's ruling entry in `AGENTS.md` does, and `valiwatt evidence` produces what he rules on, deciding nothing. Every
@@ -87,6 +104,25 @@ whose records Hydro-Québec may have revised: its numbers may differ from the co
 data-quality run lists every revised record. Such a clone's store lacks the replays of record: the report shows them
 from their entries in the committed replay ledger, labelled as recorded in the ledger and not re-run here, and says
 what only the original store holds.
+
+### Checking the freeze from a clone
+
+The order "rules frozen, then v2's 2024 replay" rests on the annotated tag `rules-frozen-v2` (unsigned: its date was
+recorded by the author's own tools) and on the start times the replay ledger records. Nothing outside the repository
+anchors that order. What a clone can check, without data or a run store:
+
+```sh
+git cat-file -p rules-frozen-v2      # the tag: its commit, its tagger date, its message
+uv run python -c 'from valiwatt.monitor.run import check_freeze; print(check_freeze())'
+                                     # the rule files and dependencies equal the tag's; prints the rules hash
+git diff --stat rules-frozen-v2..HEAD -- src/valiwatt config
+                                     # what changed since: only the files that render, scan or dispatch
+                                     # (NOT_RULES in src/valiwatt/monitor/rules.py) may appear
+uv run pytest tests/test_tags.py tests/test_replay_ledger.py
+                                     # the tags on their pinned commits, every v2 ledger entry tied to the tag's
+                                     # commit and to the rules hash at the tag, and v2's 2024 entries to one model
+                                     # hash and one frozen-artifact hash
+```
 
 The replay ledger, [`docs/replay-ledger.json`](docs/replay-ledger.json), is committed with each report. It holds one
 entry per replay of 2024 or 2025 finished since the history was rewritten (the 2023 rehearsal has none): its run ID,
@@ -115,8 +151,18 @@ The rules every part of the project follows.
 - **A check that cannot fail is not a check.** Every gate and monitor has a test that injects the fault it must catch:
   a duplicated hour, a misplaced record, an impossible value, a sensor outage, a day no forecast fed, a reading past
   the clock, a shifted demand level, intervals made too narrow, a moved freeze tag. `valiwatt breaks` runs them all as
-  a tracked run, and the report refuses to render if one did not fire.
-- **Numbers come from runs.** The reports are rendered from tracked MLflow runs; no number in them is typed by hand.
+  a tracked run, and the report refuses to render if any break fails: each label says what its test checks, what the
+  check does with the fault it is given or, for some, what it must not do with an input it must leave alone, and a
+  control passes only by staying quiet. The monitor's breaks run on synthetic data: they show that a check can fire,
+  not that it would catch the same fault in real demand.
+- **Numbers come from runs.** The reports are rendered from tracked MLflow runs. Every measured value comes from a
+  run, and the design constants the report templates write in numerals are read from the runs or from the code:
+  `tests/test_report_constants.py` holds the templates' text, the strings their code prints and the numbers their
+  printed expressions write to the few numerals they may type (section, plan and standard references, version names,
+  the dates of the owner's rulings, facts of the calendar, the constants of a formula, the numbering of a list). Not
+  checked: numbers written out in words, such as the six model families of the preliminary trial; the numbers the
+  templates' logic compares against and the arguments of their filters; and the break labels the validation report's
+  section 11 prints, hand-written descriptions of the tests, numerals included.
 - **Claims stay within the checks.** Each report ends with what it does not show.
 - **The monitor recommends; it never acts.** When a threshold trips, it writes a recommendation with its evidence;
   nothing retrains on its own.
@@ -125,7 +171,9 @@ The rules every part of the project follows.
 
 - **Demand:** Hydro-Québec open data, "Historique de la demande d'électricité au Québec", hourly, from 2019.
 - **Weather forecast:** NOAA's National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), from the
-  Iowa Environmental Mesonet's archive.
+  Iowa Environmental Mesonet's archive. Limits: one forecast point stands for the whole province; NOAA's model
+  changes over the years are not tracked, so the series is not homogeneous; and no revision of any source is
+  modelled, a forecast's arrival time being assumed from its issue time.
 - **Observed weather:** Environment and Climate Change Canada hourly station observations from climate.weather.gc.ca,
   for one station in each of six population centres (`config/stations.toml`), for data quality, v1's model and the
   optimistic bound.
@@ -143,6 +191,9 @@ FAQ asks for, with the date the data was retrieved.
 > Neither Hydro-Québec, Environment and Climate Change Canada, NOAA nor the Iowa Environmental Mesonet produced, reviewed or endorsed this work, and the project is affiliated with neither NOAA nor the Iowa Environmental Mesonet.
 >
 > Built with Claude Code under the repository owner's direction.
+
+No independent human reviewed the code: the reviews were made by AI agents in fresh contexts and by another vendor's
+AI model, which is not independent validation in SR 11-7's sense.
 
 ## Licence
 

@@ -290,4 +290,4 @@ CI has no data, so it runs every break on synthetic frames. `valiwatt all` also 
 | 2026-10-17 | Validation report (FR, EN) with the model card, committed under `docs/report/`; CI green on the private remote |
 | 2026-10-18 | Full fresh-context review of the tree and every public line; fixes |
 | 2026-10-19 | Buffer |
-| 2026-10-20 | v1 ready for the owner's review |
+| — | v1 ready for the owner's review |

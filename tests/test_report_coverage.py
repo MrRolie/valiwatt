@@ -107,8 +107,9 @@ def test_the_figure_receives_each_season_with_its_interval(monkeypatch):
     monkeypatch.setattr(F, "coverage_by_season", lambda rows, lang, path, nominal: seen.update(rows, nominal=nominal))
     seasons = RV.season_coverage(coverage(pooled={k: (0.85, 0.82, 0.88) for k in KEYS},
                                           by_season={k: (0.90, 0.87, 0.93) for k in KEYS}), 0.9)
-    ctx = {"v": {"cases": {"peak": {"hours": []}}}, "p": {"weeks": [], "decisions": []},
-           "r": {"weeks": [], "decisions": []}, "monthly": None, "curves": None, "seasons": seasons, "nominal": 0.9}
+    ctx = {"v": {"cases": {"peak": {"hours": []}}, "config": {"hour_blocks": {}}}, "p": {"weeks": [], "decisions": []},
+           "r": {"weeks": [], "decisions": [], "year": 2024, "contrasts": {"label": "seen_by_developers"}},
+           "monthly": None, "curves": None, "seasons": seasons, "nominal": 0.9}
     RV.figures(ctx, "en")
     assert seen == {"pooled": {k: (0.85, 0.82, 0.88) for k in KEYS},
                     "by_season": {k: (0.90, 0.87, 0.93) for k in KEYS}, "nominal": 0.9}

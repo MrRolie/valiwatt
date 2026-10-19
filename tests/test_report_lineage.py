@@ -224,7 +224,7 @@ def test_the_chain_follows_the_v2_2024_replay_not_a_v1_or_a_2025_one(monkeypatch
 def test_a_clean_2025_with_nothing_changed_renders_beside_the_2024_replay_of_record(monkeypatch, lang):
     """Control (plan section 13): a through-2025 data-quality run, the 2025 test of record on v2's first 2024
     replay's frozen run, and a later 2024 rerun on the render's code. The 2024 replay of record is the first; the
-    rerun is shown beside it and changes nothing."""
+    rerun is shown beside it and does not replace it."""
     w = S.World().install(monkeypatch)
     w.add_2025()
     rerun = rerun_2024(w)

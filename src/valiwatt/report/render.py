@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import shutil
@@ -98,10 +99,52 @@ def filters(lang: str) -> dict:
 SUPERSCRIPT = str.maketrans("-0123456789", "\u207b\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079")
 
 
+def bootstrap_quantiles(func) -> tuple[float, float]:
+    """The two quantiles of its bootstrap draws that `func` takes as its interval, read from its source: the one
+    `np.quantile(draws, [low, high])` call it makes, its bounds symmetric. Refused otherwise, so a change to the code
+    that computes an interval cannot leave the reports stating another level."""
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "quantile" and len(n.args) == 2]
+    if len(calls) != 1:
+        raise ReportRefused(f"{func.__qualname__} does not take its interval by one np.quantile call")
+    low, high = (float(x) for x in ast.literal_eval(calls[0].args[1]))
+    if not 0 < low < high < 1 or abs(low - (1 - high)) > 1e-12:
+        raise ReportRefused(f"{func.__qualname__} takes the quantiles {low} and {high}: not a symmetric interval")
+    return low, high
+
+
+@functools.cache
+def design() -> dict:
+    """The design constants the templates state that no run carries, read from the code that applies them: the level
+    of the week-block bootstrap intervals (forecast/evaluate.py `mean_with_ci`, every interval of the validation
+    report) and of the data-quality report's R² interval (quality/representativeness.py `r2_difference`); the
+    temperature at which the frozen GAM's curves are zero (forecast/freeze.py `BASE_C`); the offset of local standard
+    time from UTC, in hours (config `LST_OFFSET`); the rise in demand whose carry the lags section states
+    (report/soundness.py `CARRY_RISE_MW`). Templates read them as the global `design`."""
+    from valiwatt.config import LST_OFFSET
+    from valiwatt.forecast import evaluate, freeze
+    from valiwatt.quality import representativeness
+    from valiwatt.report import soundness
+
+    def level(func):
+        low, high = bootstrap_quantiles(func)
+        return round(high - low, 9)
+
+    return {"ci_level": level(evaluate.mean_with_ci), "ci_quantiles": bootstrap_quantiles(evaluate.mean_with_ci),
+            "dq_ci_level": level(representativeness.r2_difference), "ref_c": float(freeze.BASE_C),
+            "utc_offset_h": LST_OFFSET / pd.Timedelta(hours=1), "carry_rise_mw": soundness.CARRY_RISE_MW}
+
+
 def environment(lang: str) -> jinja2.Environment:
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(TEMPLATES), undefined=jinja2.StrictUndefined,
                              trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
     env.filters.update(filters(lang))
+    env.globals["design"] = design()
     return env
 
 

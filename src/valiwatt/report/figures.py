@@ -14,6 +14,7 @@ import pandas as pd
 from matplotlib.ticker import MaxNLocator
 
 from valiwatt.quality.figures import AXIS, GRID, INK, INK_2, SERIES_1, SERIES_2, _num, _save, _style, plt
+from valiwatt.report.render import design
 
 SERIES_3 = "#1baf7a"
 SERIES_4 = "#eda100"
@@ -24,13 +25,12 @@ LABELS = {
         "mape": "EAMP mensuelle (%)", "persistence": "v1 tel que livré (météo de la veille)",
         "observed": "météo observée (borne optimiste)", "baseline": "même heure, une semaine avant",
         "gam_forecast": "v2 : le GAM sur la prévision (production)", "forecast": "forme de v1 sur la prévision",
-        "effect": "Effet de la température (MW), relatif à 18 °C", "temp": "Prévision de température (°C)",
+        "effect": "Effet de la température (MW), relatif à {} °C", "temp": "Prévision de température (°C)",
         "with_lags": "Modèle figé (avec les retards)", "without_lags": "Sans les retards (interprétation seulement)",
         "extrapolated": "extrapolé (hors de la plage d'entraînement)",
-        "blocks": {"night": "nuit (0–5 h)", "morning": "matin (6–9 h)", "day": "jour (10–15 h)",
-                   "evening": "soir (16–20 h)", "late": "fin de soirée (21–23 h)"},
+        "blocks": {"night": "nuit", "morning": "matin", "day": "jour", "evening": "soir", "late": "fin de soirée"},
         "coverage": "Couverture (%)", "nominal": "nominale {} %", "pooled": "quantile unique",
-        "by_season": "quantile par saison", "ci": "IC 95 %", "demand": "Demande (MW)", "actual": "réelle",
+        "by_season": "quantile par saison", "ci": "IC {} %", "demand": "Demande (MW)", "actual": "réelle",
         "interval": "intervalle à {} %", "week_mape": "EAMP hebdomadaire (%)", "week_bias": "Biais hebdomadaire (%)",
         "week_cov": "Couverture hebdomadaire (%)", "threshold": "seuil de la saison",
         "drift_t": "Dérive, température", "drift_f": "Dérive, prévision", "alarm": "niveau d'alarme",
@@ -40,13 +40,12 @@ LABELS = {
         "mape": "Monthly MAPE (%)", "persistence": "v1 as shipped (previous day's weather)",
         "observed": "observed weather (optimistic bound)", "baseline": "same hour one week earlier",
         "gam_forecast": "v2: the GAM on the forecast (production)", "forecast": "v1's form on the forecast",
-        "effect": "Temperature effect (MW), relative to 18 °C", "temp": "Forecast temperature (°C)",
+        "effect": "Temperature effect (MW), relative to {} °C", "temp": "Forecast temperature (°C)",
         "with_lags": "Frozen model (with the lags)", "without_lags": "Without the lags (interpretation only)",
         "extrapolated": "extrapolated (outside the training range)",
-        "blocks": {"night": "night (0–5 h)", "morning": "morning (6–9 h)", "day": "day (10–15 h)",
-                   "evening": "evening (16–20 h)", "late": "late evening (21–23 h)"},
+        "blocks": {"night": "night", "morning": "morning", "day": "day", "evening": "evening", "late": "late evening"},
         "coverage": "Coverage (%)", "nominal": "nominal {}%", "pooled": "one quantile",
-        "by_season": "one quantile per season", "ci": "95% CI", "demand": "Demand (MW)", "actual": "actual",
+        "by_season": "one quantile per season", "ci": "{}% CI", "demand": "Demand (MW)", "actual": "actual",
         "interval": "{}% interval", "week_mape": "Weekly MAPE (%)", "week_bias": "Weekly bias (%)",
         "week_cov": "Weekly coverage (%)", "threshold": "season's threshold",
         "drift_t": "Drift, temperature", "drift_f": "Drift, forecast", "alarm": "alarm level",
@@ -86,9 +85,11 @@ def _nominal(nominal: float, lang: str) -> str:
 
 
 def coverage_by_season(rows: dict, lang: str, path: Path, nominal: float):
-    """rows: {"pooled": {season: (coverage, ci_low, ci_high)}, "by_season": {...}}; the 95 % interval is drawn as a
-    thin error bar, the point label sits above it; the dashed line is the intervals' nominal coverage."""
-    L = dict(LABELS[lang], nominal=LABELS[lang]["nominal"].format(_nominal(nominal, lang)))
+    """rows: {"pooled": {season: (coverage, ci_low, ci_high)}, "by_season": {...}}; the bootstrap interval (its level
+    read from the code, `design`) is drawn as a thin error bar, the point label sits above it; the dashed line is the
+    intervals' nominal coverage."""
+    L = dict(LABELS[lang], nominal=LABELS[lang]["nominal"].format(_nominal(nominal, lang)),
+             ci=LABELS[lang]["ci"].format(_nominal(design()["ci_level"], lang)))
     fig, ax = plt.subplots(figsize=(6, 3.2))
     x = np.arange(len(SEASON_ORDER))
     w = 0.36
@@ -144,9 +145,9 @@ def peak_hours(hours: list[dict], lang: str, path: Path, nominal: float):
     _save(fig, path)
 
 
-# The hour blocks of the partial-effects figure, in the palette's fixed order: v1's blocks of the local day.
-BLOCKS = (("night", range(0, 6), SERIES_1), ("morning", range(6, 10), SERIES_2), ("day", range(10, 16), SERIES_3),
-          ("evening", range(16, 21), SERIES_4), ("late", range(21, 24), SERIES_5))
+# The colour of each of v1's hour blocks in the partial-effects figure, in the palette's fixed order; the blocks' hours
+# come from the validation run (config `hour_blocks`), never from here.
+BLOCKS = (("night", SERIES_1), ("morning", SERIES_2), ("day", SERIES_3), ("evening", SERIES_4), ("late", SERIES_5))
 
 
 def _segments(t: np.ndarray, y: np.ndarray, inside: np.ndarray):
@@ -163,30 +164,35 @@ def _segments(t: np.ndarray, y: np.ndarray, inside: np.ndarray):
     return out
 
 
-def partial_effects(rows: list[dict], lang: str, path: Path):
-    """The frozen GAM's 24 temperature curves (plan section 4.5), each relative to its value at 18 °C, beside the same
+def partial_effects(rows: list[dict], lang: str, path: Path, blocks: dict):
+    """The frozen GAM's 24 temperature curves (plan section 4.5), each relative to its value at the reference
+    temperature the code draws them about (`design()["ref_c"]`, forecast/freeze.py BASE_C), beside the same
     curves from the GAM fitted without the lags (interpretation only): solid over the training range, dashed where
     the curve is extrapolated as a straight line. rows: the frozen run's partial_effects.csv (hour, temp_c,
-    effect_mw, effect_mw_nolag, in_training_range). Coloured by v1's hour blocks."""
+    effect_mw, effect_mw_nolag, in_training_range). Coloured by v1's hour blocks: blocks, {name: (first hour, last
+    hour)}, as the validation run's config gives them."""
     L = LABELS[lang]
+    ref_c = design()["ref_c"]
     d = pd.DataFrame(rows).sort_values(["hour", "temp_c"])
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.8))
     for ax, col, title in ((axes[0], "effect_mw", L["with_lags"]), (axes[1], "effect_mw_nolag", L["without_lags"])):
-        for block, hours, color in BLOCKS:
-            for k, h in enumerate(hours):
+        for block, color in BLOCKS:
+            first, last = (int(x) for x in blocks[block])
+            name = f"{L['blocks'][block]} ({first}–{last} h)"
+            for k, h in enumerate(range(first, last + 1)):
                 g = d[d["hour"] == h]
                 t, y = g["temp_c"].to_numpy(float), g[col].to_numpy(float)
                 inside = g["in_training_range"].astype(bool).to_numpy()
                 for xs, ys, solid in _segments(t, y, inside):
                     ax.plot(xs, ys, color=color, linewidth=1.0 if solid else 0.9, linestyle="-" if solid else "--",
-                            label=(L["blocks"][block] if solid and k == 0 and ax is axes[0] else None))
-        ax.axvline(18.0, color=INK_2, linewidth=0.6, linestyle=":")
+                            label=(name if solid and k == 0 and ax is axes[0] else None))
+        ax.axvline(ref_c, color=INK_2, linewidth=0.6, linestyle=":")
         ax.set_title(title, fontsize=9, color=INK)
         ax.set_xlabel(L["temp"], fontsize=9)
         ax.xaxis.set_major_formatter(_num(lang, 0))
         ax.yaxis.set_major_formatter(_num(lang, 0))
         _style(ax)
-    axes[0].set_ylabel(L["effect"], fontsize=9)
+    axes[0].set_ylabel(L["effect"].format(_num(lang, 0)(ref_c, None)), fontsize=9)
     handles, labels = axes[0].get_legend_handles_labels()
     from matplotlib.lines import Line2D
 
@@ -197,8 +203,9 @@ def partial_effects(rows: list[dict], lang: str, path: Path):
     _save(fig, path)
 
 
-def replay_weekly(weeks: list[dict], decisions: list[dict], lang: str, path: Path):
-    """Three small multiples: weekly MAPE, bias and coverage against the week's season thresholds."""
+def replay_weekly(weeks: list[dict], decisions: list[dict], lang: str, path: Path, title: str | None = None):
+    """Three small multiples: weekly MAPE, bias and coverage against the week's season thresholds. title: printed in
+    the image above them (a replayed year's evaluation label, so the picture carries it when it travels alone)."""
     L = LABELS[lang]
     ev = [w for w in weeks if w["evaluated"]]
     x = [pd.Timestamp(w["week_start"]) for w in ev]
@@ -221,10 +228,13 @@ def replay_weekly(weeks: list[dict], decisions: list[dict], lang: str, path: Pat
         ax.yaxis.set_major_formatter(_num(lang, 1))
         _style(ax)
     axes[0].legend(frameon=False, fontsize=8, labelcolor=INK)
+    if title:
+        axes[0].set_title(title, fontsize=9, color=INK)
     _save(fig, path)
 
 
-def replay_drift(weeks: list[dict], lang: str, path: Path):
+def replay_drift(weeks: list[dict], lang: str, path: Path, title: str | None = None):
+    """The weekly drift distances against their alarm levels; title as in `replay_weekly`."""
     L = LABELS[lang]
     x = [pd.Timestamp(w["week_start"]) for w in weeks]
     fig, axes = plt.subplots(2, 1, figsize=(8, 4.6), sharex=True)
@@ -237,15 +247,17 @@ def replay_drift(weeks: list[dict], lang: str, path: Path):
         ax.set_ylim(bottom=0)
         _style(ax)
     axes[0].legend(frameon=False, fontsize=8, labelcolor=INK)
+    if title:
+        axes[0].set_title(title, fontsize=9, color=INK)
     _save(fig, path)
 
 
 SOUNDNESS_LABELS = {
     "fr": {"slope": "Pente froide (MW par °C plus froid)", "hour": "Heure locale", "with": "avec les retards",
-           "without": "sans les retards", "band": "plis, 5ᵉ–95ᵉ centile (avec les retards)",
+           "without": "sans les retards", "band": "plis, centiles {} à {} (avec les retards)",
            "title": "De {} à {} °C, ajouté après le gel ; ne décide rien"},
     "en": {"slope": "Cold slope (MW per °C colder)", "hour": "Local hour", "with": "with the lags",
-           "without": "without the lags", "band": "folds, 5th–95th percentile (with the lags)",
+           "without": "without the lags", "band": "folds, percentiles {} to {} (with the lags)",
            "title": "From {} to {} °C, added after the freeze; decides nothing"},
 }
 
@@ -256,12 +268,14 @@ def soundness_slopes(sound: dict, lang: str, path: Path):
     size table."""
     L = SOUNDNESS_LABELS[lang]
     key = sound["cold"]
+    spread = sound["settings"]["spread"]
     a, b = (float(x) for x in sound["settings"]["cold_spans"][0])
     fig, ax = plt.subplots(figsize=(8, 3.4))
     band = sorted(sound["stability"]["rows"], key=lambda r: r["hour"])
     if band:
         ax.fill_between([r["hour"] for r in band], [r["p5"] for r in band], [r["p95"] for r in band],
-                        color=SERIES_1, alpha=0.15, linewidth=0, label=L["band"])
+                        color=SERIES_1, alpha=0.15, linewidth=0,
+                        label=L["band"].format(*(_num(lang, 0)(100 * q, None) for q in (spread[0], spread[-1]))))
     for kind, color in (("production", SERIES_1), ("no_lag", SERIES_2)):
         for year, style in ((sound["last"], "-"), (sound["first"], "--")):
             rows = sound["slopes"][str(year)][kind]
