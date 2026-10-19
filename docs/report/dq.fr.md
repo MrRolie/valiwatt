@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `2e9b690ced7b45e994e0eb757b4075b5` (2026-10-19 06:44 UTC), code `535af960544a`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `48a8fb57277d49b0af3c0f0def2c526d` (2026-10-19 08:33 UTC), code `7843d8a9c190`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -204,7 +204,7 @@ _La demande journalière selon la température moyenne du jour à Montréal, 201
 
 ![R² par source de température](figures/fr/r2_by_source.png)
 
-**Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne 1 000 fois les semaines complètes (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
+**Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne 1 000 fois les semaines civiles en blocs (incomplètes comprises) (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
 
 | Comparaison | Écart de R² (moyenne − Montréal) | Intervalle à 95 % | Semaines |
 |---|---|---|---|

@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `2e9b690ced7b45e994e0eb757b4075b5` (2026-10-19 06:44 UTC), code `535af960544a`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `48a8fb57277d49b0af3c0f0def2c526d` (2026-10-19 08:33 UTC), code `7843d8a9c190`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -204,7 +204,7 @@ _Daily demand against the day's mean temperature in Montréal, 2019–2023._
 
 ![R² by temperature source](figures/en/r2_by_source.png)
 
-**What the numbers show.** To tell whether a gap in R² exceeds sampling chance, whole weeks are resampled 1,000 times (neighbouring days resemble each other; drawing single days would understate the uncertainty) and both models are refitted on every draw.
+**What the numbers show.** To tell whether a gap in R² exceeds sampling chance, calendar weeks are resampled as blocks (incomplete ones included) 1,000 times (neighbouring days resemble each other; drawing single days would understate the uncertainty) and both models are refitted on every draw.
 
 | Comparison | R² gap (mean − Montréal) | 95% interval | Weeks |
 |---|---|---|---|
