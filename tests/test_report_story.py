@@ -365,10 +365,10 @@ def test_the_coverage_sides_name_each_group_or_say_none(lang):
 # --- what the alarm can and cannot see ------------------------------------------------------------------------------
 
 SILENCE = {"fr": ("Le silence n'est donc pas une preuve", "À chacun des départs mesurés",
-                  "même le plus grand écart mesuré entre la demande et la prévision, ±",
+                  "même le plus grand biais injecté, ±",
                   "Les mesures des changements de niveau n'ont pas fini"),
            "en": ("Silence is therefore no proof", "At each of the starts measured",
-                  "even the largest gap measured between demand and forecast, ±",
+                  "even the largest bias injected, ±",
                   "The level-shift measures did not finish")}
 
 

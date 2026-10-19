@@ -132,9 +132,9 @@ def test_the_power_sentence_has_a_true_branch_for_every_table(lang):
         assert "None" not in text and "\n" not in text
         if L["every_from"] is None:  # even the largest size missed at some start, whatever the smaller ones did
             largest = ("±" + f"{100 * L['sizes'][-1]:.0f}" + ("\u00a0%" if lang == "fr" else "%"))
-            assert (f"même le plus grand écart mesuré entre la demande et la prévision, {largest}, n'a pas donné"
+            assert (f"même le plus grand biais injecté, {largest}, n'a pas donné"
                     if lang == "fr" else
-                    f"even the largest gap measured between demand and forecast, {largest}, did not yield") in text
+                    f"even the largest bias injected, {largest}, did not yield") in text
             assert ("aucune taille" if lang == "fr" else "no size") not in text
         else:
             assert ("±" + f"{100 * L['every_from']:.0f}") in text
@@ -154,11 +154,11 @@ def test_the_power_sentence_puts_each_count_next_to_its_own_sign(lang):
     assert (L["strongest_caught"]["caught"], L["milder_max"]) == (2, 1)
     text = str(macros(lang).power_limit(L, 2024, 8))
     if lang == "fr":
-        assert "un écart de +2\u00a0%, à 0 des 2 départs, et de −2\u00a0%, à 1 des 2." in text
+        assert "un biais de +2\u00a0%, à 0 des 2 départs, et de −2\u00a0%, à 1 des 2." in text
         assert "× 0,5 de leur demi-largeur ont donné « recalibrer » à 2 des 2 départs" in text
         assert "des réductions moindres (jusqu'à × 0,9), à 1 des 2 départs au plus." in text
     else:
-        assert "a gap of +2% did at 0 of 2 starts, and of −2% at 1 of 2." in text
+        assert "a bias of +2% did at 0 of 2 starts, and of −2% at 1 of 2." in text
         assert "× 0.5 of their half-width yielded \"recalibrate\" at 2 of 2 starts" in text
         assert "milder cuts (up to × 0.9) at most at 1 of 2 starts." in text
 
@@ -646,5 +646,5 @@ def test_every_in_brief_branch_renders_a_true_sentence(lang):
     text = ok(str(m.brief_misses(level, L, 2023, 2024, 10)))
     assert ("a donné « réentraîner » en 10 semaines à 1 des 4 départs" if fr else
             "yielded \"retrain\" within 10 weeks at 1 of 4 starts") in text
-    assert ("±2\u00a0% ajouté entre la demande et la prévision (en plus des erreurs propres de la prévision), à 1 des 8 cas"
-            if fr else "±2% added between demand and forecast (on top of the forecast's own errors) did at 1 of 8 cases") in text
+    assert ("±2\u00a0% injecté dans la prévision, à 1 des 8 cas"
+            if fr else "±2% injected into the forecast did at 1 of 8 cases") in text

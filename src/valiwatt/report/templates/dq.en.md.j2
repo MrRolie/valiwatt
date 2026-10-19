@@ -224,7 +224,7 @@ _Daily demand against the day's mean temperature in {{ primary.centre }}, {{ yea
 
 ![R² by temperature source](figures/en/r2_by_source.png)
 
-**What the numbers show.** To tell whether a gap in R² exceeds sampling chance, whole weeks are resampled {{ dyear.resamples|num }} times (neighbouring days resemble each other; drawing single days would understate the uncertainty) and both models are refitted on every draw.
+**What the numbers show.** To tell whether a gap in R² exceeds sampling chance, calendar weeks are resampled as blocks (incomplete ones included) {{ dyear.resamples|num }} times (neighbouring days resemble each other; drawing single days would understate the uncertainty) and both models are refitted on every draw.
 
 | Comparison | R² gap (mean − {{ primary.centre }}) | {{ design.dq_ci_level|pct(0) }} interval | Weeks |
 |---|---|---|---|

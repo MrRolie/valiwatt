@@ -132,7 +132,7 @@ def hour_blocks(rows: list[dict], blocks: dict) -> list[dict]:
 def detection_limits(power: dict) -> dict:
     """What a replay's power table shows, for the sentences that sum it up.
 
-    bias: for each size of the sustained gap (both signs), how many of the cases (start x sign) yielded *retrain*
+    bias: for each size of the sustained bias injected into the forecast (both signs), how many of the cases (start x sign) yielded *retrain*
     within the horizon; `every_from`, the smallest size from which every case of that size and every larger one did
     (None when even the largest size missed somewhere); the smallest size measured, with its catches by sign.
     half_width: for each narrowing factor, how many starts yielded *recalibrate*; the strongest narrowing (the smallest

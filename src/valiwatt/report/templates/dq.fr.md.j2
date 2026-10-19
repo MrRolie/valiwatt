@@ -225,7 +225,7 @@ _La demande journalière selon la température moyenne du jour à {{ primary.cen
 
 ![R² par source de température](figures/fr/r2_by_source.png)
 
-**Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne {{ dyear.resamples|num }} fois les semaines complètes (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
+**Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne {{ dyear.resamples|num }} fois les semaines civiles en blocs (incomplètes comprises) (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
 
 | Comparaison | Écart de R² (moyenne − {{ primary.centre }}) | Intervalle à {{ design.dq_ci_level|pct(0) }} | Semaines |
 |---|---|---|---|
