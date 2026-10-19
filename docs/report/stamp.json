@@ -1,22 +1,22 @@
 {
-  "code_sha256": "20879b72f3a656049bc8615e5118d3d3532e4f7e8a6fa596f12f0ba2e329938d",
+  "code_sha256": "4e3642ca90ec7a091f251375b37c51c10e85db6731e30027b7c0c5417e07f0f6",
   "rules_sha256": "998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38",
   "freeze_commit": "825b7bd134a88ad38dc62efe361e30f80321c8be",
   "runs": {
-    "dq": "f3cddb2e81164f20bea8603c409a7aea",
-    "validation": "61b54b9e5dc1459d9486ccd3b4360645",
-    "frozen_2023": "9cad994a02d949548e1635ed1384a284",
-    "frozen_2024": "06658910bf0944e9a19f8a520e58d515",
-    "pseudo_replay": "08ac0c28df4f4de198e1f6a3404efb4b",
-    "diag_pseudo_replay": "b415dbe7f9944c2c8aed3eb5e14fa633",
-    "replay": "b1dca448e0fc436ca2e270c8e3c28a3f",
-    "diag_replay": "31a80cfd69944743918a35bd3137414a",
-    "breaks": "9ddea75f6df54dbd8e8f06608e240baf",
-    "soundness": "d26010e4dc694b60928f5d6cf90a1e91"
+    "dq": "2e9b690ced7b45e994e0eb757b4075b5",
+    "validation": "1b1f8a469c6041b0b5fc9cc6993643da",
+    "frozen_2023": "f763d6a8027644409c7b2e16c6a02b05",
+    "frozen_2024": "1a1bd1f746784da09a3f6bf15068db77",
+    "pseudo_replay": "b5d11e847d7d445796652216b6cdd0be",
+    "diag_pseudo_replay": "d394bf2f83dc46dcad3f03ee39e50a7b",
+    "replay": "5ae065d3334a4a698f69f646f12c5706",
+    "diag_replay": "122ded5fcbe247e38407d0fda948f88d",
+    "breaks": "355ad7994c294dfe9e00daaaf638a6a3",
+    "soundness": "88464390290e416dab2ced84f4f1f1b2"
   },
   "files": {
-    "dq.en.md": "48e96540a29118785a24f2a82b8e94500958aab7c521430a11e9845257ce9c85",
-    "dq.fr.md": "fb6b28dcf9beadb7a2878fe0eec7d2c8f709c3230a752188861d9fa76ac0c74e",
+    "dq.en.md": "33d86f5f11923f7a35e67f111006bdd444a147bd89f9192418a8a67306cbd7e4",
+    "dq.fr.md": "336238173786a2ea9dd1c52329f6c7d96700ae184a72d9955560904b999723de",
     "figures/en/daily_demand.png": "c354ea6759d2951fbb7b4a946a5f9eeb6e6a42ec1be2bdd43a81651709b0df5f",
     "figures/en/heating_curve.png": "fc6af2475ad1c817393ac3bdd7dac0752390e1fff7431c0db0d1ee57605bbc33",
     "figures/en/nbm_feeding.png": "d2f305cdb1700deafec8a4ed0192ee35548be7b7e486b2d6b3164a28735c737a",
@@ -43,11 +43,11 @@
     "figures/validation/validation-peak-hours.fr.png": "63865202b653d78e48e10e2a1b9e5363a676f519fac325468e7ab844cad5f508",
     "figures/validation/validation-soundness-slopes.en.png": "1b44b907c9462d64e0144eb467adb5e620733f9dfcb26ac9fbc706c14930735f",
     "figures/validation/validation-soundness-slopes.fr.png": "ca0f7106a6f462294e4ea9b9e34e42bd69112099cf00c5e1d101b6a53e1419d7",
-    "story.en.md": "c1cfadd841939ca35c04fa5c7cb19e20fb01b353d2b1fc5996b145412a98da48",
-    "story.fr.md": "b8d587dc7b6c40944e93c6edb7649d3e1f600b3bcece079573026742deef1207",
-    "validation.en.md": "c17da553f8daa064e2985faae5d7448feb49abfbcad9c69fd9325016d3efe407",
-    "validation.fr.md": "e4a9e0d50f2a41faf2feff55096c0f5c6105c5ac379ede98f3b6cfc11ea8425e"
+    "story.en.md": "676845ef98b9bff97d77ee6abdcb06208cafa42269c6053ce0556216b4cff27a",
+    "story.fr.md": "6e91c7494449155298b1f30cfce569f92a3367fdc6f674dd718d61fb48a6e970",
+    "validation.en.md": "a73aaf7e4eacaa9f068acaceea0fb323ecb5d5b10f6280a5f3a337702d95b3e2",
+    "validation.fr.md": "cb73546f9bd00ee2cfb912e2d4f7567493b92e16339a12ecc195b85532ba3603"
   },
-  "ledger_sha256": "992a212f8a51e3dc5171ccc937d518ec2f638e17bc88c2a1d08a85edb9d0659d",
+  "ledger_sha256": "8108857f48c17dc3c4294205868cd2609aa315e735a7329565b099a00f88a14b",
   "standing_2025": null
 }

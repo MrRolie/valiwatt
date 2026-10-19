@@ -14,7 +14,7 @@ _La version courte du rapport de validation, en sept points : à lire d'abord._
 >
 > Construit avec Claude Code sous la direction du propriétaire du dépôt.
 
-Le [rapport complet](validation.fr.md) est la référence, et chaque point renvoie à sa section. Chaque valeur mesurée ici vient des mêmes exécutions MLflow : code `93552854e9b5`, rejeu de 2024 `b1dca448e0fc436ca2e270c8e3c28a3f`. Les constantes de conception viennent de ces exécutions ou du code. La version anglaise est dérivée de celle-ci.
+Le [rapport complet](validation.fr.md) est la référence, et chaque point renvoie à sa section. Chaque valeur mesurée ici vient des mêmes exécutions MLflow : code `535af960544a`, rejeu de 2024 `5ae065d3334a4a698f69f646f12c5706`. Les constantes de conception viennent de ces exécutions ou du code. La version anglaise est dérivée de celle-ci.
 
 ## La question
 
@@ -44,7 +44,7 @@ L'année 2024 a été rejouée heure par heure, comme en production. Le modèle,
 
 ## Le silence est-il une bonne nouvelle ?
 
-Un moniteur muet ne rassure que s'il sait voir un vrai changement. Le rapport l'a mesuré en imposant des changements soutenus à quelques départs fixés et en rejouant les vraies règles. Sur 2024 (vu par les développeurs), un écart soutenu de ±4 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de ±2 % l'a donné à 4 des 8 cas. La prévision s'appuie sur la demande de la veille : elle suit une partie d'une hausse durable de la demande. L'écart que la hausse ouvre entre les deux est donc plus petit qu'elle. Une hausse soutenue de 10 % a donné « réentraîner » en 10 semaines à 4 des 4 départs sur 2023 (l'année de répétition), et à 4 des 4 sur 2024 (vue par les développeurs). Le silence n'est donc pas une preuve : des changements soutenus sont passés inaperçus à certains des départs mesurés. ([section 7](validation.fr.md#7-le-modèle-figé-répété-sur-2023-répétition-sur-une-année-de-conception), [section 8](validation.fr.md#8-2024-rejouée-vu-par-les-développeurs))
+Un moniteur muet ne rassure que s'il sait voir un vrai changement. Le rapport l'a mesuré en imposant des changements soutenus à quelques départs fixés et en rejouant les vraies règles. Sur 2024 (vu par les développeurs), un biais soutenu de ±4 % ou plus ajouté entre la demande et la prévision, en plus des erreurs propres de la prévision, a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de ±2 % l'a donné à 4 des 8 cas. La prévision s'appuie sur la demande de la veille : elle suit une partie d'une hausse durable de la demande. L'écart que la hausse ouvre entre les deux est donc plus petit qu'elle. Une hausse soutenue de 10 % a donné « réentraîner » en 10 semaines à 4 des 4 départs sur 2023 (l'année de répétition), et à 4 des 4 sur 2024 (vue par les développeurs). Le silence n'est donc pas une preuve : des changements soutenus sont passés inaperçus à certains des départs mesurés. ([section 7](validation.fr.md#7-le-modèle-figé-répété-sur-2023-répétition-sur-une-année-de-conception), [section 8](validation.fr.md#8-2024-rejouée-vu-par-les-développeurs))
 
 ## Le registre d'honnêteté
 

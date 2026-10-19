@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `f3cddb2e81164f20bea8603c409a7aea` (2026-10-19 04:27 UTC), code `93552854e9b5`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `2e9b690ced7b45e994e0eb757b4075b5` (2026-10-19 06:44 UTC), code `535af960544a`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -21,7 +21,7 @@ _Rapport généré à partir de l'exécution MLflow `f3cddb2e81164f20bea8603c409
 - **Un enregistrement** porte un horodatage décalé de 365 jours ; il est replacé, avec sa preuve (section 3.2).
 - **45 heures** sont vides à la source, en 2 plages (la plus longue : 41 heures). Elles restent vides.
 - Les 6 stations météo ont chacune une température pour au moins 99,2 % des heures.
-- La prévision de température de v2 a alimenté **100,00 %** des 2 192 jours de la fenêtre ; aucun de ses points n'est à 75 heures ou plus de son émission (section 4.1).
+- La prévision de température de v2 a alimenté **100,00 %** des 2 192 jours de la fenêtre, chaque prévision étant prise comme disponible 2 heures après son émission, une hypothèse (section 4.1) ; aucun de ses points n'est à 75 heures ou plus de son émission (section 4.1).
 - Sur 2019–2023, les degrés-jours de Montréal et le jour de la semaine reproduisent **94,2 %** de la variation de la demande journalière ; avec la moyenne des 6 stations, **93,0 %**.
 - L'heure la plus chargée de 2019–2023 est l'heure finissant à 2023-02-03 18:00 HNE : **42 473 MW**, par −26,1 °C à Montréal.
 
@@ -138,7 +138,7 @@ Les pics de température sont signalés avec la même règle que la demande (sco
 
 ### 4.1 La prévision de température
 
-La prévision de température que v2 utilise est la guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), archivée par l'Iowa Environmental Mesonet : 8 747 prévisions, 197 879 points toutes les trois heures, en degrés Fahrenheit, convertis en degrés Celsius. 136 points identiques en double, à la jonction des fichiers annuels, sont écartés ; deux valeurs différentes pour une même prévision et une même heure feraient refuser le chargement. Chaque jour est alimenté par la plus fraîche des prévisions dont les propres points encadrent ses 24 heures, parmi les 12 plus fraîches disponibles à l'origine du jour ; la règle complète est dans le rapport de validation (section 2).
+La prévision de température que v2 utilise est la guidance NBS du National Blend of Models de la NOAA pour la station CYUL (Montréal-Trudeau), archivée par l'Iowa Environmental Mesonet : 8 747 prévisions, 197 879 points toutes les trois heures, en degrés Fahrenheit, convertis en degrés Celsius. 136 points identiques en double, à la jonction des fichiers annuels, sont écartés ; deux valeurs différentes pour une même prévision et une même heure feraient refuser le chargement. Chaque jour est alimenté par la plus fraîche des prévisions dont les propres points encadrent ses 24 heures, parmi les 12 plus fraîches disponibles à l'origine du jour ; la règle complète est dans le rapport de validation (section 2). Une prévision compte comme disponible 2 heures après son heure d'émission : l'archive n'enregistre aucune heure d'arrivée, ce délai est donc supposé, non observé, et chaque jour compté ici comme alimenté repose sur lui.
 
 | Contrôle | Résultat | Mesure |
 |---|---|---|

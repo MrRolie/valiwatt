@@ -14,7 +14,7 @@ _The short version of the validation report, in seven points: read it first._
 >
 > Built with Claude Code under the repository owner's direction.
 
-The [full report](validation.en.md) is the reference, and each point links to its section. Every measured value here comes from the same MLflow runs: code `93552854e9b5`, 2024 replay `b1dca448e0fc436ca2e270c8e3c28a3f`. The design constants come from those runs or from the code. This English version is derived from the French one.
+The [full report](validation.en.md) is the reference, and each point links to its section. Every measured value here comes from the same MLflow runs: code `535af960544a`, 2024 replay `5ae065d3334a4a698f69f646f12c5706`. The design constants come from those runs or from the code. This English version is derived from the French one.
 
 ## The question
 
@@ -44,7 +44,7 @@ The year 2024 was replayed hour by hour, as in production. The model, frozen on 
 
 ## Is silence good news?
 
-A silent monitor reassures only if it can see a real change. The report measured that by imposing sustained changes at a few fixed starts and replaying the real rules. On 2024 (seen by the developers), a sustained gap of ±4% or more between demand and forecast yielded "retrain" within 8 weeks at each of the 4 starts; a gap of ±2% did at 4 of 8 cases. The forecast leans on the day before's demand: it follows part of a lasting rise in demand. The gap the rise opens between the two is therefore smaller than the rise. A sustained 10% rise yielded "retrain" within 10 weeks at 4 of 4 starts on 2023 (the rehearsal year), and at 4 of 4 on 2024 (seen by the developers). Silence is therefore no proof: sustained changes went unnoticed at some of the starts measured. ([section 7](validation.en.md#7-the-frozen-model-rehearsed-on-2023-rehearsal-on-a-design-year), [section 8](validation.en.md#8-2024-replayed-seen-by-the-developers))
+A silent monitor reassures only if it can see a real change. The report measured that by imposing sustained changes at a few fixed starts and replaying the real rules. On 2024 (seen by the developers), a sustained bias of ±4% or more added between demand and forecast, on top of the forecast's own errors, yielded "retrain" within 8 weeks at each of the 4 starts; a gap of ±2% did at 4 of 8 cases. The forecast leans on the day before's demand: it follows part of a lasting rise in demand. The gap the rise opens between the two is therefore smaller than the rise. A sustained 10% rise yielded "retrain" within 10 weeks at 4 of 4 starts on 2023 (the rehearsal year), and at 4 of 4 on 2024 (seen by the developers). Silence is therefore no proof: sustained changes went unnoticed at some of the starts measured. ([section 7](validation.en.md#7-the-frozen-model-rehearsed-on-2023-rehearsal-on-a-design-year), [section 8](validation.en.md#8-2024-replayed-seen-by-the-developers))
 
 ## The honesty ledger
 

@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `f3cddb2e81164f20bea8603c409a7aea` (2026-10-19 04:27 UTC), code `93552854e9b5`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `2e9b690ced7b45e994e0eb757b4075b5` (2026-10-19 06:44 UTC), code `535af960544a`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -21,7 +21,7 @@ _Generated from MLflow run `f3cddb2e81164f20bea8603c409a7aea` (2026-10-19 04:27 
 - **One record** carries a timestamp 365 days off; it is moved back, with its evidence (section 3.2).
 - **45 hours** are blank at the source, in 2 runs (the longest: 41 hours). They stay blank.
 - Each of the 6 weather stations has a temperature for at least 99.2% of the hours.
-- v2's temperature forecast fed **100.00%** of the window's 2,192 days; none of its points is 75 hours or more after its issue (section 4.1).
+- v2's temperature forecast fed **100.00%** of the window's 2,192 days, each forecast taken as available 2 hours after its issue, an assumption (section 4.1); none of its points is 75 hours or more after its issue (section 4.1).
 - Over 2019–2023, Montréal's degree-days and the day of the week reproduce **94.2%** of the variation in daily demand; with the mean of the 6 stations, **93.0%**.
 - The busiest hour of 2019–2023 is the hour ending 2023-02-03 18:00 EST: **42,473 MW**, at −26.1 °C in Montréal.
 
@@ -138,7 +138,7 @@ Temperature spikes are flagged with the same rule as demand (score beyond 10, sc
 
 ### 4.1 The temperature forecast
 
-The temperature forecast v2 uses is NOAA's National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), archived by the Iowa Environmental Mesonet: 8,747 forecasts, 197,879 points every three hours, in degrees Fahrenheit, converted to degrees Celsius. 136 identical duplicate points, where the yearly files meet, are dropped; two different values for one forecast and one hour would refuse the load. Each day is fed by the freshest forecast whose own points bracket its 24 hours, among the 12 freshest available at the day's origin; the full rule is in the validation report (section 2).
+The temperature forecast v2 uses is NOAA's National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), archived by the Iowa Environmental Mesonet: 8,747 forecasts, 197,879 points every three hours, in degrees Fahrenheit, converted to degrees Celsius. 136 identical duplicate points, where the yearly files meet, are dropped; two different values for one forecast and one hour would refuse the load. Each day is fed by the freshest forecast whose own points bracket its 24 hours, among the 12 freshest available at the day's origin; the full rule is in the validation report (section 2). A forecast counts as available 2 hours after its issue time: the archive records no arrival time, so that delay is assumed, not observed, and every day counted as fed here rests on it.
 
 | Check | Result | Measure |
 |---|---|---|
