@@ -447,7 +447,7 @@ Verdicts ({{ label(p.verdict.label) }}) : « {{ VERDICT[p.verdict.shipped] }} »
 {% set alone = near.pseudo %}
 **La règle 2 sur {{ p.year }}.** {% if alone %}Sa première formulation (EAMP ou biais hors seuil {{ K.consecutive_weeks }} semaines de suite, dans n'importe quelle combinaison) dit « réentraîner » {{ near_list(alone) }}. {{ near_why(alone, K.trim_days) }}{% else %}Sa première formulation n'aurait rien recommandé de plus.{% endif +%}
 
-**Puissance des règles sur {{ p.year }}.** À partir de la première semaine jugée de {{ months(LP.months) }}, on impose un changement soutenu et on rejoue les règles hebdomadaires : un écart entre la demande et la prévision (de ±{{ LP.sizes[0]|pct(0) }} à ±{{ LP.sizes[-1]|pct(0) }}), compté en semaines avant « réentraîner », ou des intervalles rétrécis (demi-largeur × {{ LP.mildest|num(1) }} à × {{ LP.strongest|num(1) }}), comptés en semaines avant « recalibrer » (— : rien en {{ K.power_horizon }} semaines). Une mesure, jamais une recommandation.
+**Puissance des règles sur {{ p.year }}.** À partir de la première semaine jugée de {{ months(LP.months) }}, on impose un changement soutenu et on rejoue les règles hebdomadaires : un biais ajouté entre la demande et la prévision, en plus des erreurs propres de la prévision (de ±{{ LP.sizes[0]|pct(0) }} à ±{{ LP.sizes[-1]|pct(0) }}), compté en semaines avant « réentraîner », ou des intervalles rétrécis (demi-largeur × {{ LP.mildest|num(1) }} à × {{ LP.strongest|num(1) }}), comptés en semaines avant « recalibrer » (— : rien en {{ K.power_horizon }} semaines). Une mesure, jamais une recommandation.
 
 {{ power_table(p.power.bias, 'bias') }}
 {{ power_table(p.power.half_width, 'half_width') }}

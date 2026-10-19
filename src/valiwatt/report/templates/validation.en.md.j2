@@ -448,7 +448,7 @@ Verdicts ({{ label(p.verdict.label) }}): "{{ VERDICT[p.verdict.shipped] }}" agai
 {% set alone = near.pseudo %}
 **Rule 2 on {{ p.year }}.** {% if alone %}Its first wording (MAPE or bias beyond its threshold {{ K.consecutive_weeks }} weeks in a row, in any combination) says "retrain" {{ near_list(alone) }}. {{ near_why(alone, K.trim_days) }}{% else %}Its first wording would have recommended nothing more.{% endif +%}
 
-**The rules' power on {{ p.year }}.** From the first judged week of {{ months(LP.months) }}, a sustained change is imposed and the weekly rules are replayed: a gap between demand and forecast (from ±{{ LP.sizes[0]|pct(0) }} to ±{{ LP.sizes[-1]|pct(0) }}), counted in weeks before "retrain", or narrowed intervals (half-width × {{ LP.mildest|num(1) }} to × {{ LP.strongest|num(1) }}), counted in weeks before "recalibrate" (—: nothing within {{ K.power_horizon }} weeks). A measurement, never a recommendation.
+**The rules' power on {{ p.year }}.** From the first judged week of {{ months(LP.months) }}, a sustained change is imposed and the weekly rules are replayed: a bias added between demand and forecast, on top of the forecast's own errors (from ±{{ LP.sizes[0]|pct(0) }} to ±{{ LP.sizes[-1]|pct(0) }}), counted in weeks before "retrain", or narrowed intervals (half-width × {{ LP.mildest|num(1) }} to × {{ LP.strongest|num(1) }}), counted in weeks before "recalibrate" (—: nothing within {{ K.power_horizon }} weeks). A measurement, never a recommendation.
 
 {{ power_table(p.power.bias, 'bias') }}
 {{ power_table(p.power.half_width, 'half_width') }}

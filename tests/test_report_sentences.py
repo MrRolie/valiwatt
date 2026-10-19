@@ -646,5 +646,5 @@ def test_every_in_brief_branch_renders_a_true_sentence(lang):
     text = ok(str(m.brief_misses(level, L, 2023, 2024, 10)))
     assert ("a donné « réentraîner » en 10 semaines à 1 des 4 départs" if fr else
             "yielded \"retrain\" within 10 weeks at 1 of 4 starts") in text
-    assert ("±2\u00a0% entre la demande et la prévision, à 1 des 8 cas" if fr else
-            "±2% between demand and forecast did at 1 of 8 cases") in text
+    assert ("±2\u00a0% ajouté entre la demande et la prévision (en plus des erreurs propres de la prévision), à 1 des 8 cas"
+            if fr else "±2% added between demand and forecast (on top of the forecast's own errors) did at 1 of 8 cases") in text

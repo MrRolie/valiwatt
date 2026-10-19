@@ -161,7 +161,7 @@ def test_the_in_brief_gives_the_power_measures_own_horizon(lang):
     ctx = context()
     K = ctx["K"] = {**ctx["K"], "power_horizon": 17, "step_horizon": 19}
     line = line_of(RP.render(ctx, lang), "- " + ("Le rapport mesure" if lang == "fr" else "The report also"))
-    rise, gap = line.split(f" ; sur {RP.R_YEAR}, un écart" if lang == "fr" else f"; on {RP.R_YEAR}, a sustained gap")
+    rise, gap = line.split(f" ; sur {RP.R_YEAR}, un biais" if lang == "fr" else f"; on {RP.R_YEAR}, a sustained bias")
     assert f" {K['step_horizon']} " in rise and f" {K['power_horizon']} " not in rise
     assert (f"l'a donné en {K['power_horizon']} semaines à" if lang == "fr" else
             f"did within {K['power_horizon']} weeks at") in gap

@@ -86,7 +86,7 @@ files, are the source of truth. On a later vintage of the sources, the numbers m
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`,
 `soundness`, `breaks`, `ledger`, `report`. The 2024 and 2025 replays refuse to run until the monitoring rules are
 frozen by the `rules-frozen-v2` tag; the 2023 rehearsal does not need it.
-`valiwatt safety` scans what git stages and every object in the history for anything that must not be published.
+`valiwatt safety` scans git's index (every file the next commit would carry) and every object in the history for anything that must not be published.
 
 **2025, once Hydro-Québec publishes it.** No 2025 demand is to be read before then. The gate cannot enforce all of
 it; these rest on the developers' conduct (plan section 11.3; report section 9): that nobody looks at 2025 demand on
@@ -127,9 +127,11 @@ uv run python -c 'from valiwatt.monitor.run import check_freeze; print(check_fre
 git diff --stat rules-frozen-v2..HEAD -- src/valiwatt config
                                      # what changed since: only files outside the rules may appear (NOT_RULES
                                      # in src/valiwatt/monitor/rules.py, whose comment says they render, scan
-                                     # or dispatch); among them, src/valiwatt/report/soundness.py, the
-                                     # conceptual-soundness analysis, computes after the freeze but decides
-                                     # nothing
+                                     # or dispatch); the report code among them also computes what the report
+                                     # prints (src/valiwatt/report/soundness.py, the conceptual-soundness
+                                     # analysis; src/valiwatt/report/validation.py, the report's own measures),
+                                     # but none of it is a rule: the recommendations and the 2025 verdict
+                                     # come from the rule files
 uv run pytest tests/test_tags.py tests/test_replay_ledger.py
                                      # the tags on their pinned commits, every v2 ledger entry tied to the tag's
                                      # commit and to the rules hash at the tag, and v2's 2024 entries to one model

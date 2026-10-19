@@ -125,11 +125,13 @@ def design() -> dict:
     report) and of the data-quality report's R² interval (quality/representativeness.py `r2_difference`); the
     temperature at which the frozen GAM's curves are zero (forecast/freeze.py `BASE_C`); the offset of local standard
     time from UTC, in hours (config `LST_OFFSET`); the rise in demand whose carry the lags section states
-    (report/soundness.py `CARRY_RISE_MW`). Templates read them as the global `design`."""
+    (report/soundness.py `CARRY_RISE_MW`); the hours after its issue time a temperature forecast is taken as available
+    (sources/nbm.py `AVAILABILITY_LAG`). Templates read them as the global `design`."""
     from valiwatt.config import LST_OFFSET
     from valiwatt.forecast import evaluate, freeze
     from valiwatt.quality import representativeness
     from valiwatt.report import soundness
+    from valiwatt.sources import nbm
 
     def level(func):
         low, high = bootstrap_quantiles(func)
@@ -137,7 +139,8 @@ def design() -> dict:
 
     return {"ci_level": level(evaluate.mean_with_ci), "ci_quantiles": bootstrap_quantiles(evaluate.mean_with_ci),
             "dq_ci_level": level(representativeness.r2_difference), "ref_c": float(freeze.BASE_C),
-            "utc_offset_h": LST_OFFSET / pd.Timedelta(hours=1), "carry_rise_mw": soundness.CARRY_RISE_MW}
+            "utc_offset_h": LST_OFFSET / pd.Timedelta(hours=1), "carry_rise_mw": soundness.CARRY_RISE_MW,
+            "availability_lag_h": nbm.AVAILABILITY_LAG / pd.Timedelta(hours=1)}
 
 
 def environment(lang: str) -> jinja2.Environment:
