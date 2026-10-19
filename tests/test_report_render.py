@@ -807,7 +807,7 @@ def test_every_limit_branch_renders_a_true_clause(lang):
     no_recal = "aucun « recalibrer »" if lang == "fr" else "no \"recalibrate\""
     assert str(m.episode_limit({**worst, **quiet}, 2024, 0.15)) == retrain + no_recal
     assert str(m.episode_limit({**worst, **loud}, 2024, 0.15)) == retrain + recal
-    absorbs = "Les retards de la demande absorbent" if lang == "fr" else "The demand lags absorb"
+    absorbs = "Les retards de la demande font passer une partie" if lang == "fr" else "The demand lags pass part"
     for missed, caught in ((0, 4), (1, 1), (2, 1), (2, 3)):
         level = {"size": 0.1, "up_n": 4, "up_missed": missed, "down_n": 4, "down_caught": caught,
                  "months": [1, 3, 6, 9], "missed_months": [1, 3, 6][:missed]}

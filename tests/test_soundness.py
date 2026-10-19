@@ -186,6 +186,35 @@ def test_the_freezes_difference_is_over_their_common_range():
     assert all(r["max_abs_mw"] == 0.0 and r["slope_change_pct"] == 0.0 for r in d["rows"])
 
 
+def test_the_freezes_difference_is_taken_on_the_whole_degrees_of_their_common_range():
+    a = curve()
+    b = curve(edit=lambda h, t, e: e + np.where(t == -24, 5.0, np.where(t == -25, 1e6, 0.0)))
+    d = SN.freeze_difference(a, b, (-24.6, 30.2), (-28.0, 34.0))
+    assert d["common_range"] == [-24.6, 30.2] and SN.whole_degrees(*d["common_range"]) == [-24.0, 30.0]
+    assert all(r["max_abs_mw"] == 5.0 and r["at_c"] == -24.0 for r in d["rows"])  # -25 is outside: not compared
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_section_3_1_names_the_grid_of_its_largest_difference_and_reads_the_lags_on_observed_demand(lang):
+    from valiwatt.report.render import fmt_num
+
+    ctx = RP.context()
+    sound = ctx["sound"]
+    part = RV.soundness_section(RP.render(ctx, lang))
+    for k in SN.KINDS:
+        assert sound["between"][k]["grid_c"] == SN.whole_degrees(*sound["between_freezes"][k]["common_range"])
+    lo, hi = (fmt_num(x, 0, lang) for x in sound["between"]["production"]["grid_c"])
+    assert (f"de {lo} à {hi} °C" if lang == "fr" else f"from {lo} to {hi} °C") in part
+    assert ("on the grid (MW)" if lang == "en" else "sur la grille (MW)") in part
+    for gone in ("each degree colder", "chaque degré plus froid", "one forecast to the next",
+                 "d'une prévision à l'autre", "one-off shock", "choc isolé"):
+        assert gone not in part, gone
+    assert ("average slope" if lang == "en" else "pente moyenne") in part
+    carry = sound["lag_carry"][str(sound["last"])]
+    assert carry["lasting_per_1000_mw"] + carry["gap_per_1000_mw"] == pytest.approx(SN.CARRY_RISE_MW)
+    assert fmt_num(carry["carry_week_per_1000_mw"], 0, lang) + " MW" in part
+
+
 # --- 4. the lags ---------------------------------------------------------------------------------------------------
 
 def test_lags_that_are_not_positive_or_do_not_fade_are_findings():

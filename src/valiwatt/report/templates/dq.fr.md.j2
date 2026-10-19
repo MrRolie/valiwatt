@@ -83,8 +83,8 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 
 | Contrôle | Résultat | Mesure | Seuil |
 |---|---|---|---|
-| Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | aucun |
-| Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | aucun |
+| Fenêtre attendue, aucun enregistrement hors fenêtre | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} hors fenêtre | un seul enregistrement le fait échouer |
+| Chaque doublon correspond à une forme connue | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} non résolu | un seul doublon non résolu le fait échouer |
 | Valeurs dans des bornes physiques larges ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} à {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} à {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Part des heures utilisables | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 

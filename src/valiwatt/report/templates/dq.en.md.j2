@@ -83,8 +83,8 @@ A gate that fails stops the chain: no canonical data is written and the command 
 
 | Check | Result | Measure | Threshold |
 |---|---|---|---|
-| Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | none |
-| Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | none |
+| Expected window, no record outside it | {{ c['demand_window'].passed|verdict }} | {{ c['demand_window'].metrics.outside }} outside | a single record fails it |
+| Every duplicate matches a known shape | {{ c['demand_duplicates_resolved'].passed|verdict }} | {{ c['demand_duplicates_resolved'].metrics.unresolved }} unresolved | a single unresolved duplicate fails it |
 | Values within loose physical bounds ({{ window_years[0] }}–{{ window_years[1] }}) | {{ c['demand_bounds'].passed|verdict }} | {{ c['demand_bounds'].metrics.min_mw|num }} to {{ c['demand_bounds'].metrics.max_mw|num }} MW | {{ c['demand_bounds'].metrics.low_mw|num }} to {{ c['demand_bounds'].metrics.high_mw|num }} MW |
 | Share of usable hours | {{ c['demand_coverage'].passed|verdict }} | {{ c['demand_coverage'].metrics.usable_share|pct(2) }} | ≥ {{ c['demand_coverage'].metrics.threshold|pct(0) }} |
 

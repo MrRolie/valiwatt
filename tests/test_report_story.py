@@ -80,7 +80,8 @@ def test_the_story_renders_in_full_seven_beats_each_ending_with_its_link(state, 
     # each beat links to the sections that carry its rest, in paragraph order
     five = ["5", "10"] if ctx["sides"]["season"]["under"] else ["5"]
     # the cold beat ends with the soundness paragraph (section 3.1, added after the freeze)
-    expected = [["1"], ["2", "3"], ["3", "4", "3.1"], five, ["8"], ["7", "8"], ["9", "10"]]
+    # the honesty ledger cites section 8 for the freeze's order, section 9 for the gate
+    expected = [["1"], ["2", "3"], ["3", "4", "3.1"], five, ["8"], ["7", "8"], ["8", "9", "10"]]
     assert [[n for n, *_ in re.findall(LINK, body)] for body in beats(text).values()] == expected
 
 
@@ -456,3 +457,17 @@ def test_the_readme_points_to_the_story_first():
     readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
     story, full = readme.index("docs/report/story.fr.md"), readme.index("docs/report/validation.fr.md")
     assert story < full and "docs/report/story.en.md" in readme
+
+
+def test_the_readme_dates_the_frozen_model_s_data_as_the_committed_report_and_the_code_do():
+    """The README is hand-written: its date of the frozen model's last training day is held to the committed model card
+    (itself held to the runs by its stamp), and its embargo to the walk-forward's constant."""
+    from valiwatt.forecast.walkforward import EMBARGO_DAYS
+
+    root = Path(__file__).resolve().parents[1]
+    readme = root.joinpath("README.md").read_text(encoding="utf-8")
+    m = re.search(r"Its training data end on (\d{4}-\d{2}-\d{2})", readme)
+    assert m, "the README no longer dates the frozen model's data"
+    card = root.joinpath("docs/report/validation.fr.md").read_text(encoding="utf-8")
+    assert f"Figé sur les données jusqu'au {m.group(1)}" in card
+    assert f"the last {EMBARGO_DAYS} days before" in readme

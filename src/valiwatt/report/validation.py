@@ -791,7 +791,8 @@ def first_2024(entries: list[dict], tag: str, chain_entry: dict) -> dict | None:
     earliest entry of the freeze's first replayed year (`lineage.first_replays`, the walk that names the 2024 replay of
     record once 2025 has started). `chain_entry` is the ledger entry of the chain's own 2024 replay (`chain.replay`,
     deliberately: once 2025 has started, section 8 shows the replay of record through `rec24` instead): the same run,
-    or a rerun, with what its printed results and hashes change (`differences`, then HASHES). None for a v1 chain,
+    or a rerun, with what its printed results and hashes change (`differences`, then HASHES); and every other later
+    entry of that year (`others`), each with what it changes likewise. None for a v1 chain,
     and for a ledger that holds no entry of the freeze yet (`valiwatt report` appends the chain's replay before it
     renders). A ledger holding entries of the freeze but none of its first replayed year is refused: the report would
     not name the replay whose frozen artifacts judge 2025."""
@@ -804,9 +805,16 @@ def first_2024(entries: list[dict], tag: str, chain_entry: dict) -> dict | None:
         raise ReportRefused(f"the replay ledger holds no {tag} entry of its first replayed year: the report names v2's "
                             "first 2024 replay, whose frozen artifacts judge 2025")
     e = dict(first[0])
+
+    def changed(x: dict) -> list[str]:
+        return differences(x, e) + [k for k in HASHES if x.get(k) != e.get(k)]
+
     same = e["run_id"] == chain_entry["run_id"]
-    found = [] if same else differences(chain_entry, e) + [k for k in HASHES if chain_entry.get(k) != e.get(k)]
-    return {**e, "same": same, "chain": dict(chain_entry), "differences": found}
+    found = [] if same else changed(chain_entry)
+    # Every later entry of the first replayed year other than the chain's own, earliest first, with what its printed
+    # results and hashes change from the first's: the report names each rerun the ledger holds, not only the chain's.
+    others = [{**dict(x), "differences": changed(x)} for x in first[1:] if x["run_id"] != chain_entry["run_id"]]
+    return {**e, "same": same, "chain": dict(chain_entry), "differences": found, "others": others}
 
 
 def weekly_coverage(weeks: list[dict], nominal: float) -> dict:
@@ -1209,6 +1217,10 @@ def check_rendered(text: str, lang: str, ctx: dict, doc: str, status_line: str) 
                                 or (held is None and first24["run_id"] not in numbered_section(text, 9))):
         raise ReportRefused(f"v2's first 2024 replay {first24['run_id']}, whose frozen artifacts judge 2025, is not "
                             "named in section 8, and before any 2025 start in section 9")
+    unnamed = [x["run_id"] for x in (first24 or {}).get("others", []) if x["run_id"] not in numbered_section(text, 8)]
+    if unnamed:
+        raise ReportRefused(f"the v2 2024 reruns {', '.join(unnamed)} of the replay ledger are not named in section 8, "
+                            "which names every one")
     if ctx.get("store_only"):
         if say["store_only"] not in text:
             raise ReportRefused("a record read from the ledger without the sentence on what only the store holds")

@@ -79,8 +79,9 @@ A plain `uv run pytest` runs both sets.
 2023 rehearsal and the 2024 replay, the conceptual-soundness run (after the replay, deciding nothing), and the breaks.
 It renders the reports into `docs/report/` (French, the reference, and English), stamped with the IDs of the runs they
 come from and the hash of the code that made them; a test fails when the code no longer matches the stamp. It never
-replays 2025. Neither `data/` nor `mlruns/` is in git: anyone can regenerate every figure, and the runs, not the
-rendered files, are the source of truth.
+replays 2025. Neither `data/` nor `mlruns/` is in git: anyone can re-run the chain, and the runs, not the rendered
+files, are the source of truth. On a later vintage of the sources, the numbers may differ from the committed reports
+(see "A later vintage" below).
 
 Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --year Y`, `replay --year Y`,
 `soundness`, `breaks`, `ledger`, `report`. The 2024 and 2025 replays refuse to run until the monitoring rules are
@@ -91,13 +92,15 @@ frozen by the `rules-frozen-v2` tag; the 2023 rehearsal does not need it.
 it; these rest on the developers' conduct (plan section 11.3; report section 9): that nobody looks at 2025 demand on
 the portal before the test of record, nor computes on 2025 records outside the replay command; that a ruling entry
 comes only from the owner; and that the run store, which lists the starts that did not finish, is kept until the
-render. The 2025 test uses the model frozen on data up to the end of 2023, two years old by the end of 2025 by design:
-a level drift in demand accepted since then shows as bias (plan section 16). Afterwards: `valiwatt fetch --through
-2025` and `valiwatt dq --through 2025`, then `valiwatt replay --year 2025`, which runs only by that command and only
-behind its gate. The gate finds the start clean or refuses it with its evidence; no flag lifts a refusal, only the
-owner's ruling entry in `AGENTS.md` does, and `valiwatt evidence` produces what he rules on, deciding nothing. Every
-start is recorded, and the earliest is the test of record, unless it stopped before it finished and a ruling of the
-owner names the start that takes its place. Nothing of the 2025 vintage is rendered before the first 2025 start.
+render. The 2025 test uses the model frozen for 2024. Its training data end on 2023-12-24, as the report's model card
+gives it: the walk-forward embargo leaves out the last 7 days before 2024. The model is therefore two years old by the
+end of 2025, by design, and a level drift in demand accepted since then shows as bias (plan section 16).
+Afterwards: `valiwatt fetch --through 2025` and `valiwatt dq --through 2025`, then `valiwatt replay --year 2025`, which
+runs only by that command and only behind its gate. The gate finds the start clean or refuses it with its evidence; no
+flag lifts a refusal, only the owner's ruling entry in `AGENTS.md` does, and `valiwatt evidence` produces what he rules
+on, deciding nothing. Every start is recorded, and the earliest is the test of record, unless it stopped before it
+finished and a ruling of the owner names the start that takes its place. Nothing of the 2025 vintage is rendered before
+the first 2025 start.
 
 **A later vintage.** A clone that fetches after Hydro-Québec has published 2025 reads a later vintage of 2019–2024,
 whose records Hydro-Québec may have revised: its numbers may differ from the committed reports, and the 2025
@@ -109,15 +112,24 @@ what only the original store holds.
 
 The order "rules frozen, then v2's 2024 replay" rests on the annotated tag `rules-frozen-v2` (unsigned: its date was
 recorded by the author's own tools) and on the start times the replay ledger records. Nothing outside the repository
-anchors that order. What a clone can check, without data or a run store:
+anchors that order. The tags must be fetched; a clone of the public repository has them. What a clone can then
+check, without data or a run store:
 
 ```sh
-git cat-file -p rules-frozen-v2      # the tag: its commit, its tagger date, its message
+git cat-file -p rules-frozen-v2      # the tag: its commit, its tagger date (as seconds since 1970), its message
+TZ=UTC git for-each-ref --format='%(taggerdate:iso-strict-local)' refs/tags/rules-frozen-v2
+                                     # the tag's date, in UTC
+uv run python -c 'import json; e = json.load(open("docs/replay-ledger.json"))["replays"]; print(min(x["started_utc"] for x in e if x["freeze_tag"] == "rules-frozen-v2"))'
+                                     # the earliest start of a v2 replay in the ledger, in UTC: it comes after
+                                     # the tag's date
 uv run python -c 'from valiwatt.monitor.run import check_freeze; print(check_freeze())'
                                      # the rule files and dependencies equal the tag's; prints the rules hash
 git diff --stat rules-frozen-v2..HEAD -- src/valiwatt config
-                                     # what changed since: only the files that render, scan or dispatch
-                                     # (NOT_RULES in src/valiwatt/monitor/rules.py) may appear
+                                     # what changed since: only files outside the rules may appear (NOT_RULES
+                                     # in src/valiwatt/monitor/rules.py, whose comment says they render, scan
+                                     # or dispatch); among them, src/valiwatt/report/soundness.py, the
+                                     # conceptual-soundness analysis, computes after the freeze but decides
+                                     # nothing
 uv run pytest tests/test_tags.py tests/test_replay_ledger.py
                                      # the tags on their pinned commits, every v2 ledger entry tied to the tag's
                                      # commit and to the rules hash at the tag, and v2's 2024 entries to one model
@@ -151,18 +163,19 @@ The rules every part of the project follows.
 - **A check that cannot fail is not a check.** Every gate and monitor has a test that injects the fault it must catch:
   a duplicated hour, a misplaced record, an impossible value, a sensor outage, a day no forecast fed, a reading past
   the clock, a shifted demand level, intervals made too narrow, a moved freeze tag. `valiwatt breaks` runs them all as
-  a tracked run, and the report refuses to render if any break fails: each label says what its test checks, what the
-  check does with the fault it is given or, for some, what it must not do with an input it must leave alone, and a
-  control passes only by staying quiet. The monitor's breaks run on synthetic data: they show that a check can fire,
-  not that it would catch the same fault in real demand.
+  a tracked run, and the report refuses to render if any break fails. Each break's label says what its test checks.
+  Most labels say what the check does with the fault it is given. Some say what the check must not do with an input
+  it must leave alone. A control passes only by staying quiet. The monitor's breaks run on synthetic data: they show
+  that a check can fire, not that it would catch the same fault in real demand.
 - **Numbers come from runs.** The reports are rendered from tracked MLflow runs. Every measured value comes from a
-  run, and the design constants the report templates write in numerals are read from the runs or from the code:
-  `tests/test_report_constants.py` holds the templates' text, the strings their code prints and the numbers their
-  printed expressions write to the few numerals they may type (section, plan and standard references, version names,
-  the dates of the owner's rulings, facts of the calendar, the constants of a formula, the numbering of a list). Not
-  checked: numbers written out in words, such as the six model families of the preliminary trial; the numbers the
-  templates' logic compares against and the arguments of their filters; and the break labels the validation report's
-  section 11 prints, hand-written descriptions of the tests, numerals included.
+  run. The design constants the report templates write in numerals are read from the runs or from the code.
+  `tests/test_report_constants.py` checks this. It reads the templates' text, the strings their code prints and the
+  numbers their printed expressions write. It allows only a few kinds of numerals there: section, plan and standard
+  references, version names, the dates of the owner's rulings, facts of the calendar, the constants of a formula and
+  the numbering of a list. Some numbers are not checked. Numbers written out in words are not, such as the six model
+  families of the preliminary trial. Neither are the numbers the templates' logic compares against, nor the arguments
+  of their filters. Nor are the break labels in section 11 of the validation report: they are hand-written
+  descriptions of the tests, numerals included.
 - **Claims stay within the checks.** Each report ends with what it does not show.
 - **The monitor recommends; it never acts.** When a threshold trips, it writes a recommendation with its evidence;
   nothing retrains on its own.

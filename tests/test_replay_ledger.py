@@ -640,6 +640,52 @@ def test_v2s_first_2024_replay_is_named_and_a_rerun_held_to_its_printed_results_
     assert view["same"] and view["differences"] == []
 
 
+def test_every_later_v2_2024_entry_is_named_with_what_it_changes_from_the_first():
+    first = W.v2_entry("1" * 32, 2024, W.utc(0))
+    same = W.v2_entry("2" * 32, 2024, W.utc(1))
+    other = W.v2_entry("3" * 32, 2024, W.utc(2), mape=0.0399)
+    chain = W.v2_entry("4" * 32, 2024, W.utc(3))
+    view = RV.first_2024([chain, other, first, same], W.FREEZE_TAG, chain)
+    assert [x["run_id"] for x in view["others"]] == [same["run_id"], other["run_id"]]  # earliest first, chain's apart
+    assert [x["differences"] for x in view["others"]] == [[], ["mape"]]
+    assert RV.first_2024([first, chain], W.FREEZE_TAG, chain)["others"] == []
+    assert [x["run_id"] for x in RV.first_2024([first, same], W.FREEZE_TAG, first)["others"]] == [same["run_id"]]
+
+
+@pytest.mark.parametrize("lang", ("fr", "en"))
+def test_section_8_names_every_v2_2024_rerun_of_the_ledger_and_keeps_its_paragraphs_apart(lang):
+    ctx = RP.state("none")
+    chain = dict(ctx["first24"]["chain"])
+    mid = W.v2_entry("5" * 32, 2024, W.utc(1), mape=0.0399)
+    late = {**chain, "started_utc": W.utc(2)}
+    ctx["first24"] = RV.first_2024([RP.FIRST_2024, mid, late], W.FREEZE_TAG, late)
+    eight = RV.numbered_section(RP.render(ctx, lang), 8)
+    assert eight.count(f"`{mid['run_id']}`") == 2  # in the paragraph and in the table
+    assert ("differs from the first on MAPE" if lang == "en" else "diffère du premier sur l'EAMP") in eight
+    side = "**2024 side by side.**" if lang == "en" else "**2024 côte à côte.**"
+    assert f".\n\n{side}" in eight  # the first replay's paragraph ends before the table's heading
+
+
+@pytest.mark.parametrize("lang", ("fr", "en"))
+def test_once_2025_has_started_section_8_still_names_every_v2_2024_rerun_of_the_ledger(lang):
+    rerun = RP.rerun24_view()
+    chain = {k: rerun[k] for k in ledger.V2_FIELDS}
+    mid = W.v2_entry("5" * 32, 2024, W.utc(2), mape=0.0399)
+    ctx = RP.context(held_view=RP.clean_record(), rec24=RP.rec24_view(), rerun24=rerun,
+                     first24=RV.first_2024([RP.FIRST_2024, chain, mid], W.FREEZE_TAG, chain))
+    text = RP.render(ctx, lang)
+    eight = RV.numbered_section(text, 8)
+    assert eight.count(f"`{mid['run_id']}`") == 2  # in the paragraph and in the table
+    assert eight.count(f"`{RP.FIRST_2024['run_id']}`") == 2 and eight.count(f"`{rerun['run_id']}`") == 2  # once each
+    assert ("It differs from the record on MAPE" if lang == "en" else "Il diffère du rejeu de référence sur l'EAMP") \
+        in eight
+    side = "**2024 side by side.**" if lang == "en" else "**2024 côte à côte.**"
+    assert f".\n\n{side}" in eight
+    with pytest.raises(ReportRefused, match="not named in section 8"):
+        RV.check_rendered(text.replace(mid["run_id"], "0" * 32), lang, ctx, "validation",
+                          RV.status_sentence(environment(lang), ctx, lang))
+
+
 def test_a_v2_ledger_with_v2_entries_but_no_v2_2024_entry_is_refused():
     chain = W.v2_entry("2" * 32, 2024, W.utc(1))
     with pytest.raises(ReportRefused, match="first replayed year"):

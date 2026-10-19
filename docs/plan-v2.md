@@ -1031,3 +1031,13 @@ None yet.
   figures, and says the cold-peak advantage is an outcome of the choice. The README says what backs the freeze's order
   and how to check it from a clone, and tests tie each v2 ledger entry to the tag's commit and rules hash, and v2's
   2024 entries to one model hash and one frozen-artifact hash.
+- 2026-10-18, a second pass of report and README text after the freeze, deciding nothing; no rule file changed, and
+  the rules hash is the one the freeze tag carries. Section 3.1 names the 1 °C grid on which the two freezes' curves
+  are compared, says that its slopes are averages over their spans, and reads the lags as the model uses them: each
+  forecast reads observed demand, never an earlier forecast. Section 8 names every v2 2024 rerun the ledger holds,
+  before and after a 2025 start, and the report refuses to render when one is missing; it also says that the freeze's
+  order rests on an unsigned tag and recorded start times. Section 10 says that the day before's demand is taken as
+  known at the forecast's issue, with no publication delay. Section 12 repeats that the intervals carry no
+  finite-sample guarantee. The story states its limits and the 2024 winter weeks below the nominal. The README dates
+  the frozen model's data as the report does, a test holds that date to the committed report, and the README shows
+  how to set the tag's date beside the ledger's first v2 start.

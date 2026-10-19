@@ -19,8 +19,9 @@ The measures (this module is not a rule file: monitor/rules.py NOT_RULES; it onl
    settings on each fold's training rows (`fold_fits`, proven to reproduce validation's out-of-sample forecasts to
    CONTROL_MW on every hour, `control`, or the run stops), each hour's spread, and the folds and freezes whose slope
    leaves it by more than FOLD_FACTOR times its width.
-4. The lags, read: both freezes', their spread across the folds, their sum (below 1: a one-off shock fades), and the
-   measured difference between the cold slopes of the two curve kinds.
+4. The lags, read: both freezes', their spread across the folds, their sum (below 1: a lasting shift in observed
+   demand passes into the forecast only in part; each forecast reads observed demand, never an earlier forecast), and
+   the measured difference between the cold slopes of the two curve kinds.
 5. Sensitivity. (a) Input: the frozen 2024 GAM's forecast with the temperature forecast moved by -SHIFT_C and +SHIFT_C
    on its own training rows of 2023 (in sample), mean and by season, in MW and in %, held to its curves: an additive
    model's forecast moves by exactly its curve's difference, to CONSISTENCY_MW. (b) Parameters: the walk-forward MAPE on
@@ -205,14 +206,21 @@ def not_positive(rows: list[dict]) -> list[dict]:
             if k.startswith("cold ") and r[k] is not None and r[k] <= 0]
 
 
+def whole_degrees(lo: float, hi: float) -> list[float]:
+    """The first and last whole degree inside [lo, hi]: the ends of the 1 °C grid the curves are compared on."""
+    return [float(np.ceil(lo)), float(np.floor(hi))]
+
+
 def freeze_difference(c23: pd.DataFrame, c24: pd.DataFrame, range23, range24) -> dict:
-    """Each hour's curve difference between the two freezes (2024 minus 2023) over their common training range, its
-    largest absolute value in MW and where, and the change of the cold slope in percent of 2023's."""
+    """Each hour's curve difference between the two freezes (2024 minus 2023) on the whole degrees of their common
+    training range (not at its fractional ends), its largest absolute value in MW and where, and the change of the cold
+    slope in percent of 2023's."""
     lo, hi = max(range23[0], range24[0]), min(range23[1], range24[1])
+    first, last = whole_degrees(lo, hi)
     a, b = _by_hour(c23), _by_hour(c24)
     rows = []
     for h in sorted(a):
-        grid = [x for x in a[h].index if np.ceil(lo) <= x <= np.floor(hi) and x in b[h].index]
+        grid = [x for x in a[h].index if first <= x <= last and x in b[h].index]
         d = (b[h][grid] - a[h][grid]).abs()
         s23, s24 = slope(a[h], *COLD_SPANS[0], "cold"), slope(b[h], *COLD_SPANS[0], "cold")
         rows.append({"hour": h, "max_abs_mw": float(d.max()), "at_c": float(d.idxmax()),
@@ -367,8 +375,8 @@ CARRY_RISE_MW = 1000
 
 def lag_reading(lags: dict, folds: list[dict]) -> dict:
     """Each freeze's lags in MW per MW, their sum, what a 1,000 MW rise in yesterday's demand carries into today's
-    forecast, and the findings: a lag that is not positive, or lags whose sum is not below 1 (a one-off shock would not
-    fade)."""
+    forecast, and the findings: a lag that is not positive, or lags whose sum is not below 1 (a lasting shift in observed
+    demand would pass into the forecast in full or more). The key `fades` keeps the stored runs' name for that test."""
     out = {}
     for year, lag in lags.items():
         total = lag["lag24"] + lag["lag168"]
@@ -727,11 +735,17 @@ def view(results: dict, run_id: str) -> dict:
             for b in results["shape"][y][k]:
                 by_hour[y][k].setdefault(b["hour"], []).append(b)
     flat = results["flattening"]
+    # The largest difference is taken on the whole degrees of the common training range only (freeze_difference):
+    # the report names that grid, never the range's fractional ends, where the curves are not compared.
     between = {k: {"max_abs_mw": max(r["max_abs_mw"] for r in d["rows"]),
+                   "grid_c": whole_degrees(*d["common_range"]),
                    "change_pct": stats(r["slope_change_pct"] for r in d["rows"])}
                for k, d in results["between_freezes"].items()}
+    lags = {y: {**x, "carry_week_per_1000_mw": CARRY_RISE_MW * x["lag168"],
+                "lasting_per_1000_mw": CARRY_RISE_MW * x["sum"], "gap_per_1000_mw": CARRY_RISE_MW * (1 - x["sum"])}
+            for y, x in results["lags"]["freezes"].items()}
     return {**results, "years": [int(y) for y in years], "last": int(years[-1]), "first": int(years[0]),
             "cold": cold, "cold2": f"cold {span_key(*COLD_SPANS[1])}", "warm": warm, "reading": reading,
-            "breaks_by_hour": by_hour, "between": between,
+            "breaks_by_hour": by_hour, "between": between, "lag_carry": lags,
             "flat": {"difference": stats(r["difference"] for r in flat), "ratio": stats(r["ratio"] for r in flat)},
             "public": PUBLIC_FIGURE}
