@@ -1,6 +1,6 @@
 # Validating and monitoring a forecast of Québec's electricity demand, v2
 
-_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `c9d98aaa957b`, code hash `53b698330073`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs, and every design constant from the runs or from the code that produced them; none is typed by hand. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
+_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `908535a0f5a6`, code hash `dd449fab8c3c`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs. The design constants its templates write in numerals are read from the runs or from the code that produced them: a test holds the templates' text, the strings their code prints and the numbers their printed expressions write to the few numerals they may type: section, plan and standard references, version names, the dates of the owner's rulings, facts of the calendar, the constants of a formula and the numbering of a list. The break labels of section 11 are hand-written descriptions of the tests, numerals included, and that test does not read them. "The developers" are the AI agents that built this project and the owner who directs them. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -18,7 +18,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 
 - **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending.
 - Over the 34,997 common hours of 2020–2023 (_in sample for the choice of family and input_), the mean absolute percentage error is 2.83% for v2, 3.48% for v1's form on the same forecast and 4.42% for v1 as shipped. These years served to choose the family and the input: v2's advantage there is biased upward by that choice, and it does not prove v2 better (section 3).
-- Its 90% intervals held demand 90.3% of the time from 2021-01 to 2023-12, and the 95% CI of that coverage contains the nominal. They hold it less often than promised in these groups: winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). These are v2's intervals; coverage is never a criterion of the decision rule.
+- Its 90% intervals held demand 90.3% of the time from 2021-01 to 2023-12, and the 95% CI of that coverage contains the nominal. They hold it less often than the nominal in these groups: winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). These are v2's intervals; coverage is never a criterion of the decision rule.
 - At the 5 busiest hours of 2019–2023, all in 2023-02, demand fell outside the interval 3 times out of 5, always above it. Reported, never judged.
 - 2024 (_seen by the developers_): MAPE 2.58%, coverage 92.2%, no recommendation; verdicts: v2 against v1 as shipped, "better"; v2 against v1's form, "better". A success on a year already seen is weak evidence: it supports no claim; v2 goes to 2025 as frozen (section 8).
 - 2025: pending; the test of record will be the first 2025 replay started under `rules-frozen-v2`, unless that start stops before it finishes and a dated ruling of the owner names the start that takes its place (section 9; plan section 11.3.5).
@@ -36,7 +36,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 | **Model** | An additive model of the GAM family, fitted by penalized least squares: one temperature curve per local hour (splines, 10 knots at the quantiles of the training rows, degree 3, continued as a straight line outside the training range), v1's 72 constants per hour and day type, the demand of the day before and of the week before; standardized, then ridge, alpha 1.0. Frozen on the data up to 2023-12-24; hash `7aadbc5866c6`, that of this chain's frozen model, from which this date, the interval below and the curves of section 3 come. Compared with v1 as shipped and with v1's form on the same forecast, which never recommend anything. |
 | **Interval** | Forecast × (1 ± 6.22%). The half-width is a quantile of the 8,729 out-of-sample relative errors from 2023-01 to 2023-12 already scored when the frozen model is fitted: the form of a split conformal interval, without its finite-sample guarantee. The measured coverage is the evidence (sections 5 and 8). |
 | **Validation error** | MAPE 2.83% [2.69%, 2.95%] over its hours of 2020–2023 (_in sample for the choice of family and input_), against 7.81% for the naive baseline (section 3). |
-| **2024 replay** | _seen by the developers_: MAPE 2.58%, coverage 92.2%; no recommendation; verdicts "better" against v1 as shipped and "better" against v1's form (section 8). |
+| **2024 replay** | _seen by the developers_: MAPE 2.58%, coverage 92.2%; no recommendation, beside what the rules can miss that year: a sustained gap of ±2% between demand and forecast yielded "retrain" within 8 weeks at 4 of 8 cases, and intervals cut to × 0.5 of their half-width yielded "recalibrate" at 3 of 4 starts, and milder cuts at 1 of 4 at most; verdicts "better" against v1 as shipped and "better" against v1's form (section 8). |
 | **2025** | Pending (section 9). |
 | **Weather caveat** | The temperature forecast is available, by assumption, 2 hours after its issue time; every result that depends on it rests on that assumption (section 2). The observed temperature of the target hour is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 10. |
@@ -59,7 +59,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 
 **The source.** The temperature is the NOAA National Blend of Models (NBM), its NBS product for station CYUL (Montréal-Trudeau, the airport of v1's primary station), as archived by the Iowa Environmental Mesonet: points every three hours, in degrees Fahrenheit, which this project interpolates to the hour and converts to degrees Celsius. The files are downloaded by script, never committed.
 
-**The feeding rule.** A forecast is **available** 2 hours after its issue time: this is an **assumption**, since the archive records no arrival time, and every result that depends on the forecast rests on it. For day D, among the 12 freshest forecasts available at D's origin (D 05:00 UTC), the freshest whose own points bracket each of D's 24 hours is taken, each of those points finite and inside the data-quality bounds. Interpolation is linear in time, inside a single forecast; two forecasts are never mixed. Each training day carries the forecast issued for it by the same rule, never an observation.
+**The feeding rule.** A forecast is **available** 2 hours after its issue time: this is an **assumption**, since the archive records no arrival time, and every result that depends on the forecast rests on it. It rests on the delivery times NOAA's cloud bucket shows for a related product, measured outside the tracked runs (plan section 3.2 gives the counts); those times also cover 2024, and the sensitivity to a longer margin below runs on the validation years only, not on the 2024 replay. For day D, among the 12 freshest forecasts available at D's origin (D 05:00 UTC), the freshest whose own points bracket each of D's 24 hours is taken, each of those points finite and inside the data-quality bounds. Interpolation is linear in time, inside a single forecast; two forecasts are never mixed. Each training day carries the forecast issued for it by the same rule, never an observation.
 
 **On 2019–2023.** 1,826 days fed out of 1,826; no day was left without a forecast. Ranks of the forecast used (0: the freshest): rank 0, 1,826 days. Hour of the forecast used, by year: 2019: 0 h UTC (364 days), 12 h UTC (1 days); 2020: 0 h UTC (55 days), 1 h UTC (310 days), 7 h UTC (1 days); 2021: 1 h UTC (364 days), 19 h UTC (1 days); 2022: 1 h UTC (365 days); 2023: 1 h UTC (365 days).
 
@@ -90,7 +90,7 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 
 **The sensitivity to the availability margin.** Validated also with forecasts available 6 hours after their issue, which takes from each day its own early-morning forecast, the GAM changes its MAPE by +0.02 pt [+0.01 pt, +0.02 pt] (6 hours minus 2, over 35,036 hours): this is what an availability of 6 hours instead of 2 would cost; a longer delay is not measured. This variant is labelled and chooses nothing.
 
-**31 December 2023.** Its last two hours need the 2024-01-01 06:00 UTC point of a forecast issued on 31 December and available before that day's origin: the information is 2023's, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of 2020–2023 hold 24 more than the trial's.
+**The last day of 2023.** Its last two hours need a point valid early on the first day of 2024, of a forecast issued that last day and available before its origin: the information is 2023's, and that day is forecast like every other. The preliminary trial that served the choice cut on valid time and left that day out: v2's hours of 2020–2023 hold that day's hours, which the trial's lack.
 
 **The forecast leads.** The longest lead of a forecast point, by issue year: 2019, 66 h; 2020, 72 h; 2021, 71 h; 2022, 71 h; 2023, 71 h; 2024, 71 h. The argument of plan section 9.2 (a bad forecast spoils at most two consecutive days) holds as long as no point reaches 75 hours. No year reaches it. The NBM's model changes over the years are not tracked: the forecast series is not homogeneous, and the drift monitor watches it.
 
@@ -227,7 +227,7 @@ Cold tail (_in sample for the choice of family and input_): 1,468 common hours b
 
 ### 3.1 Conceptual soundness, added after the freeze
 
-_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for 2023 and for 2024 and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the 2025 verdict stays as the plan pre-registers it. Run `6af4421e1e8f466a845118761947a708`._
+_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for 2023 and for 2024 and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the 2025 verdict stays as the plan pre-registers it. Run `67886e32a5c24dc1b7a5c9b362e211db`._
 
 The settings were fixed before these measures were computed on the real runs: the heating base, 18 °C, is v1's, fixed before any v2 curve existed and the temperature at which every curve is zero (a base read off these curves would fit the check to what it checks); the tolerance is 1 MW per 1 °C step, one unit of the whole MW the report prints the curves in, so that the check is no finer than the page that states it; a fold is flagged when its slope leaves the folds' 5th to 95th percentile band by more than 0.5 times its width (10% of the folds lie outside the band by construction, so a flag needs a distance past its edge, and one measured in the band's own width holds at every hour whatever its spread). The developers had, however, already looked at the curves table of the model frozen for 2024 before fixing them.
 
@@ -663,13 +663,17 @@ No statistic of a touched week lies beyond the mean of its untouched days, as th
 
 _Every number in this section is of 2024, seen by the developers: seen through v1 and its departure before v2 was chosen, it proves nothing. A success there is weak evidence; a verdict that is not "better" there is a finding against v2. Whatever it shows, v2 goes to 2025 as frozen._
 
+The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 tuned them on its 2023 rehearsal, and v1's departure, which changed how the thresholds are calibrated and how design code sees each decision time, came after v1's 2024 results had been seen. v2 re-derived what its new model and input touch (plan section 9.3): every threshold and alarm level, and the intervals' half-width, from v2's own validation weeks; temperature drift, which reads the issued weather forecast where v1 read the station's observation; forecast drift, which reads v2's forecasts; and the day-level quality check, which also fails a day with no forecast in view. The rules v2 froze before its 2024 replay therefore include changes made after 2024 had been seen through v1.
+
+**v2's first 2024 replay** is `18daf1fc40a24300aeaba5e4f14d4107`, started on 2026-10-17T23:11:15.047Z (code `521febded2db`, rules `998b1e492ebc`, freeze `825b7bd134a8`), named from its entry in the replay ledger: its frozen artifacts, hash `eb412529206f`, are those 2025 will be judged on. This section's figures come from this chain's replay, `4284bb3d13dd43d0a600882142f448bd`, started on 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`): a **rerun** of the first; it does not replace it, and 2025 will be judged on the first's frozen artifacts; its printed results are the same as the first's: MAPE, coverage, recommendations, verdicts, the frozen model's hash and the hash of the frozen artifacts that judged it.
 **2024 side by side.** v1's replays come from their entries in the replay ledger: recorded, not re-run here.
 
 | Replay | Label | MAPE | Coverage | Recommendations |
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (frozen first), recorded in the ledger | — | 4.23% | 89.4% | none |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (after its departure), recorded in the ledger | — | 4.23% | 89.4% | none |
-| v2, `fac1d0f3813b4499b10e4622c8fc4997` | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, first, `18daf1fc40a24300aeaba5e4f14d4107`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, rerun, `4284bb3d13dd43d0a600882142f448bd` | _seen by the developers_ | 2.58% | 92.2% | none |
 
 **v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `9f87c124e34344a8a65e4a7679c3c458`: MAPE 4.23% against 4.23% (relative gap 0.0e+00), coverage 89.39% against 89.43% (−0.04 pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
@@ -768,6 +772,8 @@ The clock steps hour by hour from 2024-01-01 to 2024-12-31; every read, temperat
 | Days failing data quality | 0 of 366 |
 | Weeks judged | 52 of 53 |
 
+**Coverage on 2024.** Only the overall coverage is measured with an interval on 2024: no coverage by season, hour block or load decile is computed on it, as section 5 does on 2020–2023. By judged week of 2024, coverage fell below the 90% nominal in 17 of 52 weeks: winter, 10 of 13; spring, 5 of 13; summer, 0 of 13; fall, 2 of 13 (the weekly figure below); these weekly shares carry no interval and decide nothing.
+
 Hours not forecast, by missing input (an hour can lack several): the week before's demand unavailable (2), the day before's demand unavailable (2).
 
 **Recommendations.**
@@ -817,12 +823,16 @@ On 2024, a sustained gap of ±4% or more between demand and forecast yielded "re
 
 No one-day shock gave an alarm on 2024: a bad day spoils at most two days of a week, which the trim sets aside; it can only complete failing days the weeks already held.
 
+**A level shift in demand on 2024**, from the first judged week of January, April, July and October, for 10 weeks (weeks before "retrain"; —: nothing within 10 weeks), measured as in section 7:
+
 | Start | −10% | −5% | +5% | +10% | 
 |---|---|---|---|---|
 | 2024-01-01 (winter) | 3 | 6 | 3 | 2 | 
 | 2024-04-01 (spring) | 2 | 5 | 3 | 2 | 
 | 2024-07-01 (summer) | 2 | 2 | 2 | 2 | 
 | 2024-10-07 (fall) | 2 | 2 | 8 | 2 | 
+
+**What the echo exclusion costs on 2024** (a random daily error over 8 weeks), measured as in section 7:
 
 | Daily standard deviation | Trials | "Retrain" with the exclusion | without it | Suppressed by the exclusion | Delayed |
 |---|---|---|---|---|---|
@@ -862,14 +872,20 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 
 ## 9. 2025, the test of record
 
-**Pending.** No 2025 replay has started. The test of record will be the first 2025 replay started under `rules-frozen-v2`, on exactly the artifacts frozen for v2's first 2024 replay, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What 2025 will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year 2025 is rendered before that first start.
+**Pending.** No 2025 replay has started. The test of record will be the first 2025 replay started under `rules-frozen-v2`, on exactly the artifacts frozen for v2's first 2024 replay, `18daf1fc40a24300aeaba5e4f14d4107`, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What 2025 will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year 2025 is rendered before that first start.
+
+**What the 2025 gate cannot enforce** (plan section 11.3): that nobody looks at 2025 demand on Hydro-Québec's portal before the test of record, nor in diagnosing a refused fetch, a failed data-quality run or a stopped start; that nobody computes on 2025 records outside the replay command, in an interpreter say, which leaves no started run; that a ruling entry is committed only from the owner's own decision, since the gate cannot tell who wrote it; and that the run store, which lists the starts that did not finish, is kept until the render, since it is not committed. These rest on the developers' conduct, not on code.
+
+**The model's age.** 2025 is judged by the model frozen on the data up to 2023-12-24, never refitted on 2024: by design, a level drift in demand accepted since then shows in 2025 as bias (plan section 16). The comparisons stay fair, v1 as shipped and v1's form being frozen on the same data.
 
 ## 10. Limitations
 
 - **The choice and 2024.** v2's family and input were chosen on 2020–2023; 2024 had been seen through v1. Neither proves v2 better: only a clean 2025 test of record can (section 9).
-- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed (2 hours after issue), and the sensitivity of section 2 measures what an availability of 6 hours instead of 2 would cost; a longer delay is not measured. The NBM's model changes over the years without being tracked.
+- **The availability assumption.** The archive records no arrival time for the forecasts: their availability is assumed (2 hours after issue), and the sensitivity of section 2 measures what an availability of 6 hours instead of 2 would cost; a longer delay is not measured. The assumption rests on a related NOAA product's delivery times, measured outside the tracked runs (section 2), and the sensitivity ran on the validation years only. The NBM's model changes over the years without being tracked.
 - **One forecast for a province.** A single forecast point stands for Québec's weather, as a single station did in v1.
 - **Conditional coverage.** v2's interval under-covers winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). The coverage thresholds of winter are drawn from weeks that already had this under-coverage: the monitor does not flag it as a degradation. Conversely, the coverage threshold of summer (91.0%) exceeds the 90% nominal: a week covered beyond nominal can be flagged low there.
+- **Detection power** (measured on 2023, the rehearsal year, and on 2024, seen by the developers, at a few fixed starts). On 2023, a sustained gap of ±4% or more between demand and forecast yielded "retrain" within 8 weeks at each of the 4 starts; a gap of +2% did at 2 of 4 starts, and of −2% at 2 of 4. On 2023, intervals cut to × 0.5 of their half-width yielded "recalibrate" at 2 of 4 starts; milder cuts (up to × 0.9) at most at 1 of 4 starts. On 2024, a sustained gap of ±4% or more between demand and forecast yielded "retrain" within 8 weeks at each of the 4 starts; a gap of +2% did at 2 of 4 starts, and of −2% at 2 of 4. On 2024, intervals cut to × 0.5 of their half-width yielded "recalibrate" at 3 of 4 starts; milder cuts (up to × 0.9) at most at 1 of 4 starts. A replay without a recommendation is therefore no proof that nothing changed (sections 7 and 8).
+- **Coverage on 2024.** Only the overall coverage is measured with an interval on 2024; whether section 5's conditional coverage held there is not measured. By judged week of 2024, coverage fell below the 90% nominal in 17 of 52 weeks: winter, 10 of 13; spring, 5 of 13; summer, 0 of 13; fall, 2 of 13 (section 8).
 - **Extrapolation.** Below the training range, the curves are straight lines; the decision rule's cold tail and section 3's count of hours outside the range measure what that costs.
 - **Episodes of several days** (measured on 2023, the rehearsal year, and on 2024, seen by the developers). An episode of several days can give a false alarm with nothing wrong in the model: on 2023, "retrain" at up to 56.7% of starts (7 days at × 0.70) and at most 34.9% for an episode of ±15%, no "recalibrate"; on 2024, "retrain" at up to 51.2% of starts (7 days at × 0.70) and at most 27.9% for an episode of ±15%, no "recalibrate" (sections 7 and 8).
 - **Level shift** (measured on 2023, the rehearsal year, and on 2024, seen by the developers). On 2023, a sustained 10% rise in demand yielded "retrain" within 10 weeks at every start. On 2024, a sustained 10% rise in demand yielded "retrain" within 10 weeks at every start. The power tables measure a gap between forecast and demand, not a level shift.
@@ -881,488 +897,488 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 
 ## 11. The breaks, on synthetic data
 
-Each gate and each monitor has a test that injects the fault it must catch; a control injects nothing and must stay quiet. The `breaks` run runs them all; the report refuses to be generated if any failed. No break reads the real data: the quality gates, the guards and the render are tested on small fabricated data, and the clock and the monitors in a synthetic world (`tests/replay_world.py`), with a drift alarm level set by hand at 1.0. That a break fires in that world shows the check can fire, not that it would see the same fault in real demand.
+Each gate and each monitor has a test that injects the fault it must catch; a control injects nothing and must stay quiet. Each label says what its test checks: most say what the check does with the fault it is given, and some say what it must not do with an input it must leave alone (a one-day shock, an echo, a week too short to judge). The result is "passed" when the test found what its label says, "stayed quiet" for a control, and "FAILED" otherwise. The `breaks` run runs them all; the report refuses to be generated if any failed. No break reads the real data: the quality gates, the guards and the render are tested on small fabricated data, and the clock and the monitors in a synthetic world (`tests/replay_world.py`), with a drift alarm level set by hand at 1.0. That a break fires in that world shows the check can fire, not that it would see the same fault in real demand.
 
 | Control | Break | Result |
 |---|---|---|
-| Data-quality gates | A duplicate of no known shape fails the gate | fired |
-| Data-quality gates | An ambiguous misplaced record is not moved and fails the gate | fired |
-| Data-quality gates | A record outside the window fails the gate | fired |
-| Data-quality gates | A demand value out of bounds fails the gate | fired |
-| Data-quality gates | Coverage below its threshold fails the gate | fired |
-| Data-quality gates | Duplicate weather rows fail the index gate | fired |
-| Data-quality gates | An impossible temperature fails the bounds gate | fired |
-| Data-quality gates | A sensor outage fails the coverage gate | fired |
-| Data-quality gates | An outage shared by several stations fails the panel gate | fired |
-| Data-quality gates | A failing gate stops the chain: no canonical data is written | fired |
-| Data-quality gates | Raw files that no longer match their manifest are refused | fired |
-| Data-quality gates | A window month missing from a station's manifest is refused before any of that station's files is hashed | fired |
+| Data-quality gates | A duplicate of no known shape fails the gate | passed |
+| Data-quality gates | An ambiguous misplaced record is not moved and fails the gate | passed |
+| Data-quality gates | A record outside the window fails the gate | passed |
+| Data-quality gates | A demand value out of bounds fails the gate | passed |
+| Data-quality gates | Coverage below its threshold fails the gate | passed |
+| Data-quality gates | Duplicate weather rows fail the index gate | passed |
+| Data-quality gates | An impossible temperature fails the bounds gate | passed |
+| Data-quality gates | A sensor outage fails the coverage gate | passed |
+| Data-quality gates | An outage shared by several stations fails the panel gate | passed |
+| Data-quality gates | A failing gate stops the chain: no canonical data is written | passed |
+| Data-quality gates | Raw files that no longer match their manifest are refused | passed |
+| Data-quality gates | A window month missing from a station's manifest is refused before any of that station's files is hashed | passed |
 | Data-quality gates | Control: a manifest listing every month of the window passes, and its months outside the window are dropped | stayed quiet |
-| Data-quality gates | A record off the hourly grid fails the window gate, with its timestamp | fired |
-| Data-quality gates | An out-of-bounds value inside a fall-back pair still fails the bounds gate | fired |
-| Data-quality gates | An out-of-bounds value is set aside before a repair reads it | fired |
-| Data-quality gates | A misplaced record that fits two empty hours equally well is not moved and fails the gate | fired |
-| Data-quality gates | An out-of-bounds duplicate is never moved into a usable hour, nor through the replay | fired |
-| Data-quality gates | An out-of-bounds value that reaches a usable hour is marked out of bounds | fired |
-| Data-quality gates | An out-of-bounds value makes no spike next to it | fired |
-| No lookahead | An input read after the forecast's origin is refused | fired |
-| No lookahead | A training row inside the embargo is refused | fired |
-| No lookahead | A 2024 row is refused by design code | fired |
-| No lookahead | Validation refuses a 2024 row | fired |
-| No lookahead | A drift reference holding replayed days is refused | fired |
-| No lookahead | Thresholds built on the replayed year are refused | fired |
-| No lookahead | A replay's drift thresholds ignore the replayed year | fired |
-| No lookahead | The frozen model refuses training rows inside its embargo | fired |
-| No lookahead | The day-level data-quality verdict used for calibration reads no record after the last day | fired |
-| No lookahead | An origin moved earlier than the 24-hour lag allows is refused | fired |
-| No lookahead | A value repaired from a later record reaches no lag and no training before that record arrives | fired |
-| No lookahead | A half-width fixed when its model is fitted is calibrated only on the days already scored then, not on a value repaired an hour later | fired |
-| No lookahead | Out-of-sample rows that do not say when they were scored calibrate no half-width | fired |
-| Replay clock | Records corrupted after a cut change nothing judged before it | fired |
-| Replay clock | A record that arrives a week late is not used before it arrives | fired |
-| Replay clock | Reading past the clock, or turning it back, is refused | fired |
-| Replay clock | A forecast issued after its origin is refused | fired |
-| Replay clock | A day scored before the hour after its last hour is refused | fired |
-| Replay clock | A forecast built on a row of another origin is refused | fired |
-| Replay clock | A forecast built on a row of another day is refused | fired |
+| Data-quality gates | A record off the hourly grid fails the window gate, with its timestamp | passed |
+| Data-quality gates | An out-of-bounds value inside a fall-back pair still fails the bounds gate | passed |
+| Data-quality gates | An out-of-bounds value is set aside before a repair reads it | passed |
+| Data-quality gates | A misplaced record that fits two empty hours equally well is not moved and fails the gate | passed |
+| Data-quality gates | An out-of-bounds duplicate is never moved into a usable hour, nor through the replay | passed |
+| Data-quality gates | An out-of-bounds value that reaches a usable hour is marked out of bounds | passed |
+| Data-quality gates | An out-of-bounds value makes no spike next to it | passed |
+| No lookahead | An input read after the forecast's origin is refused | passed |
+| No lookahead | A training row inside the embargo is refused | passed |
+| No lookahead | A 2024 row is refused by design code | passed |
+| No lookahead | Validation refuses a 2024 row | passed |
+| No lookahead | A drift reference holding replayed days is refused | passed |
+| No lookahead | Thresholds built on the replayed year are refused | passed |
+| No lookahead | A replay's drift thresholds ignore the replayed year | passed |
+| No lookahead | The frozen model refuses training rows inside its embargo | passed |
+| No lookahead | The day-level data-quality verdict used for calibration reads no record after the last day | passed |
+| No lookahead | An origin moved earlier than the 24-hour lag allows is refused | passed |
+| No lookahead | A value repaired from a later record reaches no lag and no training before that record arrives | passed |
+| No lookahead | A half-width fixed when its model is fitted is calibrated only on the days already scored then, not on a value repaired an hour later | passed |
+| No lookahead | Out-of-sample rows that do not say when they were scored calibrate no half-width | passed |
+| Replay clock | Records corrupted after a cut change nothing judged before it | passed |
+| Replay clock | A record that arrives a week late is not used before it arrives | passed |
+| Replay clock | Reading past the clock, or turning it back, is refused | passed |
+| Replay clock | A forecast issued after its origin is refused | passed |
+| Replay clock | A day scored before the hour after its last hour is refused | passed |
+| Replay clock | A forecast built on a row of another origin is refused | passed |
+| Replay clock | A forecast built on a row of another day is refused | passed |
 | Monitors and decision table | Control: clean data yield no recommendation | stayed quiet |
-| Monitors and decision table | The seasonal reference stays quiet on clean data and fires on a shift | fired |
-| Monitors and decision table | Temperature drift with performance inside its thresholds: investigate the data | fired |
-| Monitors and decision table | A sensor gap fails the day's data quality and suspends the performance rules | fired |
-| Monitors and decision table | A missing and a duplicated demand record fail their day | fired |
-| Monitors and decision table | A low week (−30%) and its echo through the one-week lag do not yield retrain | fired |
-| Monitors and decision table | A high week (+30%) and its echo, MAPE high in both weeks, do not yield retrain | fired |
-| Monitors and decision table | MAPE high two weeks with bias on opposite sides is an echo; without the flip it fires | fired |
-| Monitors and decision table | Bias beyond the same side three weeks running yields retrain; an echo or an unjudged week breaks it | fired |
-| Monitors and decision table | The power measure finds a sustained 8% gap or intervals cut to 20%, and nothing without a change | fired |
-| Monitors and decision table | The level-shift measure finds a 12% rise in demand, and nothing without a change | fired |
-| Monitors and decision table | The episode measure: a one-day shock brings no false alarm, and every start is counted | fired |
-| Monitors and decision table | The episode measure finds the false alarm of five days across a Monday, and the echo the exclusion keeps out | fired |
-| Monitors and decision table | A false alarm resting on a week already out of band is called assisted; an alarm the year already had is not counted | fired |
-| Monitors and decision table | The echo exclusion only ever removes or delays retrain | fired |
-| Monitors and decision table | Two altered days never lift the trimmed statistic past the untouched days (2,000 draws) | fired |
-| Monitors and decision table | Partial weeks have no drift statistic | fired |
-| Monitors and decision table | The last day is judged at the end of the data, and says so | fired |
-| Monitors and decision table | Duplicated temperatures and an off-grid demand record fail their day | fired |
-| Monitors and decision table | A shift in the demand level: retrain | fired |
-| Monitors and decision table | Intervals made too narrow: recalibrate | fired |
-| Monitors and decision table | Two rules at once: one recommendation with both pieces of evidence | fired |
-| Monitors and decision table | A one-day shock (Saturday) does not yield retrain | fired |
-| Monitors and decision table | A one-day shock (Sunday) does not yield retrain | fired |
-| Monitors and decision table | A week with too few scored hours is not judged | fired |
-| Monitors and decision table | A week with too few full days has no trimmed statistic and is never broadly out of band | fired |
-| Monitors and decision table | A partial week, a week with a failed day and a week with too few hours are not judged, each condition alone | fired |
-| Monitors and decision table | A week cut by the end of the period is not judged, even with enough hours | fired |
-| Monitors and decision table | The day-level data-quality verdict the calibration reads is, day by day, the replay's own, on seven injected faults and the clean days | fired |
-| Monitors and decision table | A week holding a day the replay would fail does not calibrate the thresholds, and why is logged | fired |
-| Monitors and decision table | A week cut by the calibration years is set aside; a day without a data-quality verdict makes the thresholds refuse | fired |
-| The monitor never acts | A replay that changes the model or its intervals fails | fired |
-| Frozen rules | Without the freeze tag, the 2024 replay is refused | fired |
-| Frozen rules | A rule file edited after the freeze is refused and named | fired |
-| Frozen rules | A rule file added after the freeze is refused | fired |
-| Frozen rules | A moved freeze tag is refused unless recorded as a departure | fired |
-| Frozen rules | The replay called directly on the held-out year passes the freeze gate: without the tag, with an edited rule file or under a moved tag, it is refused | fired |
-| Frozen rules | The committed replay ledger shows a moved tag even with no MLflow store: refused unless a departure is recorded | fired |
-| Frozen rules | A replay ledger that cannot be parsed is refused | fired |
-| Frozen rules | A replay ledger with no list of replays is refused | fired |
-| Frozen rules | A ledger entry without a freeze commit is refused | fired |
-| Frozen rules | Earlier replays are found even when deleted | fired |
-| Frozen rules | Raw files other than the ones checked are refused | fired |
-| Frozen rules | Design code refuses a raw demand file other than the one checked | fired |
-| Frozen rules | A registered model that changed during the replay fails it | fired |
-| Frozen rules | A frozen model from another validation run, year or rule set is refused | fired |
-| Frozen rules | A validation or data-quality run made on other data or other rules is refused | fired |
-| Frozen rules | A frozen model file that no longer matches its hash is refused | fired |
-| Frozen rules | The registered model is refused when its run records another hash | fired |
-| Frozen rules | Without the freeze tag, the 2024 replay stops before reading any input | fired |
-| Frozen rules | Under a moved freeze tag, the 2024 replay stops before reading any input, even with --departure and no recorded departure | fired |
-| Frozen rules | The 2024 replay refuses a frozen model built on another validation run | fired |
-| Frozen rules | The 2024 replay fails when the registered model changes while it runs | fired |
-| Frozen rules | An alias pointing at another year's frozen model is refused | fired |
-| Report rendering | A report whose code changed since its run is refused | fired |
-| Report rendering | The public-safety scan fires on private content | fired |
-| Report rendering | A figure whose metadata carries a private path, or with bytes hidden after its end, is refused | fired |
-| Report rendering | A file removed from the tree later, a forbidden path or a leftover ref is still caught in the history | fired |
-| Report rendering | An annotated tag message carrying a private path is caught | fired |
-| Report rendering | The home-directory shorthands fire; ordinary prose does not | fired |
-| Report rendering | A figure with a chunk outside the allowlist or a bad checksum is refused | fired |
-| Report rendering | A figure whose structure breaks the PNG rules is refused: bytes in the end chunk, an oversized fixed-length chunk, a missing header, a chunk twice, image data missing, split, or not inflating to exactly the size the header states | fired |
-| Report rendering | A private path hidden in a fixed-length chunk of a figure is caught | fired |
+| Monitors and decision table | The seasonal reference stays quiet on clean data and fires on a shift | passed |
+| Monitors and decision table | Temperature drift with performance inside its thresholds: investigate the data | passed |
+| Monitors and decision table | A sensor gap fails the day's data quality and suspends the performance rules | passed |
+| Monitors and decision table | A missing and a duplicated demand record fail their day | passed |
+| Monitors and decision table | A low week (−30%) and its echo through the one-week lag do not yield retrain | passed |
+| Monitors and decision table | A high week (+30%) and its echo, MAPE high in both weeks, do not yield retrain | passed |
+| Monitors and decision table | MAPE high two weeks with bias on opposite sides is an echo; without the flip it fires | passed |
+| Monitors and decision table | Bias beyond the same side three weeks running yields retrain; an echo or an unjudged week breaks it | passed |
+| Monitors and decision table | The power measure finds a sustained 8% gap or intervals cut to 20%, and nothing without a change | passed |
+| Monitors and decision table | The level-shift measure finds a 12% rise in demand, and nothing without a change | passed |
+| Monitors and decision table | The episode measure: a one-day shock brings no false alarm, and every start is counted | passed |
+| Monitors and decision table | The episode measure finds the false alarm of five days across a Monday, and the echo the exclusion keeps out | passed |
+| Monitors and decision table | A false alarm resting on a week already out of band is called assisted; an alarm the year already had is not counted | passed |
+| Monitors and decision table | The echo exclusion only ever removes or delays retrain | passed |
+| Monitors and decision table | Two altered days never lift the trimmed statistic past the untouched days (2,000 draws) | passed |
+| Monitors and decision table | Partial weeks have no drift statistic | passed |
+| Monitors and decision table | The last day is judged at the end of the data, and says so | passed |
+| Monitors and decision table | Duplicated temperatures and an off-grid demand record fail their day | passed |
+| Monitors and decision table | A shift in the demand level: retrain | passed |
+| Monitors and decision table | Intervals made too narrow: recalibrate | passed |
+| Monitors and decision table | Two rules at once: one recommendation with both pieces of evidence | passed |
+| Monitors and decision table | A one-day shock (Saturday) does not yield retrain | passed |
+| Monitors and decision table | A one-day shock (Sunday) does not yield retrain | passed |
+| Monitors and decision table | A week with too few scored hours is not judged | passed |
+| Monitors and decision table | A week with too few full days has no trimmed statistic and is never broadly out of band | passed |
+| Monitors and decision table | A partial week, a week with a failed day and a week with too few hours are not judged, each condition alone | passed |
+| Monitors and decision table | A week cut by the end of the period is not judged, even with enough hours | passed |
+| Monitors and decision table | The day-level data-quality verdict the calibration reads is, day by day, the replay's own, on seven injected faults and the clean days | passed |
+| Monitors and decision table | A week holding a day the replay would fail does not calibrate the thresholds, and why is logged | passed |
+| Monitors and decision table | A week cut by the calibration years is set aside; a day without a data-quality verdict makes the thresholds refuse | passed |
+| The monitor never acts | A replay that changes the model or its intervals fails | passed |
+| Frozen rules | Without the freeze tag, the 2024 replay is refused | passed |
+| Frozen rules | A rule file edited after the freeze is refused and named | passed |
+| Frozen rules | A rule file added after the freeze is refused | passed |
+| Frozen rules | A moved freeze tag is refused unless recorded as a departure | passed |
+| Frozen rules | The replay called directly on the held-out year passes the freeze gate: without the tag, with an edited rule file or under a moved tag, it is refused | passed |
+| Frozen rules | The committed replay ledger shows a moved tag even with no MLflow store: refused unless a departure is recorded | passed |
+| Frozen rules | A replay ledger that cannot be parsed is refused | passed |
+| Frozen rules | A replay ledger with no list of replays is refused | passed |
+| Frozen rules | A ledger entry without a freeze commit is refused | passed |
+| Frozen rules | Earlier replays are found even when deleted | passed |
+| Frozen rules | Raw files other than the ones checked are refused | passed |
+| Frozen rules | Design code refuses a raw demand file other than the one checked | passed |
+| Frozen rules | A registered model that changed during the replay fails it | passed |
+| Frozen rules | A frozen model from another validation run, year or rule set is refused | passed |
+| Frozen rules | A validation or data-quality run made on other data or other rules is refused | passed |
+| Frozen rules | A frozen model file that no longer matches its hash is refused | passed |
+| Frozen rules | The registered model is refused when its run records another hash | passed |
+| Frozen rules | Without the freeze tag, the 2024 replay stops before reading any input | passed |
+| Frozen rules | Under a moved freeze tag, the 2024 replay stops before reading any input, even with --departure and no recorded departure | passed |
+| Frozen rules | The 2024 replay refuses a frozen model built on another validation run | passed |
+| Frozen rules | The 2024 replay fails when the registered model changes while it runs | passed |
+| Frozen rules | An alias pointing at another year's frozen model is refused | passed |
+| Report rendering | A report whose code changed since its run is refused | passed |
+| Report rendering | The public-safety scan fires on private content | passed |
+| Report rendering | A figure whose metadata carries a private path, or with bytes hidden after its end, is refused | passed |
+| Report rendering | A file removed from the tree later, a forbidden path or a leftover ref is still caught in the history | passed |
+| Report rendering | An annotated tag message carrying a private path is caught | passed |
+| Report rendering | The home-directory shorthands fire; ordinary prose does not | passed |
+| Report rendering | A figure with a chunk outside the allowlist or a bad checksum is refused | passed |
+| Report rendering | A figure whose structure breaks the PNG rules is refused: bytes in the end chunk, an oversized fixed-length chunk, a missing header, a chunk twice, image data missing, split, or not inflating to exactly the size the header states | passed |
+| Report rendering | A private path hidden in a fixed-length chunk of a figure is caught | passed |
 | Report rendering | Control: an intact run chain is followed to its end | stayed quiet |
-| Report rendering | A breaks run marked failed breaks the report's run chain | fired |
-| Report rendering | A run made from other code breaks the report's run chain | fired |
-| Report rendering | A model frozen for another year breaks the report's run chain | fired |
-| Report rendering | A replay made under another freeze commit breaks the report's run chain | fired |
-| Report rendering | A validation naming another data-quality run breaks the report's run chain | fired |
-| Report rendering | A replay after a departure brings the replays it departs from; one that names none is refused | fired |
-| Report rendering | A departure recorded in `AGENTS.md` that the 2024 replay does not carry breaks the report's run chain, and so does a departure replay whose freeze commit `AGENTS.md` does not name | fired |
+| Report rendering | A breaks run marked failed breaks the report's run chain | passed |
+| Report rendering | A run made from other code breaks the report's run chain | passed |
+| Report rendering | A model frozen for another year breaks the report's run chain | passed |
+| Report rendering | A replay made under another freeze commit breaks the report's run chain | passed |
+| Report rendering | A validation naming another data-quality run breaks the report's run chain | passed |
+| Report rendering | A replay after a departure brings the replays it departs from; one that names none is refused | passed |
+| Report rendering | A departure recorded in `AGENTS.md` that the 2024 replay does not carry breaks the report's run chain, and so does a departure replay whose freeze commit `AGENTS.md` does not name | passed |
 | Report rendering | Control: with no departure recorded, an intact chain passes; with one, the replay that carries it passes | stayed quiet |
-| Report rendering | A departure recorded by a hash shorter than 12 characters breaks the report's run chain | fired |
-| Report rendering | A departures section that cannot be found in `AGENTS.md` breaks the report's run chain | fired |
-| Report rendering | An hour block missing from the validation run's coverage, or one too many, makes the report refuse | fired |
-| Report rendering | A season missing from the validation run's coverage makes the report refuse | fired |
-| Report rendering | A week of rule 2's first wording missing from the replay's judged weeks makes the report refuse | fired |
-| Report rendering | A failure broad in both weeks with no retrain in the replay makes the report refuse | fired |
-| Report rendering | A breaks run that does not mark its controls makes the report refuse | fired |
-| Report rendering | A spring 2020 case with no spring hours makes the report refuse | fired |
-| Report rendering | An empty power table makes the report refuse | fired |
-| Report rendering | A power table without narrowed-interval rows makes the report refuse | fired |
-| Report rendering | A spring 2020 interval of the difference with two draws sharing a seed, or made of one batch, makes the report refuse | fired |
-| Report rendering | A bound of the interval of the difference that Monte Carlo error or rounding cannot separate from zero leaves the verdict undetermined | fired |
-| Report rendering | An agent session's address in a commit message, a tag message or a staged file is caught | fired |
-| Report rendering | A replay-ledger entry rewritten by hand makes the ledger update refuse | fired |
-| Report rendering | A replay ledger carrying a private name, or a field outside its fixed shape, is not written | fired |
-| Report rendering | A 2024 replay that disagrees with its ledger entry breaks the report's run chain | fired |
-| Report rendering | A replay from before a departure that is in neither the store nor the ledger, or is recorded as incomplete, breaks the report's run chain | fired |
+| Report rendering | A departure recorded by a hash shorter than 12 characters breaks the report's run chain | passed |
+| Report rendering | A departures section that cannot be found in `AGENTS.md` breaks the report's run chain | passed |
+| Report rendering | An hour block missing from the validation run's coverage, or one too many, makes the report refuse | passed |
+| Report rendering | A season missing from the validation run's coverage makes the report refuse | passed |
+| Report rendering | A week of rule 2's first wording missing from the replay's judged weeks makes the report refuse | passed |
+| Report rendering | A failure broad in both weeks with no retrain in the replay makes the report refuse | passed |
+| Report rendering | A breaks run that does not mark its controls makes the report refuse | passed |
+| Report rendering | A spring 2020 case with no spring hours makes the report refuse | passed |
+| Report rendering | An empty power table makes the report refuse | passed |
+| Report rendering | A power table without narrowed-interval rows makes the report refuse | passed |
+| Report rendering | A spring 2020 interval of the difference with two draws sharing a seed, or made of one batch, makes the report refuse | passed |
+| Report rendering | A bound of the interval of the difference that Monte Carlo error or rounding cannot separate from zero leaves the verdict undetermined | passed |
+| Report rendering | An agent session's address in a commit message, a tag message or a staged file is caught | passed |
+| Report rendering | A replay-ledger entry rewritten by hand makes the ledger update refuse | passed |
+| Report rendering | A replay ledger carrying a private name, or a field outside its fixed shape, is not written | passed |
+| Report rendering | A 2024 replay that disagrees with its ledger entry breaks the report's run chain | passed |
+| Report rendering | A replay from before a departure that is in neither the store nor the ledger, or is recorded as incomplete, breaks the report's run chain | passed |
 | Report rendering | Control: a replay from before a departure that the store lacks is shown from the ledger, labelled "recorded in the ledger, not re-run here" | stayed quiet |
-| Report rendering | A replay from before a departure that disagrees with its ledger entry breaks the report's run chain | fired |
-| Report rendering | A replay ledger edited or removed after the render fails the report's stamp test | fired |
-| Report rendering | A break that did not fire marks the breaks run failed | fired |
-| Report rendering | A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, French report | fired |
-| Report rendering | A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, English report | fired |
-| No lookahead | A row scored an hour after the fit clock does not calibrate the half-width and one scored at the fit clock itself does; the last day of the data, scored at the end of the data, does not calibrate a half-width fixed then | fired |
-| Report rendering | A 2024 replay without its false-alarm and blind-spot measures makes the report refuse | fired |
-| Report rendering | 2024 measures made with other lengths, factors, level shifts or noise than 2023's make the report refuse | fired |
-| Report rendering | A 2024 replay departing from replays made under two freeze commits, a departure the report does not describe, makes the report refuse | fired |
-| Data-quality gates | A forecast response for another station or model is refused | fired |
-| Data-quality gates | A forecast temperature that is neither a number nor blank is refused | fired |
-| Data-quality gates | An empty forecast response is refused | fired |
-| Data-quality gates | A forecast run outside the requested year is refused | fired |
-| Data-quality gates | A refused forecast response writes nothing | fired |
+| Report rendering | A replay from before a departure that disagrees with its ledger entry breaks the report's run chain | passed |
+| Report rendering | A replay ledger edited or removed after the render fails the report's stamp test | passed |
+| Report rendering | A break that did not fire marks the breaks run failed | passed |
+| Report rendering | A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, French report | passed |
+| Report rendering | A bound of the interval of the difference printed no more than k printed standard errors from zero leaves the verdict undetermined, and a bound printed farther out never does: the verdict never contradicts its numbers, English report | passed |
+| No lookahead | A row scored an hour after the fit clock does not calibrate the half-width and one scored at the fit clock itself does; the last day of the data, scored at the end of the data, does not calibrate a half-width fixed then | passed |
+| Report rendering | A 2024 replay without its false-alarm and blind-spot measures makes the report refuse | passed |
+| Report rendering | 2024 measures made with other lengths, factors, level shifts or noise than 2023's make the report refuse | passed |
+| Report rendering | A 2024 replay departing from replays made under two freeze commits, a departure the report does not describe, makes the report refuse | passed |
+| Data-quality gates | A forecast response for another station or model is refused | passed |
+| Data-quality gates | A forecast temperature that is neither a number nor blank is refused | passed |
+| Data-quality gates | An empty forecast response is refused | passed |
+| Data-quality gates | A forecast run outside the requested year is refused | passed |
+| Data-quality gates | A refused forecast response writes nothing | passed |
 | Data-quality gates | Control: a clean year of forecasts verifies, and the next year's first run is inside its request | stayed quiet |
-| Data-quality gates | A forecast point without its run time or its valid time is refused at verification and at load, naming its lines | fired |
-| Data-quality gates | Two values for one forecast point refuse the load | fired |
+| Data-quality gates | A forecast point without its run time or its valid time is refused at verification and at load, naming its lines | passed |
+| Data-quality gates | Two values for one forecast point refuse the load | passed |
 | Data-quality gates | Control: identical duplicate forecast points are dropped and counted, with no refusal | stayed quiet |
-| Data-quality gates | A primary station other than Montréal-Trudeau's refuses the forecast's pairing | fired |
-| Data-quality gates | A forecast file that no longer matches its manifest is refused | fired |
+| Data-quality gates | A primary station other than Montréal-Trudeau's refuses the forecast's pairing | passed |
+| Data-quality gates | A forecast file that no longer matches its manifest is refused | passed |
 | Data-quality gates | Control: a clean forecast passes its gates | stayed quiet |
-| Data-quality gates | An impossible forecast temperature fails the forecast's bounds gate | fired |
-| Data-quality gates | Too few days fed by a forecast fail the forecast's coverage gate; a day without runs of its own, fed by the eve's run, does not | fired |
-| Data-quality gates | 49 of 50 days fed (98%) pass the forecast's coverage gate; 48 of 50, or 48 of 49, fail it | fired |
-| Data-quality gates | The station and the forecast share one bounds filter | fired |
-| Data-quality gates | The forecast's error against the station reads only the design window's hours, never an observation outside the bounds | fired |
-| Data-quality gates | A run missing one bracketing point gives way to the next | fired |
-| Data-quality gates | A run with a bracketing point outside the bounds does not cover the day | fired |
-| Data-quality gates | A run with a blank bracketing point does not cover the day | fired |
-| Data-quality gates | With no covering run among the twelve freshest, the day has no forecast and says why | fired |
+| Data-quality gates | An impossible forecast temperature fails the forecast's bounds gate | passed |
+| Data-quality gates | Too few days fed by a forecast fail the forecast's coverage gate; a day without runs of its own, fed by the eve's run, does not | passed |
+| Data-quality gates | 49 of 50 days fed (98%) pass the forecast's coverage gate; 48 of 50, or 48 of 49, fail it | passed |
+| Data-quality gates | The station and the forecast share one bounds filter | passed |
+| Data-quality gates | The forecast's error against the station reads only the design window's hours, never an observation outside the bounds | passed |
+| Data-quality gates | A run missing one bracketing point gives way to the next | passed |
+| Data-quality gates | A run with a bracketing point outside the bounds does not cover the day | passed |
+| Data-quality gates | A run with a blank bracketing point does not cover the day | passed |
+| Data-quality gates | With no covering run among the twelve freshest, the day has no forecast and says why | passed |
 | Data-quality gates | Control: hourly values are linear in time between one run's points, in degrees Celsius | stayed quiet |
-| Data-quality gates | Points of two runs are never mixed | fired |
-| Data-quality gates | A failing forecast gate stops the chain | fired |
-| Data-quality gates | Data quality checks exactly the forecast rows the loader hands on, and refuses a point without its run time instead of dropping it silently | fired |
-| Data-quality gates | Forecast files other than those the data-quality run checked are refused | fired |
+| Data-quality gates | Points of two runs are never mixed | passed |
+| Data-quality gates | A failing forecast gate stops the chain | passed |
+| Data-quality gates | Data quality checks exactly the forecast rows the loader hands on, and refuses a point without its run time instead of dropping it silently | passed |
+| Data-quality gates | Forecast files other than those the data-quality run checked are refused | passed |
 | Data-quality gates | Control: Hydro-Québec records after the window are set aside at load and counted | stayed quiet |
 | Data-quality gates | Control: the revised 2019-2024 records are listed by the through-2025 data-quality run | stayed quiet |
 | Data-quality gates | Control: the through-2025 data-quality run logs its list of revisions, empty or not | stayed quiet |
 | Data-quality gates | Control: a lead of 75 hours or more is reported against the two-day argument | stayed quiet |
-| Data-quality gates | Every Hydro-Québec request, through 2024 or 2025, is bounded by the portal at the end of its window's year and its count is asked under that same bound | fired |
-| Data-quality gates | A response holding a record past its bound is refused and nothing is written | fired |
+| Data-quality gates | Every Hydro-Québec request, through 2024 or 2025, is bounded by the portal at the end of its window's year and its count is asked under that same bound | passed |
+| Data-quality gates | A response holding a record past its bound is refused and nothing is written | passed |
 | Data-quality gates | Control: each request's bound is the window's last hour | stayed quiet |
 | Data-quality gates | Control: a 2024 export ending at the window's last hour is written | stayed quiet |
 | Data-quality gates | Control: a plain fetch never asks the portal again for a verified file | stayed quiet |
-| Data-quality gates | A forced 2025 fetch of the weather files is refused before any request | fired |
-| Data-quality gates | The fetch command through 2025 goes through each source's gate before any request, and refuses, before any source runs, to force a source other than Hydro-Québec | fired |
-| Data-quality gates | A day no forecast run fed is not predicted and fails as forecast missing: investigate the data | fired |
-| Data-quality gates | A design temperature outside the bounds is blank, as in the replay | fired |
-| No lookahead | Only the forecast files of the listed years are read | fired |
+| Data-quality gates | A forced 2025 fetch of the weather files is refused before any request | passed |
+| Data-quality gates | The fetch command through 2025 goes through each source's gate before any request, and refuses, before any source runs, to force a source other than Hydro-Québec | passed |
+| Data-quality gates | A day no forecast run fed is not predicted and fails as forecast missing: investigate the data | passed |
+| Data-quality gates | A design temperature outside the bounds is blank, as in the replay | passed |
+| No lookahead | Only the forecast files of the listed years are read | passed |
 | No lookahead | Control: the freshest run available by the origin feeds the day | stayed quiet |
-| No lookahead | A run available after the origin is never used, even with absurd values, and the next-freshest is | fired |
-| No lookahead | The run rule refuses a forecast run without its run time: its availability cannot be established | fired |
+| No lookahead | A run available after the origin is never used, even with absurd values, and the next-freshest is | passed |
+| No lookahead | The run rule refuses a forecast run without its run time: its availability cannot be established | passed |
 | No lookahead | Control: 31 December 2023 is forecast from its own 01 UTC run, which reads that run's 1 January 2024 06 UTC point | stayed quiet |
 | No lookahead | Control: without a forecast, the v1 table keeps every column and every value | stayed quiet |
-| No lookahead | The feature table refuses a finite weather forecast whose run has no availability time, or one after its row's origin | fired |
-| No lookahead | A row whose forecast became available after its origin is refused | fired |
+| No lookahead | The feature table refuses a finite weather forecast whose run has no availability time, or one after its row's origin | passed |
+| No lookahead | A row whose forecast became available after its origin is refused | passed |
 | No lookahead | Control: a forecast available at the origin itself passes | stayed quiet |
-| No lookahead | A row whose weather forecast has no availability time is refused | fired |
-| No lookahead | A row without its origin is refused, even with a forecast available 24 hours after its target hour, and even with no forecast input at all | fired |
-| No lookahead | Walk-forward refuses, before any fit, a fold's training row, even one supplied separately, whose forecast has no availability or became available after its origin, or that has no origin | fired |
-| No lookahead | Walk-forward refuses, before any fit, a fold's test row whose forecast has no availability or became available after its origin, or that has no origin: it never reaches the interval calibration | fired |
-| No lookahead | A fit on the weather forecast, the GAM or least squares, refuses before placing its knots a row whose forecast has no availability or became available after its origin, or that has no origin | fired |
-| No lookahead | Spline knots placed on test hours as well are refused by the fit, even for a single test hour that moves no knot by a hundredth of a degree; knots 1.1e-12 °C off the rule are refused | fired |
+| No lookahead | A row whose weather forecast has no availability time is refused | passed |
+| No lookahead | A row without its origin is refused, even with a forecast available 24 hours after its target hour, and even with no forecast input at all | passed |
+| No lookahead | Walk-forward refuses, before any fit, a fold's training row, even one supplied separately, whose forecast has no availability or became available after its origin, or that has no origin | passed |
+| No lookahead | Walk-forward refuses, before any fit, a fold's test row whose forecast has no availability or became available after its origin, or that has no origin: it never reaches the interval calibration | passed |
+| No lookahead | A fit on the weather forecast, the GAM or least squares, refuses before placing its knots a row whose forecast has no availability or became available after its origin, or that has no origin | passed |
+| No lookahead | Spline knots placed on test hours as well are refused by the fit, even for a single test hour that moves no knot by a hundredth of a degree; knots 1.1e-12 °C off the rule are refused | passed |
 | No lookahead | Control: a fit on its own usable hours passes the knot check, to its 1e-12 °C tolerance, and still forecasts the hours without a target | stayed quiet |
-| No lookahead | A freeze whose knots are not the rule on its own training rows is refused | fired |
-| No lookahead | The eve of the replayed year never calibrates a half-width, in the 2024 freeze or the 2023 one | fired |
-| No lookahead | Out-of-sample rows that do not say their day calibrate no half-width | fired |
-| No lookahead | The 2024 freeze's half-width leaves out the eve of the replayed year | fired |
-| No lookahead | A design feed holding a forecast run available after the design window is refused | fired |
-| No lookahead | Design code reads only the design years' forecast run files | fired |
+| No lookahead | A freeze whose knots are not the rule on its own training rows is refused | passed |
+| No lookahead | The eve of the replayed year never calibrates a half-width, in the 2024 freeze or the 2023 one | passed |
+| No lookahead | Out-of-sample rows that do not say their day calibrate no half-width | passed |
+| No lookahead | The 2024 freeze's half-width leaves out the eve of the replayed year | passed |
+| No lookahead | A design feed holding a forecast run available after the design window is refused | passed |
+| No lookahead | Design code reads only the design years' forecast run files | passed |
 | No lookahead | Control: the 1 January 2024 01 UTC run in the 2023 file, available in time, is kept | stayed quiet |
-| No lookahead | The cold threshold comes from the design forecast temperatures only | fired |
-| No lookahead | Validation binds every input it prepares and asks the loader for the design years only | fired |
+| No lookahead | The cold threshold comes from the design forecast temperatures only | passed |
+| No lookahead | Validation binds every input it prepares and asks the loader for the design years only | passed |
 | No lookahead | Control: the forecast record is logged for every design day | stayed quiet |
-| No lookahead | Each design origin's forecast temperature uses only the runs available by then | fired |
-| No lookahead | On a sparse archive, the replay and validation feed each day from the same run | fired |
-| No lookahead | A temperature-drift reference holding replayed days is refused | fired |
-| No lookahead | The comparison models are scored on the inputs recorded at issue | fired |
-| No lookahead | A rehearsal whose issued forecast differs from validation's is refused | fired |
-| No lookahead | The 2023 rehearsal runs end to end and refuses an input validation did not issue | fired |
-| No lookahead | The 2024 replay reads no record of 2025 | fired |
-| No lookahead | The evidence's replay receives no record of 2025 | fired |
-| Replay clock | The replay sees a forecast run only once it is available, and so does the day verdict | fired |
-| Monitors and decision table | The temperature drift thresholds read the issued forecast, not the observation | fired |
-| Monitors and decision table | A day no forecast fed fails the forecast-missing criterion in the day verdicts validation's calibration reads, as in the replay | fired |
-| Monitors and decision table | Drift of the forecast temperature input, with performance inside, yields investigate the data | fired |
+| No lookahead | Each design origin's forecast temperature uses only the runs available by then | passed |
+| No lookahead | On a sparse archive, the replay and validation feed each day from the same run | passed |
+| No lookahead | A temperature-drift reference holding replayed days is refused | passed |
+| No lookahead | The comparison models are scored on the inputs recorded at issue | passed |
+| No lookahead | A rehearsal whose issued forecast differs from validation's is refused | passed |
+| No lookahead | The 2023 rehearsal runs end to end and refuses an input validation did not issue | passed |
+| No lookahead | The 2024 replay reads no record of 2025 | passed |
+| No lookahead | The evidence's replay receives no record of 2025 | passed |
+| Replay clock | The replay sees a forecast run only once it is available, and so does the day verdict | passed |
+| Monitors and decision table | The temperature drift thresholds read the issued forecast, not the observation | passed |
+| Monitors and decision table | A day no forecast fed fails the forecast-missing criterion in the day verdicts validation's calibration reads, as in the replay | passed |
+| Monitors and decision table | Drift of the forecast temperature input, with performance inside, yields investigate the data | passed |
 | Monitors and decision table | Control: the reuse measure feeds one corrupted run to two days | stayed quiet |
-| Monitors and decision table | The reuse measure never reports two days from a run that misses one | fired |
+| Monitors and decision table | The reuse measure never reports two days from a run that misses one | passed |
 | Monitors and decision table | Control: without forecast runs, the replay is v1's | stayed quiet |
 | Monitors and decision table | Control: the decision rule runs on the replayed year, with its evaluation label | stayed quiet |
 | Monitors and decision table | Control: v2's sensitivity measures run with the forecast feed | stayed quiet |
-| Monitors and decision table | A contrast whose interval lies below zero is better | fired |
-| Monitors and decision table | A contrast whose interval lies above zero is worse | fired |
-| Monitors and decision table | A contrast whose interval holds zero is not separated | fired |
-| Monitors and decision table | A bound that prints as 0.00 points does not separate and one that prints as 0.01 points does, on both sides: the state follows the printed bounds | fired |
-| Monitors and decision table | A better contrast whose cold tail is not worse gets the verdict better, against v1 as shipped | fired |
-| Monitors and decision table | A better contrast whose cold tail is not worse gets the verdict better, against v1's form on the forecast | fired |
-| Monitors and decision table | A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not testable, against v1 as shipped | fired |
-| Monitors and decision table | A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not testable, against v1's form on the forecast | fired |
-| Monitors and decision table | A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1 as shipped | fired |
-| Monitors and decision table | A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1's form on the forecast | fired |
-| Monitors and decision table | A worse contrast gets the verdict worse, against v1 as shipped | fired |
-| Monitors and decision table | A worse contrast gets the verdict worse, against v1's form on the forecast | fired |
-| Monitors and decision table | A verdict on an unknown state is refused | fired |
+| Monitors and decision table | A contrast whose interval lies below zero is better | passed |
+| Monitors and decision table | A contrast whose interval lies above zero is worse | passed |
+| Monitors and decision table | A contrast whose interval holds zero is not separated | passed |
+| Monitors and decision table | A bound that prints as 0.00 points does not separate and one that prints as 0.01 points does, on both sides: the state follows the printed bounds | passed |
+| Monitors and decision table | A better contrast whose cold tail is not worse gets the verdict better, against v1 as shipped | passed |
+| Monitors and decision table | A better contrast whose cold tail is not worse gets the verdict better, against v1's form on the forecast | passed |
+| Monitors and decision table | A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not testable, against v1 as shipped | passed |
+| Monitors and decision table | A better contrast whose cold tail is not testable gets the verdict better on average, the cold tail not testable, against v1's form on the forecast | passed |
+| Monitors and decision table | A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1 as shipped | passed |
+| Monitors and decision table | A contrast not separated, or better with a worse cold tail, gets the verdict not shown better, against v1's form on the forecast | passed |
+| Monitors and decision table | A worse contrast gets the verdict worse, against v1 as shipped | passed |
+| Monitors and decision table | A worse contrast gets the verdict worse, against v1's form on the forecast | passed |
+| Monitors and decision table | A verdict on an unknown state is refused | passed |
 | Monitors and decision table | Control: a v2 closer on every hour is better on both comparisons | stayed quiet |
-| Monitors and decision table | Hours where one model has a forecast and another has none, far off and cold, change neither the contrasts nor the cold tail: everything is scored on the common hours | fired |
-| Monitors and decision table | The contrasts that decide the verdicts, the cold tail's included, are the paired difference in hourly absolute error over the observed demand, on the common hours, at a thousand week-block resamples and seed 0: another metric, seed or number of resamples fails | fired |
-| Monitors and decision table | On one set of hours the three contrasts add up: the whole change = family + input | fired |
-| Monitors and decision table | The five busiest hours are taken over the whole year by demand, a missing forecast kept with its reason, and quieter hours never replace them | fired |
-| Monitors and decision table | The cold tail is not testable at 119 hours in 6 weeks, at 120 hours in 3 weeks, or at 119 hours below the threshold plus one at it; it is at 120 hours in 4 weeks | fired |
-| Monitors and decision table | The cold tail is not testable at 119 cold hours and is at 120, and the verdict says so | fired |
-| Monitors and decision table | A v2 better on average but worse on the cold hours is not shown better | fired |
-| Monitors and decision table | The cold threshold reads the forecast temperatures only: changing every demand value leaves it unchanged | fired |
-| Monitors and decision table | The model card's status follows the test of record: candidate with no 2025 start, unfinished until it finishes whatever its standing, even before its standing is logged, post hoc when it is, a held-out status only on a finished clean 2025; a finished test whose standing is neither clean nor post hoc is refused | fired |
-| Monitors and decision table | Only a clean test of record is labelled held out: a post-hoc one is labelled post hoc, a start after a finished one is seen by the developers, and a start after a stopped one without the owner's ruling naming it is refused | fired |
+| Monitors and decision table | Hours where one model has a forecast and another has none, far off and cold, change neither the contrasts nor the cold tail: everything is scored on the common hours | passed |
+| Monitors and decision table | The contrasts that decide the verdicts, the cold tail's included, are the paired difference in hourly absolute error over the observed demand, on the common hours, at a thousand week-block resamples and seed 0: another metric, seed or number of resamples fails | passed |
+| Monitors and decision table | On one set of hours the three contrasts add up: the whole change = family + input | passed |
+| Monitors and decision table | The five busiest hours are taken over the whole year by demand, a missing forecast kept with its reason, and quieter hours never replace them | passed |
+| Monitors and decision table | The cold tail is not testable at 119 hours in 6 weeks, at 120 hours in 3 weeks, or at 119 hours below the threshold plus one at it; it is at 120 hours in 4 weeks | passed |
+| Monitors and decision table | The cold tail is not testable at 119 cold hours and is at 120, and the verdict says so | passed |
+| Monitors and decision table | A v2 better on average but worse on the cold hours is not shown better | passed |
+| Monitors and decision table | The cold threshold reads the forecast temperatures only: changing every demand value leaves it unchanged | passed |
+| Monitors and decision table | The model card's status follows the test of record: candidate with no 2025 start, unfinished until it finishes whatever its standing, even before its standing is logged, post hoc when it is, a held-out status only on a finished clean 2025; a finished test whose standing is neither clean nor post hoc is refused | passed |
+| Monitors and decision table | Only a clean test of record is labelled held out: a post-hoc one is labelled post hoc, a start after a finished one is seen by the developers, and a start after a stopped one without the owner's ruling naming it is refused | passed |
 | The monitor never acts | Control: comparison models crossing their thresholds yield no recommendation | stayed quiet |
-| The monitor never acts | A comparison model changed during the replay fails it | fired |
-| Frozen rules | The GAM forecasts what the scikit-learn pipeline the owner ruled forecasts, with the same columns, scaler and ridge, extrapolation below and above the training range included | fired |
+| The monitor never acts | A comparison model changed during the replay fails it | passed |
+| Frozen rules | The GAM forecasts what the scikit-learn pipeline the owner ruled forecasts, with the same columns, scaler and ridge, extrapolation below and above the training range included | passed |
 | Frozen rules | Control: without v2's models, the walk-forward is exactly v1's | stayed quiet |
 | Frozen rules | Control: without the v2 models, validation is exactly v1's | stayed quiet |
 | Frozen rules | Control: the frozen GAM, read back from its file, forecasts what the fitted GAM and the ruled scikit-learn pipeline, built independently, forecast, past the training range included | stayed quiet |
-| Frozen rules | A frozen GAM whose knot, scale, coefficient or any other hashed field changed is refused | fired |
-| Frozen rules | A frozen GAM with another degree, extrapolation or bias setting is refused, and each setting changes the hash | fired |
-| Frozen rules | A frozen GAM whose knots are not ten finite, strictly increasing values is refused | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: the module's extrapolation changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: the module's spline degree changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: the module's bias setting changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: the module's number of knots changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: with the module's day types reordered after the freeze, its file reads back under the same hash and forecasts exactly the same | fired |
-| Frozen rules | The frozen GAM forecasts from its file alone: with a day type added to the module after the freeze, its file reads back under the same hash and forecasts exactly the same | fired |
-| Frozen rules | Frozen least squares forecast from their file alone: the module's hour blocks changed after the freeze (hour 6 moved from the morning to the night) change neither their forecast nor their curves | fired |
-| Frozen rules | Frozen least squares forecast from their file alone: the module's base temperature changed after the freeze, and the table's degree-hours computed with it, change neither their forecast nor their curves | fired |
-| Frozen rules | Frozen least squares' hour blocks and base temperature are in their file and their hash: another forecast comes with another hash, and an edited file is refused | fired |
-| Frozen rules | Frozen least squares whose blocks do not partition the hours 0 to 23, whose base is not a finite number, or whose columns are not those their blocks generate, are refused | fired |
-| Frozen rules | A row without a day type or with an hour outside 0 to 23 is never forecast, and a day type the stored cells do not cover is refused, for both families | fired |
-| Frozen rules | An hour given as text ("6") is hour 6 everywhere: its cells, blocks and curves are those of the whole hour, never a row counted as known and forecast from its lags alone, for both families | fired |
+| Frozen rules | A frozen GAM whose knot, scale, coefficient or any other hashed field changed is refused | passed |
+| Frozen rules | A frozen GAM with another degree, extrapolation or bias setting is refused, and each setting changes the hash | passed |
+| Frozen rules | A frozen GAM whose knots are not ten finite, strictly increasing values is refused | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: the module's extrapolation changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: the module's spline degree changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: the module's bias setting changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: the module's number of knots changed after the freeze changes neither its forecast nor its curves, and its file read again is refused | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: with the module's day types reordered after the freeze, its file reads back under the same hash and forecasts exactly the same | passed |
+| Frozen rules | The frozen GAM forecasts from its file alone: with a day type added to the module after the freeze, its file reads back under the same hash and forecasts exactly the same | passed |
+| Frozen rules | Frozen least squares forecast from their file alone: the module's hour blocks changed after the freeze (hour 6 moved from the morning to the night) change neither their forecast nor their curves | passed |
+| Frozen rules | Frozen least squares forecast from their file alone: the module's base temperature changed after the freeze, and the table's degree-hours computed with it, change neither their forecast nor their curves | passed |
+| Frozen rules | Frozen least squares' hour blocks and base temperature are in their file and their hash: another forecast comes with another hash, and an edited file is refused | passed |
+| Frozen rules | Frozen least squares whose blocks do not partition the hours 0 to 23, whose base is not a finite number, or whose columns are not those their blocks generate, are refused | passed |
+| Frozen rules | A row without a day type or with an hour outside 0 to 23 is never forecast, and a day type the stored cells do not cover is refused, for both families | passed |
+| Frozen rules | An hour given as text ("6") is hour 6 everywhere: its cells, blocks and curves are those of the whole hour, never a row counted as known and forecast from its lags alone, for both families | passed |
 | Frozen rules | Control: on the rows the pipeline produces, frozen least squares forecast exactly what the previous formula forecast (0 MW apart) | stayed quiet |
 | Frozen rules | Control: the comparison models score every replayed hour exactly as the previous formula did (0 MW apart) | stayed quiet |
-| Frozen rules | A frozen GAM whose columns are not those its knots, settings and day types generate, name for name and in order, is refused when it forecasts; written with its day types in another order, it forecasts the same | fired |
-| Frozen rules | A production model with a lag coefficient that is not positive is refused | fired |
-| Frozen rules | The freeze refuses, before logging anything, a production model whose lag coefficient is not positive | fired |
+| Frozen rules | A frozen GAM whose columns are not those its knots, settings and day types generate, name for name and in order, is refused when it forecasts; written with its day types in another order, it forecasts the same | passed |
+| Frozen rules | A production model with a lag coefficient that is not positive is refused | passed |
+| Frozen rules | The freeze refuses, before logging anything, a production model whose lag coefficient is not positive | passed |
 | Frozen rules | Control: the frozen least squares keep v1's forecast | stayed quiet |
-| Frozen rules | A comparison model that was edited, replaced by another model, frozen for another year or missing is refused | fired |
-| Frozen rules | A real-data run from a commit that does not descend from the v2-first-run tag is refused | fired |
+| Frozen rules | A comparison model that was edited, replaced by another model, frozen for another year or missing is refused | passed |
+| Frozen rules | A real-data run from a commit that does not descend from the v2-first-run tag is refused | passed |
 | Frozen rules | Control: a real-data run from a descendant of the v2-first-run tag passes | stayed quiet |
-| Frozen rules | A 2025 fetch before the freeze is refused | fired |
-| Frozen rules | A 2025 fetch from a tree with uncommitted changes is refused | fired |
-| Frozen rules | A partial 2025 export is refused and nothing is written | fired |
-| Frozen rules | A dependency changed after the v2 freeze tag is refused and named | fired |
+| Frozen rules | A 2025 fetch before the freeze is refused | passed |
+| Frozen rules | A 2025 fetch from a tree with uncommitted changes is refused | passed |
+| Frozen rules | A partial 2025 export is refused and nothing is written | passed |
+| Frozen rules | A dependency changed after the v2 freeze tag is refused and named | passed |
 | Frozen rules | Control: v1's replays never count as a moved v2 freeze tag | stayed quiet |
-| Frozen rules | A v2 replay under a moved v2 freeze tag is refused unless the departure is recorded | fired |
-| Frozen rules | A 2025 replay run on its own sees a tag moved since v2's 2024 replay: the check is scoped by freeze, not by year | fired |
-| Frozen rules | An unfinished start counts for the moved-tag check | fired |
-| Frozen rules | A stored replay without a freeze tag counts as v1's | fired |
-| Frozen rules | A tag named like a freeze that the configuration does not list is refused | fired |
+| Frozen rules | A v2 replay under a moved v2 freeze tag is refused unless the departure is recorded | passed |
+| Frozen rules | A 2025 replay run on its own sees a tag moved since v2's 2024 replay: the check is scoped by freeze, not by year | passed |
+| Frozen rules | An unfinished start counts for the moved-tag check | passed |
+| Frozen rules | A stored replay without a freeze tag counts as v1's | passed |
+| Frozen rules | A tag named like a freeze that the configuration does not list is refused | passed |
 | Frozen rules | Control: recorded departures are read from the section of their freeze tag | stayed quiet |
-| Frozen rules | A v2 departure entry naming only the new freeze commit is refused: neither the commit the tag moved from nor the rule change between them is recorded | fired |
-| Frozen rules | A v2 departure entry that does not name the freeze commit the tag moved from, an earlier replay's, is refused | fired |
-| Frozen rules | A v2 departure entry that leaves out a rule commit between its two freeze commits, read commit by commit, is refused and the commit named | fired |
-| Frozen rules | A v2 departure entry naming a commit of its move that touches no rule file or dependency is refused | fired |
-| Frozen rules | A v2 departure record whose second move does not start at the commit the first moved the tag to is refused | fired |
-| Frozen rules | A v2 freeze tag moved back to an earlier moved-to commit, with no entry recording that move, is refused; on the last moved-to commit it passes | fired |
-| Frozen rules | The 2025 gate refuses an incomplete departure record before the run opens, and nothing opens | fired |
-| Frozen rules | Before the v2 freeze tag, a ledger entry under it, a v2 section naming a commit, a missing section or a head that does not descend from v1 fails the history check | fired |
+| Frozen rules | A v2 departure entry naming only the new freeze commit is refused: neither the commit the tag moved from nor the rule change between them is recorded | passed |
+| Frozen rules | A v2 departure entry that does not name the freeze commit the tag moved from, an earlier replay's, is refused | passed |
+| Frozen rules | A v2 departure entry that leaves out a rule commit between its two freeze commits, read commit by commit, is refused and the commit named | passed |
+| Frozen rules | A v2 departure entry naming a commit of its move that touches no rule file or dependency is refused | passed |
+| Frozen rules | A v2 departure record whose second move does not start at the commit the first moved the tag to is refused | passed |
+| Frozen rules | A v2 freeze tag moved back to an earlier moved-to commit, with no entry recording that move, is refused; on the last moved-to commit it passes | passed |
+| Frozen rules | The 2025 gate refuses an incomplete departure record before the run opens, and nothing opens | passed |
+| Frozen rules | Before the v2 freeze tag, a ledger entry under it, a v2 section naming a commit, a missing section or a head that does not descend from v1 fails the history check | passed |
 | Frozen rules | Control: a v2 departure naming the freeze commit it moved from passes v2's history check | stayed quiet |
 | Frozen rules | Control: a dependency change recorded as a departure passes v2's history check | stayed quiet |
-| Frozen rules | A rule commit after the v2 freeze tag, not recorded, fails the history check | fired |
-| Frozen rules | A pyproject.toml change after the v2 freeze tag, not recorded, fails the history check | fired |
-| Frozen rules | A uv.lock change after the v2 freeze tag, not recorded, fails the history check | fired |
-| Frozen rules | A rule change reverted later, the tag left in place, fails the history read commit by commit | fired |
-| Frozen rules | A v2 departure that does not name a change commit of its move fails the history check | fired |
-| Frozen rules | A v2 departure naming a commit that is neither a change of its move nor a freeze commit fails the history check | fired |
-| Frozen rules | A v2 departure that does not name the commit the tag moved from, or the one it moved to, fails the history check | fired |
-| Frozen rules | A move of the v2 freeze tag without its departure entry, or an entry with no move, fails the history check | fired |
-| Frozen rules | A v2 section entry naming a commit that is neither a departure nor the owner's ruling on 2025 with its outcome fails the history check | fired |
-| Frozen rules | A v2 freeze tag moved without its pin committed fails the history check from the next commit on | fired |
-| Frozen rules | A tag moved off its pinned commit fails the tags test | fired |
-| Frozen rules | A rule-file change after v2-first-run that the plan's section 18 does not name fails the plan's history check | fired |
-| Frozen rules | A pyproject.toml change after v2-first-run that the plan's section 18 does not name fails the plan's history check | fired |
-| Frozen rules | A uv.lock change after v2-first-run that the plan's section 18 does not name fails the plan's history check | fired |
-| Frozen rules | An edit of v2's plan after plan-v2, outside its section 18 and not named there, fails the plan's history check | fired |
-| Frozen rules | A section 18 entry of the plan rewritten without being named fails the plan's history check | fired |
+| Frozen rules | A rule commit after the v2 freeze tag, not recorded, fails the history check | passed |
+| Frozen rules | A pyproject.toml change after the v2 freeze tag, not recorded, fails the history check | passed |
+| Frozen rules | A uv.lock change after the v2 freeze tag, not recorded, fails the history check | passed |
+| Frozen rules | A rule change reverted later, the tag left in place, fails the history read commit by commit | passed |
+| Frozen rules | A v2 departure that does not name a change commit of its move fails the history check | passed |
+| Frozen rules | A v2 departure naming a commit that is neither a change of its move nor a freeze commit fails the history check | passed |
+| Frozen rules | A v2 departure that does not name the commit the tag moved from, or the one it moved to, fails the history check | passed |
+| Frozen rules | A move of the v2 freeze tag without its departure entry, or an entry with no move, fails the history check | passed |
+| Frozen rules | A v2 section entry naming a commit that is neither a departure nor the owner's ruling on 2025 with its outcome fails the history check | passed |
+| Frozen rules | A v2 freeze tag moved without its pin committed fails the history check from the next commit on | passed |
+| Frozen rules | A tag moved off its pinned commit fails the tags test | passed |
+| Frozen rules | A rule-file change after v2-first-run that the plan's section 18 does not name fails the plan's history check | passed |
+| Frozen rules | A pyproject.toml change after v2-first-run that the plan's section 18 does not name fails the plan's history check | passed |
+| Frozen rules | A uv.lock change after v2-first-run that the plan's section 18 does not name fails the plan's history check | passed |
+| Frozen rules | An edit of v2's plan after plan-v2, outside its section 18 and not named there, fails the plan's history check | passed |
+| Frozen rules | A section 18 entry of the plan rewritten without being named fails the plan's history check | passed |
 | Frozen rules | Control: a clean 2025 start with nothing changed passes the gate | stayed quiet |
-| Frozen rules | The 2025 gate walks every commit after the first freeze commit and refuses a rule or dependency change, even one reverted later, naming the commits and files; an empty commit passes | fired |
-| Frozen rules | The 2025 gate refuses a merge, a shallow clone and a head that does not descend from the freeze commit | fired |
-| Frozen rules | A fix after a failed first 2024 start refuses the 2025 gate, which names it | fired |
-| Frozen rules | The owner's ruling entry, with its evidence, lifts a refusal with its outcome: clean, labelled held out | fired |
-| Frozen rules | The owner's ruling entry, with its evidence, lifts a refusal with its outcome: post hoc, labelled post hoc | fired |
-| Frozen rules | An owner's ruling that does not apply leaves the refusal: followed by a rule change, on a commit an earlier start descends past, unresolved, or without a finished evidence run made from a clean tree | fired |
-| Frozen rules | A 2025 start one of whose frozen artifacts differs from v2's first 2024 entry is refused | fired |
-| Frozen rules | A 2025 start whose runs are missing from the store, as in a fresh clone, is refused | fired |
-| Frozen rules | The 2025 gate refuses a data-quality run that is not a passing through-2025 run | fired |
-| Frozen rules | The 2025 gate refuses a raw file the data-quality run did not check, reading no demand record | fired |
-| Frozen rules | A 2025 start while another is running is refused | fired |
-| Frozen rules | Two simultaneous 2025 starts open one run; the other is refused | fired |
-| Frozen rules | A 2025 diagnostic run without its finished, complete replay refuses the gate | fired |
-| Frozen rules | A 2025 replay without a v2 2024 entry in the replay ledger is refused | fired |
-| Frozen rules | After an unfinished test of record, a later start refuses, saying whether the stopped run holds any result, until an owner's ruling names the stopped start | fired |
-| Frozen rules | A 2025 start after a finished test of record is tagged seen by the developers | fired |
-| Frozen rules | The replay function, called on its own, refuses 2025 | fired |
-| Frozen rules | The 2025 replay is refused until the data window reaches the end of 2025 | fired |
-| Frozen rules | The 2025 replay refuses a working tree with uncommitted changes | fired |
-| Frozen rules | The 2025 replay reads the artifacts frozen for 2024, never the latest | fired |
-| Frozen rules | A 2025 replay stopped midway leaves its started run, with the step it reached and its error's class; one stopped by a check holds no metric and no result | fired |
-| Frozen rules | A 2025 start stopped while its gate record is logged keeps its error's class, and the next start's refusal names it | fired |
-| Frozen rules | A 2025 run exists only with its tags: their computation failing creates none, and a stop right after its creation leaves a stopped start the next gate sees | fired |
-| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_ID) is refused before any run exists: it is no start | fired |
-| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_CONTEXT) is refused before any run exists: it is no start | fired |
-| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_EXPERIMENT_NAME) is refused before any run exists: it is no start | fired |
-| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) is refused before any run exists: it is no start | fired |
-| Frozen rules | A 2025 start is always a fresh run of the monitoring experiment, even when the environment names an older run of another experiment (MLFLOW_RUN_ID): the next gate sees it | fired |
-| Frozen rules | A run that could not be entered (another already active, another experiment selected) is refused before it exists; should entering fail all the same, it ends failed with its error's class, never running: a 2025 start so stopped is a stopped start | fired |
+| Frozen rules | The 2025 gate walks every commit after the first freeze commit and refuses a rule or dependency change, even one reverted later, naming the commits and files; an empty commit passes | passed |
+| Frozen rules | The 2025 gate refuses a merge, a shallow clone and a head that does not descend from the freeze commit | passed |
+| Frozen rules | A fix after a failed first 2024 start refuses the 2025 gate, which names it | passed |
+| Frozen rules | The owner's ruling entry, with its evidence, lifts a refusal with its outcome: clean, labelled held out | passed |
+| Frozen rules | The owner's ruling entry, with its evidence, lifts a refusal with its outcome: post hoc, labelled post hoc | passed |
+| Frozen rules | An owner's ruling that does not apply leaves the refusal: followed by a rule change, on a commit an earlier start descends past, unresolved, or without a finished evidence run made from a clean tree | passed |
+| Frozen rules | A 2025 start one of whose frozen artifacts differs from v2's first 2024 entry is refused | passed |
+| Frozen rules | A 2025 start whose runs are missing from the store, as in a fresh clone, is refused | passed |
+| Frozen rules | The 2025 gate refuses a data-quality run that is not a passing through-2025 run | passed |
+| Frozen rules | The 2025 gate refuses a raw file the data-quality run did not check, reading no demand record | passed |
+| Frozen rules | A 2025 start while another is running is refused | passed |
+| Frozen rules | Two simultaneous 2025 starts open one run; the other is refused | passed |
+| Frozen rules | A 2025 diagnostic run without its finished, complete replay refuses the gate | passed |
+| Frozen rules | A 2025 replay without a v2 2024 entry in the replay ledger is refused | passed |
+| Frozen rules | After an unfinished test of record, a later start refuses, saying whether the stopped run holds any result, until an owner's ruling names the stopped start | passed |
+| Frozen rules | A 2025 start after a finished test of record is tagged seen by the developers | passed |
+| Frozen rules | The replay function, called on its own, refuses 2025 | passed |
+| Frozen rules | The 2025 replay is refused until the data window reaches the end of 2025 | passed |
+| Frozen rules | The 2025 replay refuses a working tree with uncommitted changes | passed |
+| Frozen rules | The 2025 replay reads the artifacts frozen for 2024, never the latest | passed |
+| Frozen rules | A 2025 replay stopped midway leaves its started run, with the step it reached and its error's class; one stopped by a check holds no metric and no result | passed |
+| Frozen rules | A 2025 start stopped while its gate record is logged keeps its error's class, and the next start's refusal names it | passed |
+| Frozen rules | A 2025 run exists only with its tags: their computation failing creates none, and a stop right after its creation leaves a stopped start the next gate sees | passed |
+| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_ID) is refused before any run exists: it is no start | passed |
+| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_RUN_CONTEXT) is refused before any run exists: it is no start | passed |
+| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_EXPERIMENT_NAME) is refused before any run exists: it is no start | passed |
+| Frozen rules | A 2025 start under an MLflow environment variable not allowed (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) is refused before any run exists: it is no start | passed |
+| Frozen rules | A 2025 start is always a fresh run of the monitoring experiment, even when the environment names an older run of another experiment (MLFLOW_RUN_ID): the next gate sees it | passed |
+| Frozen rules | A run that could not be entered (another already active, another experiment selected) is refused before it exists; should entering fail all the same, it ends failed with its error's class, never running: a 2025 start so stopped is a stopped start | passed |
 | Frozen rules | Control: a gate refusal opens no run | stayed quiet |
-| Frozen rules | The replay function refuses 2025 without its open, started run, of this code and of this kind | fired |
-| Frozen rules | The diagnostics run after the replay has finished, in a run of their own; their failure leaves the replay finished | fired |
-| Frozen rules | Two worker processes replay 2025 under the diagnostic run, each looking it up in the store; a run ID the store does not hold is refused inside a worker | fired |
-| Frozen rules | The evidence compares every column of every hour and decides nothing | fired |
-| Frozen rules | The evidence refuses a working tree with uncommitted changes | fired |
-| Frozen rules | The evidence refuses a data-quality run that is not a passing through-2025 run | fired |
-| Frozen rules | The all command never replays 2025 nor runs the evidence, whatever its flags, and refuses --through | fired |
-| Frozen rules | No flag but --departure reaches the 2025 replay | fired |
-| Frozen rules | The freeze command refuses 2025: 2025 is judged by the artifacts frozen for 2024 | fired |
-| Report rendering | A v1 replay-ledger entry changed since tag v1 is caught | fired |
-| Report rendering | A v2 entry of a year its freeze does not replay is refused | fired |
-| Report rendering | A ledger entry under an unknown freeze tag is refused | fired |
-| Report rendering | A v1 entry carrying v2's fields is refused | fired |
-| Report rendering | A v2 entry without its evaluation label is refused | fired |
-| Report rendering | An evaluation label other than the one the 2025 starts give is refused | fired |
-| Report rendering | A post-hoc test of record labelled held out is refused | fired |
+| Frozen rules | The replay function refuses 2025 without its open, started run, of this code and of this kind | passed |
+| Frozen rules | The diagnostics run after the replay has finished, in a run of their own; their failure leaves the replay finished | passed |
+| Frozen rules | Two worker processes replay 2025 under the diagnostic run, each looking it up in the store; a run ID the store does not hold is refused inside a worker | passed |
+| Frozen rules | The evidence compares every column of every hour and decides nothing | passed |
+| Frozen rules | The evidence refuses a working tree with uncommitted changes | passed |
+| Frozen rules | The evidence refuses a data-quality run that is not a passing through-2025 run | passed |
+| Frozen rules | The all command never replays 2025 nor runs the evidence, whatever its flags, and refuses --through | passed |
+| Frozen rules | No flag but --departure reaches the 2025 replay | passed |
+| Frozen rules | The freeze command refuses 2025: 2025 is judged by the artifacts frozen for 2024 | passed |
+| Report rendering | A v1 replay-ledger entry changed since tag v1 is caught | passed |
+| Report rendering | A v2 entry of a year its freeze does not replay is refused | passed |
+| Report rendering | A ledger entry under an unknown freeze tag is refused | passed |
+| Report rendering | A v1 entry carrying v2's fields is refused | passed |
+| Report rendering | A v2 entry without its evaluation label is refused | passed |
+| Report rendering | An evaluation label other than the one the 2025 starts give is refused | passed |
+| Report rendering | A post-hoc test of record labelled held out is refused | passed |
 | Report rendering | Control: after a stopped start, the start the owner's ruling names becomes the test of record, clean and labelled held out | stayed quiet |
 | Report rendering | Control: after a stopped start, the start the owner's ruling names becomes the test of record, post hoc and labelled post hoc | stayed quiet |
 | Report rendering | Control: a later 2025 rerun labelled seen by the developers passes | stayed quiet |
-| Report rendering | A 2024 entry with a standing, or a 2025 entry without one, is refused | fired |
-| Report rendering | A v2 entry that is no departure, under another freeze commit than v2's first 2024 entry, is refused | fired |
-| Report rendering | A 2025 entry before any v2 2024 entry is refused | fired |
-| Report rendering | A stored replay differing from its v2 entry in its evaluation label is refused | fired |
-| Report rendering | A stored replay differing from its v2 entry in the production model's hash is refused | fired |
-| Report rendering | A stored replay differing from its v2 entry in the decision rule's verdicts is refused | fired |
-| Report rendering | A stored replay differing from its v2 entry in the frozen artifacts' hash is refused | fired |
-| Report rendering | A stored replay differing from its v2 entry in its standing is refused | fired |
-| Report rendering | A later 2025 start offered as the test of record is refused | fired |
-| Report rendering | After a stopped start, a start without the owner's ruling naming it does not become the test of record | fired |
-| Report rendering | A replay MLflow calls finished that never marked itself complete stays out of the replay ledger | fired |
+| Report rendering | A 2024 entry with a standing, or a 2025 entry without one, is refused | passed |
+| Report rendering | A v2 entry that is no departure, under another freeze commit than v2's first 2024 entry, is refused | passed |
+| Report rendering | A 2025 entry before any v2 2024 entry is refused | passed |
+| Report rendering | A stored replay differing from its v2 entry in its evaluation label is refused | passed |
+| Report rendering | A stored replay differing from its v2 entry in the production model's hash is refused | passed |
+| Report rendering | A stored replay differing from its v2 entry in the decision rule's verdicts is refused | passed |
+| Report rendering | A stored replay differing from its v2 entry in the frozen artifacts' hash is refused | passed |
+| Report rendering | A stored replay differing from its v2 entry in its standing is refused | passed |
+| Report rendering | A later 2025 start offered as the test of record is refused | passed |
+| Report rendering | After a stopped start, a start without the owner's ruling naming it does not become the test of record | passed |
+| Report rendering | A replay MLflow calls finished that never marked itself complete stays out of the replay ledger | passed |
 | Report rendering | Control: the chain follows v2's 2024 replay, not a v1 replay nor a 2025 one | stayed quiet |
 | Report rendering | Control: a clean 2025 with nothing changed renders beside the 2024 replay of record, the rerun beside it, French report | stayed quiet |
 | Report rendering | Control: a clean 2025 with nothing changed renders beside the 2024 replay of record, the rerun beside it, English report | stayed quiet |
-| Report rendering | A 2025 replay judged by frozen artifacts with other hashes than the 2024 replay of record's breaks the report's run chain | fired |
-| Report rendering | A 2025 rerun judged by frozen artifacts one of whose hashes differs from the 2024 replay of record's breaks the report's run chain | fired |
-| Report rendering | A 2025 replay, the test of record or a rerun, whose data-quality run does not reach the end of 2025 breaks the report's run chain | fired |
-| Report rendering | An unfinished 2025 test of record whose gate's record names other frozen artifacts than the 2024 replay of record's breaks the report's run chain | fired |
-| Report rendering | A 2024 replay tagged with another evaluation label than seen by the developers, or with none, makes the report refuse | fired |
+| Report rendering | A 2025 replay judged by frozen artifacts with other hashes than the 2024 replay of record's breaks the report's run chain | passed |
+| Report rendering | A 2025 rerun judged by frozen artifacts one of whose hashes differs from the 2024 replay of record's breaks the report's run chain | passed |
+| Report rendering | A 2025 replay, the test of record or a rerun, whose data-quality run does not reach the end of 2025 breaks the report's run chain | passed |
+| Report rendering | An unfinished 2025 test of record whose gate's record names other frozen artifacts than the 2024 replay of record's breaks the report's run chain | passed |
+| Report rendering | A 2024 replay tagged with another evaluation label than seen by the developers, or with none, makes the report refuse | passed |
 | Report rendering | Control: a record made on older code renders with its code stated, not refused, French report | stayed quiet |
 | Report rendering | Control: a record made on older code renders with its code stated, not refused, English report | stayed quiet |
-| Report rendering | A comparison model whose hash differs from the one the replay logged breaks the report's run chain | fired |
-| Report rendering | A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry names, breaks the chain; an unfinished start is shown as unfinished, French report | fired |
-| Report rendering | A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry names, breaks the chain; an unfinished start is shown as unfinished, English report | fired |
-| Report rendering | v1's history comes only from its rules-frozen entries; without its plain entry the chain breaks | fired |
-| Report rendering | A freeze tag moved back to an earlier commit, or onto a named change commit, is refused; an owner's ruling on 2025 is no departure | fired |
-| Report rendering | The report refuses an incomplete v2 departure record, by the replay gate's own rule | fired |
-| Report rendering | A replay from before a departure made under a change commit the entry names, neither a commit the tag moved from nor one it moved to, breaks the report's run chain | fired |
-| Report rendering | A standing the gate's record did not log, or a status drawn from anything but the test of record, makes the report refuse | fired |
-| Report rendering | A finished 2025 replay without its standing or its gate's record breaks the report's run chain | fired |
+| Report rendering | A comparison model whose hash differs from the one the replay logged breaks the report's run chain | passed |
+| Report rendering | A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry names, breaks the chain; an unfinished start is shown as unfinished, French report | passed |
+| Report rendering | A v2 departure from a replay in neither the store nor the ledger, or from a freeze commit no departure entry names, breaks the chain; an unfinished start is shown as unfinished, English report | passed |
+| Report rendering | v1's history comes only from its rules-frozen entries; without its plain entry the chain breaks | passed |
+| Report rendering | A freeze tag moved back to an earlier commit, or onto a named change commit, is refused; an owner's ruling on 2025 is no departure | passed |
+| Report rendering | The report refuses an incomplete v2 departure record, by the replay gate's own rule | passed |
+| Report rendering | A replay from before a departure made under a change commit the entry names, neither a commit the tag moved from nor one it moved to, breaks the report's run chain | passed |
+| Report rendering | A standing the gate's record did not log, or a status drawn from anything but the test of record, makes the report refuse | passed |
+| Report rendering | A finished 2025 replay without its standing or its gate's record breaks the report's run chain | passed |
 | Report rendering | Control: the owner's ruling the gate read is printed, with the stopped start it names, French report | stayed quiet |
 | Report rendering | Control: the owner's ruling the gate read is printed, with the stopped start it names, English report | stayed quiet |
-| Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, French report | fired |
-| Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, English report | fired |
-| Report rendering | A 2024 replay whose contrasts or verdicts do not carry the seen-by-the-developers label makes the report refuse | fired |
-| Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, French report | fired |
-| Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, English report | fired |
-| Report rendering | A better claim from a 2025 that is not clean makes the report refuse, French report | fired |
-| Report rendering | A better claim from a 2025 that is not clean makes the report refuse, English report | fired |
-| Report rendering | A 2025 verdict without a 2025 replay makes the report refuse, French report | fired |
-| Report rendering | A 2025 verdict without a 2025 replay makes the report refuse, English report | fired |
-| Report rendering | A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, French report | fired |
-| Report rendering | A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, English report | fired |
-| Report rendering | An unfinished 2025 start not listed in section 9 makes the report refuse, French report | fired |
-| Report rendering | An unfinished 2025 start not listed in section 9 makes the report refuse, English report | fired |
-| Report rendering | A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the recommendation stay its own, French report | fired |
-| Report rendering | A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the recommendation stay its own, English report | fired |
-| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (not confirmed), French report | fired |
-| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (not confirmed), English report | fired |
-| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (better than v1 as shipped only), French report | fired |
-| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (better than v1 as shipped only), English report | fired |
-| Report rendering | An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report refuse, French report | fired |
-| Report rendering | An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report refuse, English report | fired |
-| Report rendering | A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the report renders, French report | fired |
-| Report rendering | A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the report renders, English report | fired |
-| Report rendering | A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the report refuse, even when section 2 states another year's; and the reverse, French report | fired |
-| Report rendering | A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the report refuse, even when section 2 states another year's; and the reverse, English report | fired |
-| Report rendering | A 2024 day without a forecast, listed by the through-2025 data-quality run, is not counted among 2025's days | fired |
-| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 clean), French report | fired |
-| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 clean), English report | fired |
-| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), French report | fired |
-| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), English report | fired |
-| Report rendering | The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says it is no back-test on held-out data, French report | fired |
-| Report rendering | The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says it is no back-test on held-out data, English report | fired |
-| Report rendering | The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds as printed, French report | fired |
-| Report rendering | The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds as printed, English report | fired |
-| Report rendering | The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a finding against the two-day argument; with no placement constructible, the argument is not put to the test, French report | fired |
-| Report rendering | The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a finding against the two-day argument; with no placement constructible, the argument is not put to the test, English report | fired |
-| Report rendering | A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report refuse, French report | fired |
-| Report rendering | A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report refuse, English report | fired |
-| Report rendering | A lead of 75 hours or more not stated in section 4.1 of the data-quality report makes it refuse, even when In brief states it | fired |
-| Report rendering | The data-quality report of a through-2025 run lists no 2025 day without a forecast, no 2025 hour of the forecast and no 2025 lead of 75 hours or more, and says which counts include 2025 | fired |
-| Report rendering | Before any 2025 start, a data-quality run that reaches 2025, named or the latest, makes the render refuse, naming that run | fired |
-| Report rendering | Through the command, before any 2025 start, the report on a through-2025 data-quality run named by its ID is refused, naming the run, and the report folder stays empty | fired |
-| Report rendering | A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, the report refuses, French report | fired |
-| Report rendering | A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, the report refuses, English report | fired |
+| Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, French report | passed |
+| Report rendering | A report or story that does not open with its status sentence, whatever the status, is refused, English report | passed |
+| Report rendering | A 2024 replay whose contrasts or verdicts do not carry the seen-by-the-developers label makes the report refuse | passed |
+| Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, French report | passed |
+| Report rendering | A better claim without the held-out label, in the sentence or on the page, makes the report refuse, English report | passed |
+| Report rendering | A better claim from a 2025 that is not clean makes the report refuse, French report | passed |
+| Report rendering | A better claim from a 2025 that is not clean makes the report refuse, English report | passed |
+| Report rendering | A 2025 verdict without a 2025 replay makes the report refuse, French report | passed |
+| Report rendering | A 2025 verdict without a 2025 replay makes the report refuse, English report | passed |
+| Report rendering | A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, French report | passed |
+| Report rendering | A v1 number on 2024 taken from anywhere but its ledger entries makes the report refuse, English report | passed |
+| Report rendering | An unfinished 2025 start not listed in section 9 makes the report refuse, French report | passed |
+| Report rendering | An unfinished 2025 start not listed in section 9 makes the report refuse, English report | passed |
+| Report rendering | A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the recommendation stay its own, French report | passed |
+| Report rendering | A later passing 2025 rerun never overrides the test of record: the status, the withdrawn claims and the recommendation stay its own, English report | passed |
+| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (not confirmed), French report | passed |
+| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (not confirmed), English report | passed |
+| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (better than v1 as shipped only), French report | passed |
+| Report rendering | A clean 2025 that does not confirm v2, without its recommendation or without opening the In brief and the story, makes the report refuse (better than v1 as shipped only), English report | passed |
+| Report rendering | An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report refuse, French report | passed |
+| Report rendering | An unfinished test of record rendered with a 2025 claim, or with another start's verdict, makes the report refuse, English report | passed |
+| Report rendering | A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the report renders, French report | passed |
+| Report rendering | A stopped start left out, or listed after the test of record, makes the report refuse; listed first, the report renders, English report | passed |
+| Report rendering | A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the report refuse, even when section 2 states another year's; and the reverse, French report | passed |
+| Report rendering | A 2025 lead of 75 hours or more in the test of record's data-quality run not stated in section 9 makes the report refuse, even when section 2 states another year's; and the reverse, English report | passed |
+| Report rendering | A 2024 day without a forecast, listed by the through-2025 data-quality run, is not counted among 2025's days | passed |
+| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 clean), French report | passed |
+| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 clean), English report | passed |
+| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), French report | passed |
+| Report rendering | The 2019–2024 records revised are listed in section 9, each with its values (two records of one hour both shown), whatever 2025's standing; a page that drops one, prints another value or lists it elsewhere is refused (2025 post hoc), English report | passed |
+| Report rendering | The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says it is no back-test on held-out data, French report | passed |
+| Report rendering | The standards table says held-out data done only of a clean, finished 2025 test of record; post hoc, it says it is no back-test on held-out data, English report | passed |
+| Report rendering | The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds as printed, French report | passed |
+| Report rendering | The 2025 coverage is given with its 95% interval and whether it holds the 90% nominal, judged on the bounds as printed, English report | passed |
+| Report rendering | The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a finding against the two-day argument; with no placement constructible, the argument is not put to the test, French report | passed |
+| Report rendering | The run-reuse paragraph follows its placements: one week past its untouched days, at a single offset, is a finding against the two-day argument; with no placement constructible, the argument is not put to the test, English report | passed |
+| Report rendering | A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report refuse, French report | passed |
+| Report rendering | A lead of 75 hours or more in 2019-2024 not stated as a finding against the two-day argument makes the report refuse, English report | passed |
+| Report rendering | A lead of 75 hours or more not stated in section 4.1 of the data-quality report makes it refuse, even when In brief states it | passed |
+| Report rendering | The data-quality report of a through-2025 run lists no 2025 day without a forecast, no 2025 hour of the forecast and no 2025 lead of 75 hours or more, and says which counts include 2025 | passed |
+| Report rendering | Before any 2025 start, a data-quality run that reaches 2025, named or the latest, makes the render refuse, naming that run | passed |
+| Report rendering | Through the command, before any 2025 start, the report on a through-2025 data-quality run named by its ID is refused, naming the run, and the report folder stays empty | passed |
+| Report rendering | A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, the report refuses, French report | passed |
+| Report rendering | A fresh clone shows each record from the ledger, labelled; without the label or the sentence on the store, the report refuses, English report | passed |
 | Report rendering | Control: a store without the 2025 test of record shows it from its entry, with the stopped start it departs from, French report | stayed quiet |
 | Report rendering | Control: a store without the 2025 test of record shows it from its entry, with the stopped start it departs from, English report | stayed quiet |
 | Report rendering | Control: with everything in the store, each record renders from its run, with no ledger label, French report | stayed quiet |
 | Report rendering | Control: with everything in the store, each record renders from its run, with no ledger label, English report | stayed quiet |
-| Report rendering | A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement line, is refused, French report | fired |
-| Report rendering | A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement line, is refused, English report | fired |
-| Report rendering | Attribution lines that differ from the wording the owner ruled in `AGENTS.md` fail the test | fired |
-| Report rendering | One word changed in `attribution.py` fails the comparison with `AGENTS.md` | fired |
+| Report rendering | A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement line, is refused, French report | passed |
+| Report rendering | A report, validation or data quality, without the NOAA and IEM line, or without the widened no-endorsement line, is refused, English report | passed |
+| Report rendering | Attribution lines that differ from the wording the owner ruled in `AGENTS.md` fail the test | passed |
+| Report rendering | One word changed in `attribution.py` fails the comparison with `AGENTS.md` | passed |
 | Report rendering | Control: diagnostics that did not finish are said so, in place of their measures, French report | stayed quiet |
 | Report rendering | Control: diagnostics that did not finish are said so, in place of their measures, English report | stayed quiet |
-| Report rendering | 2025 measures made with another design than 2023's and 2024's make the report refuse | fired |
-| Report rendering | A replay whose lag coefficients are not both positive makes the report, which says they are, refuse | fired |
-| Report rendering | A diagnostic longest lead unlike the data-quality run's makes the report refuse | fired |
-| Report rendering | Selection values that disagree with the validation run make the report refuse | fired |
+| Report rendering | 2025 measures made with another design than 2023's and 2024's make the report refuse | passed |
+| Report rendering | A replay whose lag coefficients are not both positive makes the report, which says they are, refuse | passed |
+| Report rendering | A diagnostic longest lead unlike the data-quality run's makes the report refuse | passed |
+| Report rendering | Selection values that disagree with the validation run make the report refuse | passed |
 | Report rendering | Control: both pages, in both languages, render from what the replay, its diagnostics, the 2025 gate and the ledger write, and the report's episode rows have the keys of the rows the measure builds | stayed quiet |
 | Report rendering | Control: the stamp carries the test of record's 2025 standing, never a rerun's | stayed quiet |
 | Report rendering | Control: v2's figures and templates pass the public-safety scan | stayed quiet |
-| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step colder below the heating base is a finding, with its hour, its step and its size | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step warmer above the base is a finding | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step colder below the heating base is a finding, with its hour, its step and its size | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A curve that falls one step warmer above the base is a finding | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | Control: a sound curve, and a reversal within the tolerance, give no shape finding | stayed quiet |
-| Conceptual soundness, added after the freeze (decides nothing) | A cold slope that is not positive is a finding; a positive one is not | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A fold, or a frozen model, whose slope leaves the folds' band by more than the fixed factor is flagged; without one, nothing is | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | Lags that are not positive, or whose sum is not below 1, are findings, of a frozen model or of a fold | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A cold slope that is not positive is a finding; a positive one is not | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A fold, or a frozen model, whose slope leaves the folds' band by more than the fixed factor is flagged; without one, nothing is | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | Lags that are not positive, or whose sum is not below 1, are findings, of a frozen model or of a fold | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | Control: the GAM the soundness measure refits at the ruled settings reproduces validation's out-of-sample forecasts on every hour | stayed quiet |
-| Conceptual soundness, added after the freeze (decides nothing) | A refit variant that does not reproduce validation, or not on the same hours, stops the run | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | The soundness measure refuses a row after the design window | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | Curves that are not the ones that forecast make the input sensitivity a finding | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A curves table that is not the frozen model's is refused | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness run that does not name the chain's frozen models, validation, hashes or code makes the report refuse | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | Soundness results that name another run than their own make the report refuse | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, French report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, French report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, French report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, English report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, English report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, English report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, French report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, English report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, French report | fired |
-| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, English report | fired |
+| Conceptual soundness, added after the freeze (decides nothing) | A refit variant that does not reproduce validation, or not on the same hours, stops the run | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | The soundness measure refuses a row after the design window | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | Curves that are not the ones that forecast make the input sensitivity a finding | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A curves table that is not the frozen model's is refused | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness run that does not name the chain's frozen models, validation, hashes or code makes the report refuse | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | Soundness results that name another run than their own make the report refuse | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, English report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness check that fails without being stated as a finding, or a finding whose check passed, makes the report refuse, English report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | The story, or section 12, stating the soundness measures without the label "added after the freeze, deciding nothing" makes the report refuse, English report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness section whose numbers are not its run's makes the report refuse, English report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A soundness finding or measure without the label "added after the freeze; decides nothing", or a finding of the run left out, makes the report refuse, English report | passed |
 
 The break "A shift in the demand level: retrain" multiplies the synthetic world's demand by 1.12, a 12% rise. On the real 2023 hours, a 10% rise yielded "retrain" within 10 weeks at every start (section 10). On the real 2024 hours (seen by the developers), the same rise yielded "retrain" within 10 weeks at every start (section 10).
 
@@ -1390,15 +1406,15 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Run | Identifier | Date |
 |---|---|---|
-| data quality | `718b9c3a51ad46009cf33e04db045e46` | 2026-10-18 07:20 UTC |
-| validation | `47d38b233b804a29982140268449cdaf` | 2026-10-18 07:24 UTC |
-| models frozen for 2023 | `6c6ce0666e844452a95eeaf863bcc736` | 2026-10-18 07:24 UTC |
-| models frozen for 2024 | `26df92f2be4948d9b5a5d97fa2fcfe30` | 2026-10-18 07:53 UTC |
-| 2023 rehearsal | `aa12983bc72e4186bcf3124a2b7ec9c1` | 2026-10-18 07:24 UTC |
-| the 2023 rehearsal's diagnostics (section 7) | `477bbd6d09f041099f0c315d1af7b89b` | 2026-10-18 07:25 UTC |
-| this chain's 2024 replay | `fac1d0f3813b4499b10e4622c8fc4997` | 2026-10-18 07:53 UTC |
-| the diagnostics of the 2024 replay whose numbers section 8 shows | `e7655cd3f663402f82c4fae16277e60a` | 2026-10-18 07:54 UTC |
-| conceptual soundness, added after the freeze (section 3.1) | `6af4421e1e8f466a845118761947a708` | 2026-10-18 08:27 UTC |
-| breaks | `5b95f2f8ffbe48ecb1e786b41f2649b6` | 2026-10-18 08:48 UTC |
+| data quality | `121b2888c89b4d93b4ff030620b1a46c` | 2026-10-19 00:27 UTC |
+| validation | `4b53184205654e2383a393e70d6eb16c` | 2026-10-19 00:31 UTC |
+| models frozen for 2023 | `56531ced65f0453f930576b76b132e84` | 2026-10-19 00:31 UTC |
+| models frozen for 2024 | `6b75de5955224d91bee89f80cbdf28d5` | 2026-10-19 00:56 UTC |
+| 2023 rehearsal | `d506557a88ee48be9d4f28e3cb7ef32c` | 2026-10-19 00:31 UTC |
+| the 2023 rehearsal's diagnostics (section 7) | `270016dd8b074fe2a905f27fd99781b9` | 2026-10-19 00:32 UTC |
+| this chain's 2024 replay | `4284bb3d13dd43d0a600882142f448bd` | 2026-10-19 00:56 UTC |
+| the diagnostics of the 2024 replay whose numbers section 8 shows | `8ce4de0cc39349069b47e220268dabad` | 2026-10-19 00:57 UTC |
+| conceptual soundness, added after the freeze (section 3.1) | `67886e32a5c24dc1b7a5c9b362e211db` | 2026-10-19 01:29 UTC |
+| breaks | `77307663b9da4f3f90e3b8aad3e74c74` | 2026-10-19 01:47 UTC |
 
-Code hash: `53b6983300730f26e728fcdaf93e8e4fc23b99007dc1de9164c19a150fe04bc6`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.
+Code hash: `dd449fab8c3ca7f9c13a9128086baeb91e090df2b6672d533a7f62bb7a3f1bb6`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.

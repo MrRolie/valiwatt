@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `718b9c3a51ad46009cf33e04db045e46` (2026-10-18 07:20 UTC), code `c9d98aaa957b`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `121b2888c89b4d93b4ff030620b1a46c` (2026-10-19 00:27 UTC), code `908535a0f5a6`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -70,8 +70,8 @@ A gate that fails stops the chain: no canonical data is written and the command 
 
 | Check | Result | Measure | Threshold |
 |---|---|---|---|
-| Expected window, no record outside it | passed | 0 outside | 0 |
-| Every duplicate matches a known shape | passed | 0 unresolved | 0 |
+| Expected window, no record outside it | passed | 0 outside | none |
+| Every duplicate matches a known shape | passed | 0 unresolved | none |
 | Values within loose physical bounds (2019–2024) | passed | 13,294 to 42,473 MW | 5,000 to 60,000 MW |
 | Share of usable hours | passed | 99.89% | ≥ 99% |
 
@@ -144,6 +144,8 @@ The temperature forecast v2 uses is NOAA's National Blend of Models NBS guidance
 |---|---|---|
 | Bounds, the whole window (−60 to 45 °C) | passed | 0 points outside the bounds out of 197,879; from −28.3 to 35.0 °C; 0 blank points |
 | Days fed, the whole window (threshold 98%) | passed | 2,192 days out of 2,192 (100.00%) |
+
+The 98% threshold was set after the archive's day counts for 2019–2024 had been seen (plan section 3.4): on those years, its gate is no test.
 
 **The days no forecast fed**: none. Such a day fails the replay's day data-quality check ("investigate the data"). 0 days were fed by the same forecast as the day before.
 

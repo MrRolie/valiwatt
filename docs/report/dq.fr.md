@@ -1,6 +1,6 @@
 # Qualité et représentativité des données
 
-_Rapport généré à partir de l'exécution MLflow `718b9c3a51ad46009cf33e04db045e46` (2026-10-18 07:20 UTC), code `c9d98aaa957b`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir de l'exécution MLflow `121b2888c89b4d93b4ff030620b1a46c` (2026-10-19 00:27 UTC), code `908535a0f5a6`. Chaque valeur mesurée de ce rapport vient de cette exécution ; aucune n'est saisie à la main. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -70,8 +70,8 @@ Un contrôle bloquant qui échoue arrête la chaîne : aucune donnée canonique 
 
 | Contrôle | Résultat | Mesure | Seuil |
 |---|---|---|---|
-| Fenêtre attendue, aucun enregistrement hors fenêtre | réussi | 0 hors fenêtre | 0 |
-| Chaque doublon correspond à une forme connue | réussi | 0 non résolu | 0 |
+| Fenêtre attendue, aucun enregistrement hors fenêtre | réussi | 0 hors fenêtre | aucun |
+| Chaque doublon correspond à une forme connue | réussi | 0 non résolu | aucun |
 | Valeurs dans des bornes physiques larges (2019–2024) | réussi | 13 294 à 42 473 MW | 5 000 à 60 000 MW |
 | Part des heures utilisables | réussi | 99,89 % | ≥ 99 % |
 
@@ -145,6 +145,8 @@ La prévision de température que v2 utilise est la guidance NBS du National Ble
 | Bornes, toute la fenêtre (−60 à 45 °C) | réussi | 0 points hors bornes sur 197 879 ; de −28,3 à 35,0 °C ; 0 points vides |
 | Jours alimentés, toute la fenêtre (seuil 98 %) | réussi | 2 192 jours sur 2 192 (100,00 %) |
 
+Le seuil de 98 % a été fixé après que les décomptes de jours de l'archive pour 2019–2024 eurent été vus (section 3.4 du plan) : sur ces années, sa porte n'est pas un test.
+
 **Les jours qu'aucune prévision n'a alimentés** : aucun. Un tel jour échoue au contrôle de qualité du jour dans le rejeu (« examiner les données »). 0 jours ont été alimentés par la même prévision que la veille.
 
 **Rangs de la prévision utilisée** (0 : la plus fraîche) : rang 0, 2 192 jours. **Âge de la prévision à l'origine du jour** : 4 h, 1 770 jours ; 5 h, 419 jours ; 10 h, 1 jours ; 17 h, 1 jours ; 22 h, 1 jours. **Heure de la prévision utilisée, par année** : 2019 : 0 h UTC (364 jours), 12 h UTC (1 jours) ; 2020 : 0 h UTC (55 jours), 1 h UTC (310 jours), 7 h UTC (1 jours) ; 2021 : 1 h UTC (364 jours), 19 h UTC (1 jours) ; 2022 : 1 h UTC (365 jours) ; 2023 : 1 h UTC (365 jours) ; 2024 : 1 h UTC (366 jours).
@@ -204,7 +206,7 @@ _La demande journalière selon la température moyenne du jour à Montréal, 201
 
 **Ce que les chiffres montrent.** Pour savoir si un écart de R² dépasse le hasard de l'échantillon, on rééchantillonne 1 000 fois les semaines complètes (des jours voisins se ressemblent ; tirer des jours isolés sous-estimerait l'incertitude) et on réajuste les deux modèles à chaque tirage.
 
-| Comparaison | Écart de R² (moyenne − Montréal) | Intervalle à 95 % | Semaines |
+| Comparaison | Écart de R² (moyenne − Montréal) | Intervalle à 95 % | Semaines |
 |---|---|---|---|
 | Toute l'année | −0,012 | −0,016 à −0,008 | 261 |
 | Hiver | +0,006 | −0,010 à +0,022 | 68 |

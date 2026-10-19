@@ -1,6 +1,6 @@
 # Validation et surveillance d'une prévision de la demande d'électricité au Québec, v2
 
-_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 8), code `c9d98aaa957b`, empreinte du code `53b698330073`, règles gelées au commit `825b7bd134a8` (étiquette `rules-frozen-v2`). Chaque valeur mesurée vient de ces exécutions, et chaque constante de conception des exécutions ou du code qui les a produites ; aucune n'est saisie à la main. Chaque résultat porte son étiquette d'évaluation, lue des exécutions : _dans l'échantillon du choix de la famille et de l'entrée_ pour 2020–2023, _répétition sur une année de conception_ pour 2023, _vu par les développeurs_ pour 2024, et pour 2025 _données réservées_ seulement quand son test de référence est propre. La version anglaise est dérivée de celle-ci._
+_Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le rejeu de 2024 (section 8), code `908535a0f5a6`, empreinte du code `dd449fab8c3c`, règles gelées au commit `825b7bd134a8` (étiquette `rules-frozen-v2`). Chaque valeur mesurée vient de ces exécutions. Les constantes de conception que ses gabarits écrivent en chiffres sont lues des exécutions ou du code qui les a produites : un test tient le texte des gabarits, les chaînes que leur code imprime et les nombres qu'écrivent leurs expressions imprimées aux rares chiffres qu'ils peuvent saisir : renvois de section, du plan et des normes, noms de version, dates des décisions du propriétaire, faits du calendrier, constantes d'une formule et numérotation d'une liste. Les libellés des bris de la section 11 sont des descriptions des tests écrites à la main, chiffres compris, et ce test ne les lit pas. « Les développeurs » sont les agents IA qui ont construit ce projet et le propriétaire qui les dirige. Chaque résultat porte son étiquette d'évaluation, lue des exécutions : _dans l'échantillon du choix de la famille et de l'entrée_ pour 2020–2023, _répétition sur une année de conception_ pour 2023, _vu par les développeurs_ pour 2024, et pour 2025 _données réservées_ seulement quand son test de référence est propre. La version anglaise est dérivée de celle-ci._
 
 > Données de demande : Hydro-Québec, « Historique de la demande d'électricité au Québec » (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), sous licence CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offre ces données à titre informatif et sans garantie de qualité ; ce ne sont pas des données officielles. Ce projet les a contrôlées, en a masqué ou corrigé quelques heures (chaque cas est documenté) et les a agrégées ; il ne redistribue pas le jeu de données, et les rapports n'en citent que quelques valeurs horaires, comme preuves.
 >
@@ -18,7 +18,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 - **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente.
 - Sur les 34 997 heures communes de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), l'erreur absolue moyenne est de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la même prévision et 4,42 % pour v1 tel que livré. Ces années ont servi à choisir la famille et l'entrée : l'avantage de v2 y est biaisé vers le haut par ce choix, et il ne prouve pas que v2 est meilleur (section 3).
-- Ses intervalles à 90 % ont contenu la demande 90,3 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils en contiennent moins que promis dans ces groupes : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
+- Ses intervalles à 90 % ont contenu la demande 90,3 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils la contiennent moins souvent que le nominal dans ces groupes : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
 - Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 3 fois sur 5, toujours par le haut. Rapporté, jamais jugé.
 - 2024 (_vu par les développeurs_) : EAMP de 2,58 %, couverture de 92,2 %, aucune recommandation ; verdicts : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Un succès sur une année déjà vue est une preuve faible : il ne soutient aucune affirmation ; v2 va à 2025 tel que gelé (section 8).
 - 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sauf si ce départ s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 9 ; section 11.3.5 du plan).
@@ -36,7 +36,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 | **Modèle** | Un modèle additif de la famille des GAM, ajusté par moindres carrés pénalisés : une courbe de température par heure locale (splines, 10 nœuds aux quantiles des lignes d'entraînement, degré 3, prolongée en ligne droite hors de la plage d'entraînement), les 72 constantes de v1 par heure et type de jour, la demande de la veille et de la semaine précédente ; normalisation puis crête, alpha 1,0. Figé sur les données jusqu'au 2023-12-24 ; empreinte `7aadbc5866c6`, celle du modèle figé de cette chaîne, d'où viennent cette date, l'intervalle ci-dessous et les courbes de la section 3. Comparé à v1 tel que livré et à la forme de v1 sur la même prévision, qui ne recommandent jamais rien. |
 | **Intervalle** | Prévision × (1 ± 6,22 %). La demi-largeur est un quantile des 8 729 erreurs relatives hors échantillon de 2023-01 à 2023-12 déjà notées quand le modèle figé est ajusté : la forme d'un intervalle conforme « split », sans sa garantie en échantillon fini. La couverture mesurée en est la preuve (sections 5 et 8). |
 | **Erreur en validation** | EAMP de 2,83 % [2,69 % ; 2,95 %] sur ses heures de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), contre 7,81 % pour la référence naïve (section 3). |
-| **Rejeu de 2024** | _vu par les développeurs_ : EAMP de 2,58 %, couverture de 92,2 % ; aucune recommandation ; verdicts « meilleur » contre v1 tel que livré et « meilleur » contre la forme de v1 (section 8). |
+| **Rejeu de 2024** | _vu par les développeurs_ : EAMP de 2,58 %, couverture de 92,2 % ; aucune recommandation, à côté de ce que les règles peuvent manquer cette année-là : un écart soutenu de ±2 % entre la demande et la prévision a donné « réentraîner » en 8 semaines à 4 des 8 cas, et des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs, et des réductions moindres à 1 des 4 au plus ; verdicts « meilleur » contre v1 tel que livré et « meilleur » contre la forme de v1 (section 8). |
 | **2025** | En attente (section 9). |
 | **Mise en garde météo** | La prévision de température est disponible, par hypothèse, 2 heures après son heure d'émission ; tout résultat qui en dépend repose sur cette hypothèse (section 2). La température observée de l'heure visée n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
 | **Limites** | Section 10. |
@@ -46,8 +46,8 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 - **Validation progressive.** Chaque mois de 2020 à 2023 est prévu par des modèles réajustés sur les heures qui le précèdent seulement, moins les 7 derniers jours (l'embargo). Les trois modèles comparés y sont ajustés aux mêmes plis : v2, la forme de v1 sur la même prévision et v1 tel que livré, refait dans le harnais de v2.
 - **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) : en moyenne, de combien la prévision s'écarte de la demande réelle. Le biais signé dit dans quel sens : biais = (demande − prévision) / demande, positif quand la prévision est trop basse.
-- **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne.
-- **La règle de décision, fixée dans le plan avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le 5ᵉ centile de celles de 2019–2023 (−12,0 °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de 120 heures froides ou moins de 4 semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
+- **L'incertitude d'une moyenne.** Les heures voisines partagent la météo ; on rééchantillonne donc des semaines entières, 1 000 fois, pour obtenir un intervalle à 95 % autour de chaque moyenne.
+- **La règle de décision, fixée dans le plan avant tout rejeu de v2.** Sur les heures communes (celles où la demande et les trois prévisions existent), on compare l'erreur de v2 à celle de chaque autre modèle, heure par heure, avec un intervalle à 95 % par semaines entières. Une comparaison est **meilleure** quand la borne haute de son intervalle est sous zéro, **pire** quand la borne basse est au-dessus, **non séparée** sinon ; les bornes sont jugées telles qu'imprimées, au centième de point. On refait les comparaisons sur les heures froides, celles dont la prévision de température est sous le 5ᵉ centile de celles de 2019–2023 (−12,0 °C) : choisies sur l'entrée connue à l'émission, jamais sur le résultat. Le verdict de chaque comparaison : *meilleur* (la comparaison est meilleure et sa queue froide n'est pas pire) ; *meilleur en moyenne, la queue froide non testable* (moins de 120 heures froides ou moins de 4 semaines) ; *pas montré meilleur* ; *pire*. « v2 est meilleur que v1 » ne se dit que du verdict contre v1 tel que livré, et seulement sur des données réservées ; « le GAM mérite sa place » que du verdict contre la forme de v1. La comparaison de l'entrée (forme de v1 sur la prévision contre v1 tel que livré) est rapportée, jamais jugée.
 - **À côté, jamais jugés.** Les 5 heures les plus chargées de chaque période jugée, 2020–2023 comme une seule période puis chaque année rejouée (par la demande réelle, parmi toutes les heures qui en ont une) : l'erreur signée de chaque modèle, ou pourquoi il n'a pas de prévision. La couverture des intervalles de v2, avec la phrase sur ses 90 % (section 5).
 - **L'intervalle de prévision.** Sa demi-largeur est un quantile des erreurs relatives |demande − prévision| / prévision. Pour chaque mois de validation, c'est le quantile de rang ⌈(n + 1) × 0,90⌉ des n erreurs hors échantillon des 12 mois précédents déjà notées quand le modèle du mois est ajusté ; pour le modèle figé, le même quantile sur les erreurs des 12 mois qui précèdent l'année rejouée, déjà notées quand il est ajusté. C'est la forme d'un intervalle conforme « split », sans sa garantie de couverture en échantillon fini : ces erreurs horaires sont autocorrélées et viennent d'autres modèles. La seule preuve est la couverture mesurée hors échantillon.
 - **Le modèle figé.** En production, le modèle n'est pas réajusté : il est ajusté une fois, figé avec son empreinte, puis rejoué heure par heure.
@@ -59,7 +59,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 **La source.** La température est celle du National Blend of Models (NBM) de la NOAA, son produit NBS pour la station CYUL (Montréal-Trudeau, l'aéroport de la station principale de v1), tel que l'archive l'Iowa Environmental Mesonet : des points toutes les trois heures, en degrés Fahrenheit, que ce projet interpole à l'heure et convertit en degrés Celsius. Les fichiers sont téléchargés par script, jamais versés au dépôt.
 
-**La règle d'alimentation.** Une prévision est **disponible** 2 heures après son heure d'émission : c'est une **hypothèse**, car l'archive ne consigne aucune heure d'arrivée, et tout résultat qui dépend de la prévision repose sur elle. Pour le jour J, parmi les 12 prévisions les plus fraîches disponibles à l'origine de J (J 05:00 UTC), on prend la plus fraîche dont les propres points encadrent chacune des 24 heures de J, chacun de ces points étant fini et dans les bornes du contrôle de qualité. On interpole linéairement dans le temps, à l'intérieur d'une seule prévision ; deux prévisions ne sont jamais mélangées. Chaque jour d'entraînement porte la prévision émise pour lui par la même règle, jamais une observation.
+**La règle d'alimentation.** Une prévision est **disponible** 2 heures après son heure d'émission : c'est une **hypothèse**, car l'archive ne consigne aucune heure d'arrivée, et tout résultat qui dépend de la prévision repose sur elle. Elle s'appuie sur les heures de livraison qu'affiche le compartiment infonuagique de la NOAA pour un produit apparenté, mesurées hors des exécutions suivies (la section 3.2 du plan en donne les décomptes) ; ces heures couvrent aussi 2024, et la sensibilité à une marge plus longue, plus bas, ne tourne que sur les années de validation, pas sur le rejeu de 2024. Pour le jour J, parmi les 12 prévisions les plus fraîches disponibles à l'origine de J (J 05:00 UTC), on prend la plus fraîche dont les propres points encadrent chacune des 24 heures de J, chacun de ces points étant fini et dans les bornes du contrôle de qualité. On interpole linéairement dans le temps, à l'intérieur d'une seule prévision ; deux prévisions ne sont jamais mélangées. Chaque jour d'entraînement porte la prévision émise pour lui par la même règle, jamais une observation.
 
 **Sur 2019–2023.** 1 826 jours sur 1 826 alimentés ; aucun jour n'est resté sans prévision. Rangs de la prévision utilisée (0 : la plus fraîche) : rang 0, 1 826 jours. Heure de la prévision utilisée, par année : 2019 : 0 h UTC (364 jours), 12 h UTC (1 jours) ; 2020 : 0 h UTC (55 jours), 1 h UTC (310 jours), 7 h UTC (1 jours) ; 2021 : 1 h UTC (364 jours), 19 h UTC (1 jours) ; 2022 : 1 h UTC (365 jours) ; 2023 : 1 h UTC (365 jours).
 
@@ -90,7 +90,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 **La sensibilité à la marge de disponibilité.** Validé aussi avec des prévisions disponibles 6 heures après leur émission, ce qui retire à chaque jour sa propre prévision du début de journée, le GAM change son EAMP de +0,02 pt [+0,01 pt ; +0,02 pt] (6 heures moins 2, sur 35 036 heures) : c'est ce que coûterait une disponibilité à 6 heures au lieu de 2 ; un délai plus long n'est pas mesuré. Cette variante est étiquetée et ne choisit rien.
 
-**Le 31 décembre 2023.** Ses deux dernières heures demandent le point du 1ᵉʳ janvier 2024 06:00 UTC d'une prévision émise le 31 décembre et disponible avant l'origine de ce jour : l'information est celle de 2023, et ce jour est prévu comme les autres. L'essai préliminaire qui a servi au choix coupait sur l'heure de validité et laissait ce jour de côté : les heures de v2 sur 2020–2023 en ont 24 de plus que les siennes.
+**Le dernier jour de 2023.** Ses deux dernières heures demandent un point valide tôt le premier jour de 2024, d'une prévision émise ce dernier jour et disponible avant son origine : l'information est celle de 2023, et ce jour est prévu comme les autres. L'essai préliminaire qui a servi au choix coupait sur l'heure de validité et laissait ce jour de côté : les heures de v2 sur 2020–2023 contiennent celles de ce jour, que celles de l'essai n'ont pas.
 
 **Les délais de prévision.** Le plus long délai d'un point de prévision, par année d'émission : 2019, 66 h ; 2020, 72 h ; 2021, 71 h ; 2022, 71 h ; 2023, 71 h ; 2024, 71 h. L'argument de la section 9.2 du plan (une mauvaise prévision gâte au plus deux jours consécutifs) tient tant qu'aucun point n'atteint 75 heures. Aucune année ne l'atteint. Les changements de modèle du NBM au fil des années ne sont pas suivis : la série de prévisions n'est pas homogène, et le moniteur de dérive la surveille.
 
@@ -100,7 +100,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 48 plis mensuels, de 2020-01 à 2023-12, embargo de 7 jours. Chaque modèle sur ses propres heures :
 
-| Prévision (_dans l'échantillon du choix de la famille et de l'entrée_) | EAMP | IC 95 % | Biais signé | Heures |
+| Prévision (_dans l'échantillon du choix de la famille et de l'entrée_) | EAMP | IC 95 % | Biais signé | Heures |
 |---|---|---|---|---|
 | v2, le GAM sur la prévision (production) | 2,83 % | [2,69 % ; 2,95 %] | +1,17 % | 35 036 |
 | la forme de v1 sur la prévision | 3,48 % | [3,36 % ; 3,59 %] | +1,17 % | 35 036 |
@@ -112,7 +112,7 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 **Les valeurs suivies du choix**, sur les 34 997 heures communes (209 semaines ; _dans l'échantillon du choix de la famille et de l'entrée_) : EAMP de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la prévision, 4,42 % pour v1 tel que livré. Erreur signée aux 5 heures les plus chargées de 2020–2023, parmi toutes les heures qui ont une demande (demande moins prévision, sur la demande ; positive quand la prévision est trop basse) : v2, le GAM sur la prévision (production), +5,7 % en moyenne ; la forme de v1 sur la prévision, +12,8 % en moyenne ; v1 tel que livré (météo de la veille), +27,0 % en moyenne. Les heures que chaque modèle n'a pas, par raison : v2, le GAM sur la prévision (production) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; la forme de v1 sur la prévision : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10) ; v1 tel que livré (météo de la veille) : demande de la semaine précédente indisponible (9), demande de la veille indisponible (10), température de la veille absente (39) ; sans demande utilisable : 9.
 
-| Comparaison (_dans l'échantillon du choix de la famille et de l'entrée_) | Différence d'EAMP | IC 95 % | État |
+| Comparaison (_dans l'échantillon du choix de la famille et de l'entrée_) | Différence d'EAMP | IC 95 % | État |
 |---|---|---|---|
 | v2 contre v1 tel que livré | −1,59 pt | [−1,78 pt ; −1,41 pt] | meilleur |
 | v2 contre la forme de v1 sur la même prévision | −0,65 pt | [−0,76 pt ; −0,55 pt] | meilleur |
@@ -137,7 +137,7 @@ Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1�
 
 **v2 par saison et par année** (_dans l'échantillon du choix de la famille et de l'entrée_) :
 
-| Groupe | EAMP | IC 95 % | Biais | IC 95 % du biais |
+| Groupe | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
 | automne | 2,42 % | [2,21 % ; 2,63 %] | +1,18 % | [+0,90 % ; +1,48 %] |
 | printemps | 3,21 % | [2,97 % ; 3,43 %] | +0,69 % | [+0,17 % ; +1,15 %] |
@@ -150,7 +150,7 @@ Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1�
 
 **Par décile de charge prévue par v2** (les déciles sont pris sur la prévision, jamais sur la demande réelle) :
 
-| Décile | EAMP | IC 95 % | Biais | IC 95 % du biais |
+| Décile | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
 | 1 | 1,98 % | [1,82 % ; 2,15 %] | +1,23 % | [+0,88 % ; +1,55 %] |
 | 2 | 2,16 % | [2,03 % ; 2,30 %] | +1,07 % | [+0,79 % ; +1,34 %] |
@@ -165,7 +165,7 @@ Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1�
 
 **Par heure de la journée** (heure locale où commence l'heure de demande) :
 
-| Heure | EAMP | IC 95 % | Biais | IC 95 % du biais |
+| Heure | EAMP | IC 95 % | Biais | IC 95 % du biais |
 |---|---|---|---|---|
 | 0 h | 2,61 % | [2,46 % ; 2,76 %] | +1,27 % | [+1,04 % ; +1,49 %] |
 | 1 h | 2,61 % | [2,46 % ; 2,75 %] | +1,28 % | [+1,04 % ; +1,50 %] |
@@ -227,7 +227,7 @@ Queue froide (_dans l'échantillon du choix de la famille et de l'entrée_) : 1�
 
 ### 3.1 Solidité conceptuelle, ajoutée après le gel
 
-_Ajoutée après le gel des règles de v2, à la décision du propriétaire du 2026-10-17, cette section ne décide rien : elle interprète et vérifie les facteurs du modèle, à partir des modèles figés pour 2023 et pour 2024 et des plis de la validation, sans réajuster aucun modèle figé ni changer aucune règle. Une vérification qui échoue est un constat que le rapport énonce, jamais une porte : aucun nombre de cette section n'entre dans un seuil, un statut, un verdict ou une recommandation, et le verdict de 2025 reste celui que le plan préenregistre. Exécution `6af4421e1e8f466a845118761947a708`._
+_Ajoutée après le gel des règles de v2, à la décision du propriétaire du 2026-10-17, cette section ne décide rien : elle interprète et vérifie les facteurs du modèle, à partir des modèles figés pour 2023 et pour 2024 et des plis de la validation, sans réajuster aucun modèle figé ni changer aucune règle. Une vérification qui échoue est un constat que le rapport énonce, jamais une porte : aucun nombre de cette section n'entre dans un seuil, un statut, un verdict ou une recommandation, et le verdict de 2025 reste celui que le plan préenregistre. Exécution `67886e32a5c24dc1b7a5c9b362e211db`._
 
 Les réglages ont été fixés avant que ces mesures soient calculées sur les exécutions réelles : la base de chauffage, 18 °C, est celle de v1, fixée avant toute courbe de v2 et température à laquelle chaque courbe vaut zéro (une base lue sur ces courbes ajusterait la vérification à ce qu'elle vérifie) ; la tolérance est de 1 MW par pas de 1 °C, une unité des MW entiers dans lesquels le rapport imprime les courbes, pour que la vérification ne soit pas plus fine que la page qui l'énonce ; un pli est signalé quand sa pente sort de la bande du 5ᵉ au 95ᵉ centile des plis de plus de 0,5 fois sa largeur (10 % des plis sont hors de la bande par construction : un signalement demande donc une distance au-delà de son bord, et une distance mesurée en largeurs de la bande vaut à chaque heure, quel que soit son étalement). Les développeurs avaient toutefois déjà regardé, avant de les fixer, la table des courbes du modèle figé pour 2024.
 
@@ -357,7 +357,7 @@ Chaque variation est la différence de la courbe de son heure sur le déplacemen
 
 **Les réglages** (_dans l'échantillon du choix de la famille et de l'entrée_). L'EAMP sur les plis et les heures de la validation, chaque réglage changé seul, à côté des réglages fixés (10 nœuds, alpha 1,0 : 2,827 % sur 35 036 heures). Ces variantes ne changent pas le modèle : elles disent combien le résultat dépend de chaque réglage.
 
-| Réglage (_dans l'échantillon du choix de la famille et de l'entrée_) | Valeur | EAMP | Différence | IC 95 % |
+| Réglage (_dans l'échantillon du choix de la famille et de l'entrée_) | Valeur | EAMP | Différence | IC 95 % |
 |---|---|---|---|---|
 | Nombre de nœuds | 8 | 2,822 % | −0,004 pt | [−0,010 pt ; 0,000 pt] |
 | Nombre de nœuds | 12 | 2,832 % | +0,005 pt | [+0,001 pt ; +0,009 pt] |
@@ -417,25 +417,25 @@ Aucun des deux cas tests n'a de critère d'acceptation qui pourrait échouer : c
 
 Nominal 90 %, de 2021-01 à 2023-12 (_dans l'échantillon du choix de la famille et de l'entrée_). Les intervalles de v2 seuls alimentent le moniteur ; ceux de v1 tel que livré sont montrés pour comparaison.
 
-| Forme | Couverture | IC 95 % | Demi-largeur moyenne |
+| Forme | Couverture | IC 95 % | Demi-largeur moyenne |
 |---|---|---|---|
 | v2, relative, un quantile (production) | 90,3 % | [88,6 % ; 92,0 %] | 6,35 % |
 | v2, relative, un quantile par saison (sensibilité) | 89,7 % | [88,2 % ; 91,2 %] | 6,19 % |
 | v2, absolue (sensibilité) | 90,2 % | [88,1 % ; 92,3 %] | 7,49 % |
 | v1 tel que livré, relative | 90,6 % | [88,7 % ; 92,5 %] | 9,99 % |
 
-L'IC 95 % de la couverture globale de v2 contient le nominal de 90 %. La couverture est rapportée, jamais jugée par la règle de décision. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les blocs horaires nuit (0–5 h) et fin de soirée (21–23 h) ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC.
+L'IC 95 % de la couverture globale de v2 contient le nominal de 90 %. La couverture est rapportée, jamais jugée par la règle de décision. La couverture conditionnelle se lit sur les IC 95 % des tableaux ci-dessous, tels qu'imprimés. Sous-couverts, leur IC 95 % entièrement sous le nominal de 90 % : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10. Sur-couverts, l'IC entièrement au-dessus : l'été et l'automne ; les blocs horaires nuit (0–5 h) et fin de soirée (21–23 h) ; les déciles de charge prévue 1, 2, 3, 4 et 5. Un quantile par saison est une analyse de sensibilité. Avec un quantile par saison, l'IC 95 % de la couverture contient le nominal de 90 % dans chaque saison. Les IC des deux formes ne se chevauchent pas en hiver et en été ; ils se chevauchent au printemps et en automne. Aucun intervalle n'est calculé sur l'écart entre les deux formes : la comparaison s'arrête au chevauchement des IC.
 
 ![Couverture par saison](figures/validation/validation-coverage-by-season.fr.png)
 
-| Saison | Un quantile | IC 95 % | Un quantile par saison | IC 95 % |
+| Saison | Un quantile | IC 95 % | Un quantile par saison | IC 95 % |
 |---|---|---|---|---|
 | hiver | 81,7 % | [78,3 % ; 84,8 %] | 88,9 % | [86,0 % ; 91,4 %] |
 | printemps | 87,5 % | [83,8 % ; 90,4 %] | 89,6 % | [86,2 % ; 92,2 %] |
 | été | 97,4 % | [96,4 % ; 98,3 %] | 89,6 % | [87,0 % ; 91,9 %] |
 | automne | 94,6 % | [92,1 % ; 96,7 %] | 90,8 % | [87,1 % ; 93,8 %] |
 
-| Bloc horaire | Couverture (un quantile) | IC 95 % |
+| Bloc horaire | Couverture (un quantile) | IC 95 % |
 |---|---|---|
 | nuit (0–5 h) | 92,5 % | [90,5 % ; 94,3 %] |
 | matin (6–9 h) | 90,4 % | [88,7 % ; 92,1 %] |
@@ -443,7 +443,7 @@ L'IC 95 % de la couverture globale de v2 contient le nominal de 90 %. La couver
 | soir (16–20 h) | 90,3 % | [88,5 % ; 92,1 %] |
 | fin de soirée (21–23 h) | 92,9 % | [91,0 % ; 94,5 %] |
 
-| Décile de charge prévue | Couverture (un quantile) | IC 95 % | Un quantile par saison | IC 95 % |
+| Décile de charge prévue | Couverture (un quantile) | IC 95 % | Un quantile par saison | IC 95 % |
 |---|---|---|---|---|
 | 1 | 98,6 % | [97,7 % ; 99,4 %] | 95,6 % | [93,8 % ; 97,2 %] |
 | 2 | 96,5 % | [95,0 % ; 97,7 %] | 94,1 % | [92,2 % ; 95,5 %] |
@@ -497,7 +497,7 @@ Avant de rejouer 2024, la même procédure est répétée sur les années de con
 
 Différence d'EAMP (figé moins réajusté), sur les mêmes 8 753 heures : +0,04 pt [+0,03 pt ; +0,06 pt], écart confirmé.
 
-| Comparaison (_répétition sur une année de conception_) | Différence d'EAMP | IC 95 % | État |
+| Comparaison (_répétition sur une année de conception_) | Différence d'EAMP | IC 95 % | État |
 |---|---|---|---|
 | v2 contre v1 tel que livré | −1,41 pt | [−1,73 pt ; −1,12 pt] | meilleur |
 | v2 contre la forme de v1 sur la même prévision | −0,59 pt | [−0,82 pt ; −0,36 pt] | meilleur |
@@ -663,23 +663,27 @@ Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours in
 
 _Chaque nombre de cette section est de 2024, vu par les développeurs : vue à travers v1 et sa dérogation avant le choix de v2, elle ne prouve rien. Un succès y est une preuve faible ; un verdict qui n'est pas « meilleur » y est un constat contre v2. Quoi qu'elle montre, v2 va à 2025 tel que gelé._
 
+Les règles de surveillance que ce rejeu applique gardent la logique de celles de v1 (section 9.1 du plan) : v1 les a réglées sur sa répétition de 2023, et la dérogation de v1, qui a changé le calibrage des seuils et la façon dont le code de conception voit chaque moment de décision, est venue après que les résultats de v1 sur 2024 eurent été vus. v2 a redérivé ce que son nouveau modèle et sa nouvelle entrée touchent (section 9.3 du plan) : chaque seuil et chaque niveau d'alarme, et la demi-largeur des intervalles, à partir des semaines de validation propres à v2 ; la dérive de température, qui lit la prévision météo émise là où v1 lisait l'observation de la station ; la dérive de la prévision, qui lit les prévisions de v2 ; et le contrôle de qualité des jours, qui met aussi en échec un jour sans prévision disponible. Les règles que v2 a gelées avant son rejeu de 2024 contiennent donc des changements faits après que 2024 eut été vue à travers v1.
+
+**Le premier rejeu de 2024 de v2** est `18daf1fc40a24300aeaba5e4f14d4107`, commencé le 2026-10-17T23:11:15.047Z (code `521febded2db`, règles `998b1e492ebc`, gel `825b7bd134a8`), nommé d'après son entrée du registre des rejeux : ses artefacts figés, d'empreinte `eb412529206f`, sont ceux sur lesquels 2025 sera jugée. Les chiffres de cette section viennent du rejeu de cette chaîne, `4284bb3d13dd43d0a600882142f448bd`, commencé le 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`) : un **rejeu refait** du premier ; il ne le remplace pas, et 2025 sera jugée sur les artefacts figés du premier ; ses résultats imprimés sont identiques à ceux du premier : EAMP, couverture, recommandations, verdicts, empreinte du modèle figé et empreinte des artefacts figés qui l'ont jugé.
 **2024 côte à côte.** Les rejeux de v1 viennent de leurs entrées du registre des rejeux : consignés, non rejoués ici.
 
 | Rejeu | Étiquette | EAMP | Couverture | Recommandations |
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (gelé d’abord), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (après sa dérogation), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
-| v2, `fac1d0f3813b4499b10e4622c8fc4997` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+| v2, premier, `18daf1fc40a24300aeaba5e4f14d4107`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+| v2, refait, `4284bb3d13dd43d0a600882142f448bd` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 
 **Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `9f87c124e34344a8a65e4a7679c3c458` : EAMP de 4,23 % contre 4,23 % (écart relatif 0,0e+00), couverture de 89,39 % contre 89,43 % (−0,04 pt), l'écart que fait la correction de la veille de l'année rejouée (section 6.3 du plan).
 
-| Modèle (_vu par les développeurs_) | EAMP | IC 95 % | Couverture | Heures |
+| Modèle (_vu par les développeurs_) | EAMP | IC 95 % | Couverture | Heures |
 |---|---|---|---|---|
 | v2, le GAM sur la prévision (production) | 2,58 % | [2,33 % ; 2,85 %] | 92,2 % | 8 778 |
 | la forme de v1 sur la prévision (comparaison, n'émet rien) | 3,19 % | [3,02 % ; 3,38 %] | 91,1 % | 8 778 |
 | v1 tel que livré (météo de la veille) (comparaison, n'émet rien) | 4,23 % | [3,70 % ; 4,84 %] | 89,4 % | 8 758 |
 
-| Comparaison (_vu par les développeurs_) | Différence d'EAMP | IC 95 % | État |
+| Comparaison (_vu par les développeurs_) | Différence d'EAMP | IC 95 % | État |
 |---|---|---|---|
 | v2 contre v1 tel que livré | −1,65 pt | [−2,13 pt ; −1,22 pt] | meilleur |
 | v2 contre la forme de v1 sur la même prévision | −0,61 pt | [−0,83 pt ; −0,40 pt] | meilleur |
@@ -768,6 +772,8 @@ L'horloge avance d'heure en heure du 2024-01-01 au 2024-12-31 ; chaque lecture, 
 | Jours en échec de qualité | 0 sur 366 |
 | Semaines jugées | 52 sur 53 |
 
+**La couverture en 2024.** Seule la couverture globale est mesurée avec un intervalle en 2024 : aucune couverture par saison, par bloc horaire ni par décile de charge n'y est calculée, comme la section 5 le fait sur 2020–2023. Par semaine jugée de 2024, la couverture est passée sous le nominal de 90 % dans 17 des 52 semaines : l'hiver, 10 des 13 ; le printemps, 5 des 13 ; l'été, 0 des 13 ; l'automne, 2 des 13 (figure hebdomadaire ci-dessous) ; ces parts hebdomadaires n'ont pas d'intervalle et ne décident rien.
+
 Heures non prévues, par donnée absente (une heure peut en manquer plusieurs) : demande de la semaine précédente indisponible (2), demande de la veille indisponible (2).
 
 **Recommandations.**
@@ -817,12 +823,16 @@ Sur 2024, un écart soutenu de ±4 % ou plus entre la demande et la prévision 
 
 Aucun choc d'un seul jour n'a donné d'alerte sur 2024 : un mauvais jour gâte au plus deux jours d'une semaine, que la coupe écarte ; il ne peut que compléter des jours en échec que les semaines contenaient déjà.
 
+**Changement de niveau de la demande sur 2024**, à partir de la première semaine jugée de janvier, avril, juillet et octobre, pendant 10 semaines (semaines avant « réentraîner » ; — : rien en 10 semaines), mesuré comme en section 7 :
+
 | Début | −10 % | −5 % | +5 % | +10 % | 
 |---|---|---|---|---|
 | 2024-01-01 (hiver) | 3 | 6 | 3 | 2 | 
 | 2024-04-01 (printemps) | 2 | 5 | 3 | 2 | 
 | 2024-07-01 (été) | 2 | 2 | 2 | 2 | 
 | 2024-10-07 (automne) | 2 | 2 | 8 | 2 | 
+
+**Ce que coûte l'exclusion de l'écho sur 2024** (une erreur aléatoire quotidienne sur 8 semaines), mesuré comme en section 7 :
 
 | Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
 |---|---|---|---|---|---|
@@ -862,14 +872,20 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 
 ## 9. 2025, le test de référence
 
-**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce sera ce premier départ, sauf s'il s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 11.3.5 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
+**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, `18daf1fc40a24300aeaba5e4f14d4107`, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce sera ce premier départ, sauf s'il s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 11.3.5 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
+
+**Ce que la barrière de 2025 ne peut pas faire respecter** (section 11.3 du plan) : que personne ne regarde la demande de 2025 sur le portail d'Hydro-Québec avant le test de référence, ni en diagnostiquant une récupération refusée, une exécution de qualité des données en échec ou un départ arrêté ; que personne ne calcule sur des enregistrements de 2025 hors de la commande de rejeu, dans un interpréteur par exemple, ce qui ne laisse aucun départ ; qu'une entrée de décision ne soit versée que sur la décision du propriétaire lui-même, car la barrière ne peut pas dire qui l'a écrite ; et que le magasin d'exécutions, qui liste les départs qui n'ont pas fini, soit gardé jusqu'au rendu, puisqu'il n'est pas versé au dépôt. Cela repose sur la conduite des développeurs, pas sur le code.
+
+**L'âge du modèle.** 2025 est jugée par le modèle figé sur les données jusqu'au 2023-12-24, jamais réajusté sur 2024 : par construction, une dérive de niveau de la demande acceptée depuis apparaît en 2025 comme un biais (section 16 du plan). Les comparaisons restent équitables, v1 tel que livré et la forme de v1 étant figés sur les mêmes données.
 
 ## 10. Limites
 
 - **Le choix et 2024.** La famille et l'entrée de v2 ont été choisies sur 2020–2023 ; 2024 avait été vue à travers v1. Ni l'une ni l'autre ne prouve que v2 est meilleur : seul un test de référence propre de 2025 le peut (section 9).
-- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée (2 heures après l'émission), et la sensibilité de la section 2 mesure ce que coûterait une disponibilité à 6 heures au lieu de 2 ; un délai plus long n'est pas mesuré. Le modèle du NBM change au fil des années sans être suivi.
+- **L'hypothèse de disponibilité.** L'archive ne consigne aucune heure d'arrivée des prévisions : leur disponibilité est supposée (2 heures après l'émission), et la sensibilité de la section 2 mesure ce que coûterait une disponibilité à 6 heures au lieu de 2 ; un délai plus long n'est pas mesuré. L'hypothèse repose sur les heures de livraison d'un produit apparenté de la NOAA, mesurées hors des exécutions suivies (section 2), et la sensibilité n'a tourné que sur les années de validation. Le modèle du NBM change au fil des années sans être suivi.
 - **Une seule prévision pour une province.** Un seul point de prévision tient lieu de la météo du Québec, comme une seule station en v1.
 - **Couverture conditionnelle.** L'intervalle de v2 sous-couvre l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Les seuils de couverture de l'hiver sont tirés de semaines qui avaient déjà cette sous-couverture : le moniteur ne la signale pas comme une dégradation. À l'inverse, le seuil de couverture de l'été (91,0 %) dépasse le nominal de 90 % : une semaine couverte au-delà du nominal peut y être signalée basse.
+- **Puissance de détection** (mesurée sur 2023, l'année de répétition, et sur 2024, vue par les développeurs, à quelques départs fixés). Sur 2023, un écart soutenu de ±4 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 2 des 4 départs, et de −2 %, à 2 des 4. Sur 2023, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 2 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus. Sur 2024, un écart soutenu de ±4 % ou plus entre la demande et la prévision a donné « réentraîner » en 8 semaines au plus à chacun des 4 départs ; un écart de +2 %, à 2 des 4 départs, et de −2 %, à 2 des 4. Sur 2024, des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs ; des réductions moindres (jusqu'à × 0,9), à 1 des 4 départs au plus. Un rejeu sans recommandation n'est donc pas la preuve que rien n'a changé (sections 7 et 8).
+- **La couverture en 2024.** Seule la couverture globale est mesurée avec un intervalle en 2024 ; que la couverture conditionnelle de la section 5 y ait tenu n'est pas mesuré. Par semaine jugée de 2024, la couverture est passée sous le nominal de 90 % dans 17 des 52 semaines : l'hiver, 10 des 13 ; le printemps, 5 des 13 ; l'été, 0 des 13 ; l'automne, 2 des 13 (section 8).
 - **Extrapolation.** Sous la plage d'entraînement, les courbes sont des droites ; la queue froide de la règle de décision et le décompte des heures hors plage de la section 3 mesurent ce que cela coûte.
 - **Épisodes de plusieurs jours** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Un épisode de plusieurs jours peut donner une fausse alerte sans que le modèle soit en cause : sur 2023, « réentraîner » jusqu'à 56,7 % des départs (7 jours à × 0,70) et au plus 34,9 % pour un épisode de ±15 %, aucun « recalibrer » ; sur 2024, « réentraîner » jusqu'à 51,2 % des départs (7 jours à × 0,70) et au plus 27,9 % pour un épisode de ±15 %, aucun « recalibrer » (sections 7 et 8).
 - **Changement de niveau** (mesuré sur 2023, l'année de répétition, et sur 2024, vue par les développeurs). Sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à chaque départ. Sur 2024, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à chaque départ. Les tableaux de puissance mesurent un écart entre prévision et demande, pas un changement de niveau.
@@ -881,488 +897,488 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 
 ## 11. Les bris, sur des données synthétiques
 
-Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attraper ; un témoin n'injecte rien et doit rester silencieux. L'exécution `breaks` les lance tous ; le rapport refuse d'être généré si l'un d'eux a échoué. Aucun bris ne lit les vraies données : les portes de qualité, les gardes et le rendu sont testés sur de petites données fabriquées, et l'horloge et les moniteurs dans un monde synthétique (`tests/replay_world.py`), avec un niveau d'alarme de dérive fixé à la main à 1,0. Qu'un bris se déclenche dans ce monde montre que le contrôle peut se déclencher, pas qu'il verrait la même faute dans la vraie demande.
+Chaque porte et chaque moniteur a un test qui injecte la faute qu'il doit attraper ; un témoin n'injecte rien et doit rester silencieux. Chaque libellé dit ce que son test vérifie : la plupart disent ce que le contrôle fait de la faute qu'on lui donne, et certains ce qu'il ne doit pas faire d'une entrée qu'il doit laisser sans suite (un choc d'un jour, un écho, une semaine trop courte pour être jugée). Le résultat est « réussi » quand le test a constaté ce que dit son libellé, « resté silencieux » pour un témoin, et « ÉCHEC » sinon. L'exécution `breaks` les lance tous ; le rapport refuse d'être généré si l'un d'eux a échoué. Aucun bris ne lit les vraies données : les portes de qualité, les gardes et le rendu sont testés sur de petites données fabriquées, et l'horloge et les moniteurs dans un monde synthétique (`tests/replay_world.py`), avec un niveau d'alarme de dérive fixé à la main à 1,0. Qu'un bris se déclenche dans ce monde montre que le contrôle peut se déclencher, pas qu'il verrait la même faute dans la vraie demande.
 
 | Contrôle | Bris | Résultat |
 |---|---|---|
-| Portes de qualité des données | Un doublon de forme inconnue fait échouer la porte | déclenché |
-| Portes de qualité des données | Un enregistrement mal placé mais ambigu n'est pas déplacé et fait échouer la porte | déclenché |
-| Portes de qualité des données | Un enregistrement hors de la fenêtre fait échouer la porte | déclenché |
-| Portes de qualité des données | Une demande hors bornes fait échouer la porte | déclenché |
-| Portes de qualité des données | Une couverture insuffisante fait échouer la porte | déclenché |
-| Portes de qualité des données | Des lignes météo en double font échouer la porte d'index | déclenché |
-| Portes de qualité des données | Une température impossible fait échouer la porte des bornes | déclenché |
-| Portes de qualité des données | Une panne de capteur fait échouer la porte de couverture | déclenché |
-| Portes de qualité des données | Une panne commune à plusieurs stations fait échouer la porte du panel | déclenché |
-| Portes de qualité des données | Une porte en échec arrête la chaîne : aucune donnée canonique n'est écrite | déclenché |
-| Portes de qualité des données | Des fichiers bruts qui ne correspondent plus à leur manifeste sont refusés | déclenché |
-| Portes de qualité des données | Un mois de la fenêtre absent du manifeste d'une station est refusé avant qu'aucun fichier de cette station ne soit haché | déclenché |
+| Portes de qualité des données | Un doublon de forme inconnue fait échouer la porte | réussi |
+| Portes de qualité des données | Un enregistrement mal placé mais ambigu n'est pas déplacé et fait échouer la porte | réussi |
+| Portes de qualité des données | Un enregistrement hors de la fenêtre fait échouer la porte | réussi |
+| Portes de qualité des données | Une demande hors bornes fait échouer la porte | réussi |
+| Portes de qualité des données | Une couverture insuffisante fait échouer la porte | réussi |
+| Portes de qualité des données | Des lignes météo en double font échouer la porte d'index | réussi |
+| Portes de qualité des données | Une température impossible fait échouer la porte des bornes | réussi |
+| Portes de qualité des données | Une panne de capteur fait échouer la porte de couverture | réussi |
+| Portes de qualité des données | Une panne commune à plusieurs stations fait échouer la porte du panel | réussi |
+| Portes de qualité des données | Une porte en échec arrête la chaîne : aucune donnée canonique n'est écrite | réussi |
+| Portes de qualité des données | Des fichiers bruts qui ne correspondent plus à leur manifeste sont refusés | réussi |
+| Portes de qualité des données | Un mois de la fenêtre absent du manifeste d'une station est refusé avant qu'aucun fichier de cette station ne soit haché | réussi |
 | Portes de qualité des données | Témoin : un manifeste qui liste chaque mois de la fenêtre passe, et ses mois hors de la fenêtre sont écartés | resté silencieux |
-| Portes de qualité des données | Un enregistrement hors de la grille horaire fait échouer la porte, avec son horodatage | déclenché |
-| Portes de qualité des données | Une valeur hors bornes cachée dans une paire du retour à l'heure normale fait quand même échouer la porte | déclenché |
-| Portes de qualité des données | Une valeur hors bornes est écartée avant qu'une réparation ne la lise | déclenché |
-| Portes de qualité des données | Un enregistrement mal placé qui irait aussi bien dans deux heures vides n'est pas déplacé et fait échouer la porte | déclenché |
-| Portes de qualité des données | Un doublon hors bornes n'est jamais déplacé dans une heure utilisable, ni dans le rejeu | déclenché |
-| Portes de qualité des données | Une valeur hors bornes qui atteint une heure utilisable est marquée hors bornes | déclenché |
-| Portes de qualité des données | Une valeur hors bornes ne crée pas de pic chez ses voisines | déclenché |
-| Pas d'information future | Une entrée postérieure à l'origine de la prévision est refusée | déclenché |
-| Pas d'information future | Une ligne d'entraînement dans l'embargo est refusée | déclenché |
-| Pas d'information future | Une ligne de 2024 est refusée par le code de conception | déclenché |
-| Pas d'information future | La validation refuse une ligne de 2024 | déclenché |
-| Pas d'information future | Une référence de dérive contenant des jours rejoués est refusée | déclenché |
-| Pas d'information future | Des seuils tirés de l'année rejouée sont refusés | déclenché |
-| Pas d'information future | Les seuils de dérive d'un rejeu ignorent l'année rejouée | déclenché |
-| Pas d'information future | Le modèle figé refuse des lignes d'entraînement dans son embargo | déclenché |
-| Pas d'information future | Le verdict de qualité des jours qui sert au calibrage ne lit aucun enregistrement postérieur au dernier jour | déclenché |
-| Pas d'information future | Une origine avancée au-delà de ce que permet le retard de 24 heures est refusée | déclenché |
-| Pas d'information future | Une valeur réparée avec un enregistrement arrivé plus tard n'entre ni dans les retards ni dans l'entraînement avant son arrivée | déclenché |
-| Pas d'information future | Une demi-largeur fixée à l'ajustement d'un modèle n'est calibrée que sur les jours déjà notés à ce moment, pas sur une valeur réparée une heure plus tard | déclenché |
-| Pas d'information future | Des erreurs hors échantillon qui ne disent pas quand elles ont été notées ne calibrent aucune demi-largeur | déclenché |
-| Horloge du rejeu | Des données corrompues après un instant ne changent rien de ce qui a été jugé avant | déclenché |
-| Horloge du rejeu | Un enregistrement arrivé une semaine en retard n'est pas utilisé avant son arrivée | déclenché |
-| Horloge du rejeu | Lire au-delà de l'horloge, ou la faire reculer, est refusé | déclenché |
-| Horloge du rejeu | Une prévision émise après son origine est refusée | déclenché |
-| Horloge du rejeu | Un jour noté avant l'heure qui suit sa dernière heure est refusé | déclenché |
-| Horloge du rejeu | Une prévision bâtie sur une ligne d'une autre origine est refusée | déclenché |
-| Horloge du rejeu | Une prévision bâtie sur une ligne d'un autre jour est refusée | déclenché |
+| Portes de qualité des données | Un enregistrement hors de la grille horaire fait échouer la porte, avec son horodatage | réussi |
+| Portes de qualité des données | Une valeur hors bornes cachée dans une paire du retour à l'heure normale fait quand même échouer la porte | réussi |
+| Portes de qualité des données | Une valeur hors bornes est écartée avant qu'une réparation ne la lise | réussi |
+| Portes de qualité des données | Un enregistrement mal placé qui irait aussi bien dans deux heures vides n'est pas déplacé et fait échouer la porte | réussi |
+| Portes de qualité des données | Un doublon hors bornes n'est jamais déplacé dans une heure utilisable, ni dans le rejeu | réussi |
+| Portes de qualité des données | Une valeur hors bornes qui atteint une heure utilisable est marquée hors bornes | réussi |
+| Portes de qualité des données | Une valeur hors bornes ne crée pas de pic chez ses voisines | réussi |
+| Pas d'information future | Une entrée postérieure à l'origine de la prévision est refusée | réussi |
+| Pas d'information future | Une ligne d'entraînement dans l'embargo est refusée | réussi |
+| Pas d'information future | Une ligne de 2024 est refusée par le code de conception | réussi |
+| Pas d'information future | La validation refuse une ligne de 2024 | réussi |
+| Pas d'information future | Une référence de dérive contenant des jours rejoués est refusée | réussi |
+| Pas d'information future | Des seuils tirés de l'année rejouée sont refusés | réussi |
+| Pas d'information future | Les seuils de dérive d'un rejeu ignorent l'année rejouée | réussi |
+| Pas d'information future | Le modèle figé refuse des lignes d'entraînement dans son embargo | réussi |
+| Pas d'information future | Le verdict de qualité des jours qui sert au calibrage ne lit aucun enregistrement postérieur au dernier jour | réussi |
+| Pas d'information future | Une origine avancée au-delà de ce que permet le retard de 24 heures est refusée | réussi |
+| Pas d'information future | Une valeur réparée avec un enregistrement arrivé plus tard n'entre ni dans les retards ni dans l'entraînement avant son arrivée | réussi |
+| Pas d'information future | Une demi-largeur fixée à l'ajustement d'un modèle n'est calibrée que sur les jours déjà notés à ce moment, pas sur une valeur réparée une heure plus tard | réussi |
+| Pas d'information future | Des erreurs hors échantillon qui ne disent pas quand elles ont été notées ne calibrent aucune demi-largeur | réussi |
+| Horloge du rejeu | Des données corrompues après un instant ne changent rien de ce qui a été jugé avant | réussi |
+| Horloge du rejeu | Un enregistrement arrivé une semaine en retard n'est pas utilisé avant son arrivée | réussi |
+| Horloge du rejeu | Lire au-delà de l'horloge, ou la faire reculer, est refusé | réussi |
+| Horloge du rejeu | Une prévision émise après son origine est refusée | réussi |
+| Horloge du rejeu | Un jour noté avant l'heure qui suit sa dernière heure est refusé | réussi |
+| Horloge du rejeu | Une prévision bâtie sur une ligne d'une autre origine est refusée | réussi |
+| Horloge du rejeu | Une prévision bâtie sur une ligne d'un autre jour est refusée | réussi |
 | Moniteurs et table de décision | Témoin : des données propres ne donnent aucune recommandation | resté silencieux |
-| Moniteurs et table de décision | La référence saisonnière reste calme sur des données propres et réagit à un décalage | déclenché |
-| Moniteurs et table de décision | Une dérive de température, performance dans les seuils : examiner les données | déclenché |
-| Moniteurs et table de décision | Un trou de capteur fait échouer la qualité du jour et suspend les règles de performance | déclenché |
-| Moniteurs et table de décision | Un enregistrement manquant et un doublon font échouer leur jour | déclenché |
-| Moniteurs et table de décision | Une semaine basse (−30 %) et son écho par le retard d'une semaine ne donnent pas « réentraîner » | déclenché |
-| Moniteurs et table de décision | Une semaine haute (+30 %) et son écho, EAMP haute les deux semaines, ne donnent pas « réentraîner » | déclenché |
-| Moniteurs et table de décision | Une EAMP haute deux semaines avec un biais de signes opposés est un écho ; sans inversion, elle déclenche | déclenché |
-| Moniteurs et table de décision | Un biais du même côté trois semaines de suite donne « réentraîner » ; un écho ou une semaine non jugée l'interrompt | déclenché |
-| Moniteurs et table de décision | La mesure de puissance trouve un écart soutenu de 8 % ou des intervalles réduits à 20 %, et rien sans changement | déclenché |
-| Moniteurs et table de décision | La mesure des changements de niveau trouve une hausse de 12 % de la demande, et rien sans changement | déclenché |
-| Moniteurs et table de décision | La mesure des épisodes : un jour de choc ne donne aucune fausse alerte, et chaque départ est compté | déclenché |
-| Moniteurs et table de décision | La mesure des épisodes trouve la fausse alerte de cinq jours qui chevauchent un lundi, et l'écho que l'exclusion écarte | déclenché |
-| Moniteurs et table de décision | Une fausse alerte appuyée sur une semaine déjà hors bande est dite aidée ; une alerte d'origine n'est pas comptée | déclenché |
-| Moniteurs et table de décision | L'exclusion de l'écho ne fait jamais qu'enlever ou retarder « réentraîner » | déclenché |
-| Moniteurs et table de décision | Deux jours altérés ne portent jamais la statistique tronquée au-delà des jours intacts (2 000 tirages) | déclenché |
-| Moniteurs et table de décision | Les semaines incomplètes n'ont pas de statistique de dérive | déclenché |
-| Moniteurs et table de décision | Le dernier jour est jugé à la fin des données, et le dit | déclenché |
-| Moniteurs et table de décision | Des températures en double et un enregistrement de demande hors grille font échouer leur jour | déclenché |
-| Moniteurs et table de décision | Un changement de niveau de la demande : réentraîner | déclenché |
-| Moniteurs et table de décision | Des intervalles trop étroits : recalibrer | déclenché |
-| Moniteurs et table de décision | Deux règles à la fois : une recommandation, les deux preuves | déclenché |
-| Moniteurs et table de décision | Un choc d'un jour (samedi) ne donne pas « réentraîner » | déclenché |
-| Moniteurs et table de décision | Un choc d'un jour (dimanche) ne donne pas « réentraîner » | déclenché |
-| Moniteurs et table de décision | Une semaine de trop peu d'heures notées n'est pas jugée | déclenché |
-| Moniteurs et table de décision | Une semaine de trop peu de jours complets n'a pas de statistique tronquée et n'est jamais hors bande étendue | déclenché |
-| Moniteurs et table de décision | Une semaine incomplète, une semaine avec un jour en échec et une semaine de trop peu d'heures ne sont pas jugées, chaque condition à elle seule | déclenché |
-| Moniteurs et table de décision | Une semaine coupée par la fin de la période n'est pas jugée, même avec assez d'heures | déclenché |
-| Moniteurs et table de décision | Le verdict de qualité des jours lu par le calibrage est, jour par jour, celui du rejeu, sur sept défauts injectés et les jours propres | déclenché |
-| Moniteurs et table de décision | Une semaine contenant un jour que le rejeu ferait échouer ne sert pas au calcul des seuils, et la raison est consignée | déclenché |
-| Moniteurs et table de décision | Une semaine coupée par les années de calibrage est écartée ; un jour sans verdict de qualité fait refuser le calcul des seuils | déclenché |
-| Le moniteur n'agit jamais | Un rejeu qui modifie le modèle ou ses intervalles échoue | déclenché |
-| Règles gelées | Sans l'étiquette de gel, le rejeu de 2024 est refusé | déclenché |
-| Règles gelées | Un fichier de règles modifié après le gel est refusé et nommé | déclenché |
-| Règles gelées | Un fichier de règles ajouté après le gel est refusé | déclenché |
-| Règles gelées | Une étiquette de gel déplacée est refusée sauf écart déclaré | déclenché |
-| Règles gelées | Le rejeu appelé directement sur l'année réservée passe la porte du gel : sans étiquette, avec un fichier de règles modifié ou sous une étiquette déplacée, il est refusé | déclenché |
-| Règles gelées | Le registre versionné des rejeux révèle une étiquette déplacée même sans dépôt MLflow : refus sauf dérogation consignée | déclenché |
-| Règles gelées | Un registre des rejeux illisible est refusé | déclenché |
-| Règles gelées | Un registre des rejeux sans liste de rejeux est refusé | déclenché |
-| Règles gelées | Une entrée du registre sans commit de gel est refusée | déclenché |
-| Règles gelées | Les rejeux antérieurs sont retrouvés même supprimés | déclenché |
-| Règles gelées | Des fichiers bruts autres que ceux contrôlés sont refusés | déclenché |
-| Règles gelées | La conception refuse un fichier de demande brut autre que celui contrôlé | déclenché |
-| Règles gelées | Un modèle enregistré qui change pendant le rejeu le fait échouer | déclenché |
-| Règles gelées | Un modèle figé d'une autre validation, d'une autre année ou d'autres règles est refusé | déclenché |
-| Règles gelées | Une validation, ou un contrôle de qualité, fait sur d'autres données ou d'autres règles est refusé | déclenché |
-| Règles gelées | Un fichier de modèle figé qui ne correspond plus à son empreinte est refusé | déclenché |
-| Règles gelées | Le modèle enregistré est refusé si son exécution porte une autre empreinte | déclenché |
-| Règles gelées | Sans l'étiquette de gel, le rejeu de 2024 s'arrête avant de lire la moindre donnée | déclenché |
-| Règles gelées | Sous une étiquette de gel déplacée, le rejeu de 2024 s'arrête avant de lire la moindre donnée, même avec --departure sans dérogation consignée | déclenché |
-| Règles gelées | Le rejeu de 2024 refuse un modèle figé construit sur une autre validation | déclenché |
-| Règles gelées | Le rejeu de 2024 échoue si le modèle enregistré change pendant qu'il tourne | déclenché |
-| Règles gelées | Un alias qui pointe vers le modèle figé d'une autre année est refusé | déclenché |
-| Rendu des rapports | Un rapport dont le code a changé depuis l'exécution est refusé | déclenché |
-| Rendu des rapports | L'analyse de sécurité publique réagit à un contenu privé | déclenché |
-| Rendu des rapports | Une figure dont les métadonnées portent un chemin privé, ou suivie d'octets cachés, est refusée | déclenché |
-| Rendu des rapports | Un fichier retiré plus tard de l'arbre, un chemin interdit ou une référence oubliée reste repéré dans l'historique | déclenché |
-| Rendu des rapports | Le message d'une étiquette annotée portant un chemin privé est repéré | déclenché |
-| Rendu des rapports | Les raccourcis du répertoire personnel réagissent, pas la prose ordinaire | déclenché |
-| Rendu des rapports | Une figure portant un bloc hors liste ou une somme de contrôle fausse est refusée | déclenché |
-| Rendu des rapports | Une figure dont la structure enfreint les règles du PNG est refusée : octets dans le bloc de fin, bloc de taille fixe trop long, en-tête absent, bloc en double, données d'image absentes, coupées ou qui ne se décompressent pas exactement à la taille que l'en-tête annonce | déclenché |
-| Rendu des rapports | Un chemin privé caché dans un bloc de taille fixe d'une figure est repéré | déclenché |
+| Moniteurs et table de décision | La référence saisonnière reste calme sur des données propres et réagit à un décalage | réussi |
+| Moniteurs et table de décision | Une dérive de température, performance dans les seuils : examiner les données | réussi |
+| Moniteurs et table de décision | Un trou de capteur fait échouer la qualité du jour et suspend les règles de performance | réussi |
+| Moniteurs et table de décision | Un enregistrement manquant et un doublon font échouer leur jour | réussi |
+| Moniteurs et table de décision | Une semaine basse (−30 %) et son écho par le retard d'une semaine ne donnent pas « réentraîner » | réussi |
+| Moniteurs et table de décision | Une semaine haute (+30 %) et son écho, EAMP haute les deux semaines, ne donnent pas « réentraîner » | réussi |
+| Moniteurs et table de décision | Une EAMP haute deux semaines avec un biais de signes opposés est un écho ; sans inversion, elle déclenche | réussi |
+| Moniteurs et table de décision | Un biais du même côté trois semaines de suite donne « réentraîner » ; un écho ou une semaine non jugée l'interrompt | réussi |
+| Moniteurs et table de décision | La mesure de puissance trouve un écart soutenu de 8 % ou des intervalles réduits à 20 %, et rien sans changement | réussi |
+| Moniteurs et table de décision | La mesure des changements de niveau trouve une hausse de 12 % de la demande, et rien sans changement | réussi |
+| Moniteurs et table de décision | La mesure des épisodes : un jour de choc ne donne aucune fausse alerte, et chaque départ est compté | réussi |
+| Moniteurs et table de décision | La mesure des épisodes trouve la fausse alerte de cinq jours qui chevauchent un lundi, et l'écho que l'exclusion écarte | réussi |
+| Moniteurs et table de décision | Une fausse alerte appuyée sur une semaine déjà hors bande est dite aidée ; une alerte d'origine n'est pas comptée | réussi |
+| Moniteurs et table de décision | L'exclusion de l'écho ne fait jamais qu'enlever ou retarder « réentraîner » | réussi |
+| Moniteurs et table de décision | Deux jours altérés ne portent jamais la statistique tronquée au-delà des jours intacts (2 000 tirages) | réussi |
+| Moniteurs et table de décision | Les semaines incomplètes n'ont pas de statistique de dérive | réussi |
+| Moniteurs et table de décision | Le dernier jour est jugé à la fin des données, et le dit | réussi |
+| Moniteurs et table de décision | Des températures en double et un enregistrement de demande hors grille font échouer leur jour | réussi |
+| Moniteurs et table de décision | Un changement de niveau de la demande : réentraîner | réussi |
+| Moniteurs et table de décision | Des intervalles trop étroits : recalibrer | réussi |
+| Moniteurs et table de décision | Deux règles à la fois : une recommandation, les deux preuves | réussi |
+| Moniteurs et table de décision | Un choc d'un jour (samedi) ne donne pas « réentraîner » | réussi |
+| Moniteurs et table de décision | Un choc d'un jour (dimanche) ne donne pas « réentraîner » | réussi |
+| Moniteurs et table de décision | Une semaine de trop peu d'heures notées n'est pas jugée | réussi |
+| Moniteurs et table de décision | Une semaine de trop peu de jours complets n'a pas de statistique tronquée et n'est jamais hors bande étendue | réussi |
+| Moniteurs et table de décision | Une semaine incomplète, une semaine avec un jour en échec et une semaine de trop peu d'heures ne sont pas jugées, chaque condition à elle seule | réussi |
+| Moniteurs et table de décision | Une semaine coupée par la fin de la période n'est pas jugée, même avec assez d'heures | réussi |
+| Moniteurs et table de décision | Le verdict de qualité des jours lu par le calibrage est, jour par jour, celui du rejeu, sur sept défauts injectés et les jours propres | réussi |
+| Moniteurs et table de décision | Une semaine contenant un jour que le rejeu ferait échouer ne sert pas au calcul des seuils, et la raison est consignée | réussi |
+| Moniteurs et table de décision | Une semaine coupée par les années de calibrage est écartée ; un jour sans verdict de qualité fait refuser le calcul des seuils | réussi |
+| Le moniteur n'agit jamais | Un rejeu qui modifie le modèle ou ses intervalles échoue | réussi |
+| Règles gelées | Sans l'étiquette de gel, le rejeu de 2024 est refusé | réussi |
+| Règles gelées | Un fichier de règles modifié après le gel est refusé et nommé | réussi |
+| Règles gelées | Un fichier de règles ajouté après le gel est refusé | réussi |
+| Règles gelées | Une étiquette de gel déplacée est refusée sauf écart déclaré | réussi |
+| Règles gelées | Le rejeu appelé directement sur l'année réservée passe la porte du gel : sans étiquette, avec un fichier de règles modifié ou sous une étiquette déplacée, il est refusé | réussi |
+| Règles gelées | Le registre versionné des rejeux révèle une étiquette déplacée même sans dépôt MLflow : refus sauf dérogation consignée | réussi |
+| Règles gelées | Un registre des rejeux illisible est refusé | réussi |
+| Règles gelées | Un registre des rejeux sans liste de rejeux est refusé | réussi |
+| Règles gelées | Une entrée du registre sans commit de gel est refusée | réussi |
+| Règles gelées | Les rejeux antérieurs sont retrouvés même supprimés | réussi |
+| Règles gelées | Des fichiers bruts autres que ceux contrôlés sont refusés | réussi |
+| Règles gelées | La conception refuse un fichier de demande brut autre que celui contrôlé | réussi |
+| Règles gelées | Un modèle enregistré qui change pendant le rejeu le fait échouer | réussi |
+| Règles gelées | Un modèle figé d'une autre validation, d'une autre année ou d'autres règles est refusé | réussi |
+| Règles gelées | Une validation, ou un contrôle de qualité, fait sur d'autres données ou d'autres règles est refusé | réussi |
+| Règles gelées | Un fichier de modèle figé qui ne correspond plus à son empreinte est refusé | réussi |
+| Règles gelées | Le modèle enregistré est refusé si son exécution porte une autre empreinte | réussi |
+| Règles gelées | Sans l'étiquette de gel, le rejeu de 2024 s'arrête avant de lire la moindre donnée | réussi |
+| Règles gelées | Sous une étiquette de gel déplacée, le rejeu de 2024 s'arrête avant de lire la moindre donnée, même avec --departure sans dérogation consignée | réussi |
+| Règles gelées | Le rejeu de 2024 refuse un modèle figé construit sur une autre validation | réussi |
+| Règles gelées | Le rejeu de 2024 échoue si le modèle enregistré change pendant qu'il tourne | réussi |
+| Règles gelées | Un alias qui pointe vers le modèle figé d'une autre année est refusé | réussi |
+| Rendu des rapports | Un rapport dont le code a changé depuis l'exécution est refusé | réussi |
+| Rendu des rapports | L'analyse de sécurité publique réagit à un contenu privé | réussi |
+| Rendu des rapports | Une figure dont les métadonnées portent un chemin privé, ou suivie d'octets cachés, est refusée | réussi |
+| Rendu des rapports | Un fichier retiré plus tard de l'arbre, un chemin interdit ou une référence oubliée reste repéré dans l'historique | réussi |
+| Rendu des rapports | Le message d'une étiquette annotée portant un chemin privé est repéré | réussi |
+| Rendu des rapports | Les raccourcis du répertoire personnel réagissent, pas la prose ordinaire | réussi |
+| Rendu des rapports | Une figure portant un bloc hors liste ou une somme de contrôle fausse est refusée | réussi |
+| Rendu des rapports | Une figure dont la structure enfreint les règles du PNG est refusée : octets dans le bloc de fin, bloc de taille fixe trop long, en-tête absent, bloc en double, données d'image absentes, coupées ou qui ne se décompressent pas exactement à la taille que l'en-tête annonce | réussi |
+| Rendu des rapports | Un chemin privé caché dans un bloc de taille fixe d'une figure est repéré | réussi |
 | Rendu des rapports | Témoin : une chaîne d'exécutions intacte est suivie jusqu'au bout | resté silencieux |
-| Rendu des rapports | Une exécution des bris marquée en échec rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Une exécution faite avec un autre code rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un modèle figé pour une autre année rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu fait sous un autre commit de gel rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Une validation qui désigne un autre contrôle de qualité rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu fait après une dérogation apporte les rejeux qu'il remplace ; s'il n'en nomme aucun, il est refusé | déclenché |
-| Rendu des rapports | Une dérogation consignée dans `AGENTS.md` que le rejeu de 2024 ne porte pas rompt la chaîne du rapport, de même qu'un rejeu après une dérogation dont `AGENTS.md` ne nomme pas le commit de gel | déclenché |
+| Rendu des rapports | Une exécution des bris marquée en échec rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Une exécution faite avec un autre code rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un modèle figé pour une autre année rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu fait sous un autre commit de gel rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Une validation qui désigne un autre contrôle de qualité rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu fait après une dérogation apporte les rejeux qu'il remplace ; s'il n'en nomme aucun, il est refusé | réussi |
+| Rendu des rapports | Une dérogation consignée dans `AGENTS.md` que le rejeu de 2024 ne porte pas rompt la chaîne du rapport, de même qu'un rejeu après une dérogation dont `AGENTS.md` ne nomme pas le commit de gel | réussi |
 | Rendu des rapports | Témoin : sans dérogation consignée, une chaîne intacte passe ; avec une dérogation, le rejeu qui la porte passe | resté silencieux |
-| Rendu des rapports | Une dérogation consignée par un hachage de moins de 12 caractères rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Une section des dérogations introuvable dans `AGENTS.md` rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un bloc horaire absent de la couverture du run de validation, ou un bloc en trop, fait refuser le rapport | déclenché |
-| Rendu des rapports | Une saison absente de la couverture du run de validation fait refuser le rapport | déclenché |
-| Rendu des rapports | Une semaine de la première formulation de la règle 2 absente des semaines jugées du rejeu fait refuser le rapport | déclenché |
-| Rendu des rapports | Une défaillance étendue aux deux semaines sans « réentraîner » dans le rejeu fait refuser le rapport | déclenché |
-| Rendu des rapports | Une exécution des bris qui ne marque pas ses témoins fait refuser le rapport | déclenché |
-| Rendu des rapports | Un cas du printemps 2020 sans heures de printemps fait refuser le rapport | déclenché |
-| Rendu des rapports | Un tableau de puissance vide fait refuser le rapport | déclenché |
-| Rendu des rapports | Un tableau de puissance sans lignes d'intervalles réduits fait refuser le rapport | déclenché |
-| Rendu des rapports | Un intervalle de la différence du printemps 2020 dont deux tirages partagent une graine, ou fait d'un seul lot, fait refuser le rapport | déclenché |
-| Rendu des rapports | Une borne de l'intervalle de la différence que l'erreur de Monte-Carlo ou l'arrondi ne sépare pas de zéro laisse le verdict indéterminé | déclenché |
-| Rendu des rapports | L'adresse d'une session d'agent dans un message de commit, un message d'étiquette ou un fichier indexé est repérée | déclenché |
-| Rendu des rapports | Une entrée du registre des rejeux réécrite à la main fait refuser la mise à jour du registre | déclenché |
-| Rendu des rapports | Un registre des rejeux portant un nom privé, ou un champ hors de sa forme fixe, n'est pas écrit | déclenché |
-| Rendu des rapports | Un rejeu de 2024 qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu d'avant une dérogation absent du magasin et du registre, ou consigné comme incomplet, rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Une dérogation consignée par un hachage de moins de 12 caractères rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Une section des dérogations introuvable dans `AGENTS.md` rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un bloc horaire absent de la couverture du run de validation, ou un bloc en trop, fait refuser le rapport | réussi |
+| Rendu des rapports | Une saison absente de la couverture du run de validation fait refuser le rapport | réussi |
+| Rendu des rapports | Une semaine de la première formulation de la règle 2 absente des semaines jugées du rejeu fait refuser le rapport | réussi |
+| Rendu des rapports | Une défaillance étendue aux deux semaines sans « réentraîner » dans le rejeu fait refuser le rapport | réussi |
+| Rendu des rapports | Une exécution des bris qui ne marque pas ses témoins fait refuser le rapport | réussi |
+| Rendu des rapports | Un cas du printemps 2020 sans heures de printemps fait refuser le rapport | réussi |
+| Rendu des rapports | Un tableau de puissance vide fait refuser le rapport | réussi |
+| Rendu des rapports | Un tableau de puissance sans lignes d'intervalles réduits fait refuser le rapport | réussi |
+| Rendu des rapports | Un intervalle de la différence du printemps 2020 dont deux tirages partagent une graine, ou fait d'un seul lot, fait refuser le rapport | réussi |
+| Rendu des rapports | Une borne de l'intervalle de la différence que l'erreur de Monte-Carlo ou l'arrondi ne sépare pas de zéro laisse le verdict indéterminé | réussi |
+| Rendu des rapports | L'adresse d'une session d'agent dans un message de commit, un message d'étiquette ou un fichier indexé est repérée | réussi |
+| Rendu des rapports | Une entrée du registre des rejeux réécrite à la main fait refuser la mise à jour du registre | réussi |
+| Rendu des rapports | Un registre des rejeux portant un nom privé, ou un champ hors de sa forme fixe, n'est pas écrit | réussi |
+| Rendu des rapports | Un rejeu de 2024 qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu d'avant une dérogation absent du magasin et du registre, ou consigné comme incomplet, rompt la chaîne du rapport | réussi |
 | Rendu des rapports | Témoin : un rejeu d'avant une dérogation absent du magasin est montré d'après le registre, avec la mention « consigné dans le registre, non rejoué ici » | resté silencieux |
-| Rendu des rapports | Un rejeu d'avant une dérogation qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un registre des rejeux modifié ou supprimé après le rendu fait échouer le test de l'estampille du rapport | déclenché |
-| Rendu des rapports | Un bris qui ne s'est pas déclenché met l'exécution des bris en échec | déclenché |
-| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport français | déclenché |
-| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport anglais | déclenché |
-| Pas d'information future | Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur, une ligne notée à l'horloge même la calibre ; le dernier jour des données, noté à la fin des données, ne calibre pas une demi-largeur fixée à ce moment | déclenché |
-| Rendu des rapports | Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport | déclenché |
-| Rendu des rapports | Des mesures de 2024 faites avec d'autres durées, facteurs, changements de niveau ou bruits que celles de 2023 font refuser le rapport | déclenché |
-| Rendu des rapports | Un rejeu de 2024 qui déroge à des rejeux faits sous deux commits de gel, une dérogation que le rapport ne décrit pas, fait refuser le rapport | déclenché |
-| Portes de qualité des données | Une réponse de prévisions pour une autre station ou un autre modèle est refusée | déclenché |
-| Portes de qualité des données | Une température prévue qui n'est ni un nombre ni vide est refusée | déclenché |
-| Portes de qualité des données | Une réponse de prévisions vide est refusée | déclenché |
-| Portes de qualité des données | Une prévision émise hors de l'année demandée est refusée | déclenché |
-| Portes de qualité des données | Une réponse de prévisions refusée n'écrit rien | déclenché |
+| Rendu des rapports | Un rejeu d'avant une dérogation qui ne concorde pas avec son entrée du registre rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un registre des rejeux modifié ou supprimé après le rendu fait échouer le test de l'estampille du rapport | réussi |
+| Rendu des rapports | Un bris qui ne s'est pas déclenché met l'exécution des bris en échec | réussi |
+| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport français | réussi |
+| Rendu des rapports | Une borne de l'intervalle de la différence imprimée à au plus k erreurs types imprimées de zéro laisse le verdict indéterminé, et une borne imprimée plus loin ne le laisse jamais : le verdict ne contredit pas ses nombres, rapport anglais | réussi |
+| Pas d'information future | Une ligne notée une heure après l'horloge d'ajustement ne calibre pas la demi-largeur, une ligne notée à l'horloge même la calibre ; le dernier jour des données, noté à la fin des données, ne calibre pas une demi-largeur fixée à ce moment | réussi |
+| Rendu des rapports | Un rejeu de 2024 sans ses mesures de fausses alertes et d'angles morts fait refuser le rapport | réussi |
+| Rendu des rapports | Des mesures de 2024 faites avec d'autres durées, facteurs, changements de niveau ou bruits que celles de 2023 font refuser le rapport | réussi |
+| Rendu des rapports | Un rejeu de 2024 qui déroge à des rejeux faits sous deux commits de gel, une dérogation que le rapport ne décrit pas, fait refuser le rapport | réussi |
+| Portes de qualité des données | Une réponse de prévisions pour une autre station ou un autre modèle est refusée | réussi |
+| Portes de qualité des données | Une température prévue qui n'est ni un nombre ni vide est refusée | réussi |
+| Portes de qualité des données | Une réponse de prévisions vide est refusée | réussi |
+| Portes de qualité des données | Une prévision émise hors de l'année demandée est refusée | réussi |
+| Portes de qualité des données | Une réponse de prévisions refusée n'écrit rien | réussi |
 | Portes de qualité des données | Témoin : une année de prévisions propre est vérifiée, et la première prévision de l'année suivante est dans sa requête | resté silencieux |
-| Portes de qualité des données | Un point de prévision sans heure d'émission ou sans heure de validité est refusé à la vérification et au chargement, avec ses lignes | déclenché |
-| Portes de qualité des données | Deux valeurs pour un même point de prévision font refuser le chargement | déclenché |
+| Portes de qualité des données | Un point de prévision sans heure d'émission ou sans heure de validité est refusé à la vérification et au chargement, avec ses lignes | réussi |
+| Portes de qualité des données | Deux valeurs pour un même point de prévision font refuser le chargement | réussi |
 | Portes de qualité des données | Témoin : des points de prévision en double identiques sont écartés et comptés, sans refus | resté silencieux |
-| Portes de qualité des données | Une station principale autre que celle de Montréal-Trudeau fait refuser l'appariement de la prévision | déclenché |
-| Portes de qualité des données | Un fichier de prévisions qui ne correspond plus à son manifeste est refusé | déclenché |
+| Portes de qualité des données | Une station principale autre que celle de Montréal-Trudeau fait refuser l'appariement de la prévision | réussi |
+| Portes de qualité des données | Un fichier de prévisions qui ne correspond plus à son manifeste est refusé | réussi |
 | Portes de qualité des données | Témoin : une prévision propre passe ses portes | resté silencieux |
-| Portes de qualité des données | Une température prévue impossible fait échouer la porte des bornes de la prévision | déclenché |
-| Portes de qualité des données | Trop peu de jours alimentés par une prévision font échouer la porte de couverture de la prévision ; un jour sans prévision à lui, alimenté par celle de la veille, ne la fait pas échouer | déclenché |
-| Portes de qualité des données | 49 jours alimentés sur 50 (98 %) passent la porte de couverture de la prévision ; 48 sur 50, ou 48 sur 49, la font échouer | déclenché |
-| Portes de qualité des données | La station et la prévision passent par un seul filtre de bornes | déclenché |
-| Portes de qualité des données | L'erreur de la prévision contre la station ne lit que les heures de la fenêtre de conception, et jamais une observation hors bornes | déclenché |
-| Portes de qualité des données | Une prévision à laquelle manque un point d'encadrement cède la place à la suivante | déclenché |
-| Portes de qualité des données | Une prévision dont un point d'encadrement est hors bornes ne couvre pas le jour | déclenché |
-| Portes de qualité des données | Une prévision dont un point d'encadrement est vide ne couvre pas le jour | déclenché |
-| Portes de qualité des données | Sans prévision couvrante parmi les douze plus récentes, le jour reste sans prévision, avec sa raison | déclenché |
+| Portes de qualité des données | Une température prévue impossible fait échouer la porte des bornes de la prévision | réussi |
+| Portes de qualité des données | Trop peu de jours alimentés par une prévision font échouer la porte de couverture de la prévision ; un jour sans prévision à lui, alimenté par celle de la veille, ne la fait pas échouer | réussi |
+| Portes de qualité des données | 49 jours alimentés sur 50 (98 %) passent la porte de couverture de la prévision ; 48 sur 50, ou 48 sur 49, la font échouer | réussi |
+| Portes de qualité des données | La station et la prévision passent par un seul filtre de bornes | réussi |
+| Portes de qualité des données | L'erreur de la prévision contre la station ne lit que les heures de la fenêtre de conception, et jamais une observation hors bornes | réussi |
+| Portes de qualité des données | Une prévision à laquelle manque un point d'encadrement cède la place à la suivante | réussi |
+| Portes de qualité des données | Une prévision dont un point d'encadrement est hors bornes ne couvre pas le jour | réussi |
+| Portes de qualité des données | Une prévision dont un point d'encadrement est vide ne couvre pas le jour | réussi |
+| Portes de qualité des données | Sans prévision couvrante parmi les douze plus récentes, le jour reste sans prévision, avec sa raison | réussi |
 | Portes de qualité des données | Témoin : les valeurs horaires sont linéaires dans le temps entre les points d'une même prévision, en degrés Celsius | resté silencieux |
-| Portes de qualité des données | Les points de deux prévisions ne sont jamais mélangés | déclenché |
-| Portes de qualité des données | Une porte de la prévision qui échoue arrête la chaîne | déclenché |
-| Portes de qualité des données | La qualité des données vérifie exactement les prévisions que le chargement remet ensuite, et refuse un point sans heure d'émission au lieu de l'écarter en silence | déclenché |
-| Portes de qualité des données | Des fichiers de prévisions autres que ceux qu'a vérifiés l'exécution de qualité des données sont refusés | déclenché |
+| Portes de qualité des données | Les points de deux prévisions ne sont jamais mélangés | réussi |
+| Portes de qualité des données | Une porte de la prévision qui échoue arrête la chaîne | réussi |
+| Portes de qualité des données | La qualité des données vérifie exactement les prévisions que le chargement remet ensuite, et refuse un point sans heure d'émission au lieu de l'écarter en silence | réussi |
+| Portes de qualité des données | Des fichiers de prévisions autres que ceux qu'a vérifiés l'exécution de qualité des données sont refusés | réussi |
 | Portes de qualité des données | Témoin : les enregistrements d'Hydro-Québec après la fenêtre sont écartés au chargement et comptés | resté silencieux |
 | Portes de qualité des données | Témoin : les enregistrements de 2019 à 2024 révisés sont listés par l'exécution de qualité des données jusqu'à 2025 | resté silencieux |
 | Portes de qualité des données | Témoin : l'exécution de qualité des données jusqu'à 2025 consigne la liste des révisions, vide ou non | resté silencieux |
 | Portes de qualité des données | Témoin : une échéance de 75 heures ou plus est signalée contre l'argument des deux jours | resté silencieux |
-| Portes de qualité des données | Chaque requête à Hydro-Québec, jusqu'à 2024 ou 2025, est bornée par le portail à la fin de l'année de sa fenêtre, et son compte est demandé sous la même borne | déclenché |
-| Portes de qualité des données | Une réponse contenant un enregistrement au-delà de sa borne est refusée et rien n'est écrit | déclenché |
+| Portes de qualité des données | Chaque requête à Hydro-Québec, jusqu'à 2024 ou 2025, est bornée par le portail à la fin de l'année de sa fenêtre, et son compte est demandé sous la même borne | réussi |
+| Portes de qualité des données | Une réponse contenant un enregistrement au-delà de sa borne est refusée et rien n'est écrit | réussi |
 | Portes de qualité des données | Témoin : la borne de chaque requête est la dernière heure de la fenêtre | resté silencieux |
 | Portes de qualité des données | Témoin : un export de 2024 qui finit à la dernière heure de la fenêtre est écrit | resté silencieux |
 | Portes de qualité des données | Témoin : un téléchargement simple ne redemande jamais au portail un fichier déjà vérifié | resté silencieux |
-| Portes de qualité des données | Un téléchargement forcé de 2025 des fichiers météo est refusé avant toute requête | déclenché |
-| Portes de qualité des données | La commande « fetch » jusqu'à 2025 passe par la porte de chaque source avant toute requête, et refuse, avant qu'aucune source ne s'exécute, de forcer une autre source qu'Hydro-Québec | déclenché |
-| Portes de qualité des données | Un jour qu'aucune prévision météo n'alimente n'est pas prévu et échoue (prévision manquante) : examiner les données | déclenché |
-| Portes de qualité des données | Une température de conception hors des bornes est vide, comme dans le rejeu | déclenché |
-| Pas d'information future | Seuls les fichiers de prévisions des années nommées sont lus | déclenché |
+| Portes de qualité des données | Un téléchargement forcé de 2025 des fichiers météo est refusé avant toute requête | réussi |
+| Portes de qualité des données | La commande « fetch » jusqu'à 2025 passe par la porte de chaque source avant toute requête, et refuse, avant qu'aucune source ne s'exécute, de forcer une autre source qu'Hydro-Québec | réussi |
+| Portes de qualité des données | Un jour qu'aucune prévision météo n'alimente n'est pas prévu et échoue (prévision manquante) : examiner les données | réussi |
+| Portes de qualité des données | Une température de conception hors des bornes est vide, comme dans le rejeu | réussi |
+| Pas d'information future | Seuls les fichiers de prévisions des années nommées sont lus | réussi |
 | Pas d'information future | Témoin : la prévision la plus récente disponible à l'origine alimente le jour | resté silencieux |
-| Pas d'information future | Une prévision disponible après l'origine n'est jamais utilisée, même absurde, et la suivante l'est | déclenché |
-| Pas d'information future | La règle du choix de la prévision refuse une prévision sans heure d'émission : sa disponibilité ne peut être établie | déclenché |
+| Pas d'information future | Une prévision disponible après l'origine n'est jamais utilisée, même absurde, et la suivante l'est | réussi |
+| Pas d'information future | La règle du choix de la prévision refuse une prévision sans heure d'émission : sa disponibilité ne peut être établie | réussi |
 | Pas d'information future | Témoin : le 31 décembre 2023 est prévu par sa propre prévision de 01 h UTC, qui lit son point du 1er janvier 2024 à 06 h UTC | resté silencieux |
 | Pas d'information future | Témoin : sans prévision, la table de v1 garde chaque colonne et chaque valeur | resté silencieux |
-| Pas d'information future | La table des variables refuse une prévision météo finie dont la prévision n'a pas d'heure de disponibilité, ou une heure postérieure à l'origine de sa ligne | déclenché |
-| Pas d'information future | Une ligne dont la prévision est devenue disponible après son origine est refusée | déclenché |
+| Pas d'information future | La table des variables refuse une prévision météo finie dont la prévision n'a pas d'heure de disponibilité, ou une heure postérieure à l'origine de sa ligne | réussi |
+| Pas d'information future | Une ligne dont la prévision est devenue disponible après son origine est refusée | réussi |
 | Pas d'information future | Témoin : une prévision disponible à l'origine même est acceptée | resté silencieux |
-| Pas d'information future | Une ligne dont la prévision météo n'a pas d'heure de disponibilité est refusée | déclenché |
-| Pas d'information future | Une ligne sans origine est refusée, même avec une prévision disponible 24 heures après son heure cible, et même sans aucune entrée de prévision | déclenché |
-| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne d'entraînement d'un pli, même fournie à part, dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | déclenché |
-| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne de test d'un pli dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine : elle n'atteint jamais l'étalonnage des intervalles | déclenché |
-| Pas d'information future | Un ajustement sur la prévision météo, le GAM ou les moindres carrés, refuse avant de placer ses nœuds une ligne dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | déclenché |
-| Pas d'information future | Des nœuds de spline placés aussi sur des heures de test font refuser l'ajustement, même pour une seule heure de test qui ne déplace aucun nœud d'un centième de degré ; des nœuds décalés de 1,1e-12 °C de la règle sont refusés | déclenché |
+| Pas d'information future | Une ligne dont la prévision météo n'a pas d'heure de disponibilité est refusée | réussi |
+| Pas d'information future | Une ligne sans origine est refusée, même avec une prévision disponible 24 heures après son heure cible, et même sans aucune entrée de prévision | réussi |
+| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne d'entraînement d'un pli, même fournie à part, dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | réussi |
+| Pas d'information future | La validation glissante refuse, avant tout ajustement, une ligne de test d'un pli dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine : elle n'atteint jamais l'étalonnage des intervalles | réussi |
+| Pas d'information future | Un ajustement sur la prévision météo, le GAM ou les moindres carrés, refuse avant de placer ses nœuds une ligne dont la prévision n'a pas de disponibilité, est disponible après son origine, ou qui n'a pas d'origine | réussi |
+| Pas d'information future | Des nœuds de spline placés aussi sur des heures de test font refuser l'ajustement, même pour une seule heure de test qui ne déplace aucun nœud d'un centième de degré ; des nœuds décalés de 1,1e-12 °C de la règle sont refusés | réussi |
 | Pas d'information future | Témoin : un ajustement sur ses seules heures utilisables passe la vérification des nœuds, à sa tolérance de 1e-12 °C près, et prévoit encore les heures sans cible | resté silencieux |
-| Pas d'information future | Un gel dont les nœuds ne suivent pas la règle sur ses propres lignes d'entraînement est refusé | déclenché |
-| Pas d'information future | La veille de l'année rejouée ne calibre jamais une demi-largeur, ni au gel de 2024 ni à celui de 2023 | déclenché |
-| Pas d'information future | Des erreurs hors échantillon qui ne disent pas leur jour ne calibrent aucune demi-largeur | déclenché |
-| Pas d'information future | La demi-largeur du gel de 2024 laisse de côté la veille de l'année rejouée | déclenché |
-| Pas d'information future | Une alimentation de conception contenant une prévision disponible après la fenêtre de conception est refusée | déclenché |
-| Pas d'information future | Le code de conception ne lit que les fichiers de prévisions des années de conception | déclenché |
+| Pas d'information future | Un gel dont les nœuds ne suivent pas la règle sur ses propres lignes d'entraînement est refusé | réussi |
+| Pas d'information future | La veille de l'année rejouée ne calibre jamais une demi-largeur, ni au gel de 2024 ni à celui de 2023 | réussi |
+| Pas d'information future | Des erreurs hors échantillon qui ne disent pas leur jour ne calibrent aucune demi-largeur | réussi |
+| Pas d'information future | La demi-largeur du gel de 2024 laisse de côté la veille de l'année rejouée | réussi |
+| Pas d'information future | Une alimentation de conception contenant une prévision disponible après la fenêtre de conception est refusée | réussi |
+| Pas d'information future | Le code de conception ne lit que les fichiers de prévisions des années de conception | réussi |
 | Pas d'information future | Témoin : la prévision de 01 h UTC du 1er janvier 2024, dans le fichier de 2023 et disponible à temps, est gardée | resté silencieux |
-| Pas d'information future | Le seuil de froid vient des seules températures prévues de la période de conception | déclenché |
-| Pas d'information future | La validation reçoit chaque entrée qu'elle prépare et ne demande que les années de conception | déclenché |
+| Pas d'information future | Le seuil de froid vient des seules températures prévues de la période de conception | réussi |
+| Pas d'information future | La validation reçoit chaque entrée qu'elle prépare et ne demande que les années de conception | réussi |
 | Pas d'information future | Témoin : le registre de la prévision est consigné pour chaque jour de conception | resté silencieux |
-| Pas d'information future | La température prévue à chaque origine de conception n'utilise que les prévisions disponibles à ce moment | déclenché |
-| Pas d'information future | Sur une archive lacunaire, le rejeu et la validation retiennent la même prévision pour chaque jour | déclenché |
-| Pas d'information future | Une référence de dérive de température contenant des jours rejoués est refusée | déclenché |
-| Pas d'information future | Les modèles de comparaison sont notés sur les entrées enregistrées à l'émission | déclenché |
-| Pas d'information future | Une répétition dont la prévision émise diffère de celle de la validation est refusée | déclenché |
-| Pas d'information future | La répétition de 2023 s'exécute de bout en bout et refuse une entrée que la validation n'a pas émise | déclenché |
-| Pas d'information future | Le rejeu de 2024 ne lit aucun enregistrement de 2025 | déclenché |
-| Pas d'information future | Le rejeu de la preuve ne reçoit aucun enregistrement de 2025 | déclenché |
-| Horloge du rejeu | Le rejeu ne voit une prévision qu'une fois disponible, et le verdict des jours non plus | déclenché |
-| Moniteurs et table de décision | Les seuils de dérive de température lisent la prévision émise, pas l'observation | déclenché |
-| Moniteurs et table de décision | Un jour qu'aucune prévision n'a alimenté échoue au critère « prévision manquante » dans les verdicts du jour que lit le calibrage de la validation, comme dans le rejeu | déclenché |
-| Moniteurs et table de décision | Une dérive de la température prévue, performance dans les bornes, donne « examiner les données » | déclenché |
+| Pas d'information future | La température prévue à chaque origine de conception n'utilise que les prévisions disponibles à ce moment | réussi |
+| Pas d'information future | Sur une archive lacunaire, le rejeu et la validation retiennent la même prévision pour chaque jour | réussi |
+| Pas d'information future | Une référence de dérive de température contenant des jours rejoués est refusée | réussi |
+| Pas d'information future | Les modèles de comparaison sont notés sur les entrées enregistrées à l'émission | réussi |
+| Pas d'information future | Une répétition dont la prévision émise diffère de celle de la validation est refusée | réussi |
+| Pas d'information future | La répétition de 2023 s'exécute de bout en bout et refuse une entrée que la validation n'a pas émise | réussi |
+| Pas d'information future | Le rejeu de 2024 ne lit aucun enregistrement de 2025 | réussi |
+| Pas d'information future | Le rejeu de la preuve ne reçoit aucun enregistrement de 2025 | réussi |
+| Horloge du rejeu | Le rejeu ne voit une prévision qu'une fois disponible, et le verdict des jours non plus | réussi |
+| Moniteurs et table de décision | Les seuils de dérive de température lisent la prévision émise, pas l'observation | réussi |
+| Moniteurs et table de décision | Un jour qu'aucune prévision n'a alimenté échoue au critère « prévision manquante » dans les verdicts du jour que lit le calibrage de la validation, comme dans le rejeu | réussi |
+| Moniteurs et table de décision | Une dérive de la température prévue, performance dans les bornes, donne « examiner les données » | réussi |
 | Moniteurs et table de décision | Témoin : la mesure de réutilisation fait alimenter deux jours par une même prévision faussée | resté silencieux |
-| Moniteurs et table de décision | La mesure de réutilisation ne présente jamais comme deux jours une prévision qui en manque un | déclenché |
+| Moniteurs et table de décision | La mesure de réutilisation ne présente jamais comme deux jours une prévision qui en manque un | réussi |
 | Moniteurs et table de décision | Témoin : sans prévisions météo, le rejeu est celui de la v1 | resté silencieux |
 | Moniteurs et table de décision | Témoin : la règle de décision s'applique à l'année rejouée, avec son étiquette d'évaluation | resté silencieux |
 | Moniteurs et table de décision | Témoin : les mesures de sensibilité de v2 s'exécutent avec le flux de prévisions | resté silencieux |
-| Moniteurs et table de décision | Un contraste dont l'intervalle est sous zéro est meilleur | déclenché |
-| Moniteurs et table de décision | Un contraste dont l'intervalle est au-dessus de zéro est moins bon | déclenché |
-| Moniteurs et table de décision | Un contraste dont l'intervalle contient zéro n'est pas départagé | déclenché |
-| Moniteurs et table de décision | Une borne qui s'imprime 0,00 point ne départage pas et une borne qui s'imprime 0,01 point départage, des deux côtés : l'état suit les bornes imprimées | déclenché |
-| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre v1 tel que livré | déclenché |
-| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre la forme de v1 sur la prévision | déclenché |
-| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre v1 tel que livré | déclenché |
-| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre la forme de v1 sur la prévision | déclenché |
-| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre v1 tel que livré | déclenché |
-| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre la forme de v1 sur la prévision | déclenché |
-| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre v1 tel que livré | déclenché |
-| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre la forme de v1 sur la prévision | déclenché |
-| Moniteurs et table de décision | Un verdict sur un état inconnu est refusé | déclenché |
+| Moniteurs et table de décision | Un contraste dont l'intervalle est sous zéro est meilleur | réussi |
+| Moniteurs et table de décision | Un contraste dont l'intervalle est au-dessus de zéro est moins bon | réussi |
+| Moniteurs et table de décision | Un contraste dont l'intervalle contient zéro n'est pas départagé | réussi |
+| Moniteurs et table de décision | Une borne qui s'imprime 0,00 point ne départage pas et une borne qui s'imprime 0,01 point départage, des deux côtés : l'état suit les bornes imprimées | réussi |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre v1 tel que livré | réussi |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas moins bonne reçoit le verdict meilleur, contre la forme de v1 sur la prévision | réussi |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre v1 tel que livré | réussi |
+| Moniteurs et table de décision | Un contraste meilleur dont la queue froide n'est pas testable reçoit le verdict meilleur en moyenne, queue froide non testable, contre la forme de v1 sur la prévision | réussi |
+| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre v1 tel que livré | réussi |
+| Moniteurs et table de décision | Un contraste non départagé, ou meilleur avec une queue froide moins bonne, reçoit le verdict pas montré meilleur, contre la forme de v1 sur la prévision | réussi |
+| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre v1 tel que livré | réussi |
+| Moniteurs et table de décision | Un contraste moins bon reçoit le verdict moins bon, contre la forme de v1 sur la prévision | réussi |
+| Moniteurs et table de décision | Un verdict sur un état inconnu est refusé | réussi |
 | Moniteurs et table de décision | Témoin : un v2 plus proche à chaque heure est meilleur sur les deux comparaisons | resté silencieux |
-| Moniteurs et table de décision | Des heures où un modèle a une prévision et un autre non, loin de la cible et froides, ne changent ni les contrastes ni la queue froide : tout est mesuré sur les heures communes | déclenché |
-| Moniteurs et table de décision | Les contrastes qui décident des verdicts, ceux de la queue froide compris, sont la différence appariée de l'erreur absolue horaire rapportée à la demande observée, sur les heures communes, à mille rééchantillonnages par semaines et graine 0 : une autre métrique, une autre graine ou un autre nombre de rééchantillonnages échoue | déclenché |
-| Moniteurs et table de décision | Sur les mêmes heures, les trois contrastes s'additionnent : changement entier = famille + entrée | déclenché |
-| Moniteurs et table de décision | Les cinq heures les plus chargées sont prises sur toute l'année selon la demande, une prévision manquante gardée avec sa raison, et des heures plus calmes ne les remplacent pas | déclenché |
-| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures en 6 semaines, ni à 120 heures en 3 semaines, ni à 119 heures sous le seuil plus une au seuil ; elle l'est à 120 heures en 4 semaines | déclenché |
-| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures froides et l'est à 120, et le verdict le dit | déclenché |
-| Moniteurs et table de décision | Un v2 meilleur en moyenne mais moins bon sur les heures froides n'est pas montré meilleur | déclenché |
-| Moniteurs et table de décision | Le seuil froid ne lit que les températures prévues : changer toutes les demandes ne le change pas | déclenché |
-| Moniteurs et table de décision | Le statut de la fiche du modèle suit le test de référence : candidat sans départ de 2025, inachevé tant qu'il n'a pas fini, quelle que soit sa position, même avant qu'elle soit consignée, a posteriori s'il l'est, un statut sur données réservées seulement sur un 2025 propre et fini ; un test fini dont la position n'est ni propre ni a posteriori est refusé | déclenché |
-| Moniteurs et table de décision | Seul un test de référence propre est étiqueté « données réservées » : un test de référence a posteriori est étiqueté a posteriori, un départ qui suit un départ fini est vu par les développeurs, et un départ qui suit un départ arrêté sans la décision du propriétaire qui le nomme est refusé | déclenché |
+| Moniteurs et table de décision | Des heures où un modèle a une prévision et un autre non, loin de la cible et froides, ne changent ni les contrastes ni la queue froide : tout est mesuré sur les heures communes | réussi |
+| Moniteurs et table de décision | Les contrastes qui décident des verdicts, ceux de la queue froide compris, sont la différence appariée de l'erreur absolue horaire rapportée à la demande observée, sur les heures communes, à mille rééchantillonnages par semaines et graine 0 : une autre métrique, une autre graine ou un autre nombre de rééchantillonnages échoue | réussi |
+| Moniteurs et table de décision | Sur les mêmes heures, les trois contrastes s'additionnent : changement entier = famille + entrée | réussi |
+| Moniteurs et table de décision | Les cinq heures les plus chargées sont prises sur toute l'année selon la demande, une prévision manquante gardée avec sa raison, et des heures plus calmes ne les remplacent pas | réussi |
+| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures en 6 semaines, ni à 120 heures en 3 semaines, ni à 119 heures sous le seuil plus une au seuil ; elle l'est à 120 heures en 4 semaines | réussi |
+| Moniteurs et table de décision | La queue froide n'est pas testable à 119 heures froides et l'est à 120, et le verdict le dit | réussi |
+| Moniteurs et table de décision | Un v2 meilleur en moyenne mais moins bon sur les heures froides n'est pas montré meilleur | réussi |
+| Moniteurs et table de décision | Le seuil froid ne lit que les températures prévues : changer toutes les demandes ne le change pas | réussi |
+| Moniteurs et table de décision | Le statut de la fiche du modèle suit le test de référence : candidat sans départ de 2025, inachevé tant qu'il n'a pas fini, quelle que soit sa position, même avant qu'elle soit consignée, a posteriori s'il l'est, un statut sur données réservées seulement sur un 2025 propre et fini ; un test fini dont la position n'est ni propre ni a posteriori est refusé | réussi |
+| Moniteurs et table de décision | Seul un test de référence propre est étiqueté « données réservées » : un test de référence a posteriori est étiqueté a posteriori, un départ qui suit un départ fini est vu par les développeurs, et un départ qui suit un départ arrêté sans la décision du propriétaire qui le nomme est refusé | réussi |
 | Le moniteur n'agit jamais | Témoin : des modèles de comparaison hors de leurs seuils ne déclenchent aucune recommandation | resté silencieux |
-| Le moniteur n'agit jamais | Un modèle de comparaison modifié pendant le rejeu le fait échouer | déclenché |
-| Règles gelées | Le GAM prévoit ce que prévoit le pipeline scikit-learn tranché par le propriétaire, mêmes colonnes, même normalisation et même ridge, extrapolation sous et au-dessus de la plage d'entraînement comprise | déclenché |
+| Le moniteur n'agit jamais | Un modèle de comparaison modifié pendant le rejeu le fait échouer | réussi |
+| Règles gelées | Le GAM prévoit ce que prévoit le pipeline scikit-learn tranché par le propriétaire, mêmes colonnes, même normalisation et même ridge, extrapolation sous et au-dessus de la plage d'entraînement comprise | réussi |
 | Règles gelées | Témoin : sans les modèles de v2, la validation glissante reste exactement celle de v1 | resté silencieux |
 | Règles gelées | Témoin : sans les modèles de v2, la validation est exactement celle de v1 | resté silencieux |
 | Règles gelées | Témoin : le GAM figé, relu de son fichier, prévoit ce que prévoient le GAM ajusté et le pipeline scikit-learn tranché, construit à part, au-delà de la plage d'entraînement compris | resté silencieux |
-| Règles gelées | Un GAM figé dont un nœud, une échelle, un coefficient ou tout autre champ de son empreinte a changé est refusé | déclenché |
-| Règles gelées | Un GAM figé d'un autre degré, d'une autre extrapolation ou d'un autre réglage de biais est refusé, et chacun de ces réglages change l'empreinte | déclenché |
-| Règles gelées | Un GAM figé dont les nœuds ne sont pas dix valeurs finies strictement croissantes est refusé | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : l'extrapolation du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le degré du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : la colonne de biais du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le nombre de nœuds du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : les types de jour du module remis dans un autre ordre après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | déclenché |
-| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : un type de jour ajouté au module après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | déclenché |
-| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : les blocs horaires du module changés après le gel (l'heure 6 passée de la matinée à la nuit) ne changent ni leur prévision ni leurs courbes | déclenché |
-| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : la température de base du module changée après le gel, et les degrés-heures de la table calculés avec elle, ne changent ni leur prévision ni leurs courbes | déclenché |
-| Règles gelées | Les blocs horaires et la température de base des moindres carrés figés sont dans leur fichier et leur empreinte : une autre prévision vient avec une autre empreinte, et un fichier modifié est refusé | déclenché |
-| Règles gelées | Des moindres carrés figés dont les blocs ne partagent pas les heures 0 à 23, dont la base n'est pas un nombre fini, ou dont les colonnes ne sont pas celles que leurs blocs engendrent, sont refusés | déclenché |
-| Règles gelées | Une ligne sans type de jour ou d'une heure hors de 0 à 23 n'est jamais prévue, et un type de jour que les cellules stockées ne couvrent pas est refusé, pour les deux familles | déclenché |
-| Règles gelées | Une heure donnée en texte (« 6 ») est l'heure 6 partout : ses cellules, ses blocs et ses courbes sont ceux de l'heure entière, jamais une ligne tenue pour connue et prévue de ses seuls retards, pour les deux familles | déclenché |
+| Règles gelées | Un GAM figé dont un nœud, une échelle, un coefficient ou tout autre champ de son empreinte a changé est refusé | réussi |
+| Règles gelées | Un GAM figé d'un autre degré, d'une autre extrapolation ou d'un autre réglage de biais est refusé, et chacun de ces réglages change l'empreinte | réussi |
+| Règles gelées | Un GAM figé dont les nœuds ne sont pas dix valeurs finies strictement croissantes est refusé | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : l'extrapolation du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le degré du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : la colonne de biais du module changée après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : le nombre de nœuds du module changé après le gel ne change ni sa prévision ni ses courbes, et son fichier relu est refusé | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : les types de jour du module remis dans un autre ordre après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | réussi |
+| Règles gelées | Le GAM figé prévoit à partir de son seul fichier : un type de jour ajouté au module après le gel, son fichier se relit sous la même empreinte et prévoit exactement la même chose | réussi |
+| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : les blocs horaires du module changés après le gel (l'heure 6 passée de la matinée à la nuit) ne changent ni leur prévision ni leurs courbes | réussi |
+| Règles gelées | Les moindres carrés figés prévoient à partir de leur seul fichier : la température de base du module changée après le gel, et les degrés-heures de la table calculés avec elle, ne changent ni leur prévision ni leurs courbes | réussi |
+| Règles gelées | Les blocs horaires et la température de base des moindres carrés figés sont dans leur fichier et leur empreinte : une autre prévision vient avec une autre empreinte, et un fichier modifié est refusé | réussi |
+| Règles gelées | Des moindres carrés figés dont les blocs ne partagent pas les heures 0 à 23, dont la base n'est pas un nombre fini, ou dont les colonnes ne sont pas celles que leurs blocs engendrent, sont refusés | réussi |
+| Règles gelées | Une ligne sans type de jour ou d'une heure hors de 0 à 23 n'est jamais prévue, et un type de jour que les cellules stockées ne couvrent pas est refusé, pour les deux familles | réussi |
+| Règles gelées | Une heure donnée en texte (« 6 ») est l'heure 6 partout : ses cellules, ses blocs et ses courbes sont ceux de l'heure entière, jamais une ligne tenue pour connue et prévue de ses seuls retards, pour les deux familles | réussi |
 | Règles gelées | Témoin : sur les lignes que produit la chaîne, les moindres carrés figés prévoient exactement ce que prévoyait la formule précédente (0 MW d'écart) | resté silencieux |
 | Règles gelées | Témoin : les modèles de comparaison notent chaque heure rejouée exactement comme la formule précédente (0 MW d'écart) | resté silencieux |
-| Règles gelées | Un GAM figé dont les colonnes ne sont pas celles que ses nœuds, ses réglages et ses types de jour engendrent, nom pour nom et dans l'ordre, est refusé à la prévision ; écrit avec ses types de jour dans un autre ordre, il prévoit la même chose | déclenché |
-| Règles gelées | Un modèle de production dont un coefficient de retard n'est pas positif est refusé | déclenché |
-| Règles gelées | Le gel refuse, avant toute consignation, un modèle de production dont un coefficient de retard n'est pas positif | déclenché |
+| Règles gelées | Un GAM figé dont les colonnes ne sont pas celles que ses nœuds, ses réglages et ses types de jour engendrent, nom pour nom et dans l'ordre, est refusé à la prévision ; écrit avec ses types de jour dans un autre ordre, il prévoit la même chose | réussi |
+| Règles gelées | Un modèle de production dont un coefficient de retard n'est pas positif est refusé | réussi |
+| Règles gelées | Le gel refuse, avant toute consignation, un modèle de production dont un coefficient de retard n'est pas positif | réussi |
 | Règles gelées | Témoin : les moindres carrés figés gardent la prévision de v1 | resté silencieux |
-| Règles gelées | Un modèle de comparaison modifié, remplacé par un autre modèle, figé pour une autre année ou manquant est refusé | déclenché |
-| Règles gelées | Un calcul sur données réelles hors de la descendance de l'étiquette v2-first-run est refusé | déclenché |
+| Règles gelées | Un modèle de comparaison modifié, remplacé par un autre modèle, figé pour une autre année ou manquant est refusé | réussi |
+| Règles gelées | Un calcul sur données réelles hors de la descendance de l'étiquette v2-first-run est refusé | réussi |
 | Règles gelées | Témoin : un calcul sur données réelles depuis un descendant de l'étiquette v2-first-run passe | resté silencieux |
-| Règles gelées | Un téléchargement de 2025 avant le gel est refusé | déclenché |
-| Règles gelées | Un téléchargement de 2025 depuis un arbre de travail aux changements non validés est refusé | déclenché |
-| Règles gelées | Un export de 2025 incomplet est refusé et rien n'est écrit | déclenché |
-| Règles gelées | Une dépendance modifiée après l'étiquette de gel de v2 est refusée et nommée | déclenché |
+| Règles gelées | Un téléchargement de 2025 avant le gel est refusé | réussi |
+| Règles gelées | Un téléchargement de 2025 depuis un arbre de travail aux changements non validés est refusé | réussi |
+| Règles gelées | Un export de 2025 incomplet est refusé et rien n'est écrit | réussi |
+| Règles gelées | Une dépendance modifiée après l'étiquette de gel de v2 est refusée et nommée | réussi |
 | Règles gelées | Témoin : les rejeux de v1 ne comptent jamais comme un déplacement de l'étiquette de gel de v2 | resté silencieux |
-| Règles gelées | Un rejeu de v2 sous une étiquette de gel de v2 déplacée est refusé sauf dérogation consignée | déclenché |
-| Règles gelées | Un rejeu de 2025 lancé seul voit une étiquette déplacée depuis le rejeu de 2024 de v2 : la vérification suit le gel, pas l'année | déclenché |
-| Règles gelées | Un départ inachevé compte pour la vérification de l'étiquette déplacée | déclenché |
-| Règles gelées | Un rejeu stocké sans étiquette de gel compte comme un rejeu de v1 | déclenché |
-| Règles gelées | Une étiquette nommée comme un gel que la configuration ne liste pas est refusée | déclenché |
+| Règles gelées | Un rejeu de v2 sous une étiquette de gel de v2 déplacée est refusé sauf dérogation consignée | réussi |
+| Règles gelées | Un rejeu de 2025 lancé seul voit une étiquette déplacée depuis le rejeu de 2024 de v2 : la vérification suit le gel, pas l'année | réussi |
+| Règles gelées | Un départ inachevé compte pour la vérification de l'étiquette déplacée | réussi |
+| Règles gelées | Un rejeu stocké sans étiquette de gel compte comme un rejeu de v1 | réussi |
+| Règles gelées | Une étiquette nommée comme un gel que la configuration ne liste pas est refusée | réussi |
 | Règles gelées | Témoin : les dérogations consignées sont lues dans la section de leur étiquette de gel | resté silencieux |
-| Règles gelées | Une entrée de dérogation de v2 qui ne nomme que le nouveau commit de gel est refusée : ni le commit d'où l'étiquette est partie ni le changement de règle entre les deux ne sont consignés | déclenché |
-| Règles gelées | Une entrée de dérogation de v2 qui ne nomme pas le commit de gel d'où l'étiquette est partie, celui d'un rejeu antérieur, est refusée | déclenché |
-| Règles gelées | Une entrée de dérogation de v2 qui omet un commit de règle entre ses deux commits de gel, lu commit par commit, est refusée et le commit est nommé | déclenché |
-| Règles gelées | Une entrée de dérogation de v2 qui nomme un commit de son déplacement ne touchant ni une règle ni une dépendance est refusée | déclenché |
-| Règles gelées | Un registre de dérogations de v2 dont le second déplacement ne part pas du commit où le premier a mené l'étiquette est refusé | déclenché |
-| Règles gelées | Une étiquette de gel de v2 ramenée sur un commit d'arrivée antérieur, sans entrée qui consigne ce déplacement, est refusée ; sur le dernier commit d'arrivée, elle passe | déclenché |
-| Règles gelées | La porte de 2025 refuse un registre de dérogations incomplet avant l'ouverture de l'exécution, et rien ne s'ouvre | déclenché |
-| Règles gelées | Avant l'étiquette de gel de v2, une entrée du registre sous elle, une section de v2 qui nomme un commit, une section absente ou une tête qui ne descend pas de v1 font échouer l'historique | déclenché |
+| Règles gelées | Une entrée de dérogation de v2 qui ne nomme que le nouveau commit de gel est refusée : ni le commit d'où l'étiquette est partie ni le changement de règle entre les deux ne sont consignés | réussi |
+| Règles gelées | Une entrée de dérogation de v2 qui ne nomme pas le commit de gel d'où l'étiquette est partie, celui d'un rejeu antérieur, est refusée | réussi |
+| Règles gelées | Une entrée de dérogation de v2 qui omet un commit de règle entre ses deux commits de gel, lu commit par commit, est refusée et le commit est nommé | réussi |
+| Règles gelées | Une entrée de dérogation de v2 qui nomme un commit de son déplacement ne touchant ni une règle ni une dépendance est refusée | réussi |
+| Règles gelées | Un registre de dérogations de v2 dont le second déplacement ne part pas du commit où le premier a mené l'étiquette est refusé | réussi |
+| Règles gelées | Une étiquette de gel de v2 ramenée sur un commit d'arrivée antérieur, sans entrée qui consigne ce déplacement, est refusée ; sur le dernier commit d'arrivée, elle passe | réussi |
+| Règles gelées | La porte de 2025 refuse un registre de dérogations incomplet avant l'ouverture de l'exécution, et rien ne s'ouvre | réussi |
+| Règles gelées | Avant l'étiquette de gel de v2, une entrée du registre sous elle, une section de v2 qui nomme un commit, une section absente ou une tête qui ne descend pas de v1 font échouer l'historique | réussi |
 | Règles gelées | Témoin : une dérogation de v2 qui nomme le commit de gel d'où l'étiquette est partie passe l'historique de v2 | resté silencieux |
 | Règles gelées | Témoin : un changement de dépendance consigné comme dérogation passe l'historique de v2 | resté silencieux |
-| Règles gelées | Un commit de règle après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
-| Règles gelées | Un changement de pyproject.toml après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
-| Règles gelées | Un changement de uv.lock après l'étiquette de gel de v2, non consigné, fait échouer l'historique | déclenché |
-| Règles gelées | Un changement de règle annulé ensuite, l'étiquette restée en place, fait échouer l'historique lu commit par commit | déclenché |
-| Règles gelées | Une dérogation de v2 qui ne nomme pas un commit de changement de son déplacement fait échouer l'historique | déclenché |
-| Règles gelées | Une dérogation de v2 qui nomme un commit ni changement de son déplacement ni commit de gel fait échouer l'historique | déclenché |
-| Règles gelées | Une dérogation de v2 qui ne nomme pas le commit d'où l'étiquette est partie, ou celui où elle est arrivée, fait échouer l'historique | déclenché |
-| Règles gelées | Un déplacement de l'étiquette de gel de v2 sans entrée de dérogation, ou une entrée sans déplacement, fait échouer l'historique | déclenché |
-| Règles gelées | Une entrée de la section de v2 qui nomme un commit sans être une dérogation ni la décision du propriétaire sur 2025 avec son issue fait échouer l'historique | déclenché |
-| Règles gelées | Une étiquette de gel de v2 déplacée sans que son épingle soit validée fait échouer l'historique dès le commit suivant | déclenché |
-| Règles gelées | Une étiquette déplacée hors du commit de son épingle fait échouer le test des étiquettes | déclenché |
-| Règles gelées | Un changement de fichier de règles après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
-| Règles gelées | Un changement de pyproject.toml après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
-| Règles gelées | Un changement de uv.lock après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | déclenché |
-| Règles gelées | Une modification du plan de v2 après plan-v2, hors de sa section 18 et non nommée par elle, fait échouer l'historique du plan | déclenché |
-| Règles gelées | Une entrée de la section 18 du plan réécrite sans être nommée fait échouer l'historique du plan | déclenché |
+| Règles gelées | Un commit de règle après l'étiquette de gel de v2, non consigné, fait échouer l'historique | réussi |
+| Règles gelées | Un changement de pyproject.toml après l'étiquette de gel de v2, non consigné, fait échouer l'historique | réussi |
+| Règles gelées | Un changement de uv.lock après l'étiquette de gel de v2, non consigné, fait échouer l'historique | réussi |
+| Règles gelées | Un changement de règle annulé ensuite, l'étiquette restée en place, fait échouer l'historique lu commit par commit | réussi |
+| Règles gelées | Une dérogation de v2 qui ne nomme pas un commit de changement de son déplacement fait échouer l'historique | réussi |
+| Règles gelées | Une dérogation de v2 qui nomme un commit ni changement de son déplacement ni commit de gel fait échouer l'historique | réussi |
+| Règles gelées | Une dérogation de v2 qui ne nomme pas le commit d'où l'étiquette est partie, ou celui où elle est arrivée, fait échouer l'historique | réussi |
+| Règles gelées | Un déplacement de l'étiquette de gel de v2 sans entrée de dérogation, ou une entrée sans déplacement, fait échouer l'historique | réussi |
+| Règles gelées | Une entrée de la section de v2 qui nomme un commit sans être une dérogation ni la décision du propriétaire sur 2025 avec son issue fait échouer l'historique | réussi |
+| Règles gelées | Une étiquette de gel de v2 déplacée sans que son épingle soit validée fait échouer l'historique dès le commit suivant | réussi |
+| Règles gelées | Une étiquette déplacée hors du commit de son épingle fait échouer le test des étiquettes | réussi |
+| Règles gelées | Un changement de fichier de règles après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | réussi |
+| Règles gelées | Un changement de pyproject.toml après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | réussi |
+| Règles gelées | Un changement de uv.lock après v2-first-run que la section 18 du plan ne nomme pas fait échouer l'historique du plan | réussi |
+| Règles gelées | Une modification du plan de v2 après plan-v2, hors de sa section 18 et non nommée par elle, fait échouer l'historique du plan | réussi |
+| Règles gelées | Une entrée de la section 18 du plan réécrite sans être nommée fait échouer l'historique du plan | réussi |
 | Règles gelées | Témoin : un départ de 2025 propre, rien n'ayant changé, passe la porte | resté silencieux |
-| Règles gelées | La porte de 2025 parcourt chaque commit après le premier commit de gel et refuse un changement de règle ou de dépendance, même annulé ensuite, en nommant les commits et les fichiers ; un commit vide passe | déclenché |
-| Règles gelées | La porte de 2025 refuse une fusion, un clone superficiel et une tête qui ne descend pas du commit de gel | déclenché |
-| Règles gelées | Un correctif après l'échec du premier départ de 2024 fait refuser la porte de 2025, qui le nomme | déclenché |
-| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : propre, étiqueté « données réservées » | déclenché |
-| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : a posteriori, étiqueté a posteriori | déclenché |
-| Règles gelées | Une décision du propriétaire qui ne s'applique pas laisse le refus : suivie d'un changement de règle, sur un commit dont un départ antérieur descend, introuvable, ou sans exécution de preuve finie faite d'un arbre propre | déclenché |
-| Règles gelées | Un départ de 2025 dont un artefact figé diffère de la première entrée de 2024 de v2 est refusé | déclenché |
-| Règles gelées | Un départ de 2025 dont les exécutions manquent au magasin, comme dans une copie fraîche, est refusé | déclenché |
-| Règles gelées | La porte de 2025 refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | déclenché |
-| Règles gelées | La porte de 2025 refuse un fichier brut que le contrôle de qualité des données n'a pas vérifié, sans lire aucune demande | déclenché |
-| Règles gelées | Un départ de 2025 pendant qu'un autre est en cours est refusé | déclenché |
-| Règles gelées | Deux départs de 2025 simultanés n'ouvrent qu'une exécution ; l'autre est refusé | déclenché |
-| Règles gelées | Une exécution de diagnostic de 2025 sans son rejeu fini et complet fait refuser la porte | déclenché |
-| Règles gelées | Un rejeu de 2025 sans entrée de 2024 de v2 au registre des rejeux est refusé | déclenché |
-| Règles gelées | Après un test de référence inachevé, un départ suivant est refusé, en disant si l'exécution arrêtée tient un résultat, jusqu'à une décision du propriétaire qui nomme le départ arrêté | déclenché |
-| Règles gelées | Un départ de 2025 ultérieur à un test de référence fini est étiqueté « vu par les développeurs » | déclenché |
-| Règles gelées | La fonction de rejeu, appelée seule, refuse 2025 | déclenché |
-| Règles gelées | Le rejeu de 2025 est refusé tant que la fenêtre des données n'atteint pas la fin de 2025 | déclenché |
-| Règles gelées | Le rejeu de 2025 refuse un arbre de travail aux changements non validés | déclenché |
-| Règles gelées | Le rejeu de 2025 lit les artefacts figés pour 2024, jamais les plus récents | déclenché |
-| Règles gelées | Un rejeu de 2025 arrêté en cours laisse son exécution démarrée, avec l'étape atteinte et la classe de son erreur ; arrêté par un contrôle, il ne tient aucune métrique ni aucun résultat | déclenché |
-| Règles gelées | Un départ de 2025 arrêté pendant qu'il enregistre la fiche de sa porte garde la classe de son erreur, et le refus du départ suivant la nomme | déclenché |
-| Règles gelées | Une exécution de 2025 n'existe qu'avec ses étiquettes : leur calcul en échec n'en crée aucune, et un arrêt juste après sa création laisse un départ arrêté que la porte suivante voit | déclenché |
-| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_ID) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
-| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_CONTEXT) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
-| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_EXPERIMENT_NAME) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
-| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | déclenché |
-| Règles gelées | Un départ de 2025 est toujours une exécution neuve de l'expérience de suivi, même quand l'environnement nomme une exécution plus ancienne d'une autre expérience (MLFLOW_RUN_ID) : la porte suivante le voit | déclenché |
-| Règles gelées | Une exécution qui ne pourrait pas être ouverte (une autre déjà active, une autre expérience choisie) est refusée avant d'exister ; si l'ouverture échoue quand même, elle finit en échec avec la classe de son erreur, jamais « en cours » : un départ de 2025 ainsi arrêté est un départ arrêté | déclenché |
+| Règles gelées | La porte de 2025 parcourt chaque commit après le premier commit de gel et refuse un changement de règle ou de dépendance, même annulé ensuite, en nommant les commits et les fichiers ; un commit vide passe | réussi |
+| Règles gelées | La porte de 2025 refuse une fusion, un clone superficiel et une tête qui ne descend pas du commit de gel | réussi |
+| Règles gelées | Un correctif après l'échec du premier départ de 2024 fait refuser la porte de 2025, qui le nomme | réussi |
+| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : propre, étiqueté « données réservées » | réussi |
+| Règles gelées | La décision du propriétaire, avec sa preuve, lève un refus avec son issue : a posteriori, étiqueté a posteriori | réussi |
+| Règles gelées | Une décision du propriétaire qui ne s'applique pas laisse le refus : suivie d'un changement de règle, sur un commit dont un départ antérieur descend, introuvable, ou sans exécution de preuve finie faite d'un arbre propre | réussi |
+| Règles gelées | Un départ de 2025 dont un artefact figé diffère de la première entrée de 2024 de v2 est refusé | réussi |
+| Règles gelées | Un départ de 2025 dont les exécutions manquent au magasin, comme dans une copie fraîche, est refusé | réussi |
+| Règles gelées | La porte de 2025 refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | réussi |
+| Règles gelées | La porte de 2025 refuse un fichier brut que le contrôle de qualité des données n'a pas vérifié, sans lire aucune demande | réussi |
+| Règles gelées | Un départ de 2025 pendant qu'un autre est en cours est refusé | réussi |
+| Règles gelées | Deux départs de 2025 simultanés n'ouvrent qu'une exécution ; l'autre est refusé | réussi |
+| Règles gelées | Une exécution de diagnostic de 2025 sans son rejeu fini et complet fait refuser la porte | réussi |
+| Règles gelées | Un rejeu de 2025 sans entrée de 2024 de v2 au registre des rejeux est refusé | réussi |
+| Règles gelées | Après un test de référence inachevé, un départ suivant est refusé, en disant si l'exécution arrêtée tient un résultat, jusqu'à une décision du propriétaire qui nomme le départ arrêté | réussi |
+| Règles gelées | Un départ de 2025 ultérieur à un test de référence fini est étiqueté « vu par les développeurs » | réussi |
+| Règles gelées | La fonction de rejeu, appelée seule, refuse 2025 | réussi |
+| Règles gelées | Le rejeu de 2025 est refusé tant que la fenêtre des données n'atteint pas la fin de 2025 | réussi |
+| Règles gelées | Le rejeu de 2025 refuse un arbre de travail aux changements non validés | réussi |
+| Règles gelées | Le rejeu de 2025 lit les artefacts figés pour 2024, jamais les plus récents | réussi |
+| Règles gelées | Un rejeu de 2025 arrêté en cours laisse son exécution démarrée, avec l'étape atteinte et la classe de son erreur ; arrêté par un contrôle, il ne tient aucune métrique ni aucun résultat | réussi |
+| Règles gelées | Un départ de 2025 arrêté pendant qu'il enregistre la fiche de sa porte garde la classe de son erreur, et le refus du départ suivant la nomme | réussi |
+| Règles gelées | Une exécution de 2025 n'existe qu'avec ses étiquettes : leur calcul en échec n'en crée aucune, et un arrêt juste après sa création laisse un départ arrêté que la porte suivante voit | réussi |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_ID) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | réussi |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_RUN_CONTEXT) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | réussi |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_EXPERIMENT_NAME) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | réussi |
+| Règles gelées | Un départ de 2025 sous une variable d'environnement MLflow non permise (MLFLOW_ENABLE_SYSTEM_METRICS_LOGGING) est refusé avant qu'aucune exécution n'existe : ce n'est pas un départ | réussi |
+| Règles gelées | Un départ de 2025 est toujours une exécution neuve de l'expérience de suivi, même quand l'environnement nomme une exécution plus ancienne d'une autre expérience (MLFLOW_RUN_ID) : la porte suivante le voit | réussi |
+| Règles gelées | Une exécution qui ne pourrait pas être ouverte (une autre déjà active, une autre expérience choisie) est refusée avant d'exister ; si l'ouverture échoue quand même, elle finit en échec avec la classe de son erreur, jamais « en cours » : un départ de 2025 ainsi arrêté est un départ arrêté | réussi |
 | Règles gelées | Témoin : un refus de la porte n'ouvre aucune exécution | resté silencieux |
-| Règles gelées | La fonction de rejeu refuse 2025 sans son exécution ouverte et démarrée, de ce code et de ce genre | déclenché |
-| Règles gelées | Les diagnostics s'exécutent après la fin du rejeu, dans leur propre exécution ; leur échec laisse le rejeu fini | déclenché |
-| Règles gelées | Deux processus rejouent 2025 sous l'exécution de diagnostic, chacun la cherchant dans le magasin ; un identifiant que le magasin n'a pas est refusé dans le processus | déclenché |
-| Règles gelées | La preuve compare chaque colonne de chaque heure et ne décide rien | déclenché |
-| Règles gelées | La preuve refuse un arbre de travail aux changements non validés | déclenché |
-| Règles gelées | La preuve refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | déclenché |
-| Règles gelées | La commande « all » ne rejoue jamais 2025 ni ne lance la preuve, quels que soient ses drapeaux, et refuse --through | déclenché |
-| Règles gelées | Aucun drapeau autre que --departure n'atteint le rejeu de 2025 | déclenché |
-| Règles gelées | La commande « freeze » refuse 2025 : 2025 est jugé par les artefacts figés pour 2024 | déclenché |
-| Rendu des rapports | Une entrée de v1 du registre des rejeux modifiée depuis l'étiquette v1 est repérée | déclenché |
-| Rendu des rapports | Une entrée de v2 d'une année que son gel ne rejoue pas est refusée | déclenché |
-| Rendu des rapports | Une entrée du registre sous une étiquette de gel inconnue est refusée | déclenché |
-| Rendu des rapports | Une entrée de v1 qui porte les champs de v2 est refusée | déclenché |
-| Rendu des rapports | Une entrée de v2 sans son étiquette d'évaluation est refusée | déclenché |
-| Rendu des rapports | Une étiquette d'évaluation autre que celle que donnent les départs de 2025 est refusée | déclenché |
-| Rendu des rapports | Un test de référence a posteriori étiqueté « données réservées » est refusé | déclenché |
+| Règles gelées | La fonction de rejeu refuse 2025 sans son exécution ouverte et démarrée, de ce code et de ce genre | réussi |
+| Règles gelées | Les diagnostics s'exécutent après la fin du rejeu, dans leur propre exécution ; leur échec laisse le rejeu fini | réussi |
+| Règles gelées | Deux processus rejouent 2025 sous l'exécution de diagnostic, chacun la cherchant dans le magasin ; un identifiant que le magasin n'a pas est refusé dans le processus | réussi |
+| Règles gelées | La preuve compare chaque colonne de chaque heure et ne décide rien | réussi |
+| Règles gelées | La preuve refuse un arbre de travail aux changements non validés | réussi |
+| Règles gelées | La preuve refuse un contrôle de qualité des données qui n'est pas un contrôle réussi jusqu'à 2025 | réussi |
+| Règles gelées | La commande « all » ne rejoue jamais 2025 ni ne lance la preuve, quels que soient ses drapeaux, et refuse --through | réussi |
+| Règles gelées | Aucun drapeau autre que --departure n'atteint le rejeu de 2025 | réussi |
+| Règles gelées | La commande « freeze » refuse 2025 : 2025 est jugé par les artefacts figés pour 2024 | réussi |
+| Rendu des rapports | Une entrée de v1 du registre des rejeux modifiée depuis l'étiquette v1 est repérée | réussi |
+| Rendu des rapports | Une entrée de v2 d'une année que son gel ne rejoue pas est refusée | réussi |
+| Rendu des rapports | Une entrée du registre sous une étiquette de gel inconnue est refusée | réussi |
+| Rendu des rapports | Une entrée de v1 qui porte les champs de v2 est refusée | réussi |
+| Rendu des rapports | Une entrée de v2 sans son étiquette d'évaluation est refusée | réussi |
+| Rendu des rapports | Une étiquette d'évaluation autre que celle que donnent les départs de 2025 est refusée | réussi |
+| Rendu des rapports | Un test de référence a posteriori étiqueté « données réservées » est refusé | réussi |
 | Rendu des rapports | Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, propre et étiqueté « données réservées » | resté silencieux |
 | Rendu des rapports | Témoin : après un départ arrêté, le départ que la décision du propriétaire nomme devient le test de référence, a posteriori et étiqueté a posteriori | resté silencieux |
 | Rendu des rapports | Témoin : un rejeu de 2025 refait, étiqueté « vu par les développeurs », passe | resté silencieux |
-| Rendu des rapports | Une entrée de 2024 qui porte une position, ou de 2025 qui n'en porte pas, est refusée | déclenché |
-| Rendu des rapports | Une entrée de v2 qui n'est pas une dérogation, sous un autre commit de gel que la première entrée de 2024 de v2, est refusée | déclenché |
-| Rendu des rapports | Une entrée de 2025 antérieure à toute entrée de 2024 de v2 est refusée | déclenché |
-| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'étiquette d'évaluation est refusé | déclenché |
-| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte du modèle de production est refusé | déclenché |
-| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par les verdicts de la règle de décision est refusé | déclenché |
-| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte des artefacts figés est refusé | déclenché |
-| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par la position est refusé | déclenché |
-| Rendu des rapports | Un départ de 2025 plus tardif présenté comme test de référence est refusé | déclenché |
-| Rendu des rapports | Après un départ arrêté, un départ sans la décision du propriétaire qui le nomme ne devient pas le test de référence | déclenché |
-| Rendu des rapports | Un rejeu que MLflow dit fini mais qui ne s'est pas marqué complet n'entre pas au registre des rejeux | déclenché |
+| Rendu des rapports | Une entrée de 2024 qui porte une position, ou de 2025 qui n'en porte pas, est refusée | réussi |
+| Rendu des rapports | Une entrée de v2 qui n'est pas une dérogation, sous un autre commit de gel que la première entrée de 2024 de v2, est refusée | réussi |
+| Rendu des rapports | Une entrée de 2025 antérieure à toute entrée de 2024 de v2 est refusée | réussi |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'étiquette d'évaluation est refusé | réussi |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte du modèle de production est refusé | réussi |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par les verdicts de la règle de décision est refusé | réussi |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par l'empreinte des artefacts figés est refusé | réussi |
+| Rendu des rapports | Un rejeu du magasin qui diffère de son entrée de v2 par la position est refusé | réussi |
+| Rendu des rapports | Un départ de 2025 plus tardif présenté comme test de référence est refusé | réussi |
+| Rendu des rapports | Après un départ arrêté, un départ sans la décision du propriétaire qui le nomme ne devient pas le test de référence | réussi |
+| Rendu des rapports | Un rejeu que MLflow dit fini mais qui ne s'est pas marqué complet n'entre pas au registre des rejeux | réussi |
 | Rendu des rapports | Témoin : la chaîne suit le rejeu de 2024 de v2, pas un rejeu de v1 ni un rejeu de 2025 | resté silencieux |
 | Rendu des rapports | Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à côté, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : un 2025 propre, sans changement, est rendu à côté du rejeu de 2024 de référence, le rejeu refait à côté, rapport anglais | resté silencieux |
-| Rendu des rapports | Un rejeu de 2025 jugé par des artefacts figés d'autres empreintes que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu de 2025 refait, jugé par des artefacts figés dont une empreinte diffère de celles du rejeu de 2024 de référence, rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu de 2025, le test de référence ou un rejeu refait, dont l'exécution de qualité des données ne va pas jusqu'à la fin de 2025 rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un test de référence de 2025 inachevé dont le registre de la porte nomme d'autres artefacts figés que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Un rejeu de 2024 étiqueté autrement que « vu par les développeurs », ou sans étiquette, fait refuser le rapport | déclenché |
+| Rendu des rapports | Un rejeu de 2025 jugé par des artefacts figés d'autres empreintes que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu de 2025 refait, jugé par des artefacts figés dont une empreinte diffère de celles du rejeu de 2024 de référence, rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu de 2025, le test de référence ou un rejeu refait, dont l'exécution de qualité des données ne va pas jusqu'à la fin de 2025 rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un test de référence de 2025 inachevé dont le registre de la porte nomme d'autres artefacts figés que ceux du rejeu de 2024 de référence rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Un rejeu de 2024 étiqueté autrement que « vu par les développeurs », ou sans étiquette, fait refuser le rapport | réussi |
 | Rendu des rapports | Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : un rejeu de référence fait sur un code plus ancien est rendu avec son code, pas refusé, rapport anglais | resté silencieux |
-| Rendu des rapports | Un modèle de comparaison dont l'empreinte diffère de celle que le rejeu a consignée rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport français | déclenché |
-| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport anglais | déclenché |
-| Rendu des rapports | L'historique de v1 ne vient que de ses entrées « rules-frozen » ; sans son entrée simple, la chaîne est rompue | déclenché |
-| Rendu des rapports | Une étiquette de gel ramenée à un commit d'avant, ou posée sur un commit de changement nommé, est refusée ; une décision du propriétaire sur 2025 n'est pas une dérogation | déclenché |
-| Rendu des rapports | Le rapport refuse un registre de dérogations de v2 incomplet, par la règle même de la porte du rejeu | déclenché |
-| Rendu des rapports | Un rejeu d'avant une dérogation fait sous un commit de changement que l'entrée nomme, ni commit de départ ni commit d'arrivée de l'étiquette, rompt la chaîne du rapport | déclenché |
-| Rendu des rapports | Une position que le registre de la porte n'a pas consignée, ou un statut tiré d'autre chose que le test de référence, fait refuser le rapport | déclenché |
-| Rendu des rapports | Un rejeu de 2025 fini sans sa position ou sans le registre de sa porte rompt la chaîne du rapport | déclenché |
+| Rendu des rapports | Un modèle de comparaison dont l'empreinte diffère de celle que le rejeu a consignée rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport français | réussi |
+| Rendu des rapports | Une dérogation de v2 dont un rejeu d'avant n'est ni dans le magasin ni dans le registre, ou dont un commit de gel n'est nommé par aucune dérogation, rompt la chaîne ; un départ inachevé est montré comme tel, rapport anglais | réussi |
+| Rendu des rapports | L'historique de v1 ne vient que de ses entrées « rules-frozen » ; sans son entrée simple, la chaîne est rompue | réussi |
+| Rendu des rapports | Une étiquette de gel ramenée à un commit d'avant, ou posée sur un commit de changement nommé, est refusée ; une décision du propriétaire sur 2025 n'est pas une dérogation | réussi |
+| Rendu des rapports | Le rapport refuse un registre de dérogations de v2 incomplet, par la règle même de la porte du rejeu | réussi |
+| Rendu des rapports | Un rejeu d'avant une dérogation fait sous un commit de changement que l'entrée nomme, ni commit de départ ni commit d'arrivée de l'étiquette, rompt la chaîne du rapport | réussi |
+| Rendu des rapports | Une position que le registre de la porte n'a pas consignée, ou un statut tiré d'autre chose que le test de référence, fait refuser le rapport | réussi |
+| Rendu des rapports | Un rejeu de 2025 fini sans sa position ou sans le registre de sa porte rompt la chaîne du rapport | réussi |
 | Rendu des rapports | Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : la décision du propriétaire que la porte a lue est imprimée, avec le départ arrêté qu'elle nomme, rapport anglais | resté silencieux |
-| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport français | déclenché |
-| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport anglais | déclenché |
-| Rendu des rapports | Un rejeu de 2024 dont les contrastes ou les verdicts ne portent pas l'étiquette « vu par les développeurs » fait refuser le rapport | déclenché |
-| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport français | déclenché |
-| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport anglais | déclenché |
-| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport français | déclenché |
-| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport anglais | déclenché |
-| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport français | déclenché |
-| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport anglais | déclenché |
-| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport français | déclenché |
-| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport anglais | déclenché |
-| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport français | déclenché |
-| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport anglais | déclenché |
-| Rendu des rapports | Un jour de 2024 sans prévision, que liste l'exécution de qualité des données jusqu'à 2025, n'est pas compté parmi les jours de 2025 | déclenché |
-| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport français | déclenché |
-| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport anglais | déclenché |
-| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport français | déclenché |
-| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport anglais | déclenché |
-| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport français | déclenché |
-| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport anglais | déclenché |
-| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport français | déclenché |
-| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport anglais | déclenché |
-| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport français | déclenché |
-| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport anglais | déclenché |
-| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport français | déclenché |
-| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport anglais | déclenché |
-| Rendu des rapports | Un délai de 75 heures ou plus non énoncé à la section 4.1 du rapport de qualité des données le fait refuser, même si « En bref » l'énonce | déclenché |
-| Rendu des rapports | Le rapport de qualité des données d'une exécution jusqu'à 2025 ne liste aucun jour de 2025 sans prévision, ni l'heure de la prévision de 2025, ni un délai de 2025 de 75 heures ou plus, et dit quels comptes comprennent 2025 | déclenché |
-| Rendu des rapports | Avant tout départ de 2025, une exécution de qualité des données qui atteint 2025, nommée ou la plus récente, fait refuser le rendu, qui nomme cette exécution | déclenché |
-| Rendu des rapports | Par la commande, avant tout départ de 2025, le rapport sur une exécution de qualité des données jusqu'à 2025 nommée par son identifiant est refusé, en nommant l'exécution, et le dossier du rapport reste vide | déclenché |
-| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport français | déclenché |
-| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport anglais | déclenché |
+| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport français | réussi |
+| Rendu des rapports | Un rapport ou une histoire qui n'ouvre pas sur sa phrase de statut, quel que soit le statut, est refusé, rapport anglais | réussi |
+| Rendu des rapports | Un rejeu de 2024 dont les contrastes ou les verdicts ne portent pas l'étiquette « vu par les développeurs » fait refuser le rapport | réussi |
+| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Une affirmation « meilleur » sans l'étiquette des données réservées, dans la phrase ou sur la page, fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | « Meilleur » tiré d'un 2025 qui n'est pas propre fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Un verdict de 2025 sans rejeu de 2025 fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Un nombre de v1 sur 2024 tiré d'ailleurs que de ses entrées du registre fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Un départ de 2025 inachevé qui n'est pas listé à la section 9 fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport français | réussi |
+| Rendu des rapports | Un rejeu de 2025 refait et meilleur ne remplace jamais le test de référence : statut, affirmations retirées et recommandation restent les siens, rapport anglais | réussi |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport français | réussi |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (non confirmé), rapport anglais | réussi |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport français | réussi |
+| Rendu des rapports | Un 2025 propre qui ne confirme pas v2, sans sa recommandation ou sans ouvrir « En bref » et le récit, fait refuser le rapport (meilleur que v1 tel que livré seulement), rapport anglais | réussi |
+| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Un test de référence inachevé rendu avec une affirmation sur 2025, ou avec le verdict d'un autre départ, fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport français | réussi |
+| Rendu des rapports | Un départ arrêté omis, ou listé après le test de référence, fait refuser le rapport ; listé d'abord, le rapport est rendu, rapport anglais | réussi |
+| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport français | réussi |
+| Rendu des rapports | Un délai de 75 heures ou plus en 2025 dans l'exécution de qualité des données du test de référence, non énoncé à la section 9, fait refuser le rapport, même quand la section 2 énonce celui d'une autre année ; et inversement, rapport anglais | réussi |
+| Rendu des rapports | Un jour de 2024 sans prévision, que liste l'exécution de qualité des données jusqu'à 2025, n'est pas compté parmi les jours de 2025 | réussi |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport français | réussi |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 propre), rapport anglais | réussi |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport français | réussi |
+| Rendu des rapports | Les enregistrements de 2019 à 2024 révisés sont listés à la section 9, chacun avec ses valeurs (deux enregistrements d'une même heure montrés tous deux), quelle que soit la position de 2025 ; une page qui en omet un, imprime une autre valeur ou le liste ailleurs est refusée (2025 a posteriori), rapport anglais | réussi |
+| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport français | réussi |
+| Rendu des rapports | Le tableau des normes ne dit « données réservées : fait » que d'un test de référence de 2025 fini et propre ; a posteriori, il dit que ce n'est pas un contrôle sur des données réservées, rapport anglais | réussi |
+| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport français | réussi |
+| Rendu des rapports | La couverture de 2025 est donnée avec son intervalle à 95 % et s'il contient le nominal de 90 %, jugé sur les bornes imprimées, rapport anglais | réussi |
+| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport français | réussi |
+| Rendu des rapports | La phrase de la mesure de réutilisation suit ses placements : une semaine au-delà de ses jours intacts, à un seul décalage, est un constat contre l'argument des deux jours ; sans placement constructible, l'argument n'est pas mis à l'épreuve, rapport anglais | réussi |
+| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport français | réussi |
+| Rendu des rapports | Un délai de 75 heures ou plus de 2019 à 2024 non dit, comme constat contre l'argument des deux jours, fait refuser le rapport, rapport anglais | réussi |
+| Rendu des rapports | Un délai de 75 heures ou plus non énoncé à la section 4.1 du rapport de qualité des données le fait refuser, même si « En bref » l'énonce | réussi |
+| Rendu des rapports | Le rapport de qualité des données d'une exécution jusqu'à 2025 ne liste aucun jour de 2025 sans prévision, ni l'heure de la prévision de 2025, ni un délai de 2025 de 75 heures ou plus, et dit quels comptes comprennent 2025 | réussi |
+| Rendu des rapports | Avant tout départ de 2025, une exécution de qualité des données qui atteint 2025, nommée ou la plus récente, fait refuser le rendu, qui nomme cette exécution | réussi |
+| Rendu des rapports | Par la commande, avant tout départ de 2025, le rapport sur une exécution de qualité des données jusqu'à 2025 nommée par son identifiant est refusé, en nommant l'exécution, et le dossier du rapport reste vide | réussi |
+| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport français | réussi |
+| Rendu des rapports | Une copie fraîche montre chaque rejeu de référence d'après le registre, étiqueté ; sans l'étiquette ou sans la phrase sur le magasin, le rapport est refusé, rapport anglais | réussi |
 | Rendu des rapports | Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont il dérive, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : un magasin sans le test de référence de 2025 le montre d'après son entrée, avec le départ arrêté dont il dérive, rapport anglais | resté silencieux |
 | Rendu des rapports | Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du registre, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : avec tout dans le magasin, chaque rejeu de référence est rendu d'après son exécution, sans mention du registre, rapport anglais | resté silencieux |
-| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport français | déclenché |
-| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport anglais | déclenché |
-| Rendu des rapports | Des lignes d'attribution qui diffèrent du libellé que le propriétaire a fixé dans `AGENTS.md` font échouer le test | déclenché |
-| Rendu des rapports | Un mot changé dans `attribution.py` fait échouer la comparaison avec `AGENTS.md` | déclenché |
+| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport français | réussi |
+| Rendu des rapports | Un rapport, de validation ou de qualité des données, sans la ligne de la NOAA et de l'IEM, ou sans la ligne élargie de non-approbation, est refusé, rapport anglais | réussi |
+| Rendu des rapports | Des lignes d'attribution qui diffèrent du libellé que le propriétaire a fixé dans `AGENTS.md` font échouer le test | réussi |
+| Rendu des rapports | Un mot changé dans `attribution.py` fait échouer la comparaison avec `AGENTS.md` | réussi |
 | Rendu des rapports | Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport français | resté silencieux |
 | Rendu des rapports | Témoin : des diagnostics qui n'ont pas fini sont dits tels, à la place de leurs mesures, rapport anglais | resté silencieux |
-| Rendu des rapports | Des mesures de 2025 faites avec une autre conception que celles de 2023 et 2024 font refuser le rapport | déclenché |
-| Rendu des rapports | Un rejeu dont les coefficients des retards ne sont pas tous deux positifs fait refuser le rapport, qui les dit positifs | déclenché |
-| Rendu des rapports | Un plus long délai de diagnostic qui diffère de celui de l'exécution de qualité des données fait refuser le rapport | déclenché |
-| Rendu des rapports | Des valeurs du choix qui ne concordent pas avec l'exécution de validation font refuser le rapport | déclenché |
+| Rendu des rapports | Des mesures de 2025 faites avec une autre conception que celles de 2023 et 2024 font refuser le rapport | réussi |
+| Rendu des rapports | Un rejeu dont les coefficients des retards ne sont pas tous deux positifs fait refuser le rapport, qui les dit positifs | réussi |
+| Rendu des rapports | Un plus long délai de diagnostic qui diffère de celui de l'exécution de qualité des données fait refuser le rapport | réussi |
+| Rendu des rapports | Des valeurs du choix qui ne concordent pas avec l'exécution de validation font refuser le rapport | réussi |
 | Rendu des rapports | Témoin : les deux pages, dans les deux langues, sont rendues d'après ce qu'écrivent le rejeu, ses diagnostics, la porte de 2025 et le registre, et les lignes d'épisodes du rapport ont les clés de celles que la mesure construit | resté silencieux |
 | Rendu des rapports | Témoin : l'estampille porte la position de 2025 du test de référence, jamais celle d'un rejeu refait | resté silencieux |
 | Rendu des rapports | Témoin : les figures et les gabarits de v2 passent l'analyse de sécurité publique | resté silencieux |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus froid sous la base de chauffage est un constat, avec son heure, son pas et sa taille | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus chaud au-dessus de la base est un constat | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus froid sous la base de chauffage est un constat, avec son heure, son pas et sa taille | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une courbe qui baisse d'un pas plus chaud au-dessus de la base est un constat | réussi |
 | Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Témoin : une courbe saine, et un retour en arrière dans la tolérance, ne donnent aucun constat de forme | resté silencieux |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une pente froide qui n'est pas positive est un constat ; une pente positive n'en est pas un | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un pli, ou un modèle figé, dont la pente sort de la bande des plis de plus du facteur fixé est signalé ; sans écart, rien ne l'est | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des retards qui ne sont pas positifs, ou dont la somme n'est pas sous 1, sont des constats, d'un modèle figé ou d'un pli | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une pente froide qui n'est pas positive est un constat ; une pente positive n'en est pas un | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un pli, ou un modèle figé, dont la pente sort de la bande des plis de plus du facteur fixé est signalé ; sans écart, rien ne l'est | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des retards qui ne sont pas positifs, ou dont la somme n'est pas sous 1, sont des constats, d'un modèle figé ou d'un pli | réussi |
 | Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Témoin : le GAM réajusté par la mesure de solidité aux réglages fixés reproduit les prévisions hors échantillon de la validation à chaque heure | resté silencieux |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une variante réajustée qui ne reproduit pas la validation, ou pas sur les mêmes heures, arrête l'exécution | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | La mesure de solidité refuse une ligne postérieure à la fenêtre de conception | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des courbes qui ne sont pas celles qui prévoient font de la sensibilité de l'entrée un constat | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une table des courbes qui n'est pas celle du modèle figé est refusée | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une exécution de solidité qui ne nomme pas les modèles figés, la validation, les empreintes ou le code de la chaîne fait refuser le rapport | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des résultats de solidité qui nomment une autre exécution que la leur font refuser le rapport | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport français | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport français | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport français | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport anglais | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport anglais | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport anglais | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport français | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport anglais | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport français | déclenché |
-| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport anglais | déclenché |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une variante réajustée qui ne reproduit pas la validation, ou pas sur les mêmes heures, arrête l'exécution | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | La mesure de solidité refuse une ligne postérieure à la fenêtre de conception | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des courbes qui ne sont pas celles qui prévoient font de la sensibilité de l'entrée un constat | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une table des courbes qui n'est pas celle du modèle figé est refusée | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une exécution de solidité qui ne nomme pas les modèles figés, la validation, les empreintes ou le code de la chaîne fait refuser le rapport | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Des résultats de solidité qui nomment une autre exécution que la leur font refuser le rapport | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport français | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport français | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport français | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité qui ne nomme pas son exécution, ou en nomme une autre que celle de la provenance, fait refuser le rapport, rapport anglais | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une vérification de solidité qui échoue sans être énoncée comme constat, ou un constat dont la vérification a réussi, fait refuser le rapport, rapport anglais | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Le récit, ou la section 12, qui énonce la solidité sans la mention « ajoutée après le gel, sans rien décider » fait refuser le rapport, rapport anglais | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport français | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Une section de solidité dont les nombres ne sont pas ceux de son exécution fait refuser le rapport, rapport anglais | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport français | réussi |
+| Solidité conceptuelle, ajoutée après le gel (ne décide rien) | Un constat ou une mesure de solidité sans la mention « ajouté après le gel ; ne décide rien », ou un constat de l'exécution omis, fait refuser le rapport, rapport anglais | réussi |
 
 Le bris « Un changement de niveau de la demande : réentraîner » multiplie la demande du monde synthétique par 1,12, une hausse de 12 %. Sur les vraies heures de 2023, une hausse de 10 % a donné « réentraîner » en 10 semaines à chaque départ (section 10). Sur les vraies heures de 2024 (vu par les développeurs), la même hausse a donné « réentraîner » en 10 semaines à chaque départ (section 10).
 
@@ -1390,15 +1406,15 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 
 | Exécution | Identifiant | Date |
 |---|---|---|
-| qualité des données | `718b9c3a51ad46009cf33e04db045e46` | 2026-10-18 07:20 UTC |
-| validation | `47d38b233b804a29982140268449cdaf` | 2026-10-18 07:24 UTC |
-| modèles figés pour 2023 | `6c6ce0666e844452a95eeaf863bcc736` | 2026-10-18 07:24 UTC |
-| modèles figés pour 2024 | `26df92f2be4948d9b5a5d97fa2fcfe30` | 2026-10-18 07:53 UTC |
-| répétition de 2023 | `aa12983bc72e4186bcf3124a2b7ec9c1` | 2026-10-18 07:24 UTC |
-| diagnostics de la répétition de 2023 (section 7) | `477bbd6d09f041099f0c315d1af7b89b` | 2026-10-18 07:25 UTC |
-| rejeu de 2024 de cette chaîne | `fac1d0f3813b4499b10e4622c8fc4997` | 2026-10-18 07:53 UTC |
-| diagnostics du rejeu de 2024 dont la section 8 montre les chiffres | `e7655cd3f663402f82c4fae16277e60a` | 2026-10-18 07:54 UTC |
-| solidité conceptuelle, ajoutée après le gel (section 3.1) | `6af4421e1e8f466a845118761947a708` | 2026-10-18 08:27 UTC |
-| bris | `5b95f2f8ffbe48ecb1e786b41f2649b6` | 2026-10-18 08:48 UTC |
+| qualité des données | `121b2888c89b4d93b4ff030620b1a46c` | 2026-10-19 00:27 UTC |
+| validation | `4b53184205654e2383a393e70d6eb16c` | 2026-10-19 00:31 UTC |
+| modèles figés pour 2023 | `56531ced65f0453f930576b76b132e84` | 2026-10-19 00:31 UTC |
+| modèles figés pour 2024 | `6b75de5955224d91bee89f80cbdf28d5` | 2026-10-19 00:56 UTC |
+| répétition de 2023 | `d506557a88ee48be9d4f28e3cb7ef32c` | 2026-10-19 00:31 UTC |
+| diagnostics de la répétition de 2023 (section 7) | `270016dd8b074fe2a905f27fd99781b9` | 2026-10-19 00:32 UTC |
+| rejeu de 2024 de cette chaîne | `4284bb3d13dd43d0a600882142f448bd` | 2026-10-19 00:56 UTC |
+| diagnostics du rejeu de 2024 dont la section 8 montre les chiffres | `8ce4de0cc39349069b47e220268dabad` | 2026-10-19 00:57 UTC |
+| solidité conceptuelle, ajoutée après le gel (section 3.1) | `67886e32a5c24dc1b7a5c9b362e211db` | 2026-10-19 01:29 UTC |
+| bris | `77307663b9da4f3f90e3b8aad3e74c74` | 2026-10-19 01:47 UTC |
 
-Empreinte du code : `53b6983300730f26e728fcdaf93e8e4fc23b99007dc1de9164c19a150fe04bc6`. Empreinte des règles : `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.
+Empreinte du code : `dd449fab8c3ca7f9c13a9128086baeb91e090df2b6672d533a7f62bb7a3f1bb6`. Empreinte des règles : `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.
