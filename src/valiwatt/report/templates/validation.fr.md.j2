@@ -324,6 +324,24 @@ Chaque prévision lit la demande observée de la même heure la veille et la sem
 | {{ 'Nombre de nœuds' if x.setting == 'n_knots' else 'Alpha de la crête' }} | {{ x.value|num(0 if x.setting == 'n_knots' else 1) }} | {{ x.mape|pct(3) }} | {{ pp(x.difference, 3) }} | {{ ppci(x.ci95_low, x.ci95_high, 3) }} |
 {% endfor %}
 
+{% set B = SO.breakdown %}
+{% set DT = {'weekday': 'un jour de semaine', 'saturday': 'un samedi', 'sunday_holiday': 'un dimanche ou un jour férié'} %}
+#### Une prévision, pièce par pièce ({{ say.soundness_label }})
+
+Un modèle additif prévoit en additionnant des pièces séparées, chacune lue sur une ou deux de ses entrées. Une pièce peut se courber : celle de la température est une courbe pour chaque heure, pas une droite, de sorte qu'un degré plus froid ajoute plus à certaines températures qu'à d'autres ; celles des retards sont des droites. Voici la prévision de v2 pour l'heure la plus chargée de {{ span(K.design_years) }}, l'heure finissant à {{ B.utc|utc }} (la première ligne du tableau de la pointe de froid de {{ peak.named_month }}, section 4), telle que le modèle de validation glissante de son pli, {{ B.fold }}, l'a faite hors échantillon. Ce modèle n'est pas conservé : l'exécution de solidité le réajuste aux réglages fixés, comme pour la mesure de stabilité, et le réajustement reproduit la prévision de la validation pour cette heure {% if B.difference == 0 %}exactement{% else %}à {{ B.difference|abs|sci }} MW près{% endif %} (au-delà de {{ ST.control_mw|sci(0) }} MW, l'exécution s'arrête).
+
+Les entrées : {{ DT[B.day_type] }} ; l'heure des courbes, {{ B.hour }} h (l'heure locale où commence l'heure de demande) ; une température prévue de {{ B.temp_c|num(1) }} °C ; la demande observée de la même heure la veille, {{ B.lags.lag24|num }} MW, et la semaine précédente, {{ B.lags.lag168|num }} MW, telles que la prévision les a lues à son émission ; leurs poids, {{ B.weights.lag24|num(3) }} et {{ B.weights.lag168|num(3) }} MW par MW.
+
+| Pièce ({{ say.soundness_label }}) | MW |
+|---|---|
+| {{ say.breakdown_rows[0] }} | {{ B.pieces.level|num }} |
+| {{ say.breakdown_rows[1] }} | {{ B.pieces.cold|num }} |
+| {{ say.breakdown_rows[2] }} | {{ B.pieces.lag24|num }} |
+| {{ say.breakdown_rows[3] }} | {{ B.pieces.lag168|num }} |
+| {{ say.breakdown_rows[4] }} | {{ B.forecast|num }} |
+
+Le froid est la courbe de l'heure à la température prévue, mesurée depuis sa valeur à {{ design.ref_c|num(0) }} °C, où les courbes du rapport valent zéro. La pièce de chaque retard est sa valeur fois son poids, mesurée depuis une demande nulle, et le niveau est ce qui reste une fois le froid et les retards comptés : la constante du modèle, la cellule de cette heure et de ce type de jour, et la valeur de la courbe à {{ design.ref_c|num(0) }} °C. Lu seul, il n'est la prévision d'aucune heure réelle. En mesurant plutôt chaque retard depuis sa moyenne sur les lignes où le modèle du pli a été ajusté ({{ B.lag_means.lag24|num }} et {{ B.lag_means.lag168|num }} MW), la part des moyennes passée dans le niveau, la même prévision se répartit en {{ B.from_means.level|num }} MW de niveau, {{ B.from_means.cold|num }} MW de froid, {{ B.from_means.lag24|num }} et {{ B.from_means.lag168|num }} MW pour la veille et la semaine précédente, dont la somme non arrondie est la même, {{ B.sum_from_means|num }} MW. La convention déplace des mégawatts entre le niveau et les retards ; le froid et la prévision sont les mêmes dans les deux. Chaque pièce est imprimée au MW près ; non arrondies, les pièces ont pour somme la prévision à {{ B.identity_mw|sci(0) }} MW près, sinon l'exécution s'arrête. Cette décomposition lit une prévision et ne décide rien : aucun de ses nombres n'entre dans un seuil, un statut, un verdict ou une recommandation.
+
 #### Constats ({{ say.soundness_label }})
 
 {% for x in SO.findings %}

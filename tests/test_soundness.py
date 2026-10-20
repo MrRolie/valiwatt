@@ -354,6 +354,138 @@ def test_the_whole_measure_on_the_synthetic_world_carries_its_label_and_every_me
     assert SN.view(R | {"run_id": "x"}, "x")["last"] == 2022
 
 
+# --- 6. one forecast, broken down ----------------------------------------------------------------------------------
+
+def _first_fold():
+    s = RW.soundness_world()
+    return s, SN.fold_fits(s.f, s.folds[:1])[model.RIDGE_ALPHA]
+
+
+def test_the_breakdown_s_pieces_sum_to_the_fold_s_forecast():
+    """The identity, on a refitted fold of the synthetic world and on a fit drawn at random: on test rows of every
+    hour and day type, the four pieces sum to model.gam_predict's forecast to IDENTITY_MW, the split with the lags
+    from their training means sums to the same, the cold is the fold's curve at the row's temperature (the report's
+    curves), and each lag piece is its weight times its lag."""
+    s, ruled = _first_fold()
+    fit = ruled["fits"][0]
+    rng = np.random.default_rng(0)
+    drawn = {**fit, "coef": rng.normal(0, 500, len(fit["coef"])), "center": rng.normal(0, 3, len(fit["coef"])),
+             "scale": rng.uniform(0.2, 5, len(fit["coef"])), "intercept": 12345.6}
+    out = ruled["out"].dropna(subset=["pred"])
+    rows = out.groupby(["hour"]).head(1).index.union(out.groupby(s.f.loc[out.index, "day_type"]).head(1).index)
+    assert len(rows) >= 24 and set(s.f.loc[rows, "day_type"]) == set(model.DAY_TYPES)
+    for t in rows:
+        row = s.f.loc[[t]]
+        for which in (fit, drawn):
+            b = SN.breakdown(which, row)
+            X = model.gam_design(row, SN.SCENARIO, which["knots"])
+            want = float(model.gam_predict(X, which["center"], which["scale"], which["coef"], which["intercept"])[0])
+            assert b["forecast"] == want
+            assert abs(sum(b["pieces"].values()) - want) <= SN.IDENTITY_MW
+            assert abs(sum(b["from_means"].values()) - want) <= SN.IDENTITY_MW
+            curve = SN.fold_curve(which, [b["temp_c"]])
+            assert b["pieces"]["cold"] == pytest.approx(
+                float(curve.loc[curve["hour"] == b["hour"], "effect_mw"].iloc[0]), abs=1e-9)
+            for k in model.LAGS:
+                assert b["pieces"][k] == b["weights"][k] * float(row[k].iloc[0])
+        assert SN.breakdown(fit, row)["forecast"] == pytest.approx(float(out.loc[t, "pred"]), abs=SN.IDENTITY_MW)
+
+
+def test_the_breakdown_is_of_validation_s_forecast_for_the_busiest_hour():
+    s = RW.soundness_world()
+    b = RW.soundness_results()["breakdown"]
+    busiest = s.f["target"].dropna().idxmax()
+    assert pd.Timestamp(b["utc"]) == busiest and b["fold"] == s.oos.loc[busiest, "fold"]
+    assert b["validation"] == float(s.oos.loc[busiest, "pred_gam_forecast"]) and b["label"] == SN.LABEL
+    assert set(b["pieces"]) == set(b["from_means"]) == set(SN.PIECES)
+    assert b["from_means"]["level"] - b["pieces"]["level"] == pytest.approx(
+        sum(b["weights"][k] * b["lag_means"][k] for k in model.LAGS))
+    SN.check_breakdown(b)  # control
+
+
+def test_a_breakdown_that_does_not_sum_or_is_not_validation_s_forecast_stops_the_run(monkeypatch):
+    s, ruled = _first_fold()
+    SN.fold_breakdown(s.f, ruled, s.oos)  # control
+    t = SN.busiest_hour(s.f)
+    oos = s.oos.copy()
+    oos.loc[t, "pred_gam_forecast"] += 10 * SN.CONTROL_MW  # the refit no longer reproduces validation there
+    with pytest.raises(SN.SoundnessError, match="not validation's out-of-sample forecast"):
+        SN.fold_breakdown(s.f, ruled, oos)
+    oos.loc[t, "pred_gam_forecast"] = np.nan
+    with pytest.raises(SN.SoundnessError, match="not validation's out-of-sample forecast"):
+        SN.fold_breakdown(s.f, ruled, oos)
+    real = SN.breakdown
+
+    def off(piece):
+        def perturbed(fit, row, *a, **k):
+            b = real(fit, row, *a, **k)
+            b["pieces"][piece] += 10 * SN.IDENTITY_MW
+            return b
+        return perturbed
+
+    for piece in SN.PIECES:
+        monkeypatch.setattr(SN, "breakdown", off(piece))
+        with pytest.raises(SN.SoundnessError, match="sum to"):
+            SN.fold_breakdown(s.f, ruled, s.oos)
+    monkeypatch.setattr(SN, "breakdown", real)
+    R = RW.soundness_results() | {"run_id": "x"}
+    SN.view(R, "x")  # control
+    for key in ("pieces", "from_means"):
+        bad = copy.deepcopy(R)
+        bad["breakdown"][key]["level"] += 1.0
+        with pytest.raises(SN.SoundnessError, match="sum to"):
+            SN.view(bad, "x")
+    with pytest.raises(SN.SoundnessError, match="lack"):
+        SN.view({k: v for k, v in R.items() if k != "breakdown"}, "x")
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_the_breakdown_renders_in_both_languages(lang):
+    from valiwatt.report.render import fmt_num
+
+    ctx = RP.context()
+    b = ctx["sound"]["breakdown"]
+    part = RV.soundness_section(RP.render(ctx, lang))
+    label = RV.SAY[lang]["soundness_label"]
+    head = next(line for line in part.splitlines() if line.startswith("#### ") and (
+        "pièce par pièce" in line if lang == "fr" else "piece by piece" in line))
+    assert head.endswith(f"({label})")
+    lines = part.splitlines()
+    assert all(row in lines for row in RV.breakdown_rows(ctx["sound"], lang))
+    for x in (*b["from_means"].values(), b["sum_from_means"], *b["lags"].values(), *b["lag_means"].values()):
+        assert fmt_num(x, 0, lang) in part, x
+    assert all(fmt_num(b["weights"][k], 3, lang) in part for k in model.LAGS)
+    assert fmt_num(b["temp_c"], 1, lang) + " °C" in part and f"{b['hour']} h" in part
+    assert ("ne décide rien" if lang == "fr" else "decides nothing") in part.split(head, 1)[1].split("\n#### ", 1)[0]
+    assert ("modèle additif" if lang == "fr" else "additive model") in part
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_a_breakdown_that_does_not_sum_or_is_not_the_cold_peak_s_first_row_is_refused(lang):
+    ctx = RP.context()
+    text = RP.render(ctx, lang)  # control
+    status = RV.status_sentence(environment(lang), ctx, lang)
+    prod = model.PRODUCTION
+    for edit, match in ((lambda c: c["sound"]["breakdown"]["pieces"].update(
+                             level=c["sound"]["breakdown"]["pieces"]["level"] + 5.0), "sum to"),
+                        (lambda c: c["sound"]["breakdown"]["from_means"].update(
+                             cold=c["sound"]["breakdown"]["from_means"]["cold"] + 5.0), "sum to"),
+                        (lambda c: c["v"]["cases"]["peak"]["hours"][0].update(
+                             {f"pred_{prod}": c["v"]["cases"]["peak"]["hours"][0][f"pred_{prod}"] + 1.0}),
+                         "not the first row"),
+                        (lambda c: c["v"]["cases"]["peak"]["hours"][0].update(utc="2023-02-03T23:00:00+00:00"),
+                         "not the first row")):
+        other = copy.deepcopy(ctx)
+        edit(other)
+        with pytest.raises(ReportRefused, match=match):
+            RV.check_rendered(text, lang, other, "validation", status)
+    row = RV.breakdown_rows(ctx["sound"], lang)[1]  # the cold
+    altered = text.replace(row, row.replace(" | ", " | 1", 1))
+    assert altered != text
+    with pytest.raises(ReportRefused, match="not its run's"):
+        RV.check_rendered(altered, lang, ctx, "validation", status)
+
+
 # --- the tracked run, against a real run store -----------------------------------------------------------------------
 
 def test_the_soundness_run_reads_the_chain_s_frozen_runs_and_logs_every_measure(tmp_path, monkeypatch):

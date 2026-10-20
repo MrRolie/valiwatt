@@ -1146,6 +1146,9 @@ SAY = {
         "no_finding": "Aucune vérification de cette section n'a échoué.",
         "to": "à",
         "lag_rows": ("Demande de la veille", "Demande de la semaine précédente", "Somme"),
+        "breakdown_rows": ("Le niveau de cette heure et de ce type de jour", "Le froid (la courbe de l'heure à la "
+                           "température prévue)", "La demande de la veille × son poids",
+                           "La demande de la semaine précédente × son poids", "Prévision (la somme)"),
         "story_soundness": "Les courbes elles-mêmes ont été lues et vérifiées après le gel, sans rien décider.",
         "sr_soundness": "Ajoutées après le gel, sans rien décider",
     },
@@ -1169,6 +1172,9 @@ SAY = {
         "no_finding": "No check of this section failed.",
         "to": "to",
         "lag_rows": ("The day before's demand", "The week before's demand", "Sum"),
+        "breakdown_rows": ("The level for that hour and kind of day", "The cold (the hour's curve at the forecast "
+                           "temperature)", "The day before's demand × its weight",
+                           "The week before's demand × its weight", "Forecast (the sum)"),
         "story_soundness": "The curves themselves were read and checked after the freeze, deciding nothing.",
         "sr_soundness": "Added after the freeze, deciding nothing",
     },
@@ -1345,11 +1351,41 @@ def lag_rows(sound: dict, lang: str) -> list[str]:
             for name, k in zip(SAY[lang]["lag_rows"], ("lag24", "lag168", "sum"))]
 
 
+def breakdown_rows(sound: dict, lang: str) -> list[str]:
+    """The rows of the soundness section's breakdown table as the run's numbers print them: the four pieces, each lag
+    measured from zero, and the forecast they sum to."""
+    num = filters(lang)["num"]
+    B = sound["breakdown"]
+    values = [B["pieces"][k] for k in SN.PIECES] + [B["forecast"]]
+    return [f"| {name} | {num(x)} |" for name, x in zip(SAY[lang]["breakdown_rows"], values)]
+
+
+def check_breakdown(ctx: dict) -> None:
+    """The soundness run's breakdown is of the cold-peak table's first row (section 4): the same hour, the same
+    forecast temperature and v2's forecast there to CONTROL_MW; and its pieces sum to its forecast
+    (soundness.check_breakdown). Refused otherwise: the breakdown would explain another forecast than the one the
+    report prints."""
+    B, prod = ctx["sound"]["breakdown"], _models()[0]
+    try:
+        SN.check_breakdown(B)
+    except SN.SoundnessError as e:
+        raise ReportRefused(str(e)) from e
+    hours = ((ctx.get("v") or {}).get("cases") or {}).get("peak", {}).get("hours") or []
+    first = hours[0] if hours else {}
+    shown = first.get(f"pred_{prod}")
+    if (not first or pd.Timestamp(first["utc"]) != pd.Timestamp(B["utc"])
+            or not abs(float(first.get("temp_forecast", np.nan)) - B["temp_c"]) <= SN.IDENTITY_MW
+            or shown is None or not abs(shown - B["forecast"]) <= SN.CONTROL_MW):
+        raise ReportRefused(f"the breakdown's forecast ({B['utc']}, {B['forecast']:.6f} MW) is not the first row of "
+                            f"the cold-peak table ({first.get('utc')}, {shown} MW)")
+
+
 def check_soundness(text: str, lang: str, ctx: dict) -> None:
     """The soundness section the page must carry (report/soundness.py; the owner's ruling of 2026-10-17): present,
     naming its own run, each of its measures under a heading carrying the label (added after the freeze, deciding
-    nothing), every finding of the run stated, each with that label, the run's findings its failed checks, its size and
-    lag tables' numbers the run's, and section 12's soundness row labelled likewise."""
+    nothing), every finding of the run stated, each with that label, the run's findings its failed checks, its size,
+    lag and breakdown tables' numbers the run's, its breakdown that of the cold-peak table's first row
+    (`check_breakdown`), and section 12's soundness row labelled likewise."""
     sound, say = ctx["sound"], SAY[lang]
     try:
         SN.check_findings(sound)
@@ -1371,8 +1407,10 @@ def check_soundness(text: str, lang: str, ctx: dict) -> None:
                             "or one without its label")
     if not sound["findings"] and say["no_finding"] not in part:
         raise ReportRefused("the soundness section does not say that none of its checks failed")
+    check_breakdown(ctx)
     lines = part.splitlines()
-    missing = [row for row in slope_rows(sound, lang) + lag_rows(sound, lang) if row not in lines]
+    missing = [row for row in slope_rows(sound, lang) + lag_rows(sound, lang) + breakdown_rows(sound, lang)
+               if row not in lines]
     if missing:
         raise ReportRefused(f"the soundness section's numbers are not its run's: {missing[0]!r} is not printed")
     if say["sr_soundness"] not in numbered_section(text, 12):

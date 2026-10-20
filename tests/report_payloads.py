@@ -389,6 +389,13 @@ def payloads(seed: int = 0):
                        "lower": g(28000, 29000), "upper": g(33000, 34000), "covered": False} for d in (3, 4)],
             "covered": 0, "evaluated": 2, "busiest_in_named_month": True, "named_month": "2023-02"}
     peak["hours"][1][f"pred_{FAM}"] = None  # a comparison model without a forecast for one of the hours
+    # The first row's hour, forecast temperature and v2 forecast are those the soundness run breaks down (the
+    # soundness world's busiest hour, report/soundness.py `fold_breakdown`): the report refuses a breakdown that is
+    # not of the cold-peak table's first row.
+    import replay_world as RW
+
+    bd = RW.soundness_results()["breakdown"]
+    peak["hours"][0] |= {"utc": bd["utc"], "temp_forecast": bd["temp_c"], f"pred_{PROD}": bd["forecast"]}
     cold_c = float(np.nanquantile(oos["temp_forecast"], 0.05))
     c = evaluate.contrasts(oos, cold_c, n_boot=200) if "vc" not in _CACHE else _CACHE["vc"]
     _CACHE["vc"] = c

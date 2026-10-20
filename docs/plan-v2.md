@@ -1051,3 +1051,13 @@ None yet.
   dated before this entry; from it on, the README's box states the status, follows it and, when a clean 2025 does not
   confirm v2, carries the recommendation. It decides nothing and changes no rule; the rules hash is the one the freeze
   tag carries.
+- 2026-10-20, a reading added to section 3.1 of the report after the freeze, deciding nothing: one forecast, piece by
+  piece. The soundness run breaks validation's out-of-sample forecast for the busiest hour of the design years (the
+  first row of the cold-peak table) into the sum of four pieces: the level of that hour and kind of day, the cold (the
+  hour's curve at the forecast temperature, measured from its value at the curves' reference temperature), the day
+  before's demand and the week before's, each its value times its weight; and states the same split with each lag
+  measured from its training average. It reads the soundness run's refit of validation's 2023-02 fold, the one that
+  reproduces validation's forecasts on every hour, and refits nothing else. The run stops when the pieces do not sum
+  to the forecast or the forecast is not validation's, and the report refuses a breakdown that is not of the
+  cold-peak table's first row. It changes no rule, no status and no verdict; the rules hash is the one the freeze tag
+  carries.

@@ -325,6 +325,24 @@ Each forecast reads the observed demand of the same hour the day before and the 
 | {{ 'Number of knots' if x.setting == 'n_knots' else 'Ridge alpha' }} | {{ x.value|num(0 if x.setting == 'n_knots' else 1) }} | {{ x.mape|pct(3) }} | {{ pp(x.difference, 3) }} | {{ ppci(x.ci95_low, x.ci95_high, 3) }} |
 {% endfor %}
 
+{% set B = SO.breakdown %}
+{% set DT = {'weekday': 'a weekday', 'saturday': 'a Saturday', 'sunday_holiday': 'a Sunday or holiday'} %}
+#### One forecast, piece by piece ({{ say.soundness_label }})
+
+An additive model forecasts by adding separate pieces, each read from one or two of its inputs. A piece can bend: the temperature's piece is a curve for each hour, not a straight line, so one degree colder adds more at some temperatures than at others; the lags' pieces are straight lines. Here is v2's forecast for the busiest hour of {{ span(K.design_years) }}, the hour ending {{ B.utc|utc }} (the first row of the {{ peak.named_month }} cold-peak table, section 4), as validation's walk-forward model of its fold, {{ B.fold }}, made it out of sample. That model is not stored: the soundness run refits it at the ruled settings, as for the stability measure, and the refit reproduces validation's forecast for that hour {% if B.difference == 0 %}exactly{% else %}to within {{ B.difference|abs|sci }} MW{% endif %} (beyond {{ ST.control_mw|sci(0) }} MW, the run stops).
+
+The inputs: {{ DT[B.day_type] }}; the curves' hour, {{ B.hour }} h (the local hour at which the demand hour begins); a forecast temperature of {{ B.temp_c|num(1) }} °C; the same hour's observed demand the day before, {{ B.lags.lag24|num }} MW, and the week before, {{ B.lags.lag168|num }} MW, as the forecast read them at its issue; their weights, {{ B.weights.lag24|num(3) }} and {{ B.weights.lag168|num(3) }} MW per MW.
+
+| Piece ({{ say.soundness_label }}) | MW |
+|---|---|
+| {{ say.breakdown_rows[0] }} | {{ B.pieces.level|num }} |
+| {{ say.breakdown_rows[1] }} | {{ B.pieces.cold|num }} |
+| {{ say.breakdown_rows[2] }} | {{ B.pieces.lag24|num }} |
+| {{ say.breakdown_rows[3] }} | {{ B.pieces.lag168|num }} |
+| {{ say.breakdown_rows[4] }} | {{ B.forecast|num }} |
+
+The cold is the hour's curve at the forecast temperature, measured from its value at {{ design.ref_c|num(0) }} °C, where the report's curves are zero. Each lag's piece is its value times its weight, measured from zero demand, and the level is what is left once the cold and the lags are counted: the model's constant, the cell of that hour and kind of day, and the curve's value at {{ design.ref_c|num(0) }} °C. Read alone, it is the forecast of no real hour. With each lag measured instead from its average over the rows the fold's model was fitted on ({{ B.lag_means.lag24|num }} and {{ B.lag_means.lag168|num }} MW), the averages' share moved into the level, the same forecast splits as {{ B.from_means.level|num }} MW of level, {{ B.from_means.cold|num }} MW of cold, {{ B.from_means.lag24|num }} and {{ B.from_means.lag168|num }} MW for the day before and the week before, which unrounded sum to the same {{ B.sum_from_means|num }} MW. The convention moves megawatts between the level and the lags; the cold and the forecast are the same under both. Each piece is printed to the MW; unrounded, the pieces sum to the forecast to within {{ B.identity_mw|sci(0) }} MW, or the run stops. This breakdown reads one forecast and decides nothing: none of its numbers enters a threshold, a status, a verdict or a recommendation.
+
 #### Findings ({{ say.soundness_label }})
 
 {% for x in SO.findings %}

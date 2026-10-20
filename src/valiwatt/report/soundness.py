@@ -27,6 +27,12 @@ The measures (this module is not a rule file: monitor/rules.py NOT_RULES; it onl
    model's forecast moves by exactly its curve's difference, to CONSISTENCY_MW. (b) Parameters: the walk-forward MAPE on
    validation's folds and rows with each setting of VARIANTS changed alone, beside the ruled one, the difference with
    evaluate.paired_difference's week-block interval (in sample for the choice).
+6. One forecast, broken down (added 2026-10-20): validation's out-of-sample forecast for the busiest hour of the design
+   years (the first row of its cold-peak table), from its fold's refit, as the exact sum of four pieces (the level
+   of that hour and kind of day, i.e. the forecast at BASE_C with both lags at zero; the cold; the day before's
+   demand; the week before's), and the same split with the lags measured from their training means
+   (`fold_breakdown`). A reading, no check: the run stops only when the
+   pieces do not sum to the forecast to IDENTITY_MW, or the forecast is not validation's to CONTROL_MW.
 
 The settings below were fixed before any of these measures was computed on the real runs (the developers had looked
 at the frozen 2024 run's partial-effects table before them; the report says so).
@@ -293,7 +299,7 @@ def fold_fits(f: pd.DataFrame, fold_list: list, train_at=None, n_knots: int = mo
             parts[a].append(pd.DataFrame({"target": test["target"], "fold": str(fold.test_month), "day": test["day"],
                                           "hour": test["hour"], "pred": pred}, index=test.index))
             fits[a].append({"fold": str(fold.test_month), "knots": knots, "coef": coef, "scale": scale,
-                            "train_min_c": lo, "train_max_c": hi})
+                            "center": center, "intercept": intercept, "train_min_c": lo, "train_max_c": hi})
     return {a: {"out": pd.concat(parts[a]), "fits": fits[a]} for a in alphas}
 
 
@@ -468,6 +474,118 @@ def parameter_sensitivity(ruled: pd.DataFrame, variants: dict, n_boot: int = N_B
             "variants": rows}
 
 
+# ------------------------------------------------------------------------------------- one forecast, broken down
+
+# The breakdown's pieces must sum to the refit's forecast to this, in MW: float rounding only, the sum being exact.
+IDENTITY_MW = 1e-6
+PIECES = ("level", "cold", "lag24", "lag168")
+
+
+def busiest_hour(f: pd.DataFrame) -> pd.Timestamp:
+    """The busiest hour of the design rows by observed demand: the first row of validation's cold-peak table, picked
+    as validate.peak_case picks it (the PEAK_HOURS largest targets, the first of them)."""
+    from valiwatt.forecast import validate as vd
+
+    top = f["target"].dropna().nlargest(vd.PEAK_HOURS).index
+    if not len(top):
+        raise SoundnessError("the design rows hold no observed demand: no busiest hour")
+    return top[0]
+
+
+def breakdown(fit: dict, row: pd.DataFrame, scenario: str = SCENARIO, ref_c: float = BASE_C) -> dict:
+    """A refitted fold's forecast on one row (`fit`: its knots, coef, scale, center and intercept) as an exact sum of
+    four pieces, read off model.gam_predict's algebra. With beta = coef / scale and K = intercept - beta . center, the
+    forecast is K + beta . x: the scaler's centring cancels into K. Only the row's own cell, its hour's spline columns
+    and the two lags are non-zero in x, so the forecast is
+      level  = K + beta[its cell] + g_h(ref_c), the level of that hour and kind of day, measured from zero demand
+               (the forecast at ref_c with both lags at zero),
+      cold   = g_h(T) - g_h(ref_c), the hour's curve at the forecast temperature (model.gam_partial_effects, the
+               report's curves), with g_h(T) = sum_k beta[h, k] B_k(T),
+      lag24  = beta[lag24] x lag24 and lag168 = beta[lag168] x lag168, each lag's value times its weight.
+    `from_means`: the same split with each lag measured from its training mean (the scaler's centre), the means'
+    share moved into the level; both sum to the same forecast. Refused (SoundnessError) when the row is not usable."""
+    cols = model.gam_columns()
+    coef, scale, center = (np.asarray(fit[k], dtype=float) for k in ("coef", "scale", "center"))
+    if not len(coef) == len(scale) == len(center) == len(cols):
+        raise SoundnessError(f"the fold fit has {len(coef)} coefficients, not the GAM's {len(cols)} columns")
+    if len(row) != 1:
+        raise SoundnessError(f"a breakdown is of one row, not {len(row)}")
+    knots = np.asarray(fit["knots"], dtype=float)
+    X = model.gam_design(row, scenario, knots)
+    if not np.isfinite(X).all():
+        raise SoundnessError("the row's inputs are not all known: its forecast cannot be broken down")
+    at = {c: i for i, c in enumerate(cols)}
+    beta = coef / scale
+    K = float(fit["intercept"]) - float(beta @ center)
+    day_type, hour = str(row["day_type"].iloc[0]), int(model.local_hour(row).iloc[0])
+    temp = float(row[f"temp_{scenario}"].iloc[0])
+    spline = [i for c, i in at.items() if c.startswith(f"spline:{hour:02d}:")]
+    g_ref = float(model.gam_basis(np.array([ref_c]), knots)[0] @ beta[spline])
+    pe = model.gam_partial_effects(knots, coef, scale, np.array([temp]), ref_c=ref_c)
+    cold = float(pe.loc[pe["hour"] == hour, "effect_mw"].iloc[0])
+    lags = {k: float(row[k].iloc[0]) for k in model.LAGS}
+    weights = {k: float(beta[at[k]]) for k in model.LAGS}
+    means = {k: float(center[at[k]]) for k in model.LAGS}
+    pieces = {"level": K + float(beta[at[f"cell:{day_type}:{hour:02d}"]]) + g_ref, "cold": cold,
+              **{k: weights[k] * lags[k] for k in model.LAGS}}
+    from_means = {"level": pieces["level"] + sum(weights[k] * means[k] for k in model.LAGS), "cold": cold,
+                  **{k: weights[k] * (lags[k] - means[k]) for k in model.LAGS}}
+    forecast = float(model.gam_predict(X, center, scale, coef, fit["intercept"])[0])
+    return {"day_type": day_type, "hour": hour, "temp_c": temp, "ref_c": float(ref_c), "lags": lags,
+            "weights": weights, "lag_means": means, "pieces": pieces, "from_means": from_means,
+            "sum": float(sum(pieces.values())), "sum_from_means": float(sum(from_means.values())),
+            "forecast": forecast}
+
+
+def check_breakdown(b: dict) -> None:
+    """The breakdown holds together (SoundnessError otherwise), on its own numbers, with this module's tolerances: its
+    four pieces, under either convention, sum to its forecast to IDENTITY_MW; each lag piece is its weight times its
+    lag, from zero or from its training mean; the two splits share the cold; and its forecast is validation's
+    out-of-sample forecast of that hour to CONTROL_MW."""
+    for key in ("pieces", "from_means"):
+        if set(b.get(key) or {}) != set(PIECES):
+            raise SoundnessError(f"the breakdown's {key} are not the pieces {list(PIECES)}")
+    f, p, m = b["forecast"], b["pieces"], b["from_means"]
+    for name, split in (("pieces", p), ("pieces measured from the training means", m)):
+        total = sum(split[k] for k in PIECES)
+        if not abs(total - f) <= IDENTITY_MW:
+            raise SoundnessError(f"the breakdown's {name} sum to {total:.6f} MW, not its forecast {f:.6f} MW "
+                                 f"(tolerance {IDENTITY_MW:g} MW)")
+    if not (abs(b["sum"] - sum(p[k] for k in PIECES)) <= IDENTITY_MW
+            and abs(b["sum_from_means"] - sum(m[k] for k in PIECES)) <= IDENTITY_MW):
+        raise SoundnessError("the breakdown's stated sums are not the sums of its pieces")
+    for k in model.LAGS:
+        w, x, mean = b["weights"][k], b["lags"][k], b["lag_means"][k]
+        if not (abs(p[k] - w * x) <= IDENTITY_MW and abs(m[k] - w * (x - mean)) <= IDENTITY_MW):
+            raise SoundnessError(f"the breakdown's {k} piece is not its weight times its lag")
+    if p["cold"] != m["cold"]:
+        raise SoundnessError("the breakdown's two splits do not share the cold")
+    v = b.get("validation")
+    if v is None or not np.isfinite(v) or not abs(f - v) <= CONTROL_MW or not abs(b["difference"] - (f - v)) <= \
+            IDENTITY_MW:
+        raise SoundnessError(f"the breakdown's forecast {f:.6f} MW is not validation's out-of-sample forecast of that "
+                             f"hour, {v} MW (tolerance {CONTROL_MW:g} MW)")
+
+
+def fold_breakdown(f: pd.DataFrame, ruled: dict, oos: pd.DataFrame, key: str = model.PRODUCTION) -> dict:
+    """The breakdown of validation's out-of-sample forecast for the busiest hour of the design rows (`busiest_hour`):
+    from the refit of its fold at the ruled settings (`ruled`: fold_fits' {"out", "fits"}), on its row of `f`, held to
+    validation's forecast of `key` in `oos` (check_breakdown; the run stops otherwise)."""
+    t = busiest_hour(f)
+    if t not in ruled["out"].index:
+        raise SoundnessError(f"the busiest hour {t} is in no fold's test rows")
+    fold = str(ruled["out"].loc[t, "fold"])
+    fit = next((x for x in ruled["fits"] if x["fold"] == fold), None)
+    if fit is None:
+        raise SoundnessError(f"the busiest hour's fold {fold} has no refit")
+    b = breakdown(fit, f.loc[[t]])
+    v = float(oos[f"pred_{key}"].get(t, np.nan))
+    out = {"utc": t, "fold": fold, "target": float(f.loc[t, "target"]), **b, "validation": v,
+           "difference": b["forecast"] - v, "identity_mw": IDENTITY_MW, "control_mw": CONTROL_MW, "label": LABEL}
+    check_breakdown(out)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------------ the whole
 
 def settings() -> dict:
@@ -564,6 +682,7 @@ def measure(frozen: dict, tables: dict, f: pd.DataFrame, fold_list: list, oos: p
     ruled_knots = fold_fits(f, fold_list, train_at, model.N_KNOTS, alphas)
     ruled = ruled_knots[model.RIDGE_ALPHA]
     R["control"] = control(ruled["out"], oos)
+    R["breakdown"] = fold_breakdown(f, ruled, oos)
     folds = fold_measures(ruled["fits"])
     last = max(frozen)
     frozen_slopes = {str(y): {r["hour"]: r[cold_key()] for r in R["slopes"][str(y)]["production"]} for y in frozen}
@@ -717,10 +836,12 @@ def view(results: dict, run_id: str) -> dict:
                              "no soundness finding is shown without it")
     missing = [k for k in ("settings", "freezes", "shape", "slopes", "slope_stats", "lowest", "between_freezes",
                            "flattening",
-                           "control", "stability", "lags", "parameters", "input", "findings") if k not in results]
+                           "control", "breakdown", "stability", "lags", "parameters", "input", "findings")
+               if k not in results]
     if missing:
         raise SoundnessError(f"the soundness results lack {missing}")
     check_findings(results)
+    check_breakdown(results["breakdown"])
     years = sorted(results["freezes"], key=int)
     cold, warm = cold_key(), f"warm {span_key(*WARM_SPAN)}"
     reading = {}

@@ -1814,6 +1814,26 @@ BREAKS = [
     _b(SOUND, f"{T_SND}::test_a_partial_effects_table_that_is_not_the_model_s_is_refused",
        "Une table des courbes qui n'est pas celle du modèle figé est refusée",
        "A curves table that is not the frozen model's is refused"),
+    _b(SOUND, f"{T_SND}::test_the_breakdown_s_pieces_sum_to_the_fold_s_forecast",
+       "Témoin : les quatre pièces de la décomposition d'une prévision ont pour somme la prévision du pli réajusté, "
+       "avec les retards mesurés depuis zéro ou depuis leurs moyennes d'entraînement",
+       "Control: the four pieces of a forecast's breakdown sum to the refitted fold's forecast, with the lags "
+       "measured from zero or from their training averages", control=True),
+    _b(SOUND, f"{T_SND}::test_a_breakdown_that_does_not_sum_or_is_not_validation_s_forecast_stops_the_run",
+       "Une décomposition dont les pièces n'ont pas pour somme la prévision, ou dont la prévision n'est pas celle de "
+       "la validation, arrête l'exécution de solidité",
+       "A breakdown whose pieces do not sum to the forecast, or whose forecast is not validation's, stops the "
+       "soundness run"),
+    _b(SOUND, f"{T_SND}::test_a_breakdown_that_does_not_sum_or_is_not_the_cold_peak_s_first_row_is_refused[fr]",
+       "Une décomposition dont les pièces n'ont pas pour somme la prévision, ou qui n'est pas celle de la première "
+       "ligne du tableau de la pointe de froid, fait refuser le rapport, rapport français",
+       "A breakdown whose pieces do not sum to the forecast, or that is not the cold-peak table's first row, makes "
+       "the report refuse, French report"),
+    _b(SOUND, f"{T_SND}::test_a_breakdown_that_does_not_sum_or_is_not_the_cold_peak_s_first_row_is_refused[en]",
+       "Une décomposition dont les pièces n'ont pas pour somme la prévision, ou qui n'est pas celle de la première "
+       "ligne du tableau de la pointe de froid, fait refuser le rapport, rapport anglais",
+       "A breakdown whose pieces do not sum to the forecast, or that is not the cold-peak table's first row, makes "
+       "the report refuse, English report"),
     _b(SOUND, f"{T_SND}::test_a_soundness_run_that_is_not_the_chain_s_is_refused",
        "Une exécution de solidité qui ne nomme pas les modèles figés, la validation, les empreintes ou le code de la "
        "chaîne fait refuser le rapport",
