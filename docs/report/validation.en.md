@@ -1,6 +1,6 @@
 # Validating and monitoring a forecast of Québec's electricity demand, v2
 
-_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `d9c4da0ab203`, code hash `7a331e59081c`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs. The design constants its templates write in numerals are read from the runs or from the code that produced them. A test checks this. It reads the templates' text, the strings their code prints and the numbers their printed expressions write. In all of these, it allows only a few kinds of numerals: section, plan and standard references, version names, the dates of the owner's rulings, facts of the calendar, the constants of a formula and the numbering of a list. The break labels of section 11 are hand-written descriptions of the tests, numerals included, and that test does not read them. "The developers" are the AI agents that built this project and the owner who directs them. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
+_Report generated from a chain of MLflow runs followed from the 2024 replay (section 8), code `cc36e86c3b40`, code hash `60d58f9c3732`, rules frozen at commit `825b7bd134a8` (tag `rules-frozen-v2`). Every measured value comes from these runs. The design constants its templates write in numerals are read from the runs or from the code that produced them. A test checks this. It reads the templates' text, the strings their code prints and the numbers their printed expressions write. In all of these, it allows only a few kinds of numerals: section, plan and standard references, version names, the dates of the owner's rulings, facts of the calendar, the constants of a formula and the numbering of a list. The break labels of section 11 are hand-written descriptions of the tests, numerals included, and that test does not read them. "The developers" are the AI agents that built this project and the owner who directs them. Every result carries its evaluation label, read from the runs: _in sample for the choice of family and input_ for 2020–2023, _rehearsal on a design year_ for 2023, _seen by the developers_ for 2024, and for 2025 _held-out data_ only when its test of record is clean. This English version is derived from the French one._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
@@ -227,7 +227,7 @@ Cold tail (_in sample for the choice of family and input_): 1,468 common hours b
 
 ### 3.1 Conceptual soundness, added after the freeze
 
-_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for 2023 and for 2024 and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the 2025 verdict stays as the plan pre-registers it. Run `d05bfb12d44745fe9eb45ebb3c10ddda`._
+_Added after v2's rules were frozen, at the owner's ruling of 2026-10-17, this section decides nothing: it interprets and checks the model's factors, from the models frozen for 2023 and for 2024 and validation's folds, refitting no frozen model and changing no rule. A check that fails is a finding the report states, never a gate: no number of this section enters a threshold, a status, a verdict or a recommendation, and the 2025 verdict stays as the plan pre-registers it. Run `e6fb793ba20d46eab0f2fc062ebe7852`._
 
 The settings were fixed before these measures were computed on the real runs: the heating base, 18 °C, is v1's, fixed before any v2 curve existed and the temperature at which every curve is zero (a base read off these curves would fit the check to what it checks); the tolerance is 1 MW per 1 °C step, one unit of the whole MW the report prints the curves in, so that the check is no finer than the page that states it; a fold is flagged when its slope leaves the folds' 5th to 95th percentile band by more than 0.5 times its width (10% of the folds lie outside the band by construction, so a flag needs a distance past its edge, and one measured in the band's own width holds at every hour whatever its spread). The developers had, however, already looked at the curves table of the model frozen for 2024 before fixing them.
 
@@ -362,6 +362,22 @@ Each change is its hour's curve difference over the move, to within 1.1 × 10⁻
 | Number of knots | 12 | 2.832% | +0.005 pt | [+0.001 pt, +0.009 pt] |
 | Ridge alpha | 0.5 | 2.827% | 0.000 pt | [0.000 pt, 0.000 pt] |
 | Ridge alpha | 2.0 | 2.826% | 0.000 pt | [0.000 pt, 0.000 pt] |
+
+#### One forecast, piece by piece (added after the freeze; decides nothing)
+
+An additive model forecasts by adding separate pieces, each read from one or two of its inputs. A piece can bend: the temperature's piece is a curve for each hour, not a straight line, so one degree colder adds more at some temperatures than at others; the lags' pieces are straight lines. Here is v2's forecast for the busiest hour of 2019–2023, the hour ending 2023-02-03 23:00 UTC (the first row of the 2023-02 cold-peak table, section 4), as validation's walk-forward model of its fold, 2023-02, made it out of sample. That model is not stored: the soundness run refits it at the ruled settings, as for the stability measure, and the refit reproduces validation's forecast for that hour exactly (beyond 1 × 10⁻⁶ MW, the run stops).
+
+The inputs: a weekday; the curves' hour, 17 h (the local hour at which the demand hour begins); a forecast temperature of −25.2 °C; the same hour's observed demand the day before, 32,083 MW, and the week before, 31,240 MW, as the forecast read them at its issue; their weights, 0.388 and 0.067 MW per MW.
+
+| Piece (added after the freeze; decides nothing) | MW |
+|---|---|
+| The level for that hour and kind of day | 10,116 |
+| The cold (the hour's curve at the forecast temperature) | 15,942 |
+| The day before's demand × its weight | 12,452 |
+| The week before's demand × its weight | 2,108 |
+| Forecast (the sum) | 40,618 |
+
+The cold is the hour's curve at the forecast temperature, measured from its value at 18 °C, where the report's curves are zero. Each lag's piece is its value times its weight, measured from zero demand, and the level is what is left once the cold and the lags are counted: the model's constant, the cell of that hour and kind of day, and the curve's value at 18 °C. Read alone, it is the forecast of no real hour. With each lag measured instead from its average over the rows the fold's model was fitted on (21,600 and 21,601 MW), the averages' share moved into the level, the same forecast splits as 19,957 MW of level, 15,942 MW of cold, 4,069 and 651 MW for the day before and the week before, which unrounded sum to the same 40,618 MW. The convention moves megawatts between the level and the lags; the cold and the forecast are the same under both. Each piece is printed to the MW; unrounded, the pieces sum to the forecast to within 1 × 10⁻⁶ MW, or the run stops. This breakdown reads one forecast and decides nothing: none of its numbers enters a threshold, a status, a verdict or a recommendation.
 
 #### Findings (added after the freeze; decides nothing)
 
@@ -664,7 +680,7 @@ _Every number in this section is of 2024, seen by the developers: seen through v
 
 The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 tuned them on its 2023 rehearsal, and v1's departure, which changed how the thresholds are calibrated and how design code sees each decision time, came after v1's 2024 results had been seen. v2 re-derived what its new model and input touch (plan section 9.3): every threshold and alarm level, and the intervals' half-width, from v2's own validation weeks; temperature drift, which reads the issued weather forecast where v1 read the station's observation; forecast drift, which reads v2's forecasts; and the day-level quality check, which also fails a day with no forecast in view. The rules v2 froze before its 2024 replay therefore include changes made after 2024 had been seen through v1. The order of freeze and replay rests on the annotated tag `rules-frozen-v2`, which is unsigned and dated by the developers' own tools, and on the start times the replay ledger records. Nothing outside the repository anchors that order.
 
-**v2's first 2024 replay** is `18daf1fc40a24300aeaba5e4f14d4107`. It started on 2026-10-17T23:11:15.047Z (code `521febded2db`, rules `998b1e492ebc`, freeze `825b7bd134a8`), and the report names it from its entry in the replay ledger. Its frozen artifacts, hash `eb412529206f`, are those 2025 will be judged on. This section's figures come from this chain's replay, `daea4f58e6e64bc5a4ea6a5958acd215`, started on 2026-10-19T18:55:30.349Z (code `7a331e59081c`). It is a **rerun** of the first and does not replace it: 2025 will be judged on the first's frozen artifacts. Its printed results are the same as the first's: MAPE, coverage, recommendations, verdicts, the frozen model's hash and the hash of the frozen artifacts that judged it. The replay ledger also holds other v2 2024 reruns, shown in the table below. `fac1d0f3813b4499b10e4622c8fc4997` started on 2026-10-18T07:53:18.050Z (code `53b698330073`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `4284bb3d13dd43d0a600882142f448bd` started on 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `b1dca448e0fc436ca2e270c8e3c28a3f` started on 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `5ae065d3334a4a698f69f646f12c5706` started on 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `69298e9f4bb04edb8363139bed160f4e` started on 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash.
+**v2's first 2024 replay** is `18daf1fc40a24300aeaba5e4f14d4107`. It started on 2026-10-17T23:11:15.047Z (code `521febded2db`, rules `998b1e492ebc`, freeze `825b7bd134a8`), and the report names it from its entry in the replay ledger. Its frozen artifacts, hash `eb412529206f`, are those 2025 will be judged on. This section's figures come from this chain's replay, `a71e4b1689444121958634d068a64db3`, started on 2026-10-21T00:10:11.670Z (code `60d58f9c3732`). It is a **rerun** of the first and does not replace it: 2025 will be judged on the first's frozen artifacts. Its printed results are the same as the first's: MAPE, coverage, recommendations, verdicts, the frozen model's hash and the hash of the frozen artifacts that judged it. The replay ledger also holds other v2 2024 reruns, shown in the table below. `fac1d0f3813b4499b10e4622c8fc4997` started on 2026-10-18T07:53:18.050Z (code `53b698330073`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `4284bb3d13dd43d0a600882142f448bd` started on 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `b1dca448e0fc436ca2e270c8e3c28a3f` started on 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `5ae065d3334a4a698f69f646f12c5706` started on 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `69298e9f4bb04edb8363139bed160f4e` started on 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `daea4f58e6e64bc5a4ea6a5958acd215` started on 2026-10-19T18:55:30.349Z (code `7a331e59081c`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash.
 
 **2024 side by side.** v1's replays come from their entries in the replay ledger: recorded, not re-run here.
 
@@ -678,7 +694,8 @@ The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 
 | v2, rerun, `b1dca448e0fc436ca2e270c8e3c28a3f`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `5ae065d3334a4a698f69f646f12c5706`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `69298e9f4bb04edb8363139bed160f4e`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
-| v2, rerun, `daea4f58e6e64bc5a4ea6a5958acd215`, this chain's | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, rerun, `daea4f58e6e64bc5a4ea6a5958acd215`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, rerun, `a71e4b1689444121958634d068a64db3`, this chain's | _seen by the developers_ | 2.58% | 92.2% | none |
 
 **v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `9f87c124e34344a8a65e4a7679c3c458`: MAPE 4.23% against 4.23% (relative gap 0.0e+00), coverage 89.39% against 89.43% (−0.04 pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
@@ -1372,6 +1389,10 @@ Each gate and each monitor has a test that injects the fault it must catch; a co
 | Conceptual soundness, added after the freeze (decides nothing) | The soundness measure refuses a row after the design window | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | Curves that are not the ones that forecast make the input sensitivity a finding | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | A curves table that is not the frozen model's is refused | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | Control: the four pieces of a forecast's breakdown sum to the refitted fold's forecast, with the lags measured from zero or from their training averages | stayed quiet |
+| Conceptual soundness, added after the freeze (decides nothing) | A breakdown whose pieces do not sum to the forecast, or whose forecast is not validation's, stops the soundness run | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A breakdown whose pieces do not sum to the forecast, or that is not the cold-peak table's first row, makes the report refuse, French report | passed |
+| Conceptual soundness, added after the freeze (decides nothing) | A breakdown whose pieces do not sum to the forecast, or that is not the cold-peak table's first row, makes the report refuse, English report | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | A soundness run that does not name the chain's frozen models, validation, hashes or code makes the report refuse | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | Soundness results that name another run than their own make the report refuse | passed |
 | Conceptual soundness, added after the freeze (decides nothing) | A soundness section that does not name its run, or names another than the provenance's, makes the report refuse, French report | passed |
@@ -1411,15 +1432,15 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 
 | Run | Identifier | Date |
 |---|---|---|
-| data quality | `050ef092d26f410abd51ab3d1907cc1e` | 2026-10-19 18:28 UTC |
-| validation | `7682722c241740ebadb707d2f815f3db` | 2026-10-19 18:30 UTC |
-| models frozen for 2023 | `b73151d0a9dd41fcaa5c3ed0da53747d` | 2026-10-19 18:30 UTC |
-| models frozen for 2024 | `ea72193ee39a430cb950eedcd99341d0` | 2026-10-19 18:55 UTC |
-| 2023 rehearsal | `81d07939aac744c7bd8af0cf0c6d67cd` | 2026-10-19 18:30 UTC |
-| the 2023 rehearsal's diagnostics (section 7) | `648cf97838e5421497e46845818ab0f8` | 2026-10-19 18:30 UTC |
-| this chain's 2024 replay | `daea4f58e6e64bc5a4ea6a5958acd215` | 2026-10-19 18:55 UTC |
-| the diagnostics of the 2024 replay whose numbers section 8 shows | `5b65355796d24efba53e393249c85ff0` | 2026-10-19 18:56 UTC |
-| conceptual soundness, added after the freeze (section 3.1) | `d05bfb12d44745fe9eb45ebb3c10ddda` | 2026-10-19 19:30 UTC |
-| breaks | `828ac9e40c884dc4a7a3485c8037a3f4` | 2026-10-19 19:47 UTC |
+| data quality | `208b3a3a79844cc4b92a9e256c816b2b` | 2026-10-20 23:28 UTC |
+| validation | `2d426a2480b0494e89fd115a79ab4b09` | 2026-10-20 23:32 UTC |
+| models frozen for 2023 | `09658131bbc64fd19bc8ecef1f409b3d` | 2026-10-20 23:33 UTC |
+| models frozen for 2024 | `fded6c9b051847a8bf49d04a5ce6ffef` | 2026-10-21 00:10 UTC |
+| 2023 rehearsal | `5a62168af2554c54a774d34da56c9fd2` | 2026-10-20 23:33 UTC |
+| the 2023 rehearsal's diagnostics (section 7) | `cf5fe53534c84e3fb9e57badb9789e3c` | 2026-10-20 23:34 UTC |
+| this chain's 2024 replay | `a71e4b1689444121958634d068a64db3` | 2026-10-21 00:10 UTC |
+| the diagnostics of the 2024 replay whose numbers section 8 shows | `b84c127a2e0e45be8b4bfd701bc14555` | 2026-10-21 00:11 UTC |
+| conceptual soundness, added after the freeze (section 3.1) | `e6fb793ba20d46eab0f2fc062ebe7852` | 2026-10-21 00:53 UTC |
+| breaks | `239bf7a37b434710bb6e73fc361cf319` | 2026-10-21 01:23 UTC |
 
-Code hash: `7a331e59081ceb6836f820ceced75bd759827eb191e7107b9075913faebcab0a`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.
+Code hash: `60d58f9c37322f6c0e1a9b476785d2a5537f5613b2c2f5b3d9fb4accbf8f4e99`. Rules hash: `998b1e492ebc12674ce192bf0e7c43fc3916b918b20faac8064e304b7a697e38`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.

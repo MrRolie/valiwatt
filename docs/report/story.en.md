@@ -14,7 +14,7 @@ _The short version of the validation report, in seven points: read it first._
 >
 > Built with Claude Code under the repository owner's direction.
 
-The [full report](validation.en.md) is the reference, and each point links to its section. Every measured value here comes from the same MLflow runs: code `d9c4da0ab203`, 2024 replay `daea4f58e6e64bc5a4ea6a5958acd215`. The design constants come from those runs or from the code. This English version is derived from the French one.
+The [full report](validation.en.md) is the reference, and each point links to its section. Every measured value here comes from the same MLflow runs: code `cc36e86c3b40`, 2024 replay `a71e4b1689444121958634d068a64db3`. The design constants come from those runs or from the code. This English version is derived from the French one.
 
 ## The question
 
