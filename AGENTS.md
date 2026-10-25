@@ -46,8 +46,8 @@ the gap goes to the owner as a question.
   same rules and with the same MAPE, coverage and recommendations; they ran under a commit the rewrite replaced, so
   the ledger, whose entries name their freeze commit, does not hold them.
 - Push only to the private remote; it turns public only at the owner's go. The tags `v1`, `plan-v2`, `v2-first-run`
-  and `rules-frozen-v2` go to the private remote with the branch (`git push --follow-tags`): the history tests read
-  them.
+  and `rules-frozen-v2`, and on the `v3` branch `v3-fork`, `plan-v3`, `v3-first-run` and `v3-rules-frozen`, go to
+  the remote with their branch (`git push --follow-tags`): the history tests read them.
 - If `ESTATE.local.md` exists, read it: it holds private context for sessions on the owner's machine. Never commit it,
   quote it or reference its contents in a tracked file.
 
@@ -154,6 +154,20 @@ the gap goes to the owner as a question.
   indication those terms allow for, and it governs.
 - **A private date in `docs/plan.md`** (2026-10-18): one milestone date, private, is blanked in the current tree;
   its earlier versions stay reachable in the history, which the owner accepted, knowing it.
+- **v3: a forecast issued at noon the day before** (2026-10-25). The forecast for day D is issued at noon EST on D−1,
+  so it comes before a day-before peak-event notice of the kind Hydro-Québec's Rate Flex D sends before 15:00 (its
+  rate text, art. 2.71). It reads demand 48 h and 168 h before and adds his "temperature change, cold persistence and
+  wind", in the form `docs/plan-v3.md` gives them (the day's mean cold, the lag day's mean cold, wind with cold),
+  and gives intervals by temperature. It is judged against v2's and v1's forms issued at noon, on the peak-event
+  windows above all. The model family stays the additive model of v2. A third freeze, on its own `v3` branch, as
+  `docs/plan-v3.md` fixes it before any v3 code.
+- **The order of the 2025 tests** (2026-10-25). Hydro-Québec's 2025 records are fetched only once `v3-rules-frozen`
+  exists and `docs/freeze-v3.json` is committed on the `v3` branch. v2's 2025 test of record runs first, from the `v2`
+  branch, untouched by v3; v3's 2025 test runs after it, from the `v3` branch (`docs/plan-v3.md`, section 11.3). If
+  2025 is published before v3 is frozen, it waits.
+- **What a ruling may give when that order fails** (2026-10-25). If v3's 2025 start finds the 2025 export retrieved
+  before v3's freeze record was committed, or a v3 rule or dependency changed after 2025 reached the machine, the gate refuses,
+  and only the owner's dated ruling lifts it; that ruling can only be post hoc (`docs/plan-v3.md`, section 11.3.4).
 
 ## Departures from the brief
 
@@ -228,5 +242,16 @@ ruling on 2025: post hoc", and it names the commit it applies to and, when it ru
 start by its start time as the refusal prints it (`YYYY-MM-DDTHH:MM:SS.mmmZ`), never by its run ID, whose 32
 hexadecimal characters would be read as a commit (the ruling of 2026-10-16 on when 2025 is clean). The 2025 gate
 reads a ruling only in those words. What each costs 2025 is stated once, in `docs/plan-v2.md` section 11.3.5.
+
+None yet.
+
+## Departures from the v3 frozen rules
+
+The rules are frozen by the `v3-rules-frozen` tag before any 2025 record reaches the machine (`docs/plan-v3.md`,
+section 10); no v3 tag takes a `rules-frozen*` name, which v2's frozen code would refuse. Entries take the forms of
+v2's section above, scoped to v3's tag, and two more: "<date>, the owner's ruling on 2025 (h): post hoc" or "(i)",
+which can only say post hoc, and "<date>, the owner's ruling on v2 first", which names the `v2`-branch commit it
+rules on by its full hash and lifts condition (g) only (`docs/plan-v3.md`, section 11.3.4). Write each other commit
+by at least its first 12 characters, and no other hexadecimal run of 7 characters or more.
 
 None yet.
