@@ -154,6 +154,11 @@ the gap goes to the owner as a question.
   indication those terms allow for, and it governs.
 - **A private date in `docs/plan.md`** (2026-10-18): one milestone date, private, is blanked in the current tree;
   its earlier versions stay reachable in the history, which the owner accepted, knowing it.
+- **The order of the 2025 tests** (2026-10-25). Hydro-Québec's 2025 records are fetched only once the tag
+  `v3-rules-frozen` exists and `docs/freeze-v3.json` is committed on the `v3` branch, which carries v3, a forecast
+  issued at noon the day before (its `docs/plan-v3.md`). v2's 2025 test of record runs first, from this branch,
+  untouched by v3; v3's 2025 test runs after it, from the `v3` branch. If 2025 is published before v3 is frozen, it
+  waits. No v3 tag takes a `rules-frozen*` name: v2's freeze check would refuse it.
 
 ## Departures from the brief
 
