@@ -34,11 +34,15 @@ EVALUATION = {2023: "rehearsal", 2024: "seen_by_developers", 2025: "held_out"}
 IN_SAMPLE_LABEL = "in_sample_for_choice"
 
 # The freezes. "years": the replayed years each freeze gates; "heading": its departures section in AGENTS.md; "end":
-# the tag that ends its checked range (None: open).
+# the tag that ends its checked range (None: open). On the v3 branch v2's range is closed at `v3-fork`
+# (docs/plan-v3.md, section 10.1), and v3's freeze is listed under its own tag, which no `rules-frozen*` pattern
+# matches (section 10.2), so v2's freeze check never sees it.
 FREEZE_TAG = "rules-frozen-v2"
 FREEZES = {"rules-frozen": {"heading": "## Departures from the frozen monitoring rules", "end": "v1",
                             "years": (2024,)},
-           "rules-frozen-v2": {"heading": "## Departures from the v2 frozen rules", "end": None,
+           "rules-frozen-v2": {"heading": "## Departures from the v2 frozen rules", "end": "v3-fork",
+                               "years": (2024, 2025)},
+           "v3-rules-frozen": {"heading": "## Departures from the v3 frozen rules", "end": None,
                                "years": (2024, 2025)}}
 # Every v2 command that computes on real data refuses unless this tag exists and is an ancestor of the head
 # (docs/plan-v2.md, section 10.4).
@@ -50,6 +54,15 @@ FIRST_RUN_TAG = "v2-first-run"
 V3_DESIGN_LAST = data_last(2024)
 V3_FIRST_RUN_TAG = "v3-first-run"
 V3_THRESHOLD_YEARS = {2024: (2021, 2023), 2025: (2022, 2024)}
+# v3's other tags and records (sections 10.2 and 10.3): its freeze; the freeze tag every v3 run made before that tag
+# exists carries; the end of v2's checked range on the v3 branch; the pre-registration; v3's own replay ledger; and
+# the freeze record, written once before any 2025 record reaches the machine.
+V3_FREEZE_TAG = "v3-rules-frozen"
+V3_PRE_FREEZE_TAG = "v3-pre-freeze"
+V3_FORK_TAG = "v3-fork"
+V3_PLAN_TAG = "plan-v3"
+V3_LEDGER = "docs/replay-ledger-v3.json"
+V3_FREEZE_RECORD = "docs/freeze-v3.json"
 
 # Design-informing analysis (station representativeness, descriptive figures) uses 2019-2023 only. 2024 is replayed
 # later as production with a frozen model, so nothing about 2024 may shape a design choice.

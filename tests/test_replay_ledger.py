@@ -336,7 +336,12 @@ def test_the_v1_entries_equal_those_of_the_ledger_at_tag_v1():
 
 
 def test_every_freeze_has_one_shape_and_its_years_come_from_the_configuration():
-    assert set(ledger.SHAPES) == set(config.FREEZES)
+    """Each freeze the configuration lists has one shape, in exactly one ledger: v1's and v2's here, v3's in its own
+    (report/ledger_v3.py, docs/plan-v3.md section 10.3), so v2's ledger never takes v3's shape by default."""
+    from valiwatt.report import ledger_v3
+
+    assert set(ledger.SHAPES) | set(ledger_v3.SHAPES) == set(config.FREEZES)
+    assert not set(ledger.SHAPES) & set(ledger_v3.SHAPES)
     assert ledger.YEARS == {t: tuple(f["years"]) for t, f in config.FREEZES.items()}
     assert ledger.V2_FIELDS[:len(ledger.FIELDS)] == ledger.FIELDS and len(ledger.V2_FIELDS) == 19
     assert ledger.fields_for(V1_TAG) == ledger.FIELDS and ledger.fields_for(V2_TAG) == ledger.V2_FIELDS

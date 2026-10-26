@@ -236,6 +236,7 @@ def test_the_v3_data_quality_run_at_noon_on_clean_data(tmp_path, monkeypatch, ru
     t, p = run.data.tags, run.data.params
     assert t["kind"] == "dq_v3" and t["gates"] == "passed" and t["issue"] == "noon" and t["byte_copies"] == "not_run"
     assert t["fresh_clone"] == "true"
+    assert (t["freeze_tag"], t["freeze_commit"]) == ("v3-pre-freeze", "")  # made before v3's freeze (section 10.3)
     assert p["design_last_utc"] == V3_DESIGN_LAST.isoformat() == "2025-01-01T05:00:00+00:00"
     assert p["nbm_years"] == "2019,2020,2021,2022,2023,2024" and calls == [YEARS]  # an explicit list
     assert {"hq_sha256", "eccc_manifests_sha256", "nbm_manifest_sha256"} <= set(p)
@@ -409,3 +410,29 @@ def test_a_noon_day_without_its_feed_or_its_lag_days_mean_fails_its_verdict():
     assert v[D] == [{"kind": "forecast_missing", "reason": "no_covering_run"}]
     assert v[D + pd.Timedelta(days=1)] == [{"kind": LAG_DAY_REASON}]
     assert not any(p for d, p in v.items() if d not in (D, D + pd.Timedelta(days=1)))
+
+
+@pytest.mark.parametrize("read", [None, "read2"])
+def test_a_fresh_clone_data_quality_run_is_refused_once_a_read_of_v2_s_store_is_logged(monkeypatch, read):
+    """D11 of the slice contract, the slice-3 forward note: a data-quality run labelled a fresh clone is read by v3's
+    validation, freezes and replays (run_v3.require_design_run) only while v3's store holds no read of v2's store; a
+    read logged after it refuses it, as dq-v3 refuses `--fresh-clone` when a read exists. A run whose byte copies
+    passed is read whatever the store holds (control)."""
+    from types import SimpleNamespace
+
+    from valiwatt.forecast.validate import LineageError
+
+    def dq(fresh: bool):
+        tags = {"byte_copies": "not_run", "fresh_clone": "true"} if fresh else {"byte_copies": "passed",
+                                                                                 "fresh_clone": "false"}
+        return SimpleNamespace(info=SimpleNamespace(run_id="dq3"), data=SimpleNamespace(tags=tags,
+                                                                                         params={"through": "2024"}))
+
+    monkeypatch.setattr(v2store, "recorded", lambda client=None: None if read is None else {"run_id": read})
+    assert run_v3.require_design_run(dq(False)) == {"byte_copies": "passed", "fresh_clone": False}
+    if read is None:
+        assert run_v3.require_design_run(dq(True)) == {"byte_copies": "not_run", "fresh_clone": True}
+    else:
+        with pytest.raises(LineageError, match="labelled a fresh clone, but v3's store holds the read of v2's store "
+                                               "read2"):
+            run_v3.require_design_run(dq(True))

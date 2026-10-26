@@ -47,9 +47,20 @@ def test_the_freezes_and_the_labels_are_configured():
     from valiwatt import config
 
     assert config.FREEZE_TAG == "rules-frozen-v2" and config.FIRST_RUN_TAG == "v2-first-run"
-    assert set(config.FREEZES) == {"rules-frozen", "rules-frozen-v2"}
+    assert set(config.FREEZES) == {"rules-frozen", "rules-frozen-v2", "v3-rules-frozen"}
     assert config.FREEZES["rules-frozen"]["years"] == (2024,) and config.FREEZES["rules-frozen"]["end"] == "v1"
-    assert config.FREEZES["rules-frozen-v2"]["years"] == (2024, 2025) and config.FREEZES["rules-frozen-v2"]["end"] is None
+    # v2's range is closed at the fork on the v3 branch (docs/plan-v3.md, section 10.1); v3's is open.
+    assert config.FREEZES["rules-frozen-v2"]["years"] == (2024, 2025)
+    assert config.FREEZES["rules-frozen-v2"]["end"] == "v3-fork" == config.V3_FORK_TAG
+    assert config.FREEZES["v3-rules-frozen"]["years"] == (2024, 2025) and config.FREEZES["v3-rules-frozen"]["end"] is None
+    assert config.FREEZES["v3-rules-frozen"]["heading"] == "## Departures from the v3 frozen rules"
+    # v3's tags and records (sections 10.2, 10.3): no v3 tag matches v2's `rules-frozen*` pattern.
+    assert (config.V3_FREEZE_TAG, config.V3_PRE_FREEZE_TAG, config.V3_FORK_TAG, config.V3_PLAN_TAG,
+            config.V3_FIRST_RUN_TAG) == ("v3-rules-frozen", "v3-pre-freeze", "v3-fork", "plan-v3", "v3-first-run")
+    assert not any(t.startswith("rules-frozen") for t in (config.V3_FREEZE_TAG, config.V3_PRE_FREEZE_TAG,
+                                                          config.V3_FORK_TAG, config.V3_PLAN_TAG,
+                                                          config.V3_FIRST_RUN_TAG))
+    assert (config.V3_LEDGER, config.V3_FREEZE_RECORD) == ("docs/replay-ledger-v3.json", "docs/freeze-v3.json")
     assert config.EVALUATION == {2023: "rehearsal", 2024: "seen_by_developers", 2025: "held_out"}
     assert config.HELD_OUT_YEAR == 2025 and config.IN_SAMPLE_LABEL == "in_sample_for_choice"
     agents = (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text(encoding="utf-8")

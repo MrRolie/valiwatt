@@ -457,6 +457,21 @@ def test_freeze_v3_refuses_a_lineage_whose_checks_did_not_run_unless_it_is_a_fre
     assert (t["byte_copies"], t["reproduction"], t["fresh_clone"]) == ("not_run", "not_run", "true")
 
 
+def test_freeze_v3_refuses_a_fresh_clone_data_quality_run_once_a_read_of_v2_s_store_is_logged(freeze_inputs,
+                                                                                               monkeypatch):
+    """D11: a read of v2's store in v3's store refuses a freeze on a data-quality run labelled a fresh clone, before any
+    file is read or model fitted (the fresh-clone control is the test above)."""
+    from valiwatt import v2store
+
+    fitted = []
+    monkeypatch.setattr(fv, "fit_frozen_v3", lambda *a, **k: fitted.append(a))
+    monkeypatch.setattr(v2store, "recorded", lambda client=None: {"run_id": "read2"})
+    LINEAGE["dq"] = fake_dq(tags={"byte_copies": "not_run", "fresh_clone": "true"})
+    with pytest.raises(vd.LineageError, match="labelled a fresh clone, but v3's store holds the read of v2's store"):
+        fv.run_freeze_v3(YEAR)
+    assert "paths" not in LINEAGE and fitted == []
+
+
 def test_a_freeze_whose_own_rows_taken_again_differ_from_its_fit_s_is_refused(world, oos, monkeypatch):
     """The freeze checks its knots and bin edge on the frozen table's own usable rows taken again: as many as the fit
     used, or refused (the control: the rows as taken, in the tests above)."""

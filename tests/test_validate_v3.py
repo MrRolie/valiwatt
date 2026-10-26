@@ -418,21 +418,34 @@ def test_validate_v3_reads_a_data_quality_run_of_the_2019_2024_window_only(entry
     assert v3.run_validate_v3(n_boot=50) == 0 and len(runs_in_store()) == 1
 
 
-def test_a_data_quality_run_whose_byte_copies_were_not_checked_is_refused_unless_a_fresh_clone(entry):
+def test_a_data_quality_run_whose_byte_copies_were_not_checked_is_refused_unless_a_fresh_clone(entry, monkeypatch):
     """Section 3.1: not run is never inferred from an absence. A data-quality run whose byte-copy check did not pass is
     refused unless it is labelled a fresh clone, before any file is read; on a fresh clone the reproduction check is
-    not run, labelled so, and v3's store is not asked for a read of v2's."""
+    not run, labelled so, and v3's store is asked only whether it holds a read of v2's (it holds none: D11), never for
+    the read's forecasts."""
+    from valiwatt import v2store
+
     entry["dq"] = fake_dq(tags={"byte_copies": "not_run"}, v2_read_run_id="")
     with pytest.raises(vd.LineageError, match="not passed, and the run is not labelled a fresh clone"):
         v3.run_validate_v3(n_boot=50)
     assert "paths" not in entry and runs_in_store() == []
+    monkeypatch.setattr(v2store, "recorded", lambda: entry["reads"].append("recorded") or None)
     entry["dq"] = fake_dq(tags={"byte_copies": "not_run", "fresh_clone": "true"}, v2_read_run_id="")
     assert v3.run_validate_v3(n_boot=50) == 0
     (run,) = runs_in_store()
     t = run.data.tags
     assert (t["reproduction"], t["fresh_clone"], t["byte_copies"], t["v2_read_run_id"]) == ("not_run", "true",
                                                                                            "not_run", "")
-    assert entry["reads"] == []
+    assert entry["reads"] == ["recorded"]
+
+
+def test_a_fresh_clone_data_quality_run_is_refused_once_a_read_of_v2_s_store_is_logged(entry):
+    """D11: a read of v2's store logged after a fresh-clone data-quality run refuses validate-v3 on that run, before
+    any file is read and before anything is logged (the fresh-clone control is the test above)."""
+    entry["dq"] = fake_dq(tags={"byte_copies": "not_run", "fresh_clone": "true"}, v2_read_run_id="")
+    with pytest.raises(vd.LineageError, match="labelled a fresh clone, but v3's store holds the read of v2's store"):
+        v3.run_validate_v3(n_boot=50)
+    assert "paths" not in entry and runs_in_store() == [] and entry["reads"] == ["recorded"]
 
 
 @pytest.mark.parametrize("read", [None, "read9"])
@@ -464,18 +477,20 @@ def test_a_fold_whose_own_rows_taken_again_differ_from_its_fit_s_is_refused(worl
         v3.run_noon(world.f_noon, folds, keys=("v3",))
 
 
-def test_the_freeze_tag_is_v3_s_freeze_once_its_tag_exists(monkeypatch):
-    """Section 10.3: runs made before `v3-rules-frozen` exists carry the freeze tag v3-pre-freeze."""
-    calls = []
+def test_the_freeze_tag_is_v3_s_freeze_once_its_tag_exists(tmp_path, monkeypatch):
+    """Section 10.3: runs made before `v3-rules-frozen` exists carry the freeze tag v3-pre-freeze; once it exists, a run
+    is made under it (records_v3.current_freeze), and refused on rule files other than the tag's, never tagged
+    pre-freeze. A scratch repository."""
+    from records_v3_world import RULE_FILE, commit, scratch_store, tag
+    from valiwatt.records_v3 import V3FreezeError
 
-    def git(args, **kwargs):
-        calls.append(args)
-        return SimpleNamespace(returncode=0 if exists else 1, stdout="abc123\n" if exists else "")
-
-    monkeypatch.setattr(v3.subprocess, "run", git)
-    for exists, expected in ((False, "v3-pre-freeze"), (True, "v3-rules-frozen")):
-        assert v3.freeze_tag() == expected
-    assert all("refs/tags/v3-rules-frozen^{commit}" in a for a in calls)
+    s = scratch_store(tmp_path, monkeypatch, frozen=False)
+    assert v3.freeze_tag() == "v3-pre-freeze" == v3.PRE_FREEZE_TAG
+    tag(s.repo, "v3-rules-frozen")
+    assert v3.freeze_tag() == "v3-rules-frozen" == v3.V3_FREEZE_TAG
+    commit(s.repo, {RULE_FILE: "MIN = 5\n"})
+    with pytest.raises(V3FreezeError, match="rule files differ"):
+        v3.freeze_tag()
 
 
 # ------------------------------------------------------------------------------------------ the real-data inputs

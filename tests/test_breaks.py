@@ -369,10 +369,13 @@ FN3, GN3, MV3 = "tests/test_features_noon.py::", "tests/test_guards_noon.py::", 
 IV3, DV3, VA3 = "tests/test_intervals_v3.py::", "tests/test_decision_rule_v3.py::", "tests/test_validate_v3.py::"
 FZ3, RP3, QV3 = "tests/test_freeze_v3.py::", "tests/test_reproduction_v3.py::", "tests/test_quality_v3.py::"
 F3, FR3, V2S = "tests/test_fetch_v3.py::", "tests/test_firstrun_v3.py::", "tests/test_v2store.py::"
+RN3, RH3, GT3 = "tests/test_replay_noon.py::", "tests/test_rehearsal_v3.py::", "tests/test_gate_v3.py::"
+TG3, FRC, DR3 = "tests/test_tags_v3.py::", "tests/test_freeze_record.py::", "tests/test_departure_record_v3.py::"
 
 PLAN_V3_12 = {
     "The spike scale": (
         QV3 + "test_the_v3_data_quality_run_at_noon_on_clean_data",
+        RN3 + "test_the_noon_replay_s_spike_scale_is_cut_at_the_year_s_first_label",
     ),
     "The clocks": (
         FN3 + "test_a_noon_day_carries_exactly_its_24_labels_and_is_scored_the_next_morning",
@@ -382,6 +385,8 @@ PLAN_V3_12 = {
         QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-07T06:00Z-0]",
         QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T05:00Z-0]",
         QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T06:00Z-1]",
+        RN3 + "test_a_noon_day_is_issued_at_noon_carries_its_24_labels_and_is_scored_at_d_plus_1_0600",
+        RN3 + "test_the_noon_replay_judges_each_day_as_validation_does",
     ),
     "The noon origin": (
         FN3 + "test_a_run_available_at_17_01_is_never_used_for_the_day_and_the_next_freshest_is",
@@ -392,6 +397,8 @@ PLAN_V3_12 = {
         MV3 + "test_no_lag_of_24_hours_enters_a_noon_model",
         FN3 + "test_the_lag_days_mean_reads_d_minus_2s_24_labels_and_nothing_after",
         GN3 + "test_a_lag_days_mean_read_after_the_origin_is_refused",
+        RN3 + "test_the_replay_never_feeds_a_day_a_run_available_after_its_noon_origin[after_origin]",
+        RN3 + "test_the_replay_never_feeds_a_day_a_run_available_after_its_noon_origin[control]",
     ),
     "Wind": (
         NBM + "test_a_header_without_the_wind_speed_is_refused",
@@ -470,6 +477,10 @@ PLAN_V3_12 = {
         FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[base_c-True]",
         MV3 + "test_term_definitions_other_than_the_ruled_ones_are_refused",
     ),
+    "Tags": (
+        TG3 + "test_creating_the_four_v3_tags_on_v2_s_code_leaves_v2_s_freeze_check_passing",
+        TG3 + "test_a_v3_tag_named_like_a_v2_freeze_stops_v2_s_freeze_check",
+    ),
     "Data": (
         QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[hq]",
         QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[eccc_file]",
@@ -505,6 +516,28 @@ PLAN_V3_12 = {
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[freeze-v3]",
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[read-v2]",
     ),
+    "The 2025 gate": (
+        GT3 + "test_a_clean_2025_start_with_everything_in_order_passes",
+        *(GT3 + f"test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[{c}]"
+          for c in ("no_ref", "no_ledger", "no_entry", "invalid_ledger", "bad_shape")),
+        GT3 + "test_the_v3_start_reads_v2_s_test_of_record_at_origin_when_v2_s_branch_is_absent",
+        GT3 + "test_the_gate_reads_v2_s_ledger_at_the_ref_never_the_working_copy",
+        *(GT3 + f"test_an_artifact_differing_from_the_freeze_record_is_refused[{a}]"
+          for a in ("production", "v2_noon", "v1_noon", "v2_midnight", "thresholds", "cold_c", "reference")),
+        *(GT3 + f"test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[{c}]"
+          for c in ("dirty", "rules", "pre_freeze", "end_time", "unfinished", "git_commit", "dq_hashes", "absent",
+                    "reproduction", "fresh_clone", "byte_copies", "model")),
+        FRC + "test_a_second_commit_touching_the_freeze_record_fails",
+        GT3 + "test_an_export_retrieved_before_the_freeze_record_refuses_h[record_commit]",
+        GT3 + "test_an_export_retrieved_before_the_freeze_record_refuses_h[run_end]",
+        GT3 + "test_a_rule_change_committed_after_the_2025_time_refuses_i[after]",
+        GT3 + "test_a_rule_change_committed_after_the_2025_time_refuses_i[before]",
+        DR3 + "test_a_clean_ruling_on_h_or_i_is_refused[h]",
+        DR3 + "test_a_clean_ruling_on_h_or_i_is_refused[i]",
+        GT3 + "test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[h]",
+        GT3 + "test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[i]",
+        GT3 + "test_a_ruling_on_v2_first_lifts_g_only",
+    ),
     "Calibration bins": (
         IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
         VA3 + "test_each_fold_bins_its_calibration_by_the_edge_of_the_fit_being_calibrated",
@@ -513,10 +546,31 @@ PLAN_V3_12 = {
         DV3 + "test_k_rounds_half_up_and_never_exceeds_w",
         DV3 + "test_w_counts_each_movable_excluded_day_by_its_own_date",
     ),
+    "The rehearsal": (
+        *(RH3 + f"test_a_rehearsal_that_differs_from_validation_refuses_to_log[{f}]"
+          for f in ("run", "rank", "reason", "temp", "wind", "daymean", "lagday", "bin", "interval", "half_width",
+                    "edge")),
+        RH3 + "test_a_validation_run_without_the_january_fold_s_interval_layer_refuses_to_log",
+        RH3 + "test_a_rehearsal_identical_to_validation_logs",
+    ),
+    "The freeze record": (
+        FRC + "test_the_record_is_read_as_the_commit_that_added_it_holds_it",
+        GT3 + "test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
+    ),
     "First run": (
         FR3 + "test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
         FR3 + "test_a_v3_real_data_run_from_a_descendant_of_the_v3_first_run_tag_passes",
         FR3 + "test_every_v3_real_data_command_calls_the_guard_before_opening_a_file",
+    ),
+    "The 2025 time": (
+        GT3 + "test_a_refetched_export_with_a_v2_2025_entry_before_the_record_refuses_h",
+        GT3 + "test_a_and_i_firing_give_a_post_hoc_standing_whatever_the_order[i_then_a]",
+        GT3 + "test_a_and_i_firing_give_a_post_hoc_standing_whatever_the_order[a_then_i]",
+        GT3 + "test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[h]",
+        GT3 + "test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[i]",
+        *(GT3 + f"test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[{t}]"
+          for t in ("dq_retrieved", "dq_started", "earlier_start")),
+        GT3 + "test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch",
     ),
     "Reproduction": (
         RP3 + "test_the_same_hours_and_values_pass_and_say_what_was_compared",
@@ -531,9 +585,10 @@ PLAN_V3_12 = {
         VA3 + "test_v2_s_form_at_midnight_is_v2_s_validation_exactly",
     ),
 }
-# The lines whose gates later slices build (the tags, the 2025 gate and its freeze record, the rehearsal, the 2025
-# time). PENDING_V3 must be empty at the freeze: v3-rules-frozen is not tagged while a line of section 12 has no break.
-PENDING_V3 = {"Tags", "The 2025 gate", "The rehearsal", "The freeze record", "The 2025 time"}
+# The lines whose gates a later slice builds. Empty since slice 4: every line's breaks fire on synthetic chains and
+# scratch clones (the tags' on a clone of v2's commit 3a1cd4a8c763), none waits for a real v3 tag. PENDING_V3 must be
+# empty at the freeze: v3-rules-frozen is not tagged while a line of section 12 has no break.
+PENDING_V3: set[str] = set()
 
 
 def plan_v3_section_12_lines() -> list[str]:

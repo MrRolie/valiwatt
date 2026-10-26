@@ -238,8 +238,10 @@ def run_read_v2(store) -> int:
     """`valiwatt read-v2 PATH`: the first-run guard (section 10.2); PATH neither v3's own store, nor inside it, nor
     holding it; v3's store not v2's (`require_own_store`); no read already in v3's store (v2's store is read once);
     then `read_v2_store`, then one run of EXPERIMENT in v3's own store logging what was read: tags kind,
-    v2_replay_run_id, v2_dq_run_id, v2_validation_run_id; params the three raw-file hashes and the forecasts' hour
-    count; OOS_ARTIFACT and RECORD_ARTIFACT. Each refusal (V2StoreRefused) comes before v2's store is opened."""
+    v2_replay_run_id, v2_dq_run_id, v2_validation_run_id, v2_freeze_tag, and the freeze the read is made under
+    (freeze_tag, freeze_commit: records_v3.current_freeze, v3-pre-freeze before v3's tag, section 10.3); params the
+    three raw-file hashes and the forecasts' hour count; OOS_ARTIFACT and RECORD_ARTIFACT. Each refusal
+    (V2StoreRefused, or V3FreezeError for the freeze) comes before v2's store is opened."""
     import tempfile
 
     import mlflow
@@ -247,6 +249,7 @@ def run_read_v2(store) -> int:
     from valiwatt import tracking
     from valiwatt.firstrun import require_first_run
     from valiwatt.quality.checks import jsonable
+    from valiwatt.records_v3 import current_freeze
     from valiwatt.tracking import start_run
 
     require_first_run()
@@ -258,9 +261,11 @@ def run_read_v2(store) -> int:
     if (done := recorded()) is not None:
         raise V2StoreRefused(f"v2's store was read once, run {done['run_id']} of v3's store: it is never opened again "
                              "(docs/plan-v3.md, section 10.3)")
+    freeze = current_freeze()
     r = read_v2_store(store)
     tags = {"kind": KIND, "v2_replay_run_id": r.replay_run_id, "v2_dq_run_id": r.dq_run_id,
-            "v2_validation_run_id": r.validation_run_id, "v2_freeze_tag": FREEZE_TAG}
+            "v2_validation_run_id": r.validation_run_id, "v2_freeze_tag": FREEZE_TAG,
+            "freeze_tag": freeze["freeze_tag"], "freeze_commit": freeze["freeze_commit"]}
     with start_run(EXPERIMENT, "read-v2", tags=tags) as run:
         mlflow.log_params({**r.hashes, "forecast_hours": len(r.forecasts),
                            "first_ts": r.forecasts["ts"].min().isoformat() if len(r.forecasts) else "",

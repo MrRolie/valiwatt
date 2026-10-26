@@ -22,6 +22,13 @@ v2 (docs/plan-v2.md, sections 3.2, 5, 9 and 11), when the NBM runs are given:
 - The comparison models are scored after the loop on the inputs the replay recorded at each issue; they issue nothing
   and touch no monitor. All three models' hashes are checked before and after.
 - Reading 2025 needs the started 2025 run the command opened in the run store (monitor/run.py, check_2025_run).
+
+v3 (docs/plan-v3.md, sections 2, 4.2, 9.3 and 12 "The clocks"), with `issue=NOON`: day D is issued at its noon origin,
+D-1 17:00 UTC (forecast/issue.py `day_origin`), on the noon inputs (lag48, lag168, the run's temperature, wind and
+day's mean, the station's lag day's mean); its 24 labels (`day_labels`) and its scoring at D+1 06:00 UTC never move
+with the origin, and its verdict is the noon day's (quality/days.py `day_problems_noon`), on the raw records stamped in
+its own hours. v2's form at midnight, when given, is issued in the same replay at D 05:00 UTC from the same feeds and
+the same clock, and no monitor reads it. The replay's gate is the caller's (`gate`): v3 passes its own.
 """
 
 from __future__ import annotations
@@ -35,9 +42,11 @@ from valiwatt.config import DEMAND_FIRST, DESIGN_LAST, LST_OFFSET, data_last
 from valiwatt.forecast.features import IssuedForecast, build, forecast_temperature, origin_of  # noqa: F401
 from valiwatt.forecast.freeze import FrozenModel
 from valiwatt.forecast.guards import LookaheadError, require_known_at_origin
+from valiwatt.forecast.issue import LAG_DAY_REASON, MIDNIGHT, NOON, IssueSpec, day_edge, day_labels, day_origin
 from valiwatt.monitor.clock import Clock, RawFeed
 from valiwatt.monitor.drift import normed_wasserstein, seasonal_reference
 from valiwatt.monitor.rules import MIN_WEEK_HOURS, day_problems, decide, week_record
+from valiwatt.quality.days import day_problems_noon
 from valiwatt.quality.demand import (
     SPIKE_Z,
     STATUS_MASKED_DST,
@@ -53,12 +62,23 @@ LOOKBACK = 200 * H  # the feature window behind an origin: more than the 168-hou
 # The last hour a replay may read before 2025: the end of 2024 (docs/plan-v2.md, section 11.3).
 LAST_BEFORE_2025 = data_last(2024)
 RUN_POINTS = ("runtime", "ftime", "tmp_f")
+RUN_POINTS_NOON = ("runtime", "ftime", "tmp_f", "wsp_kt")  # v3's feed reads the wind too (plan-v3, section 3.2)
 # v1's columns of an issued day; v2 adds every comparator input recorded at issue and the day's forecast record.
 V1_ISSUED = ["day", "hour", "day_type", "lag24", "lag168", "temp_persistence"]
 V2_INPUTS = ["hdh_persistence", "cdh_persistence", "temp_forecast", "available_forecast", "hdh_forecast",
              "cdh_forecast"]
 RECORD_COLUMNS = {"runtime": "forecast_runtime", "rank": "forecast_rank", "lead_h": "forecast_lead_h",
                   "reason": "forecast_reason"}
+# v3's columns of a day issued at noon (plan-v3, sections 2 and 4.1): every input a noon model reads, recorded at issue,
+# so the comparison models at noon are scored on them later; no lag24 and no persistence temperature.
+NOON_ISSUED = ["day", "hour", "day_type", "lag48", "lag168", "temp_forecast", "available_forecast", "hdh_forecast",
+               "cdh_forecast", "wind_forecast", "daymean_forecast", "lagday_observed", "lagday_last_utc"]
+# The inputs whose absence a noon hour names, with the reason each carries: a forecast input the day's record reason,
+# the lag day's mean LAG_DAY_REASON, the lags none (plan-v3, section 5).
+NOON_REASONS = {"lag48": None, "lag168": None, "temp_forecast": "record", "wind_forecast": "record",
+                "daymean_forecast": "record", "lagday_observed": LAG_DAY_REASON}
+# v2's form at midnight inside a noon replay (plan-v3, section 4.2): its columns of the hourly frame.
+MIDNIGHT_KEY = "v2_midnight"
 
 
 class MonitorActedError(RuntimeError):
@@ -88,15 +108,25 @@ class ReplayResult:
     forecast_record: pd.DataFrame | None = None
     temperature_reference: pd.Series | None = None
     comparators_sha256: dict = field(default_factory=dict)
+    # v3: the forecast record of v2's form at midnight issued inside a noon replay (None without it), and the issue
+    # time the replay ran at.
+    midnight_record: pd.DataFrame | None = None
+    issue: str = "midnight"
 
 
-def forecast_feed_records(runs: pd.DataFrame, data_end: pd.Timestamp) -> pd.DataFrame:
+def run_points(issue: IssueSpec = MIDNIGHT) -> tuple[str, ...]:
+    """The columns of a run's points the feed holds and the run rule reads: with the wind at an issue time that reads
+    it (plan-v3, section 3.2)."""
+    return RUN_POINTS_NOON if issue.wind else RUN_POINTS
+
+
+def forecast_feed_records(runs: pd.DataFrame, data_end: pd.Timestamp, *, issue: IssueSpec = MIDNIGHT) -> pd.DataFrame:
     """The NBM runs as the forecast feed holds them: each point stamped (`ts_utc`) at its run's availability, the
     column `available_utc` as quality.run.load_runs gives it (runtime + AVAILABILITY_LAG when absent), the points
     available after `data_end` left out. A point without its run time, valid time or availability is refused: its run's
-    availability cannot be established."""
+    availability cannot be established. issue: with the wind (NOON), the points carry wsp_kt."""
     available = runs["available_utc"] if "available_utc" in runs else runs["runtime"] + AVAILABILITY_LAG
-    out = runs[list(RUN_POINTS)].assign(ts_utc=pd.to_datetime(available, utc=True))
+    out = runs[list(run_points(issue))].assign(ts_utc=pd.to_datetime(available, utc=True))
     undated = (out["runtime"].isna() | out["ftime"].isna() | out["ts_utc"].isna()).to_numpy()
     if undated.any():
         raise LookaheadError(f"{int(undated.sum())} forecast points have no run time, valid time or availability: "
@@ -104,24 +134,27 @@ def forecast_feed_records(runs: pd.DataFrame, data_end: pd.Timestamp) -> pd.Data
     return out[out["ts_utc"] <= pd.Timestamp(data_end)].reset_index(drop=True)
 
 
-def issued_forecast(feed: RawFeed, day: pd.Timestamp) -> IssuedForecast:
+def issued_forecast(feed: RawFeed, day: pd.Timestamp, *, issue: IssueSpec = MIDNIGHT) -> IssuedForecast:
     """Day D's issued forecast from the runs the feed shows at the clock (D's origin, when the replay issues it): the
     MAX_RUNS_BACK freshest runs by run identity (`runtime`) whatever their age, and their points only, passed to the run
     rule (features.forecast_temperature) for that one day, as validation applies it to the same runs (plan section
-    3.2: no age window, so the two choose among the same runs on any archive)."""
+    3.2: no age window, so the two choose among the same runs on any archive). issue: the issue time whose rule
+    applies (NOON: its origin, and the wind clause)."""
     points = feed.freshest("runtime", MAX_RUNS_BACK)
-    return forecast_temperature(points[list(RUN_POINTS)].reset_index(drop=True), [pd.Timestamp(day)])
+    return forecast_temperature(points[list(run_points(issue))].reset_index(drop=True), [pd.Timestamp(day)],
+                                issue=issue)
 
 
-def issued_reference(feed: RawFeed, first: pd.Timestamp) -> pd.Series:
+def issued_reference(feed: RawFeed, first: pd.Timestamp, *, issue: IssueSpec = MIDNIGHT) -> pd.Series:
     """The temperature-drift reference at a replay's start (plan section 9.3): the forecast issued, by the run rule,
     for every day before the first replayed one, from the runs in view at the start (their own availability decides
-    each day's), through the one bounds filter. Indexed by hour-ending UTC label."""
+    each day's), through the one bounds filter. Indexed by hour-ending UTC label. issue: the issue time whose
+    forecast it is (NOON: the noon-issued forecast, plan-v3 section 9.3)."""
     days = pd.date_range(lst_day(pd.DatetimeIndex([DEMAND_FIRST]))[0], pd.Timestamp(first) - pd.Timedelta(days=1))
     if len(days) == 0:
         return pd.Series(dtype=float, index=pd.DatetimeIndex([], tz="UTC", name="ts_utc"), name="temp_forecast")
     visible = feed.visible()
-    issued = forecast_temperature(visible[list(RUN_POINTS)].reset_index(drop=True), days)
+    issued = forecast_temperature(visible[list(run_points(issue))].reset_index(drop=True), days, issue=issue)
     return usable_temperature(issued.hourly).dropna()
 
 
@@ -217,33 +250,66 @@ def _not_predicted(out: pd.DataFrame, inputs: tuple, temp_col: str | None, reaso
     return reasons
 
 
-def issue(state: _State, model: FrozenModel, day: pd.Timestamp) -> pd.DataFrame:
+def _not_predicted_noon(out: pd.DataFrame, reason: str) -> list[str]:
+    """Why each noon hour has no forecast ("" where it has one): each missing input of NOON_REASONS, a forecast input
+    with the day's forecast-record reason, the lag day's mean with LAG_DAY_REASON, a lag with none."""
+    reasons = []
+    for _, r in out.iterrows():
+        if not np.isnan(r["forecast"]):
+            reasons.append("")
+            continue
+        missing = []
+        for k, why in NOON_REASONS.items():
+            if not np.isfinite(r[k]):
+                label = reason if why == "record" else why
+                missing.append(f"{k} ({label})" if label else k)
+        reasons.append(", ".join(missing))
+    return reasons
+
+
+def issue(state: _State, model: FrozenModel, day: pd.Timestamp, *, issue: IssueSpec = MIDNIGHT) -> pd.DataFrame:
     """Day D's 24 forecasts, from what is known at its origin (the clock must be exactly there).
 
     v2 (a forecast feed in the state): the forecast scenario is the one the run rule issues from the runs in view
     (`issued_forecast`); a row whose forecast became available after the origin is refused (require_known_at_origin).
     The frame records every comparator input (persistence and forecast temperatures and degree-hours) and the day's
-    forecast record (runtime, rank, lead, reason), so the comparison models are scored on them later."""
-    o = origin(day)
+    forecast record (runtime, rank, lead, reason), so the comparison models are scored on them later.
+
+    issue (v3: NOON, plan-v3 sections 2, 4.1 and 5): D is issued at its noon origin, D-1 17:00 UTC (`day_origin`). The
+    window still runs from D's edge less LOOKBACK to D's last label, every hour after the clock masked not yet observed;
+    the feed's run rule is the noon one (its wind clause); the table is built at NOON (lag48, lag168, the station's lag
+    day's mean) and its guard reads the 48-hour lag and the lag day's last label. The frame records NOON_ISSUED, the
+    forecast record, the run's day's mean (`forecast_day_mean_c`) and the interval's bin and fallback (FrozenModel
+    .predict); an hour without a forecast names each missing input (NOON_REASONS)."""
+    spec = issue
+    o = day_origin(day, issue=spec)
     if state.clock.now != o:
         raise LookaheadError(f"day {day.date()} must be issued at {o}, not at {state.clock.now}")
+    if spec != MIDNIGHT and state.forecast is None:
+        raise ValueError(f"a day issued at {spec.name} reads the forecast feed: give the runs")
     frame, temp, _, _ = state.canonical()
-    target_hours = pd.date_range(o + H, o + 24 * H, freq="h")
-    window = pd.date_range(o - LOOKBACK, o + 24 * H, freq="h")
+    edge = day_edge(day)
+    target_hours = day_labels(day)
+    window = pd.date_range(edge - LOOKBACK, edge + 24 * H, freq="h")
     dem = frame.reindex(window)
-    dem.loc[target_hours, ["mw", "status"]] = [np.nan, STATUS_NOT_YET]
-    record = None
+    dem.loc[window[window > o], ["mw", "status"]] = [np.nan, STATUS_NOT_YET]
+    record, day_mean = None, np.nan
     if state.forecast is None:
         f = build(dem, temp.reindex(window)).loc[target_hours]
     else:
-        issued = issued_forecast(state.forecast, day)
+        issued = issued_forecast(state.forecast, day, issue=spec)
         record = _record_dict(issued.record, day)
-        f = build(dem, temp.reindex(window), {"forecast": issued}).loc[target_hours]
+        if spec.wind:
+            day_mean = float(issued.record.loc[pd.Timestamp(day), "day_mean_c"])
+        f = build(dem, temp.reindex(window), {"forecast": issued}, issue=spec).loc[target_hours]
     require_known_at_origin(f)
     if not (f["origin"] == o).all() or not (f["day"] == day).all():
         raise LookaheadError(f"day {day.date()}: rows with another origin or day")
     pred = model.predict(f)
-    cols = V1_ISSUED if record is None else V1_ISSUED + V2_INPUTS
+    if spec == MIDNIGHT:
+        cols = V1_ISSUED if record is None else V1_ISSUED + V2_INPUTS
+    else:
+        cols = NOON_ISSUED
     out = pd.concat([f[cols], pred], axis=1)
     out["origin"] = o
     if record is None:
@@ -254,10 +320,22 @@ def issue(state: _State, model: FrozenModel, day: pd.Timestamp) -> pd.DataFrame:
     # A day no run fed has no runtime (NaT): the column stays a UTC time column all the same.
     out["forecast_runtime"] = pd.to_datetime(pd.Series(record["runtime"], index=out.index), utc=True).astype(
         "datetime64[ns, UTC]")
+    if spec != MIDNIGHT:
+        out["forecast_day_mean_c"] = day_mean
+        out["not_predicted_because"] = _not_predicted_noon(out, record["reason"])
+        return out
     temp_col = f"temp_{model.scenario}"
     out["not_predicted_because"] = _not_predicted(out, ("lag24", "lag168", temp_col), "temp_forecast",
                                                   record["reason"])
     return out
+
+
+def _issued_at(state: _State, model: FrozenModel, day: pd.Timestamp, spec: IssueSpec) -> pd.DataFrame:
+    """`issue` at `spec`, looked up when called (a test may wrap it). v2's call passes no keyword, as before; so does
+    the replay's call of `score_day`."""
+    if spec == MIDNIGHT:
+        return issue(state, model, day)
+    return issue(state, model, day, issue=spec)
 
 
 def _issued_record(issued: pd.DataFrame) -> dict | None:
@@ -270,11 +348,17 @@ def _issued_record(issued: pd.DataFrame) -> dict | None:
             "reason": str(first["forecast_reason"])}
 
 
-def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame, final: bool = False) -> tuple[pd.DataFrame, dict]:
+def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame, final: bool = False, *,
+              issue: IssueSpec = MIDNIGHT) -> tuple[pd.DataFrame, dict]:
     """Score day D's hours and judge its data quality, one hour after its last hour (`final`: at the end of the data,
-    when no later record exists). v2: the day's forecast record, as issued, enters its verdict (`forecast_missing`)."""
-    o = origin(day)
-    hours = pd.date_range(o + H, o + 24 * H, freq="h")
+    when no later record exists). v2: the day's forecast record, as issued, enters its verdict (`forecast_missing`).
+
+    issue (v3: NOON): the hours and the raw cut are D's own (`day_labels`; the records stamped after D's edge and up to
+    its last label), whatever the issue time (plan-v3 section 12 "The clocks"); the verdict is the noon day's
+    (quality/days.py `day_problems_noon`, the function validation's verdicts call), on the day's forecast record and
+    its lag day's mean as issued."""
+    o = day_edge(day)
+    hours = day_labels(day)
     if state.clock.now < hours[-1] + (0 * H if final else H):
         raise LookaheadError(f"day {day.date()} scored at {state.clock.now}, before the hour after its last hour")
     frame, temp, raw, raw_t = state.canonical()
@@ -292,9 +376,13 @@ def score_day(state: _State, day: pd.Timestamp, issued: pd.DataFrame, final: boo
 
     expected = f["status"] == STATUS_MASKED_DST
     forecast_record = _issued_record(issued)
-    problems = day_problems(hours, raw[(raw["ts_utc"] > o) & (raw["ts_utc"] <= hours[-1])],
-                            raw_t[(raw_t["ts_utc"] > o) & (raw_t["ts_utc"] <= hours[-1])], f["status"], temp,
-                            forecast_record=forecast_record)
+    own, own_t = (raw[(raw["ts_utc"] > o) & (raw["ts_utc"] <= hours[-1])],
+                  raw_t[(raw_t["ts_utc"] > o) & (raw_t["ts_utc"] <= hours[-1])])
+    if issue == MIDNIGHT:
+        problems = day_problems(hours, own, own_t, f["status"], temp, forecast_record=forecast_record)
+    else:
+        problems = day_problems_noon(hours, own, own_t, f["status"], temp, forecast_record,
+                                     float(issued["lagday_observed"].iloc[0]))
     record = {
         "day": day, "failed": bool(problems), "problems": problems,
         "expected": [{"kind": "fall_back", "utc": t} for t in hours[expected]],
@@ -355,10 +443,29 @@ def score_comparators(hourly: pd.DataFrame, comparators: dict) -> pd.DataFrame:
     return pd.DataFrame(out, index=hourly.index)
 
 
+def _midnight_columns(s: pd.DataFrame, issued: pd.DataFrame) -> pd.DataFrame:
+    """The scored day with v2's form at midnight beside it (plan-v3, section 4.2): its forecast, interval and why it
+    has none, issued at D 05:00 UTC, on the same hours."""
+    m = issued.reindex(s.index)
+    return s.assign(**{f"pred_{MIDNIGHT_KEY}": m["forecast"], f"lower_{MIDNIGHT_KEY}": m["lower"],
+                       f"upper_{MIDNIGHT_KEY}": m["upper"], f"why_{MIDNIGHT_KEY}": m["not_predicted_because"]})
+
+
+def _record_frame(records: dict, days, origins: dict) -> pd.DataFrame:
+    """Each replayed day's forecast record (features.IssuedForecast.record's shape) with the origin it was issued at."""
+    record = pd.DataFrame([{"origin": origins[d], **{k: records[d][k] for k in
+                                                       ("runtime", "available_utc", "rank", "lead_h", "reason")}}
+                           for d in days], index=pd.DatetimeIndex(days, name="day"))
+    for c in ("origin", "runtime", "available_utc"):
+        record[c] = pd.to_datetime(record[c], utc=True).astype("datetime64[ns, UTC]")
+    return record
+
+
 def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: FrozenModel, thresholds: dict,
            reference_forecasts: pd.DataFrame, first_day: str, last_day: str, data_end: pd.Timestamp,
            departure: bool = False, runs: pd.DataFrame | None = None, comparators: dict | None = None,
-           forecast_reference: pd.Series | None = None, run_id: str | None = None) -> ReplayResult:
+           forecast_reference: pd.Series | None = None, run_id: str | None = None, *,
+           issue: IssueSpec = MIDNIGHT, midnight: FrozenModel | None = None, gate=None) -> ReplayResult:
     """Replay [first_day, last_day] (local standard days). Raw records after `data_end` are never loaded.
 
     thresholds: the validation thresholds for this replay; refused unless they come from years before first_day's.
@@ -371,9 +478,27 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
     runs None: v1's replay exactly. runs given (v2): the NBM runs (quality.run.load_runs), fed behind the clock at their
     availability; comparators: {model key: FrozenModel}, scored after the loop on the recorded inputs;
     forecast_reference: the temperature-drift reference precomputed (the sensitivity replays pass the main replay's),
-    else rebuilt at the start from the runs in view."""
+    else rebuilt at the start from the runs in view.
+
+    v3 (plan-v3, sections 2, 4.2, 9.3 and 11):
+    - issue: NOON issues each day at its noon origin (`issue`), scores it at D+1 06:00 UTC on its own 24 labels and
+      judges it as validation does (`score_day`); the comparison models given are the noon ones, scored after the loop
+      on the recorded noon inputs; the temperature-drift reference is the noon-issued forecast. The clock starts one
+      hour before the earliest event. MIDNIGHT (the default) is v2's replay exactly.
+    - midnight: v2's form at midnight, with NOON: a second issue of each day at D 05:00 UTC (`issue` at MIDNIGHT), from
+      the same feeds and the same clock; its forecast, interval and reasons go to the hourly columns
+      pred_/lower_/upper_/why_v2_midnight and its forecast record to `midnight_record`. No monitor reads it.
+    - gate: None keeps v2's gates above; given, gate(last_day, data_end, departure, run_id) is called in their place,
+      before anything is read (monitor/run_v3.py gate_v3), and they are never called.
+    - The spike scale is cut at the last label of the year before the first replayed day (config.data_last), a fixed
+      timestamp, whatever the origin (section 9.3)."""
+    spec = issue
+    if spec not in (MIDNIGHT, NOON):
+        raise ValueError(f"a replay issues at {MIDNIGHT.name} or {NOON.name}, not {spec.name}")
     data_end = pd.Timestamp(data_end)
-    if reads_2025(last_day, data_end):
+    if gate is not None:
+        gate(last_day, data_end, departure, run_id)
+    elif reads_2025(last_day, data_end):
         from valiwatt.monitor.run import check_2025_run  # run.py imports this module
 
         check_2025_run(run_id)
@@ -385,7 +510,12 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
     comparators = dict(comparators or {})
     if comparators and runs is None:
         raise ValueError("the comparison models are scored on the inputs a v2 replay records: give the runs")
+    if spec != MIDNIGHT and runs is None:
+        raise ValueError(f"a replay issued at {spec.name} reads the forecast feed: give the runs")
+    if midnight is not None and spec != NOON:
+        raise ValueError("v2's form at midnight is issued beside a noon replay only (plan-v3, section 4.2)")
     comparators_before = {k: m.sha256() for k, m in comparators.items()}
+    midnight_before = None if midnight is None else midnight.sha256()
     first = pd.Timestamp(first_day)
     last_year = thresholds.get("last_year")
     if last_year is None or int(last_year) >= first.year:
@@ -400,32 +530,44 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
     if forecast_reference is not None and runs is not None and len(forecast_reference) \
             and not (lst_day(pd.DatetimeIndex(forecast_reference.index)) < first).all():
         raise LookaheadError("temperature-drift reference holds days of the replayed period")
-    clock = Clock(origin(first) - H)
-    feed = None if runs is None else RawFeed(forecast_feed_records(runs, data_end), clock, "forecast")
+    # The earliest event: the first day's issue, or v2's form at midnight's when it is earlier.
+    start = min([day_origin(first, issue=spec)] + ([day_edge(first)] if midnight is not None else []))
+    clock = Clock(start - H)
+    feed = None if runs is None else RawFeed(forecast_feed_records(runs, data_end, issue=spec), clock, "forecast")
     state = _State(RawFeed(raw_demand[raw_demand["ts_utc"] <= data_end], clock, "demand"),
                    RawFeed(raw_temperature[raw_temperature["ts_utc"] <= data_end], clock, "temperature"), clock,
-                   scale_last=origin(pd.Timestamp(f"{first.year}-01-01")), forecast=feed)
+                   scale_last=data_last(first.year - 1), forecast=feed)
     temperature_reference = None
     if feed is not None:
-        temperature_reference = forecast_reference if forecast_reference is not None else issued_reference(feed, first)
+        temperature_reference = forecast_reference if forecast_reference is not None else issued_reference(
+            feed, first, issue=spec)
     issued_temperatures = []  # each replayed day's issued forecast temperature, appended as it is issued
     days = pd.date_range(first_day, last_day, freq="D")
-    clock_end = min(origin(days[-1] + pd.Timedelta(days=1)) + H, data_end)
-    issue_at = {origin(d): d for d in days}
+    clock_end = min(day_edge(days[-1] + pd.Timedelta(days=1)) + H, data_end)
+    issue_at = {day_origin(d, issue=spec): d for d in days}
+    midnight_at = {day_edge(d): d for d in days} if midnight is not None else {}
     score_at = {}
     for d in days:
-        at = origin(d + pd.Timedelta(days=1)) + H
+        at = day_edge(d + pd.Timedelta(days=1)) + H
         score_at.setdefault(min(at, clock_end), []).append((d, at > clock_end))
 
     issued, scored, day_records, weeks, decisions, samples = {}, [], {}, [], [], {}
-    for t in pd.date_range(origin(days[0]), clock_end, freq="h"):
+    issued_midnight, midnight_records = {}, {}
+    for t in pd.date_range(start, clock_end, freq="h"):
         clock.advance(t)
         if t in issue_at:
-            issued[issue_at[t]] = issue(state, model, issue_at[t])
+            issued[issue_at[t]] = _issued_at(state, model, issue_at[t], spec)
             if feed is not None:
                 issued_temperatures.append(usable_temperature(issued[issue_at[t]]["temp_forecast"]))
+        if t in midnight_at:
+            issued_midnight[midnight_at[t]] = _issued_at(state, midnight, midnight_at[t], MIDNIGHT)
         for d, final in score_at.get(t, []):
-            s, rec = score_day(state, d, issued.pop(d), final=final)
+            s, rec = (score_day(state, d, issued.pop(d), final=final) if spec == MIDNIGHT
+                      else score_day(state, d, issued.pop(d), final=final, issue=spec))
+            if midnight is not None:
+                m = issued_midnight.pop(d)
+                midnight_records[d] = _issued_record(m)
+                s = _midnight_columns(s, m)
             scored.append(s)
             day_records[d] = rec
             if d.dayofweek == 6 or d == days[-1]:
@@ -445,15 +587,16 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
                     samples[week_start] = sample
     if model.sha256() != sha_before:
         raise MonitorActedError("the frozen model or its half-width changed during the replay")
+    if midnight is not None and midnight.sha256() != midnight_before:
+        raise MonitorActedError("v2's form at midnight changed during the replay")
     hourly = pd.concat(scored)
     hourly.index.name = "ts_utc"
-    record = None
+    record = midnight_record = None
     if feed is not None:
-        record = pd.DataFrame([{"origin": origin(d), **{k: day_records[d]["forecast_record"][k] for k in
-                                                         ("runtime", "available_utc", "rank", "lead_h", "reason")}}
-                               for d in days], index=pd.DatetimeIndex(days, name="day"))
-        for c in ("origin", "runtime", "available_utc"):
-            record[c] = pd.to_datetime(record[c], utc=True).astype("datetime64[ns, UTC]")
+        record = _record_frame({d: day_records[d]["forecast_record"] for d in days}, days,
+                               {d: day_origin(d, issue=spec) for d in days})
+    if midnight is not None:
+        midnight_record = _record_frame(midnight_records, days, {d: day_edge(d) for d in days})
     if comparators:
         changed = [k for k, m in comparators.items() if m.sha256() != comparators_before[k]]
         if changed:
@@ -464,4 +607,5 @@ def replay(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, model: Froze
             raise MonitorActedError(f"comparison models {changed} changed while they were scored")
     return ReplayResult(hourly=hourly, days=[day_records[d] for d in days], weeks=weeks, decisions=decisions,
                         drift_samples=samples, model_sha256=sha_before, clock_end=clock_end, forecast_record=record,
-                        temperature_reference=temperature_reference, comparators_sha256=comparators_before)
+                        temperature_reference=temperature_reference, comparators_sha256=comparators_before,
+                        midnight_record=midnight_record, issue=spec.name)

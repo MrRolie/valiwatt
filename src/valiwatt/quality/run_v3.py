@@ -104,9 +104,12 @@ def latest_passed():
 def require_design_run(dq) -> dict:
     """The data-quality run v3's validation and freezes may read (docs/plan-v3.md, sections 3.1 and 11.2), checked
     before any file is read: the window ending with 2024 (its `through` parameter), and its byte copies checked
-    (`byte_copies` passed) unless the run is labelled a fresh clone (FRESH_CLONE true). Refused (LineageError)
+    (`byte_copies` passed) unless the run is labelled a fresh clone (FRESH_CLONE true). A run labelled a fresh clone is
+    refused once v3's store holds a read of v2's store (v2store.recorded), as dq-v3 refuses `--fresh-clone` when a read
+    exists: on a machine that has the read, the label cannot stand in for the byte-copy check. Refused (LineageError)
     otherwise, an absent parameter or tag included. Returns {"byte_copies": its status, "fresh_clone": bool}."""
     from valiwatt.forecast.validate import LineageError  # validate imports quality.run
+    from valiwatt.v2store import recorded
 
     run_id, through = dq.info.run_id, dq.data.params.get("through")
     if through != str(THROUGH_DEFAULT):
@@ -117,6 +120,10 @@ def require_design_run(dq) -> dict:
     if status != "passed" and not fresh:
         raise LineageError(f"data-quality run {run_id}: its byte-copy check is {status!r}, not passed, and the run is "
                            "not labelled a fresh clone; run `valiwatt read-v2 PATH`, then `valiwatt dq-v3` again")
+    if fresh and (read := recorded()) is not None:
+        raise LineageError(f"data-quality run {run_id} is labelled a fresh clone, but v3's store holds the read of v2's "
+                           f"store {read['run_id']}: the byte copies can be checked here, so run `valiwatt dq-v3` "
+                           "again without --fresh-clone")
     return {"byte_copies": status, "fresh_clone": fresh}
 
 
@@ -127,6 +134,7 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
 
     from valiwatt.firstrun import require_first_run
     from valiwatt.monitor.rules import rules_sha256
+    from valiwatt.records_v3 import current_freeze
     from valiwatt.tracking import start_run
     from valiwatt.v2store import recorded, require_own_store
 
@@ -135,6 +143,7 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
         raise ValueError(f"no data window ends with {through}; the windows end with {list(THROUGH_YEARS)}")
     require_first_run()
     require_own_store()
+    freeze = current_freeze()  # v3-pre-freeze before the tag; under the tag, refused on other rules (section 10.3)
     copies = check_byte_copies(recorded(), fresh_clone=bool(fresh_clone))
     hq_manifest, eccc_manifests = qrun._verify_manifests(through)
     nbm_manifest = qrun._verify_nbm(through)
@@ -188,7 +197,8 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
         results["revisions"] = {"hydroquebec": {"artifact": qrun.REVISIONS_ARTIFACT, "records": len(revisions)}}
 
     tags = {"kind": KIND, "issue": NOON.name, "valiwatt_version": __version__, "rules_sha256": rules_sha256(),
-            "byte_copies": copies["status"], FRESH_CLONE: str(bool(fresh_clone)).lower()}
+            "byte_copies": copies["status"], FRESH_CLONE: str(bool(fresh_clone)).lower(),
+            "freeze_tag": freeze["freeze_tag"], "freeze_commit": freeze["freeze_commit"]}
     with start_run(EXPERIMENT, "data-quality-v3", tags=tags) as run:
         mlflow.log_params({
             "hq_sha256": hq_manifest["sha256"], "hq_rows": hq_manifest["rows"],

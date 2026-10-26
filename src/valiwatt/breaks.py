@@ -70,6 +70,8 @@ T_FN, T_GN, T_MV3 = "tests/test_features_noon.py", "tests/test_guards_noon.py", 
 T_IV3, T_DV3, T_VA3 = "tests/test_intervals_v3.py", "tests/test_decision_rule_v3.py", "tests/test_validate_v3.py"
 T_FZ3, T_RP3, T_QV3 = "tests/test_freeze_v3.py", "tests/test_reproduction_v3.py", "tests/test_quality_v3.py"
 T_F3, T_FR3, T_V2S = "tests/test_fetch_v3.py", "tests/test_firstrun_v3.py", "tests/test_v2store.py"
+T_RN3, T_RH3, T_GT3 = "tests/test_replay_noon.py", "tests/test_rehearsal_v3.py", "tests/test_gate_v3.py"
+T_TG3, T_FRC, T_DR3 = "tests/test_tags_v3.py", "tests/test_freeze_record.py", "tests/test_departure_record_v3.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -1903,6 +1905,11 @@ BREAKS = [
        "demande et des stations sont celles de cette coupure",
        "The spike scale of v3's data-quality run is cut at 2025-01-01 05:00 UTC, the last label of 2024, never at "
        "v2's: a noisier 2024 moves it, and the demand's and the stations' spike statistics are those of that cut"),
+    _b(CLOCK, f"{T_RN3}::test_the_noon_replay_s_spike_scale_is_cut_at_the_year_s_first_label",
+       "Témoin : l'échelle des pointes du rejeu à midi est coupée à la première étiquette de l'année, 05:00 UTC le 1er "
+       "janvier, quelle que soit l'origine",
+       "Control: the noon replay's spike scale is cut at the year's first label, 05:00 UTC on 1 January, whatever the "
+       "origin", control=True),
     # The clocks
     _b(CLOCK, f"{T_FN}::test_a_noon_day_carries_exactly_its_24_labels_and_is_scored_the_next_morning",
        "Témoin : un jour émis à midi porte exactement les 24 étiquettes de D 06:00 à D+1 05:00 UTC, est noté à D+1 "
@@ -1938,6 +1945,18 @@ BREAKS = [
        "valeur hors bornes horodatée à D+1 06:00 UTC fait échouer D+1 seul",
        "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at "
        "D+1 06:00 UTC fails D+1 alone"),
+    _b(CLOCK, f"{T_RN3}::test_a_noon_day_is_issued_at_noon_carries_its_24_labels_and_is_scored_at_d_plus_1_0600",
+       "Témoin : dans le rejeu de v3, chaque jour est émis à son origine de midi, D-1 17:00 UTC, porte exactement ses "
+       "24 étiquettes de D 06:00 à D+1 05:00 UTC et est noté à D+1 06:00 UTC",
+       "Control: in v3's replay each day is issued at its noon origin, D-1 17:00 UTC, carries exactly its 24 labels "
+       "D 06:00 to D+1 05:00 UTC and is scored at D+1 06:00 UTC", control=True),
+    _b(CLOCK, f"{T_RN3}::test_the_noon_replay_judges_each_day_as_validation_does",
+       "Le rejeu à midi juge chaque jour comme la validation : une demande hors bornes horodatée à D-1 18:00 UTC, "
+       "après l'origine de D, fait échouer D-1 seul, une moyenne du jour de retard manquante fait échouer son jour, et "
+       "les verdicts sont ceux de quality.days.day_verdicts",
+       "The noon replay judges each day as validation does: an out-of-bounds demand stamped at D-1 18:00 UTC, after "
+       "D's origin, fails D-1 alone, a missing lag day's mean fails its day, and the verdicts are those of "
+       "quality.days.day_verdicts"),
     # The noon origin
     _b(LOOK, f"{T_FN}::test_a_run_available_at_17_01_is_never_used_for_the_day_and_the_next_freshest_is",
        "Une prévision disponible à D-1 17:01 UTC n'est jamais utilisée pour D, même absurde, et la suivante l'est",
@@ -1969,6 +1988,13 @@ BREAKS = [
     _b(LOOK, f"{T_GN}::test_a_lag_days_mean_read_after_the_origin_is_refused",
        "Une moyenne du jour décalé lue après l'origine est refusée ; lue jusqu'à l'origine même, elle passe",
        "A lag day's mean read after the origin is refused; read up to the origin itself, it passes"),
+    _b(LOOK, f"{T_RN3}::test_the_replay_never_feeds_a_day_a_run_available_after_its_noon_origin[after_origin]",
+       "Dans le rejeu, une prévision disponible à D-1 17:01 UTC, aux valeurs absurdes, ne nourrit jamais D ; la "
+       "suivante le nourrit",
+       "In the replay, a run available at D-1 17:01 UTC, with absurd values, never feeds D; the next-freshest does"),
+    _b(LOOK, f"{T_RN3}::test_the_replay_never_feeds_a_day_a_run_available_after_its_noon_origin[control]",
+       "Témoin : dans le rejeu, la même prévision disponible à D-1 16:59 UTC nourrit D",
+       "Control: in the replay, the same run available at D-1 16:59 UTC feeds D", control=True),
     # Wind
     _b(DQ, f"{T_NBM}::test_a_header_without_the_wind_speed_is_refused",
        "Un fichier de prévision sans la colonne du vent (wsp) est refusé",
@@ -2198,6 +2224,15 @@ BREAKS = [
        "Des définitions de termes autres que celles fixées, une clé manquante ou en trop, ou un booléen pour un "
        "nombre, sont refusées",
        "Term definitions other than the ruled ones, a missing or extra key, or a boolean for a number, are refused"),
+    # Tags
+    _b(FREEZE, f"{T_TG3}::test_creating_the_four_v3_tags_on_v2_s_code_leaves_v2_s_freeze_check_passing",
+       "Témoin : sur un clone du code de v2 (3a1cd4a8c763), créer v3-fork, plan-v3, v3-first-run et v3-rules-frozen "
+       "laisse passer le contrôle de gel de v2",
+       "Control: on a clone of v2's code (3a1cd4a8c763), creating v3-fork, plan-v3, v3-first-run and v3-rules-frozen "
+       "leaves v2's freeze check passing", control=True),
+    _b(FREEZE, f"{T_TG3}::test_a_v3_tag_named_like_a_v2_freeze_stops_v2_s_freeze_check",
+       "Une étiquette de v3 nommée rules-frozen-v3 arrête le contrôle de gel du code de v2",
+       "A v3 tag named rules-frozen-v3 stops the freeze check of v2's code"),
     # Data
     _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[hq]",
        "Le fichier d'Hydro-Québec dont l'empreinte diffère de celle du premier rejeu 2024 de v2 est refusé",
@@ -2304,6 +2339,139 @@ BREAKS = [
        "La lecture du magasin de v2 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire "
        "ni enregistrer",
        "The read of v2's store refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    # The 2025 gate
+    _b(FREEZE, f"{T_GT3}::test_a_clean_2025_start_with_everything_in_order_passes",
+       "Témoin : un départ de 2025 de v3 où tout est en ordre passe, sans cause, debout propre, et son exécution "
+       "consigne le registre du portail",
+       "Control: a v3 2025 start with everything in order passes, with no cause, standing clean, and its run logs "
+       "the gate's record", control=True),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[no_ref]",
+       "(g) Sans la branche v2, le départ de 2025 de v3 est refusé",
+       "(g) Without v2's branch, v3's 2025 start is refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[no_ledger]",
+       "(g) Sans le registre de v2 sur sa branche, le départ de 2025 de v3 est refusé",
+       "(g) Without v2's ledger on its branch, v3's 2025 start is refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[no_entry]",
+       "(g) Sans entrée 2025 de v2 étiquetée hors échantillon ou post hoc, le départ de 2025 de v3 est refusé",
+       "(g) Without a v2 2025 entry labelled held out or post hoc, v3's 2025 start is refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[invalid_ledger]",
+       "(g) Un registre de v2 qui ne passe pas sa propre vérification n'est pas un test de référence : refusé",
+       "(g) A v2 ledger that fails its own check is no test of record: refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_refuses_while_v2_s_test_of_record_has_not_finished[bad_shape]",
+       "(g) Un registre de v2 qui tient une autre clé que `replays` n'est pas un test de référence : refusé",
+       "(g) A v2 ledger holding another key than `replays` is no test of record: refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_v3_start_reads_v2_s_test_of_record_at_origin_when_v2_s_branch_is_absent",
+       "Témoin : sans refs/heads/v2, le test de référence de v2 est lu à refs/remotes/origin/v2, sans aucun fetch",
+       "Control: without refs/heads/v2, v2's test of record is read at refs/remotes/origin/v2, never fetched",
+       control=True),
+    _b(FREEZE, f"{T_GT3}::test_the_gate_reads_v2_s_ledger_at_the_ref_never_the_working_copy",
+       "(g) Le registre de v2 est lu à la branche v2, jamais dans la copie de travail : une entrée 2025 sur la tête "
+       "ne lève pas (g)",
+       "(g) v2's ledger is read at v2's branch, never the working copy: a 2025 entry on the head does not lift (g)"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[production]",
+       "(b) Un modèle de production lu autrement que docs/freeze-v3.json est refusé, nommé",
+       "(b) A production model read otherwise than docs/freeze-v3.json is refused, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[v2_noon]",
+       "(b) Le modèle v2_noon modifié dans le magasin, avec son hachage, est refusé contre docs/freeze-v3.json, nommé",
+       "(b) The v2_noon model edited in the store, with its hash, is refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[v1_noon]",
+       "(b) Le modèle v1_noon modifié dans le magasin, avec son hachage, est refusé contre docs/freeze-v3.json, nommé",
+       "(b) The v1_noon model edited in the store, with its hash, is refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[v2_midnight]",
+       "(b) Le modèle v2_midnight modifié dans le magasin, avec son hachage, est refusé contre docs/freeze-v3.json, "
+       "nommé",
+       "(b) The v2_midnight model edited in the store, with its hash, is refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[thresholds]",
+       "(b) Des seuils de 2025 modifiés dans le magasin sont refusés contre docs/freeze-v3.json, nommés",
+       "(b) 2025 thresholds edited in the store are refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[cold_c]",
+       "(b) Un seuil froid modifié dans le magasin est refusé contre docs/freeze-v3.json, nommé",
+       "(b) A cold threshold edited in the store is refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_an_artifact_differing_from_the_freeze_record_is_refused[reference]",
+       "(b) Une référence de dérive modifiée dans le magasin est refusée contre docs/freeze-v3.json, nommée",
+       "(b) A drift reference edited in the store is refused against docs/freeze-v3.json, named"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[dirty]",
+       "(b) Une exécution nommée par le registre de gel, faite d'un arbre modifié, est refusée",
+       "(b) A run the freeze record names, made from a dirty tree, is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[rules]",
+       "(b) Une exécution nommée par le registre de gel, faite sous d'autres règles, est refusée",
+       "(b) A run the freeze record names, made under other rules, is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[pre_freeze]",
+       "(b) Une exécution nommée par le registre de gel, faite avant le gel, est refusée",
+       "(b) A run the freeze record names, made before the freeze, is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[end_time]",
+       "(b) Une exécution nommée dont la fin diffère de celle du registre de gel est refusée",
+       "(b) A named run whose end differs from the freeze record's is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[unfinished]",
+       "(b) Une exécution nommée par le registre de gel qui n'est pas terminée est refusée",
+       "(b) A run the freeze record names that is not finished is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[git_commit]",
+       "(b) Une exécution nommée dont le commit diffère de celui du registre de gel est refusée",
+       "(b) A named run whose commit differs from the freeze record's is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[dq_hashes]",
+       "(b) L'exécution de qualité nommée dont une empreinte de fichier brut diffère de celle du registre de gel est "
+       "refusée",
+       "(b) The named data-quality run whose raw-file hash differs from the freeze record's is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[absent]",
+       "(b) Un registre de gel qui nomme une exécution absente du magasin est refusé",
+       "(b) A freeze record naming a run the store lacks is refused"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[reproduction]",
+       "(b) Le registre de gel, refait par son propre rédacteur sur le magasin, refuse une validation dont la "
+       "reproduction a échoué, quoi qu'en dise le registre",
+       "(b) The freeze record, made again by its own writer on the store, refuses a validation whose reproduction "
+       "failed, whatever the record says"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[fresh_clone]",
+       "(b) Le registre de gel, refait par son propre rédacteur sur le magasin, refuse une exécution de qualité faite "
+       "sur un clone neuf, quoi qu'en dise le registre",
+       "(b) The freeze record, made again by its own writer on the store, refuses a data-quality run made on a fresh "
+       "clone, whatever the record says"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[byte_copies]",
+       "(b) Le registre de gel, refait par son propre rédacteur sur le magasin, refuse une validation dont les copies "
+       "à l'octet n'ont pas été vérifiées, quoi qu'en dise le registre",
+       "(b) The freeze record, made again by its own writer on the store, refuses a validation whose byte copies were "
+       "not checked, whatever the record says"),
+    _b(FREEZE, f"{T_GT3}::test_a_named_run_from_a_dirty_tree_or_other_rules_is_refused[model]",
+       "(b) Un registre de gel qui nomme un autre modèle gelé pour 2024 que celui du magasin diffère du registre que "
+       "son propre rédacteur refait : refusé",
+       "(b) A freeze record naming another model frozen for 2024 than the store's differs from the record its own "
+       "writer makes again: refused"),
+    _b(FREEZE, f"{T_FRC}::test_a_second_commit_touching_the_freeze_record_fails",
+       "Un second commit qui touche docs/freeze-v3.json fait échouer son test et sa lecture",
+       "A second commit touching docs/freeze-v3.json fails its test and its reading"),
+    _b(FREEZE, f"{T_GT3}::test_an_export_retrieved_before_the_freeze_record_refuses_h[record_commit]",
+       "(h) Un export récupéré avant le commit du registre de gel refuse ; une entrée (h) post hoc et sa preuve le "
+       "lèvent",
+       "(h) An export retrieved before the freeze record's commit refuses; an (h) post-hoc entry and its evidence "
+       "lift it"),
+    _b(FREEZE, f"{T_GT3}::test_an_export_retrieved_before_the_freeze_record_refuses_h[run_end]",
+       "(h) Un export récupéré avant la fin d'une exécution nommée refuse ; une entrée (h) post hoc et sa preuve le "
+       "lèvent",
+       "(h) An export retrieved before a named run's end refuses; an (h) post-hoc entry and its evidence lift it"),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_change_committed_after_the_2025_time_refuses_i[after]",
+       "(i) Un changement de règle validé après l'heure de 2025 refuse (i), à côté de (a)",
+       "(i) A rule change committed after the 2025 time refuses (i), beside (a)"),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_change_committed_after_the_2025_time_refuses_i[before]",
+       "Un changement de règle validé avant l'heure de 2025 ne déclenche que (a), jamais (i)",
+       "A rule change committed before the 2025 time fires (a) only, never (i)"),
+    _b(FREEZE, f"{T_DR3}::test_a_clean_ruling_on_h_or_i_is_refused[h]",
+       "Dans la section des départs de v3, une décision « clean » sur (h) est refusée à la lecture ; « post hoc » est "
+       "lue",
+       "In v3's departures section, a \"clean\" ruling on (h) is refused when read; \"post hoc\" is read"),
+    _b(FREEZE, f"{T_DR3}::test_a_clean_ruling_on_h_or_i_is_refused[i]",
+       "Dans la section des départs de v3, une décision « clean » sur (i) est refusée à la lecture ; « post hoc » est "
+       "lue",
+       "In v3's departures section, a \"clean\" ruling on (i) is refused when read; \"post hoc\" is read"),
+    _b(FREEZE, f"{T_GT3}::test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[h]",
+       "Une décision « propre » sur (h) refuse le départ de 2025 ; une décision post hoc la lève",
+       "A \"clean\" ruling on (h) refuses the 2025 start; a post-hoc one lifts it"),
+    _b(FREEZE, f"{T_GT3}::test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[i]",
+       "Une décision « propre » sur (i) refuse le départ de 2025 ; une décision post hoc la lève",
+       "A \"clean\" ruling on (i) refuses the 2025 start; a post-hoc one lifts it"),
+    _b(FREEZE, f"{T_GT3}::test_a_ruling_on_v2_first_lifts_g_only",
+       "Une décision « v2 d'abord » lève (g) seule, sans preuve ni debout ; ni (a) ni (h) ; un autre commit ne lève "
+       "rien",
+       "A \"v2 first\" ruling lifts (g) only, with no evidence and no standing; neither (a) nor (h); another commit "
+       "lifts nothing"),
     # Calibration bins
     _b(LOOK, f"{T_IV3}::test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
        "Deux plis dont les limites diffèrent classent la même note de calibration selon la limite de l'ajustement "
@@ -2312,6 +2480,63 @@ BREAKS = [
     _b(LOOK, f"{T_VA3}::test_each_fold_bins_its_calibration_by_the_edge_of_the_fit_being_calibrated",
        "Dans la validation, chaque pli classe sa calibration selon la limite de l'ajustement calibré",
        "In validation, each fold bins its calibration by the edge of the fit being calibrated"),
+    # The rehearsal
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[run]",
+       "La répétition de 2024 dont un jour est nourri par une autre prévision que celle de la validation refuse de "
+       "consigner",
+       "A 2024 rehearsal one of whose days is fed by another run than validation's refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[rank]",
+       "La répétition de 2024 dont un jour est nourri à un autre rang que dans la validation refuse de consigner",
+       "A 2024 rehearsal one of whose days is fed at another rank than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[reason]",
+       "La répétition de 2024 dont un jour est laissé sans prévision pour une autre raison que dans la validation "
+       "refuse de consigner",
+       "A 2024 rehearsal one of whose days is left unfed for another reason than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[temp]",
+       "La répétition de 2024 dont une heure a une autre température prévue que dans la validation refuse de "
+       "consigner",
+       "A 2024 rehearsal one of whose hours has another forecast temperature than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[wind]",
+       "La répétition de 2024 dont une heure a un autre vent prévu que dans la validation refuse de consigner",
+       "A 2024 rehearsal one of whose hours has another forecast wind than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[daymean]",
+       "La répétition de 2024 dont une heure a une autre moyenne du jour que dans la validation refuse de consigner",
+       "A 2024 rehearsal one of whose hours has another day's mean than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[lagday]",
+       "La répétition de 2024 dont une heure a une autre moyenne du jour de retard que dans la validation refuse de "
+       "consigner",
+       "A 2024 rehearsal one of whose hours has another lag day's mean than in validation refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[bin]",
+       "La répétition de 2024 dont une heure tombe dans l'autre classe de température refuse de consigner",
+       "A 2024 rehearsal one of whose hours falls in the other temperature bin refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[interval]",
+       "La répétition de 2024 dont une heure a émis un intervalle d'une autre demi-largeur que celle du pli de janvier "
+       "2024 refuse de consigner",
+       "A 2024 rehearsal one of whose hours issued an interval of another half-width than the January 2024 fold's "
+       "refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[half_width]",
+       "La répétition de 2024 dont la demi-largeur froide diffère de celle du pli de janvier 2024 refuse de consigner",
+       "A 2024 rehearsal whose cold half-width differs from the January 2024 fold's refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_that_differs_from_validation_refuses_to_log[edge]",
+       "La répétition de 2024 dont la limite de classe diffère de celle du pli de janvier 2024 refuse de consigner",
+       "A 2024 rehearsal whose bin edge differs from the January 2024 fold's refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_validation_run_without_the_january_fold_s_interval_layer_refuses_to_log",
+       "La répétition de 2024 sans ligne du pli de janvier 2024 dans les classes de la validation refuse de consigner",
+       "A 2024 rehearsal with no January 2024 fold row in validation's bins refuses to log"),
+    _b(LOOK, f"{T_RH3}::test_a_rehearsal_identical_to_validation_logs",
+       "Témoin : la répétition identique à la validation consigne ses résultats",
+       "Control: a rehearsal identical to validation logs its results", control=True),
+    # The freeze record
+    _b(FREEZE, f"{T_FRC}::test_the_record_is_read_as_the_commit_that_added_it_holds_it",
+       "Le registre de gel est lu tel que le commit qui l'a ajouté le contient : une copie de travail modifiée ou "
+       "supprimée ne change rien",
+       "The freeze record is read as the commit that added it holds it: an edited or deleted working copy changes "
+       "nothing"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
+       "(a) Un registre de gel dont le commit n'est pas un ancêtre du départ refuse ; témoin sur un descendant. Le "
+       "refus n'est atteint que par un lecteur substitué : celui d'un vrai départ parcourt l'historique de HEAD",
+       "(a) A freeze record whose commit is not an ancestor of the start refuses; control on a descendant. The refusal "
+       "is reached only through a substituted reader: a real start's reader walks HEAD's own history"),
     # First run
     _b(FREEZE, f"{T_FR3}::test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
        "Un calcul de v3 sur données réelles hors de la descendance de l'étiquette v3-first-run est refusé",
@@ -2320,8 +2545,48 @@ BREAKS = [
        "Témoin : un calcul de v3 sur données réelles depuis un descendant de l'étiquette v3-first-run passe",
        "Control: a v3 real-data run from a descendant of the v3-first-run tag passes", control=True),
     _b(FREEZE, f"{T_FR3}::test_every_v3_real_data_command_calls_the_guard_before_opening_a_file",
-       "Les commandes dq-v3 et read-v2 refusent hors de la descendance de v3-first-run avant d'ouvrir aucun fichier",
-       "The dq-v3 and read-v2 commands refuse off the v3-first-run descent before they open any file"),
+       "Les commandes dq-v3, read-v2, validate-v3, freeze-v3, replay-v3, evidence-v3 et freeze-record-v3 refusent "
+       "hors de la descendance de v3-first-run avant d'ouvrir aucun fichier",
+       "The dq-v3, read-v2, validate-v3, freeze-v3, replay-v3, evidence-v3 and freeze-record-v3 commands refuse off "
+       "the v3-first-run descent before they open any file"),
+    # The 2025 time
+    _b(FREEZE, f"{T_GT3}::test_a_refetched_export_with_a_v2_2025_entry_before_the_record_refuses_h",
+       "Un export récupéré de nouveau après le gel, avec une entrée 2025 de v2 commencée avant le commit du registre "
+       "de gel, refuse (h)",
+       "An export re-fetched after the freeze, with a v2 2025 entry started before the freeze record's commit, "
+       "refuses (h)"),
+    _b(FREEZE, f"{T_GT3}::test_a_and_i_firing_give_a_post_hoc_standing_whatever_the_order[i_then_a]",
+       "(a) et (i) déclenchés, une entrée (i) post hoc puis une entrée (a) propre : debout post hoc",
+       "(a) and (i) firing, an (i) post-hoc entry then a clean (a) entry: post-hoc standing"),
+    _b(FREEZE, f"{T_GT3}::test_a_and_i_firing_give_a_post_hoc_standing_whatever_the_order[a_then_i]",
+       "(a) et (i) déclenchés, dans l'ordre inverse : debout post hoc",
+       "(a) and (i) firing, in the reverse order: post-hoc standing"),
+    _b(FREEZE, f"{T_GT3}::test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[h]",
+       "Un départ après un départ arrêté, avec une décision (f) propre, reste post hoc quand (h) se déclenche",
+       "A start after a stopped one, with a clean (f) ruling, stays post hoc when (h) fires"),
+    _b(FREEZE, f"{T_GT3}::test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[i]",
+       "Un départ après un départ arrêté, avec une décision (f) propre, reste post hoc quand (i) se déclenche",
+       "A start after a stopped one, with a clean (f) ruling, stays post hoc when (i) fires"),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[dq_retrieved]",
+       "Un export récupéré de nouveau après le départ 2025 de v2 refuse encore (h) quand une exécution de qualité a lu "
+       "l'export avant le commit du registre de gel : l'heure 2025 ne recule jamais",
+       "An export re-fetched after v2's 2025 start still refuses (h) when a data-quality run read the export before "
+       "the freeze record's commit: the 2025 time never moves later"),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[dq_started]",
+       "Un export récupéré de nouveau refuse encore (h) quand une exécution de qualité jusqu'à 2025 a commencé avant "
+       "le commit du registre de gel, quelle que soit l'heure de récupération qu'elle note",
+       "A re-fetched export still refuses (h) when a data-quality run through 2025 started before the freeze record's "
+       "commit, whatever retrieval time it records"),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[earlier_start]",
+       "Après un départ arrêté dont (h) s'est déclenché, un export récupéré de nouveau après le départ 2025 de v2 "
+       "refuse encore (h) ; avec une nouvelle entrée (h), le départ est post hoc",
+       "After a stopped start whose (h) fired, an export re-fetched after v2's 2025 start still refuses (h); with a "
+       "new (h) entry the start is post hoc"),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch",
+       "Après un départ arrêté dont (i) s'est déclenché, un export récupéré de nouveau après le départ 2025 de v2 "
+       "refuse encore (i) ; avec de nouvelles entrées, le départ est post hoc",
+       "After a stopped start whose (i) fired, an export re-fetched after v2's 2025 start still refuses (i); with new "
+       "entries the start is post hoc"),
     # Reproduction
     _b(FREEZE, f"{T_RP3}::test_the_same_hours_and_values_pass_and_say_what_was_compared",
        "Témoin : les mêmes heures et les mêmes valeurs que la validation enregistrée de v2 passent la vérification de "

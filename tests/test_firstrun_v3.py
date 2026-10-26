@@ -69,11 +69,15 @@ def test_a_v3_real_data_run_from_a_descendant_of_the_v3_first_run_tag_passes(his
 
 
 def test_every_v3_real_data_command_calls_the_guard_before_opening_a_file(history, monkeypatch, tmp_path):
-    """dq-v3, read-v2, validate-v3 and freeze-v3 refuse on a head without the tag before they read anything: every
-    reader they reach first (v3's store and its check against v2's, the byte-copy check, v3's data-quality run, the raw
-    files, v2's store and its ledger) is replaced by one that records the call."""
-    from valiwatt import tracking, v2store
+    """dq-v3, read-v2, validate-v3, freeze-v3, replay-v3 (2024 and 2025), evidence-v3 and freeze-record-v3 refuse on a
+    head without the tag before they read anything: every reader they reach first (v3's store and its check against
+    v2's, the byte-copy check, v3's data-quality run, the raw files, v2's store and its ledger, the freeze record, the
+    start lock in the run store's folder) is replaced by one that records the call, or points into a folder that must
+    stay absent."""
+    from valiwatt import freeze_record, paths, tracking, v2store
     from valiwatt.forecast import freeze_v3, validate_v3
+    from valiwatt.monitor import run as mrun
+    from valiwatt.monitor import run_v3 as replay_v3
     from valiwatt.quality import run as qrun
     from valiwatt.quality import run_v3
 
@@ -83,6 +87,9 @@ def test_every_v3_real_data_command_calls_the_guard_before_opening_a_file(histor
         return lambda *a, **k: reads.append(name)
 
     monkeypatch.setattr(tracking, "MLRUNS", tmp_path / "mlruns")
+    monkeypatch.setattr(paths, "MLRUNS", tmp_path / "mlruns")
+    monkeypatch.setattr(freeze_record, "read_freeze_record", reader("the freeze record"))
+    monkeypatch.setattr(mrun, "load_raw", reader("raw records"))
     monkeypatch.setattr(v2store, "recorded", reader("v3's store"))
     monkeypatch.setattr(run_v3, "check_byte_copies", reader("byte copies"))
     monkeypatch.setattr(qrun, "_verify_manifests", reader("raw files"))
@@ -99,4 +106,11 @@ def test_every_v3_real_data_command_calls_the_guard_before_opening_a_file(histor
         validate_v3.run_validate_v3()
     with pytest.raises(firstrun.FirstRunRefused):
         freeze_v3.run_freeze_v3(2024)
+    for year in (2024, 2025):
+        with pytest.raises(firstrun.FirstRunRefused):
+            replay_v3.run_replay_v3(year)
+    with pytest.raises(firstrun.FirstRunRefused):
+        replay_v3.run_evidence_v3()
+    with pytest.raises(firstrun.FirstRunRefused):
+        freeze_record.run_write_freeze_record("0" * 32)
     assert reads == [] and not (tmp_path / "mlruns").exists()

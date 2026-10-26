@@ -20,7 +20,6 @@ differ.
 from __future__ import annotations
 
 import json
-import subprocess
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -28,7 +27,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from valiwatt.config import THROUGH_DEFAULT, V3_DESIGN_LAST, V3_FIRST_RUN_TAG, V3_THRESHOLD_YEARS
+from valiwatt.config import (
+    THROUGH_DEFAULT,
+    V3_DESIGN_LAST,
+    V3_FIRST_RUN_TAG,
+    V3_FREEZE_TAG,  # re-exported: v3's freeze (section 10.2)
+    V3_PRE_FREEZE_TAG,
+    V3_THRESHOLD_YEARS,
+)
 from valiwatt.forecast import evaluate as ev
 from valiwatt.forecast import model
 from valiwatt.forecast import validate as vd
@@ -57,8 +63,7 @@ V3_FIRST_FOLD, V3_LAST_FOLD = "2020-01", "2024-12"
 V3_DESIGN_YEARS = tuple(range(2019, 2025))
 V3_DESIGN_LAST_DAY = lst_day(pd.DatetimeIndex([V3_DESIGN_LAST]))[0]  # 2024-12-31
 KIND = "validation_v3"  # the run's kind: never v2's "validation", so no v2 step reads a v3 run
-V3_FREEZE_TAG = "v3-rules-frozen"  # v3's freeze (section 10.2)
-PRE_FREEZE_TAG = "v3-pre-freeze"  # the freeze tag of every run made before it exists (section 10.3)
+PRE_FREEZE_TAG = V3_PRE_FREEZE_TAG  # the freeze tag of every run made before v3's freeze exists (section 10.3)
 IN_SAMPLE_LABEL_V3 = "in_sample_for_terms_bins_and_subset"  # section 8.4
 # v2's form at midnight runs through v2's fold loop under v2's key, renamed to v3's on the joined frame.
 MIDNIGHT_KEY, MIDNIGHT_SOURCE = V3_COMPARATORS["horizon"], model.PRODUCTION
@@ -436,12 +441,11 @@ def check_reproduction(oos: pd.DataFrame, recorded: pd.DataFrame, *, days=REPROD
 
 def freeze_tag() -> str:
     """The freeze a v3 run is made under (section 10.3): V3_FREEZE_TAG when that tag exists in the repository, else
-    PRE_FREEZE_TAG."""
-    from valiwatt.paths import REPO_ROOT
+    PRE_FREEZE_TAG; records_v3.current_freeze, so once the tag exists a run on other rule files or dependencies than
+    the tag's is refused (V3FreezeError) rather than tagged pre-freeze."""
+    from valiwatt import records_v3
 
-    done = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{V3_FREEZE_TAG}^{{commit}}"],
-                          cwd=REPO_ROOT, capture_output=True, text=True, check=False)
-    return V3_FREEZE_TAG if done.returncode == 0 and done.stdout.strip() else PRE_FREEZE_TAG
+    return records_v3.current_freeze()["freeze_tag"]
 
 
 def load_validation_v3(dq):

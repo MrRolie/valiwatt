@@ -68,6 +68,41 @@ def cmd_freeze_v3(args) -> int:
     return run_freeze_v3(args.year)
 
 
+def cmd_replay_v3(args) -> int:
+    """v3's replay of one year at noon. Its one flag, --departure, says only that v3's freeze tag moved and that
+    AGENTS.md's v3 section records the move; it lifts no refusal of the 2025 gate."""
+    from valiwatt.monitor.run_v3 import run_replay_v3
+
+    return run_replay_v3(args.year, departure=args.departure)
+
+
+def cmd_evidence_v3(args) -> int:
+    from valiwatt.monitor.run_v3 import run_evidence_v3
+
+    return run_evidence_v3(departure=args.departure)
+
+
+def cmd_freeze_record_v3(args) -> int:
+    """docs/freeze-v3.json from the step-5 rehearsal it is given by run ID (docs/plan-v3.md, section 10.3): written
+    once, before any 2025 record reaches the machine, then committed alone."""
+    from valiwatt.freeze_record import run_write_freeze_record
+
+    return run_write_freeze_record(args.rehearsal)
+
+
+def cmd_ledger_v3(args) -> int:
+    """Append v3's store's finished replays under `v3-rules-frozen` to docs/replay-ledger-v3.json, as `ledger` does
+    for v2's (docs/plan-v3.md, section 10.3)."""
+    from valiwatt.report.ledger import LedgerError
+    from valiwatt.report.ledger_v3 import run_sync
+
+    try:
+        return run_sync()
+    except LedgerError as e:
+        print(f"v3 replay ledger: REFUSED: {e}")
+        return 1
+
+
 def cmd_read_v2(args) -> int:
     """The one command that opens v2's store, at the path it is given (docs/plan-v3.md, section 10.3)."""
     from valiwatt.v2store import run_read_v2
@@ -238,6 +273,30 @@ def build_parser() -> argparse.ArgumentParser:
                              "2025: the models frozen for 2025), from v3's data-quality and validation runs")
     p.add_argument("--year", type=int, required=True, choices=[2024, 2025])
     p.set_defaults(func=cmd_freeze_v3)
+    p = command("replay-v3", "replay a year at noon with v3's frozen models, v2's form at midnight beside them. 2024: "
+                             "the rehearsal, seen by the developers, refused unless it reads exactly validation's "
+                             "inputs. 2025: after v2's test of record, behind v3's 2025 gate, which starts it or "
+                             "refuses naming its condition and its evidence (docs/plan-v3.md, sections 11.1 and 11.3)")
+    p.add_argument("--year", type=int, required=True, choices=[2024, 2025])
+    p.add_argument("--departure", action="store_true",
+                   help="v3's freeze tag moved and AGENTS.md's v3 departures section records the move; it lifts no "
+                        "refusal of the 2025 gate")
+    p.set_defaults(func=cmd_replay_v3)
+    p = command("evidence-v3", "produce what the owner rules on, deciding nothing: the 2024 rehearsal the freeze "
+                               "record names run again on the newest export bounded to 2024, with its frozen "
+                               "artifacts, compared hour by hour with it. The 2025 gate applies a ruling only once a "
+                               "finished evidence run, made from a clean tree, exists for its commit")
+    p.add_argument("--departure", action="store_true", help="v3's freeze tag moved and AGENTS.md records the move, as "
+                                                            "for `replay-v3`")
+    p.set_defaults(func=cmd_evidence_v3)
+    p = command("freeze-record-v3", "write docs/freeze-v3.json once, from the step-5 2024 rehearsal: the runs it names "
+                                    "and the hashes of every artifact that will judge 2025, refused once any 2025 "
+                                    "record is on the machine; commit it alone")
+    p.add_argument("--rehearsal", required=True, metavar="RUN_ID", help="the run ID of the step-5 2024 rehearsal")
+    p.set_defaults(func=cmd_freeze_record_v3)
+    p = command("ledger-v3", "append v3's finished replays under v3-rules-frozen to docs/replay-ledger-v3.json "
+                             "(append-only; a run made before the tag never enters it)")
+    p.set_defaults(func=cmd_ledger_v3)
     p = command("validate", "walk-forward validation on 2020-2023 (models fitted from 2019), intervals of "
                             "split-conformal shape and the monitoring thresholds")
     p.set_defaults(func=cmd_validate)

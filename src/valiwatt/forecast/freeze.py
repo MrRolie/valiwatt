@@ -694,10 +694,12 @@ def load_frozen(replay_year: int, model_name: str = MODEL_NAME):
     return frozen, run
 
 
-def load_comparators(run) -> dict[str, FrozenModel]:
+def load_comparators(run, keys=None) -> dict[str, FrozenModel]:
     """The comparison models frozen in `run` (model.COMPARATORS), by model key: each file must match its own hash and
     the hash its run recorded (tag comparator_sha256.<key>), be the model its key names and be frozen for the run's
-    year; anything else is refused (FrozenModelError)."""
+    year; anything else is refused (FrozenModelError). keys: the comparison models expected; None, v2's
+    (COMPARATORS), each checked against model.MODELS; v3 passes its three (model.V3_COMPARATORS: v2_noon, v1_noon,
+    v2_midnight, docs/plan-v3.md section 4.2), each checked against model.MODELS_V3."""
     import mlflow
 
     from valiwatt.tracking import client
@@ -706,7 +708,13 @@ def load_comparators(run) -> dict[str, FrozenModel]:
     prefix = "comparator_sha256."
     tagged = {k[len(prefix):]: v for k, v in run.data.tags.items() if k.startswith(prefix)}
     files = {_artifact_key(a.path) for a in c.list_artifacts(run.info.run_id, "comparators")}
-    wanted = set(COMPARATORS.values())
+    if keys is None:
+        wanted, kinds = set(COMPARATORS.values()), MODELS
+    else:
+        from valiwatt.forecast.model import MODELS_V3
+
+        wanted = set(keys)
+        kinds = {k: (MODELS_V3[k].family, MODELS_V3[k].scenario) for k in wanted}
     if set(tagged) != wanted or files != wanted:
         raise FrozenModelError(f"frozen run {run.info.run_id} records comparators {sorted(tagged)} and holds files "
                                f"{sorted(files)}; the comparison models are {sorted(wanted)}")
@@ -716,9 +724,9 @@ def load_comparators(run) -> dict[str, FrozenModel]:
         if m.sha256() != tagged[key]:
             raise FrozenModelError(f"comparison model {key} of run {run.info.run_id} does not match the hash its run "
                                    "recorded")
-        if (m.family, m.scenario) != MODELS[key]:
+        if (m.family, m.scenario) != kinds[key]:
             raise FrozenModelError(f"comparison model file {key} holds a {m.family} model on {m.scenario}, not "
-                                   f"{MODELS[key]}")
+                                   f"{kinds[key]}")
         if str(m.replay_year) != run.data.tags.get("replay_year"):
             raise FrozenModelError(f"comparison model {key} was frozen for {m.replay_year}, its run for "
                                    f"{run.data.tags.get('replay_year')}")

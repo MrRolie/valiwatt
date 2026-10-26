@@ -1,9 +1,15 @@
 """The release and freeze tags are pinned to their commits, follow each other, and are annotated.
 
 `PINS` names the commit each tag must be on. A tag is pinned in the commit after it is made, so for that one commit
-an unpinned tag passes while it points at HEAD. When `rules-frozen-v2` moves (a departure), its new pin is committed
-at once, in a commit that touches only this file: tests/test_departure_record.py reads the tag's successive commits
-from the history of `PINS`, so keep it a literal dict, one tag per line.
+an unpinned tag passes while it points at HEAD. When a freeze tag moves (a departure), its new pin is committed at
+once, in a commit that touches only this file: tests/test_departure_record.py and src/valiwatt/records_v3.py read the
+tag's successive commits from the history of `PINS`, so keep it a literal dict, one tag per line.
+
+On the `v3` branch v2's record is closed at `v3-fork` (docs/plan-v3.md, section 10.1): a freeze whose configured end
+(config.FREEZES[...]["end"]) is `v3-fork` is checked against its pin as of the fork, `PINS` as tests/test_tags.py held
+it at that commit; the tag must exist and be annotated, its live position is never compared, and the order of the
+tags uses the fork's pin. So a later move of `rules-frozen-v2` on the `v2` branch fails no v3 test (it is read only
+through the 2025 gate's condition (g)). v3's tags follow in `ORDER`, each pinned once made.
 """
 
 from __future__ import annotations
@@ -12,7 +18,16 @@ from pathlib import Path
 
 import pytest
 
-from test_departure_record import HistoryMissing, commit_of, git, is_ancestor, require_full_history, scratch_clone
+from test_departure_record import (
+    HistoryMissing,
+    commit_of,
+    git,
+    is_ancestor,
+    pins_at,
+    require_full_history,
+    scratch_clone,
+)
+from valiwatt.config import FREEZES, V3_FORK_TAG
 from valiwatt.paths import REPO_ROOT
 
 PINS = {
@@ -21,20 +36,45 @@ PINS = {
     "plan-v2": "ff64c9aa2af418840958d520ddcae42f6150c370",
     "v2-first-run": "7438fc0293c95a808684e1ccdaaffd691f0693ae",
     "rules-frozen-v2": "825b7bd134a88ad38dc62efe361e30f80321c8be",
+    "v3-fork": "3a1cd4a8c76351514e8a20e5253afd89e7adb421",
+    "plan-v3": "3c97f24ca96c5244bf8b95fba858233d3871998b",
 }
 
-ORDER = ("rules-frozen", "v1", "plan-v2", "v2-first-run", "rules-frozen-v2")
+ORDER = ("rules-frozen", "v1", "plan-v2", "v2-first-run", "rules-frozen-v2", "v3-fork", "plan-v3", "v3-first-run",
+         "v3-rules-frozen")
+# The freezes whose checked range ends at the fork: each checked as of the fork, never at its live position.
+CLOSED_AT_FORK = tuple(name for name, f in FREEZES.items() if f["end"] == V3_FORK_TAG)
 
 
 def tag_commit(root: Path, name: str) -> str | None:
     return commit_of(root, f"refs/tags/{name}")
 
 
+def closed_pin(root: Path, name: str) -> str | None:
+    """The commit a freeze closed at the fork is checked against: its pin as of `v3-fork` (None without the fork tag
+    or such a pin)."""
+    end = tag_commit(root, FREEZES[name]["end"])
+    return pins_at(root, end).get(name) if end else None
+
+
 def tag_problems(root: Path, pins: dict[str, str], head: str = "HEAD") -> list[str]:
-    """What is wrong with the tags of `root` against `pins` (none: they agree). A shallow clone fails loudly."""
+    """What is wrong with the tags of `root` against `pins` (none: they agree). A freeze closed at the fork
+    (CLOSED_AT_FORK) is read as of the fork: its pin must be the fork's, and, when the tag exists, its commit is taken
+    as that pin. A shallow clone fails loudly."""
     require_full_history(root)
     problems = []
     on = {name: tag_commit(root, name) for name in (*ORDER, *pins)}
+    for name in CLOSED_AT_FORK:
+        as_of = closed_pin(root, name)
+        if as_of is None:
+            problems.append(f"tag {name} is closed at `{FREEZES[name]['end']}`, but no pin of it as of that tag is "
+                            "found")
+            continue
+        if name in pins and pins[name] != as_of:
+            problems.append(f"tag {name} is pinned to {pins[name]}, not its pin as of `{FREEZES[name]['end']}`, "
+                            f"{as_of}")
+        if on[name] is not None:
+            on[name] = as_of  # the live position is never compared (docs/plan-v3.md, section 10.1)
     for name, pin in pins.items():
         if on[name] != pin:
             problems.append(f"tag {name} is on {on[name] or 'no commit'}, not its pin {pin}")
@@ -55,10 +95,12 @@ def test_the_tags_agree_with_their_pins():
     assert tag_problems(REPO_ROOT, PINS) == []
 
 
-def tagged(tmp_path: Path) -> tuple[Path, dict[str, str]]:
-    """A scratch clone, and its tags as pins: every check passes on them (control)."""
-    clone = scratch_clone(tmp_path)
+def tagged(tmp_path: Path, clone: Path | None = None) -> tuple[Path, dict[str, str]]:
+    """A scratch clone (or `clone`), and its tags as pins, a freeze closed at the fork read as of the fork, so a later
+    move of `rules-frozen-v2` on the `v2` branch changes nothing here: every check passes on them (control)."""
+    clone = clone or scratch_clone(tmp_path)
     pins = {name: c for name in ORDER if (c := tag_commit(clone, name))}
+    pins |= {name: closed_pin(clone, name) for name in CLOSED_AT_FORK if name in pins}
     assert pins.keys() >= {"rules-frozen", "v1"}
     assert tag_problems(clone, pins) == []
     return clone, pins
@@ -113,13 +155,15 @@ def test_a_lightweight_tag_fails(tmp_path):
     assert tag_problems(clone, pins) == ["tag v1 is not annotated"]
 
 
-def ledger_freeze_problems(entries: list[dict], root: Path = REPO_ROOT, tag: str = "rules-frozen-v2") -> list[str]:
+def ledger_freeze_problems(entries: list[dict], root: Path = REPO_ROOT, tag: str = "rules-frozen-v2",
+                           commit: str | None = None) -> list[str]:
     """What ties a committed replay-ledger entry of `tag` to the tag itself, and fails: its freeze commit is not the
-    tag's commit, or its rules hash is not the hash of the rule files at the tag (monitor/rules.py `rules_sha256`)."""
+    tag's commit, or its rules hash is not the hash of the rule files at the tag (monitor/rules.py `rules_sha256`).
+    commit: the tag's commit as checked (a freeze closed at the fork: its pin as of the fork); None, the live tag's."""
     from valiwatt.monitor.rules import rules_sha256
 
     require_full_history(root)
-    commit = tag_commit(root, tag)
+    commit = commit or tag_commit(root, tag)
     if commit is None:
         return [f"tag {tag} is missing"]
     rules = rules_sha256(commit)
@@ -141,7 +185,7 @@ def test_every_committed_v2_ledger_entry_ran_on_the_rules_at_the_freeze_tag():
 
     entries = ledger.read()
     assert [e for e in entries if e["freeze_tag"] == "rules-frozen-v2"], "the ledger lists no v2 replay"
-    assert ledger_freeze_problems(entries) == []
+    assert ledger_freeze_problems(entries, commit=closed_pin(REPO_ROOT, "rules-frozen-v2")) == []
 
 
 def test_a_ledger_entry_off_the_tag_fails():
@@ -149,7 +193,7 @@ def test_a_ledger_entry_off_the_tag_fails():
 
     entries = [e for e in ledger.read() if e["freeze_tag"] == "rules-frozen-v2"]
     moved = [{**entries[0], "freeze_commit": "0" * 40}, {**entries[-1], "rules_sha256": "0" * 64}]
-    problems = ledger_freeze_problems(moved)
+    problems = ledger_freeze_problems(moved, commit=closed_pin(REPO_ROOT, "rules-frozen-v2"))
     assert len(problems) == 2 and "freeze commit" in problems[0] and "rules hash" in problems[1]
 
 

@@ -16,6 +16,11 @@ of the tag's move it belongs to, and none may follow the tag's current commit. E
 the tag moved from and the one it moved to; a commit it names that is neither fails. The owner's ruling entries on
 2025 are read by the 2025 gate, not here: here each must name a commit of the history.
 
+On the `v3` branch v2's record is closed at `v3-fork` (docs/plan-v3.md, section 10.1), as v1's is at `v1`: v2's
+history is read up to the fork, with the tag's commit its pin as of the fork and the v2 section as the fork holds it,
+so a later move of `rules-frozen-v2` on the `v2` branch, or v3's own rule changes, are no v2 departures. v3's record is
+checked in tests/test_departure_record_v3.py.
+
 The checks read the history, so a shallow clone fails them loudly instead of passing on history they cannot see; CI
 checks out the full history (`fetch-depth: 0`, .github/workflows/checks.yml), as the public-safety scan needs too.
 """
@@ -37,6 +42,7 @@ from valiwatt.report.lineage import COMMIT
 
 DEPENDENCIES = ("pyproject.toml", "uv.lock")
 V1_FREEZE, V1_END, V2_FREEZE = "rules-frozen", "v1", "rules-frozen-v2"
+V2_END = "v3-fork"  # v2's checked range ends at the fork on the v3 branch (config.FREEZES["rules-frozen-v2"]["end"])
 V1_HEADING = "## Departures from the frozen monitoring rules"
 V2_HEADING = "## Departures from the v2 frozen rules"
 PINS_FILE = "tests/test_tags.py"
@@ -372,10 +378,12 @@ def v2_unfrozen_problems(root: Path, section: str | None, entries: list[dict], h
     return problems
 
 
-def v2_record_problems(root: Path, section: str, head: str = "HEAD") -> list[str]:
-    """What is wrong with the v2 departures section against the history of `root` up to `head` (none: it agrees)."""
+def v2_record_problems(root: Path, section: str, head: str = "HEAD", *, tag_commit: str | None = None) -> list[str]:
+    """What is wrong with the v2 departures section against the history of `root` up to `head` (none: it agrees).
+    tag_commit: the commit the tag is read on (the record closed at the fork: its pin as of the fork); None, the live
+    tag's."""
     require_full_history(root)
-    tag = commit_of(root, f"refs/tags/{V2_FREEZE}")
+    tag = tag_commit or commit_of(root, f"refs/tags/{V2_FREEZE}")
     if tag is None:
         raise HistoryMissing(f"no `{V2_FREEZE}` tag in this clone: fetch the tags with the full history")
     head_commit = commit_of(root, head)
@@ -434,12 +442,16 @@ def v2_record_problems(root: Path, section: str, head: str = "HEAD") -> list[str
 
 
 def test_the_v2_record_agrees_with_the_history():
-    section = section_of(agents_text(), V2_HEADING)
+    """v2's record, closed at `v3-fork`: the history up to the fork, the tag read on its pin as of the fork, and the v2
+    section as AGENTS.md held it there."""
+    fork = commit_of(REPO_ROOT, f"refs/tags/{V2_END}")
+    assert fork is not None, f"no `{V2_END}` tag: fetch the tags with the full history"
+    section = section_of(git(REPO_ROOT, "show", f"{fork}:AGENTS.md") + "\n", V2_HEADING)
     if commit_of(REPO_ROOT, f"refs/tags/{V2_FREEZE}") is None:
-        assert v2_unfrozen_problems(REPO_ROOT, section, ledger.read()) == []
+        assert v2_unfrozen_problems(REPO_ROOT, section, ledger.read(), head=V2_END) == []
     else:
         assert section is not None, f"AGENTS.md has no line {V2_HEADING!r}"
-        assert v2_record_problems(REPO_ROOT, section) == []
+        assert v2_record_problems(REPO_ROOT, section, V2_END, tag_commit=pins_at(REPO_ROOT, fork)[V2_FREEZE]) == []
 
 
 NONE = ("\n\nThe rules are frozen by the tag. A ruling's head: \"<date>, the owner's ruling on 2025: clean\".\n\n"

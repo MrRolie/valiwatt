@@ -153,6 +153,56 @@ def test_freeze_v3_calls_run_freeze_v3_with_its_year(monkeypatch):
     assert rejected(["freeze-v3"]) and rejected(["freeze-v3", "--year", "2023"])
 
 
+def test_replay_v3_calls_run_replay_v3_with_its_year(monkeypatch):
+    """v3 replays 2024 (the rehearsal) and 2025 (docs/plan-v3.md, sections 11.1 and 11.3), with --departure and no
+    other flag, and no path or store argument."""
+    from valiwatt.monitor import run_v3
+
+    seen = []
+    monkeypatch.setattr(run_v3, "run_replay_v3", lambda year, departure=False: seen.append((year, departure)) or 0)
+    assert cli.main(["replay-v3", "--year", "2024"]) == 0
+    assert cli.main(["replay-v3", "--year", "2025", "--departure"]) == 0
+    assert seen == [(2024, False), (2025, True)]
+    assert rejected(["replay-v3"]) and rejected(["replay-v3", "--year", "2023"])
+    assert rejected(["replay-v3", "--year", "2025", "mlruns"])
+
+
+def test_evidence_v3_calls_run_evidence_v3(monkeypatch):
+    from valiwatt.monitor import run_v3
+
+    seen = []
+    monkeypatch.setattr(run_v3, "run_evidence_v3", lambda departure=False: seen.append(departure) or 0)
+    assert cli.main(["evidence-v3"]) == 0 and cli.main(["evidence-v3", "--departure"]) == 0
+    assert seen == [False, True] and rejected(["evidence-v3", "--year", "2024"])
+
+
+def test_freeze_record_v3_calls_its_writer_with_the_rehearsal_run_id(monkeypatch):
+    """The freeze record is written from the rehearsal it is given by run ID (docs/plan-v3.md, section 10.3); no run
+    ID, or a path beside it, is refused before anything runs."""
+    from valiwatt import freeze_record
+
+    seen = []
+    monkeypatch.setattr(freeze_record, "run_write_freeze_record", lambda run_id: seen.append(run_id) or 0)
+    assert cli.main(["freeze-record-v3", "--rehearsal", "a" * 32]) == 0 and seen == ["a" * 32]
+    assert rejected(["freeze-record-v3"]) and rejected(["freeze-record-v3", "--rehearsal", "a" * 32, "mlruns"])
+
+
+def test_ledger_v3_syncs_v3_s_ledger_and_says_when_it_is_refused(monkeypatch, capsys):
+    from valiwatt.report import ledger, ledger_v3
+    from valiwatt.report.ledger import LedgerError
+
+    seen = []
+    monkeypatch.setattr(ledger, "sync", lambda *a, **k: seen.append("v2's ledger") or [])  # never v2's file
+    monkeypatch.setattr(ledger_v3, "run_sync", lambda: seen.append("ledger-v3") or 0)
+    assert cli.main(["ledger-v3"]) == 0 and seen == ["ledger-v3"] and rejected(["ledger-v3", "mlruns"])
+
+    def refused():
+        raise LedgerError("a stored run disagrees")
+
+    monkeypatch.setattr(ledger_v3, "run_sync", refused)
+    assert cli.main(["ledger-v3"]) == 1 and "REFUSED: a stored run disagrees" in capsys.readouterr().out
+
+
 def test_dq_v3_passes_its_window_and_whether_it_runs_on_a_fresh_clone(monkeypatch):
     from valiwatt.quality import run_v3
 
