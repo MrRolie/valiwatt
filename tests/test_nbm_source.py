@@ -1,5 +1,6 @@
 """The NBM fetcher and loader refuse what they cannot verify: another station or model, a temperature that is neither a
-number nor blank, an empty response, a run outside the year's request, a point without its run time or its valid time,
+number nor blank, a header without the wind speed or a wind speed that is neither a whole number nor blank (plan-v3,
+section 3.1), an empty response, a run outside the year's request, a point without its run time or its valid time,
 two values for one point, a primary station the forecast is not paired with, a file that no longer matches its
 manifest, and a file of a year not listed."""
 
@@ -16,16 +17,20 @@ from valiwatt.sources import nbm
 from valiwatt.sources.http import FetchRefused
 
 # The columns of an IEM response, in its order; the header varies with the year, so only these are relied on.
-COLUMNS = ["runtime", "ftime", "model", "tmp", "dpt", "wdr", "station", "sky"]
+COLUMNS = ["runtime", "ftime", "model", "tmp", "dpt", "wdr", "wsp", "station", "sky"]
+WSP_KT = 12  # the wind written for runs without a wsp_kt column
 
 
 def iem_text(runs: pd.DataFrame, station: str = "CYUL", model: str = "NBS") -> str:
-    """An IEM `mos.py` CSV response holding `runs` (columns runtime, ftime, tmp_f)."""
+    """An IEM `mos.py` CSV response holding `runs` (columns runtime, ftime, tmp_f, and wsp_kt when present, else
+    WSP_KT knots at every point)."""
     lines = [",".join(COLUMNS)]
     for r in runs.itertuples():
         tmp = "" if pd.isna(r.tmp_f) else str(int(r.tmp_f))
+        knots = getattr(r, "wsp_kt", WSP_KT)
+        wsp = "" if pd.isna(knots) else str(int(knots))
         lines.append(",".join([r.runtime.strftime(nbm.TIME_FORMAT), r.ftime.strftime(nbm.TIME_FORMAT), model, tmp,
-                               "20", "250", station, "50"]))
+                               "20", "250", wsp, station, "50"]))
     return "\n".join(lines) + "\n"
 
 
@@ -47,7 +52,7 @@ def short_runs(year: int, days: int = 3) -> pd.DataFrame:
 def test_a_clean_year_verifies_and_the_next_years_first_run_is_inside_its_request():
     counts = nbm.verify_year(iem_text(short_runs(2022)), 2022)
     assert counts["last_runtime"] == "2023-01-01 01:00:00"  # the archive includes `ets`
-    assert counts["runs"] == 4 * 4 + 1 and counts["blank_tmp"] == 0
+    assert counts["runs"] == 4 * 4 + 1 and counts["blank_tmp"] == 0 and counts["blank_wsp"] == 0
 
 
 def test_a_response_for_another_station_or_model_is_refused():
@@ -160,8 +165,8 @@ def test_identical_duplicates_are_dropped_and_counted(store):
     assert runs.attrs["identical_duplicates"] == len(overlap)
     assert not runs.duplicated(["runtime", "ftime"]).any()
     assert len(runs) == len(a) + len(b) - len(overlap)
-    assert list(runs.columns) == ["runtime", "ftime", "tmp_f"]
-    assert str(runs["runtime"].dt.tz) == "UTC" and runs["tmp_f"].dtype == float
+    assert list(runs.columns) == ["runtime", "ftime", "tmp_f", "wsp_kt"]  # v3 reads the wind too (plan-v3, 3.1)
+    assert str(runs["runtime"].dt.tz) == "UTC" and runs["tmp_f"].dtype == float and runs["wsp_kt"].dtype == float
     assert runs.equals(runs.sort_values(["runtime", "ftime"]))
 
 
@@ -251,3 +256,56 @@ def test_an_undated_point_is_refused_at_verification_and_load(store):
     nbm.year_path(2022).write_text(with_field(text, 4, "ftime", "NaT"))
     with pytest.raises(FetchRefused, match=r"1 rows have a ftime that is missing .*lines \[4\]"):
         nbm.load_runs([2022])
+
+
+# ------------------------------------------------------------------------------------- the wind speed (plan-v3, 3.1)
+
+def test_a_header_without_the_wind_speed_is_refused():
+    text = iem_text(short_runs(2022))
+    nbm.verify_year(text, 2022)  # control
+    with pytest.raises(FetchRefused, match=r"missing columns \['wsp'\]"):
+        nbm.verify_year(text.replace(",wsp,", ",gst,", 1), 2022)
+    dropped = "\n".join(",".join(f for i, f in enumerate(line.split(",")) if i != COLUMNS.index("wsp")) if line else ""
+                        for line in text.split("\n"))
+    with pytest.raises(FetchRefused, match=r"missing columns \['wsp'\]"):
+        nbm.verify_year(dropped, 2022)
+
+
+def test_a_wind_speed_that_is_not_a_whole_number_is_refused():
+    text = iem_text(short_runs(2022))
+    for bad in ("7.5", "7.0", "x", "M", "1e1", "NaN", "inf", "+7", "7 kt"):
+        with pytest.raises(FetchRefused, match=r"1 wind speeds are neither a whole number nor blank .*line 4\)"):
+            nbm.verify_year(with_field(text, 4, "wsp", bad), 2022)
+    for good in ("0", "29", "101", "-3", " 7 "):  # whole numbers: the bounds are the gate's (quality.weather)
+        nbm.verify_year(with_field(text, 4, "wsp", good), 2022)
+    counts = nbm.verify_year(with_field(with_field(text, 4, "wsp", ""), 6, "wsp", ""), 2022)
+    assert counts["blank_wsp"] == 2 and counts["blank_tmp"] == 0  # a blank is no value, not an error
+
+
+def test_the_loader_returns_the_wind_in_knots_blank_as_nan(store):
+    runs = short_runs(2022).assign(wsp_kt=lambda r: (np.arange(len(r)) % 30).astype(float))
+    runs.loc[7, "wsp_kt"] = np.nan
+    write_years(store, {2022: iem_text(runs)})
+    loaded = nbm.load_runs([2022])
+    np.testing.assert_array_equal(loaded["wsp_kt"].to_numpy(), runs["wsp_kt"].to_numpy())
+    assert loaded["wsp_kt"].isna().sum() == 1 and nbm.manifest()["years"]["2022"]["blank_wsp"] == 1
+
+
+def test_one_temperature_with_two_winds_at_one_point_refuses_the_load(store):
+    a, b = short_runs(2022), year_runs(2023).head(60)
+    overlap = a[a["runtime"] == pd.Timestamp("2023-01-01T01:00Z")]
+    t = overlap.iloc[3]
+    b = b.assign(wsp_kt=float(WSP_KT))
+    b.loc[(b["runtime"] == t["runtime"]) & (b["ftime"] == t["ftime"]), "wsp_kt"] = WSP_KT + 1  # same temperature
+    write_years(store, {2022: iem_text(a), 2023: iem_text(b)})
+    with pytest.raises(FetchRefused, match="two values"):
+        nbm.load_runs([2022, 2023])
+
+
+def test_the_reuse_bound_follows_the_origin():
+    """Plan section 9.2: the latest run compliant at the origin, to D+3 06:00 UTC. v2's 75 hours from D 03:00 UTC;
+    v3's 87 from D-1 15:00 UTC."""
+    from valiwatt.forecast.issue import MIDNIGHT, NOON
+
+    assert nbm.REUSE_LEAD_H == nbm.reuse_lead_h() == nbm.reuse_lead_h(MIDNIGHT) == 75
+    assert nbm.reuse_lead_h(NOON) == 87

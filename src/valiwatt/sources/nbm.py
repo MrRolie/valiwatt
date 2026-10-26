@@ -9,7 +9,9 @@ the load drops those identical points and counts them. The header varies with th
 whole response are left out), so the columns are found by name. A refusal from the archive's rate limiter comes as
 HTTP 200 with a line of plain text; it has no header and is refused like any response without the required columns.
 
-Points are three-hourly; `tmp` is the 2 m temperature in whole degrees Fahrenheit, blank when the run has none. The
+Points are three-hourly; `tmp` is the 2 m temperature in whole degrees Fahrenheit, blank when the run has none; `wsp`
+the wind speed in whole knots, blank when the run has none (docs/plan-v3.md, section 3.1: a header without it, or a
+value neither a whole number nor blank, is refused; v3 converts it to km/h as knots x 1.852, forecast/issue.py). The
 forecast is read only while the primary station of `config/stations.toml` is the ECCC station at the same airport
 (climate ID 7025251): the pairing. IEM declares the data public domain; NOAA's attribution and no-endorsement terms
 apply (AGENTS.md). Nothing here is committed: the files go to the gitignored `data/raw/nbm/`.
@@ -26,6 +28,7 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import THROUGH_DEFAULT, stations
+from valiwatt.forecast.issue import MIDNIGHT, IssueSpec, day_edge, day_origin
 from valiwatt.paths import RAW_NBM, rel
 from valiwatt.sources.http import FetchRefused, get, require_fetchable, sha256_bytes, sha256_file, utc_now, write_json
 
@@ -39,13 +42,24 @@ SENSITIVITY_LAG = pd.Timedelta(hours=6)
 # A day takes the freshest covering run among this many freshest available runs.
 MAX_RUNS_BACK = 12
 # Plan section 9.2: a run whose points reach 75 h after its run time can feed three consecutive days. A lead at or
-# above it is a finding against the section's two-day argument and a trigger for a section 18 entry.
+# above it is a finding against the section's two-day argument and a trigger for a section 18 entry. v2's origin;
+# reuse_lead_h gives it for any issue time (87 at noon, docs/plan-v3.md section 9.2).
 REUSE_LEAD_H = 75
-REQUIRED = ("runtime", "ftime", "model", "tmp", "station")
+REQUIRED = ("runtime", "ftime", "model", "tmp", "wsp", "station")
+WHOLE = r"-?\d+"  # a wind speed in whole knots, as the archive writes it
 MANIFEST_PATH = RAW_NBM / "manifest.json"
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Seconds between two yearly requests: the archive answers a burst with its rate limiter.
 REQUEST_DELAY = 10.0
+
+
+def reuse_lead_h(issue: IssueSpec = MIDNIGHT) -> int:
+    """The lead from the latest run compliant at day D's origin (its run time AVAILABILITY_LAG before it) to the point a
+    run must hold to cover a third day, D+2's last bracket point (D+3 06:00 UTC): a run reaching it can feed three
+    consecutive days (plan-v2 and plan-v3, section 9.2). 75 at MIDNIGHT (REUSE_LEAD_H), 87 at NOON."""
+    day = pd.Timestamp("2021-01-04")  # any day: the clocks are fixed offsets in UTC
+    third = day_edge(day + pd.Timedelta(days=2)) + pd.Timedelta(hours=25)
+    return int((third - (day_origin(day, issue=issue) - AVAILABILITY_LAG)) / pd.Timedelta(hours=1))
 
 
 def year_path(year: int):
@@ -68,8 +82,8 @@ def year_bounds(year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
     """The one reading of a year's response: `verify_year`'s checks, then the rows they passed (runtime and ftime as
-    naive UTC, tmp_f in °F, NaN when blank, in the file's order) and the counts the manifest records. The load reads
-    these same rows, so it never holds a row the checks did not see."""
+    naive UTC, tmp_f in °F and wsp_kt in knots, each NaN when blank, in the file's order) and the counts the manifest
+    records. The load reads these same rows, so it never holds a row the checks did not see."""
     rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff"))))
     if not rows or not any(rows):
         raise FetchRefused("empty response")
@@ -97,6 +111,13 @@ def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
         first = int(not_numbers.to_numpy().argmax())
         raise FetchRefused(f"{int(not_numbers.sum())} temperatures are neither a number nor blank "
                            f"(first {tmp.iloc[first]!r} at line {first + 2})")
+    wsp = pd.Series([r[col["wsp"]].strip() for r in body], dtype=str)
+    not_whole = (wsp != "") & ~wsp.str.fullmatch(WHOLE)
+    if not_whole.any():
+        first = int(not_whole.to_numpy().argmax())
+        raise FetchRefused(f"{int(not_whole.sum())} wind speeds are neither a whole number nor blank "
+                           f"(first {wsp.iloc[first]!r} at line {first + 2})")
+    knots = pd.to_numeric(wsp.where(wsp != ""), errors="raise").astype(float)
     times = {}
     for c in ("runtime", "ftime"):
         raw = pd.Series([r[col[c]] for r in body], dtype=str)
@@ -117,8 +138,10 @@ def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
         raise FetchRefused(f"{int(outside.sum())} rows have a run time outside {sts}..{ets}, the request for {year} "
                            f"(first {runtime[outside].iloc[0]})")
     counts = {"rows": len(body), "runs": int(runtime.nunique()), "first_runtime": runtime.min().strftime(TIME_FORMAT),
-              "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum())}
-    return pd.DataFrame({"runtime": runtime, "ftime": times["ftime"], "tmp_f": values.astype(float)}), counts
+              "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum()),
+              "blank_wsp": int((wsp == "").sum())}
+    return pd.DataFrame({"runtime": runtime, "ftime": times["ftime"], "tmp_f": values.astype(float),
+                         "wsp_kt": knots}), counts
 
 
 def verify_year(text: str, year: int) -> dict:
@@ -126,8 +149,9 @@ def verify_year(text: str, year: int) -> dict:
 
     Refused: a missing required column (any of REQUIRED, found by name), no row, a row of another length than the
     header, a station other than CYUL or a model other than NBS, a temperature that is neither a number nor blank, a
-    run or valid time that is missing (blank, "NaT", "nan") or does not parse, naming its lines, and a run time
-    outside the request's bounds as the archive applies them. Returns the counts the manifest records."""
+    wind speed that is neither a whole number (WHOLE) nor blank, a run or valid time that is missing (blank, "NaT",
+    "nan") or does not parse, naming its lines, and a run time outside the request's bounds as the archive applies them.
+    Returns the counts the manifest records."""
     return _parse_year(text, year)[1]
 
 
@@ -213,9 +237,10 @@ def require_pairing() -> None:
 def load_runs(years) -> pd.DataFrame:
     """The runs of an explicit list of years (never a pattern: a file of a year not listed is never opened).
 
-    Columns runtime, ftime (UTC), tmp_f (°F, NaN when blank), sorted by run and valid time. Identical duplicate points
-    (same run, valid time and value: the files overlap at their boundary) are dropped and counted in
-    `.attrs["identical_duplicates"]`; two values for one run and valid time refuse the load. Refused unless the
+    Columns runtime, ftime (UTC), tmp_f (°F) and wsp_kt (knots), each NaN when blank, sorted by run and valid time.
+    Identical duplicate points (same run, valid time, temperature and wind: the files overlap at their boundary) are
+    dropped and counted in `.attrs["identical_duplicates"]`; two values for one run and valid time, in either field,
+    refuse the load. Refused unless the
     primary station is the one the forecast is paired with."""
     require_pairing()
     years = [int(y) for y in years]
@@ -224,8 +249,8 @@ def load_runs(years) -> pd.DataFrame:
         raise FetchRefused("no year listed: the forecast's years are given explicitly")
     d = pd.concat(frames, ignore_index=True)
     out = pd.DataFrame({"runtime": d["runtime"].dt.tz_localize("UTC"), "ftime": d["ftime"].dt.tz_localize("UTC"),
-                        "tmp_f": d["tmp_f"].astype(float)})
-    identical = out.duplicated(["runtime", "ftime", "tmp_f"])
+                        "tmp_f": d["tmp_f"].astype(float), "wsp_kt": d["wsp_kt"].astype(float)})
+    identical = out.duplicated(["runtime", "ftime", "tmp_f", "wsp_kt"])
     out = out[~identical]
     conflict = out.duplicated(["runtime", "ftime"], keep=False)
     if conflict.any():

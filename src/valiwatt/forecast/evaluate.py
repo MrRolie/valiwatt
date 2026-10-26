@@ -8,6 +8,12 @@ the replay would have scored by that fit clock (`calibration_rows`).
 
 The decision rule (what counts as v2 being better than v1, `docs/plan-v2.md` section 8), the model card's status
 (section 8.5) and the evaluation label of a v2 replay (section 10.5) are here, in a rule file, frozen with the rest.
+
+v3's (`docs/plan-v3.md`) are here too, beside v2's and never through them: the intervals by temperature (section 7:
+`binned_half_widths`, and `relative_conformal` given `bins`, each fold re-binning its calibration window by its own
+edge, at its own issue time's fit clock), and the decision rule of section 8 (`contrasts_v3`, `terms_verdict`,
+`family_verdict`, the event windows, `rank_windows`, `judge_v3`, `status_v3`, `recommendation_v3`). Every v2 function
+called as before computes what it computed before.
 """
 
 from __future__ import annotations
@@ -18,14 +24,26 @@ import numpy as np
 import pandas as pd
 
 from valiwatt import config
-from valiwatt.forecast.features import day_origin
+from valiwatt.config import LOCAL_TZ
 from valiwatt.forecast.guards import LookaheadError
-from valiwatt.forecast.model import COMPARATORS, PRODUCTION
+from valiwatt.forecast.issue import MIDNIGHT, IssueSpec, score_clock
+from valiwatt.forecast.model import (
+    COLD_QUANTILE,
+    COMPARATORS,
+    NOON_KEYS,
+    PRODUCTION,
+    V3_COMPARATORS,
+    V3_PRODUCTION,
+    bin_edge,  # noqa: F401  the bin edge rule and its check, model.py's (a fit places the edge): one home
+    check_bin_edge,  # noqa: F401
+)
 from valiwatt.forecast.walkforward import folds as month_folds
 
 ALPHA = 0.10  # nominal 90 % intervals
 CALIBRATION_FOLDS = 12
 N_BOOT = 1000
+# When the replay scores a day, the data not ending before it: issue.score_clock with no end of the data.
+_NO_DATA_END = pd.Timestamp.max.tz_localize("UTC")
 SEASONS = {12: "winter", 1: "winter", 2: "winter", 3: "spring", 4: "spring", 5: "spring",
            6: "summer", 7: "summer", 8: "summer", 9: "fall", 10: "fall", 11: "fall"}
 
@@ -113,7 +131,8 @@ def calibration_rows(window: pd.DataFrame, fit_clock: pd.Timestamp) -> pd.DataFr
     changes in that hour. (Re-reading its targets at the fit clock would score a day the replay has not scored.)
 
     So a row calibrates only when both are at or before the fit clock: its `scored_at`, and the time the replay
-    scores its day, one hour after the day's last hour (`features.day_origin(day + 1 day) + 1 h`). The two differ only
+    scores its day, one hour after the day's last hour (`issue.score_clock`, D+1 06:00 UTC, whatever the issue time:
+    docs/plan-v3.md, section 2, never derived from D+1's origin). The two differ only
     on the last day of the data, which design code scores at the end of the data: the end of the data never counts as
     a day's scoring for calibration. Without the second condition, a freeze whose data end at its fit clock (the 2024
     freeze, on design data ending 2024-01-01 05:00 UTC) would calibrate on the eve of its replayed year, 2023-12-31,
@@ -124,8 +143,7 @@ def calibration_rows(window: pd.DataFrame, fit_clock: pd.Timestamp) -> pd.DataFr
     _require_scored(window)
     fit_clock = pd.Timestamp(fit_clock)
     days = window["day"]
-    replay_scores = days.map({d: day_origin(pd.Timestamp(d) + pd.Timedelta(days=1)) + pd.Timedelta(hours=1)
-                              for d in pd.unique(days)})
+    replay_scores = days.map({d: score_clock(d, _NO_DATA_END) for d in pd.unique(days)})
     return window[(window["scored_at"] <= fit_clock) & (replay_scores <= fit_clock)]
 
 
@@ -137,17 +155,104 @@ def _require_scored(rows: pd.DataFrame) -> None:
                              "the fit clock: they calibrate no half-width")
 
 
+def fit_clock_of(fold: str, issue: IssueSpec = MIDNIGHT) -> pd.Timestamp:
+    """The fit clock of a monthly fold (walkforward.Fold.fit_clock): the origin of its first test day at the issue
+    time given, D 05:00 UTC for v2, the eve at 17:00 UTC at noon (docs/plan-v3.md, section 6)."""
+    return month_folds(fold, fold, issue=issue)[0].fit_clock
+
+
+def bin_of(temps, edge: float) -> np.ndarray:
+    """Each hour's interval bin against an edge (docs/plan-v3.md, section 7): "cold" strictly below it, "rest" at or
+    above it, None without a finite temperature."""
+    t = np.asarray(temps, dtype=float)
+    return np.where(~np.isfinite(t), None, np.where(t < float(edge), "cold", "rest"))
+
+
+def binned_half_widths(scores, temps, days, edge: float, alpha: float = ALPHA) -> dict:
+    """The two relative half-widths of a calibration (docs/plan-v3.md, section 7): its finite scores binned by each
+    one's own noon-feed temperature against `edge`, the edge of the fit being calibrated (`bin_of`; a score keeps no
+    bin from the fold that scored it), each bin's conformal quantile (`conformal_quantile`).
+
+    The cold bin falls back to the pooled half-width of every finite score when it holds fewer than MIN_COLD_HOURS
+    scores or scores from fewer than MIN_COLD_WEEKS Monday-to-Sunday weeks (`week_of` of `days`, each score's day), as
+    v2's cold tail; the fallback is recorded. Returns bin_edge, q_cold, q_rest, q_pooled, cold_n, cold_weeks and
+    fallback, the interval layer a fit stores and `check_interval_layer` checks."""
+    edge = float(edge)
+    if not np.isfinite(edge):
+        raise ValueError(f"a bin edge must be finite, got {edge}")
+    s = np.asarray(scores, dtype=float).ravel()
+    t = np.asarray(temps, dtype=float).ravel()
+    d = pd.Series(pd.to_datetime(np.asarray(days).ravel()))
+    if not (len(s) == len(t) == len(d)):
+        raise ValueError(f"{len(s)} scores, {len(t)} temperatures and {len(d)} days: one of each per score")
+    scored = np.isfinite(s)
+    b = bin_of(t, edge)
+    cold, rest = scored & (b == "cold"), scored & (b == "rest")
+    cold_n = int(cold.sum())
+    cold_weeks = int(week_of(d[cold]).nunique()) if cold_n else 0
+    fallback = bool(cold_n < MIN_COLD_HOURS or cold_weeks < MIN_COLD_WEEKS)
+    q_pooled = conformal_quantile(s, alpha)
+    return {"bin_edge": edge, "q_cold": q_pooled if fallback else conformal_quantile(s[cold], alpha),
+            "q_rest": conformal_quantile(s[rest], alpha), "q_pooled": q_pooled, "cold_n": cold_n,
+            "cold_weeks": cold_weeks, "fallback": fallback}
+
+
+def check_interval_layer(layer: dict) -> dict:
+    """Refuse (ValueError) an interval layer (`binned_half_widths`) that does not follow its rule: every half-width and
+    the edge finite, the counts whole, the fallback recorded exactly when the cold bin holds fewer than MIN_COLD_HOURS
+    scores or MIN_COLD_WEEKS weeks, and a cold bin that fell back holding the pooled half-width. Returns it with its
+    numbers as floats, its counts as ints and its fallback as a bool, in one key order: what a frozen model stores and
+    hashes (docs/plan-v3.md, section 4.4)."""
+    keys = ("bin_edge", "q_cold", "q_rest", "q_pooled", "cold_n", "cold_weeks", "fallback")
+    if not isinstance(layer, dict) or set(layer) != set(keys):
+        raise ValueError(f"an interval layer holds exactly {list(keys)}, got {layer!r}")
+    out = {}
+    for k in keys[:4]:
+        v = layer[k]
+        if isinstance(v, bool) or not isinstance(v, (int, float, np.integer, np.floating)) or not np.isfinite(v):
+            raise ValueError(f"interval layer {k}={v!r} is not a finite number")
+        out[k] = float(v)
+    for k in ("cold_n", "cold_weeks"):
+        v = layer[k]
+        if isinstance(v, bool) or not isinstance(v, (int, np.integer)) or v < 0:
+            raise ValueError(f"interval layer {k}={v!r} is not a whole count")
+        out[k] = int(v)
+    if not isinstance(layer["fallback"], (bool, np.bool_)):
+        raise ValueError(f"interval layer fallback={layer['fallback']!r} is not a boolean")
+    out["fallback"] = bool(layer["fallback"])
+    rule = out["cold_n"] < MIN_COLD_HOURS or out["cold_weeks"] < MIN_COLD_WEEKS
+    if out["fallback"] != rule:
+        raise ValueError(f"interval layer fallback={out['fallback']} with {out['cold_n']} cold scores in "
+                         f"{out['cold_weeks']} weeks: the rule gives {rule}")
+    if out["fallback"] and out["q_cold"] != out["q_pooled"]:
+        raise ValueError(f"a cold bin that fell back holds the pooled half-width {out['q_pooled']!r}, not "
+                         f"{out['q_cold']!r}")
+    return out
+
+
 def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
                        calibration_folds: int = CALIBRATION_FOLDS, absolute: bool = False,
-                       groups: pd.Series | None = None) -> pd.DataFrame:
+                       groups: pd.Series | None = None, *, issue: IssueSpec = MIDNIGHT,
+                       bins: tuple[str, dict] | None = None) -> pd.DataFrame:
     """Interval for each fold from the out-of-sample scores of the previous `calibration_folds` folds only, those
-    scored by the fold's fit clock (`calibration_rows`).
+    scored by the fold's fit clock (`calibration_rows`), the origin of its first test day at `issue` (`fit_clock_of`;
+    v2's, MIDNIGHT, unless given).
 
     Each row needs its `scored_at` and its `day`, which pass through to `calibration_rows`. Relative score
     |y - f| / f (half-width q * f) by default; absolute score |y - f| (half-width q) as sensitivity.
-    With `groups` (e.g. the season of each hour), the quantile is taken within the row's own group (Mondrian)."""
+    With `groups` (e.g. the season of each hour), the quantile is taken within the row's own group (Mondrian).
+
+    With `bins` = (temperature column, {fold: bin edge}), v3's intervals by temperature (docs/plan-v3.md, section 7):
+    each fold bins its own calibration window, and its own hours, by each hour's temperature against the fold's own
+    edge, the edge of the fit being calibrated, never the edge of the fold that scored the hour
+    (`binned_half_widths`, with its fallback); the output adds each hour's bin, the edge and the layer (q_cold,
+    q_rest, q_pooled, cold_n, cold_weeks, fallback), q being the bin's half-width. Relative scores only, no groups."""
     _require_scored(out)
-    d = out[["target", pred_col, "fold", "scored_at", "day"]].copy()
+    if bins is not None and (groups is not None or absolute):
+        raise ValueError("binned intervals take relative scores and no groups")
+    temp_col, edges = bins if bins is not None else (None, None)
+    cols = ["target", pred_col, "fold", "scored_at", "day"] + ([temp_col] if temp_col else [])
+    d = out[cols].copy()
     d["group"] = "all" if groups is None else groups.reindex(d.index)
     if absolute:
         d["score"] = (d["target"] - d[pred_col]).abs()
@@ -158,8 +263,22 @@ def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
     for i, fold in enumerate(folds):
         if i < calibration_folds:
             continue
-        window = calibration_rows(d[d["fold"].isin(folds[i - calibration_folds:i])],
-                                  month_folds(fold, fold)[0].fit_clock)
+        window = calibration_rows(d[d["fold"].isin(folds[i - calibration_folds:i])], fit_clock_of(fold, issue))
+        if bins is not None:
+            if fold not in edges:
+                raise ValueError(f"fold {fold} has no bin edge")
+            part = d[d["fold"] == fold]
+            layer = binned_half_widths(window["score"], window[temp_col], window["day"], edges[fold], alpha)
+            b = bin_of(part[temp_col], layer["bin_edge"])
+            q = np.where(b == "cold", layer["q_cold"], np.where(b == "rest", layer["q_rest"], np.nan))
+            half = q * part[pred_col]
+            rows.append(pd.DataFrame({"fold": fold, "q": q, "lower": part[pred_col] - half,
+                                      "upper": part[pred_col] + half,
+                                      "calibration_n": int(np.isfinite(window["score"].to_numpy()).sum()),
+                                      "bin": pd.Series(b, index=part.index, dtype=object), "edge_c": layer["bin_edge"],
+                                      **{k: layer[k] for k in ("q_cold", "q_rest", "q_pooled", "cold_n",
+                                                               "cold_weeks", "fallback")}}, index=part.index))
+            continue
         for g, part in d[d["fold"] == fold].groupby("group"):
             calib = window.loc[window["group"] == g, "score"].to_numpy()
             q = conformal_quantile(calib, alpha)
@@ -170,7 +289,7 @@ def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
     iv = pd.concat(rows)
     y = out.loc[iv.index, "target"]
     inside = ((y >= iv["lower"]) & (y <= iv["upper"])).astype(float)
-    iv["covered"] = inside.where(y.notna() & out.loc[iv.index, pred_col].notna())
+    iv["covered"] = inside.where(y.notna() & out.loc[iv.index, pred_col].notna() & iv["lower"].notna())
     return iv
 
 
@@ -194,7 +313,7 @@ def weekly_stats(d: pd.DataFrame, covered: pd.Series | None = None) -> pd.DataFr
 # What counts as v2 being better than v1 (`docs/plan-v2.md`, section 8), the model card's status (section 8.5) and the
 # evaluation label of a v2 replay (section 10.5): one place, in a rule file, frozen with the rest. All pure.
 
-COLD_QUANTILE = 0.05  # cold_c: this quantile of the forecast temperatures of the design hours (inputs only)
+# COLD_QUANTILE (model.py, 0.05): cold_c is this quantile of the forecast temperatures of the design hours (inputs only)
 MIN_COLD_HOURS = 120  # below it, or below MIN_COLD_WEEKS, the cold tail is not testable on that year, never passed
 MIN_COLD_WEEKS = 4
 PEAK_HOURS = 5  # the busiest hours of the year, reported beside the verdicts and never judged
@@ -261,16 +380,17 @@ def _reason(frame: pd.DataFrame, hour, key: str) -> str:
     return why if isinstance(why, str) and why else "no forecast"
 
 
-def _peak(frame: pd.DataFrame) -> list[dict]:
+def _peak(frame: pd.DataFrame, keys=None, temp_col: str = "temp_forecast") -> list[dict]:
     """The PEAK_HOURS busiest hours of the whole frame by target, among every hour with a finite target, whatever
-    forecasts exist; a missing forecast is NaN with its reason."""
+    forecasts exist; a missing forecast is NaN with its reason. The forecasts of `keys` (v2's three unless given) and
+    the temperature of `temp_col` are shown."""
     y = frame["target"].astype(float)
     rows = []
     for hour in y[np.isfinite(y)].nlargest(PEAK_HOURS).index:
         row = {"utc": pd.Timestamp(hour).tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ"),
-               "target": float(frame.at[hour, "target"]), "temp_forecast": float(frame.at[hour, "temp_forecast"])}
+               "target": float(frame.at[hour, "target"]), temp_col: float(frame.at[hour, temp_col])}
         missing = {}
-        for key in _COMPARED:
+        for key in (_COMPARED if keys is None else keys):
             value = float(frame.at[hour, f"pred_{key}"])
             row[f"pred_{key}"] = value if np.isfinite(value) else float("nan")
             if not np.isfinite(value):
@@ -403,3 +523,300 @@ def evaluation_label(year: int, earlier_starts: list, gate: dict | None = None) 
     if standing not in STANDINGS:
         raise ValueError(f"the {year} test of record's standing must be one of {STANDINGS}, got {standing!r}")
     return "held_out" if standing == "clean" else "post_hoc"
+
+
+# ------------------------------------------------------------------------------------------- v3's decision rule
+#
+# What counts as the terms, and the family, being better at noon (`docs/plan-v3.md`, section 8), the model card's
+# status and the recommendation (section 8.5): one place, in a rule file, frozen with the rest, beside v2's. All pure.
+# The bootstrap, the states, the cold tail's minimums and v2's verdict are v2's, reused.
+
+# Hydro-Québec's Rate Flex D peak hours (section 2): the hours starting at 06:00 to 09:00 and 16:00 to 19:00 local
+# clock time, daylight time included (ending at 07:00 to 10:00 and 17:00 to 20:00), from December 1 to March 31, less
+# the excluded days that fall inside the winter: December 24, 25, 26 and 31, January 1 and 2, Good Friday, Easter
+# Monday.
+WINDOWS = {"morning": (6, 7, 8, 9), "evening": (16, 17, 18, 19)}  # the local hour each window's hours start in
+EVENT_HOURS = WINDOWS["morning"] + WINDOWS["evening"]
+WINTER_MONTHS = (12, 1, 2, 3)
+EXCLUDED_FIXED = ((12, 24), (12, 25), (12, 26), (12, 31), (1, 1), (1, 2))
+RATE_EVENTS = 30  # at most 120 event hours a winter, 4 hours each (art. 2.70)
+TERMS_VERDICTS = ("better", "better_windows_cold_untested", "not_shown_better", "worse", "not_testable")
+TERMS_BETTER = ("better", "better_windows_cold_untested")  # the terms' "not testable" counts as not better
+STATUSES_V3 = ("candidate", "both_better", "terms_only", "family_only", "neither", "post_hoc", "unfinished")
+RECOMMENDATIONS = ("review_family", "keep_v2_noon")  # in this order when both: the family first
+SUBSETS = ("all", "cold", "event_windows")
+
+# The four forecasts (section 8.1): v3, v2's form at noon, v1's form at noon, and v2's form at midnight.
+_V3, _V2_NOON, _V1_NOON = V3_PRODUCTION, V3_COMPARATORS["terms"], V3_COMPARATORS["family"]
+_V2_MIDNIGHT = V3_COMPARATORS["horizon"]
+_V3_PAIRS = {"terms": (_V3, _V2_NOON), "family": (_V2_NOON, _V1_NOON), "whole": (_V3, _V1_NOON)}
+_HOUR = pd.Timedelta(hours=1)
+
+
+def winter_of(day) -> int | None:
+    """The winter a date belongs to, named by the year of its December (2023 for 2023-12-01 to 2024-03-31); None
+    outside December to March."""
+    d = pd.Timestamp(day)
+    return d.year if d.month == 12 else d.year - 1 if d.month in WINTER_MONTHS else None
+
+
+def easter_sunday(year: int) -> pd.Timestamp:
+    """Easter Sunday of a Gregorian year, by the anonymous Gregorian algorithm (Meeus/Jones/Butcher): no calendar
+    dependency."""
+    a, b, c = year % 19, year // 100, year % 100
+    d, e = divmod(b, 4)
+    g = (b - (b + 8) // 25 + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l_ = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l_) // 451
+    month, day = divmod(h + l_ - 7 * m + 114, 31)
+    return pd.Timestamp(year, month, day + 1)
+
+
+def excluded_days(winter: int) -> frozenset:
+    """The excluded days of a winter that fall inside it (section 2): the six fixed dates, and Good Friday and Easter
+    Monday of the next year's Easter, each only when its own date is on or before March 31 (date membership,
+    docs/plan-v3.md section 18: a winter can count Good Friday and not Easter Monday)."""
+    fixed = [pd.Timestamp(winter if m == 12 else winter + 1, m, d) for m, d in EXCLUDED_FIXED]
+    sunday = easter_sunday(winter + 1)
+    movable = [sunday - pd.Timedelta(days=2), sunday + pd.Timedelta(days=1)]
+    return frozenset(fixed + [d for d in movable if winter_of(d) == winter])
+
+
+def winter_days(winter: int) -> pd.DatetimeIndex:
+    """The days from December 1 to March 31 of a winter, a leap day included, less its excluded days."""
+    days = pd.date_range(pd.Timestamp(winter, 12, 1), pd.Timestamp(winter + 1, 3, 31), freq="D")
+    return days[~days.isin(list(excluded_days(winter)))]
+
+
+def winter_windows(winter: int) -> int:
+    """W: twice the winter's days that are not excluded days (`winter_days`): its morning and evening windows."""
+    return 2 * len(winter_days(winter))
+
+
+def windows_k(w: int, W: int) -> int:
+    """k = floor(RATE_EVENTS * w / W + 0.5), at most w (section 8.3): the windows a part of a winter ranks, in exact
+    integer arithmetic so that a half rounds up."""
+    w, W = int(w), int(W)
+    if W <= 0 or w < 0:
+        raise ValueError(f"windows need W > 0 and w >= 0, got w={w}, W={W}")
+    return min(w, (2 * RATE_EVENTS * w + W) // (2 * W))
+
+
+def event_windows(index: pd.DatetimeIndex) -> pd.DataFrame:
+    """For each hour-ending UTC label, the local date and the hour its hour starts in (as features.build's `hour`
+    column, daylight time included), and its event window: "morning" or "evening" inside the rate's peak hours on a
+    winter day that is not excluded (section 8.2), else None. Hours starting 06:00 to 09:00 and 16:00 to 19:00 never
+    straddle a local date, so the window's date is its hours' local date."""
+    idx = pd.DatetimeIndex(index)
+    if idx.tz is None:
+        raise ValueError("event windows need hour-ending UTC labels, tz-aware")
+    start = (idx - _HOUR).tz_convert(LOCAL_TZ)
+    date = pd.DatetimeIndex(start.tz_localize(None).normalize())
+    hour = np.asarray(start.hour)
+    winters = {y: excluded_days(y) for y in {winter_of(d) for d in pd.unique(date)} if y is not None}
+    in_winter = np.array([(w := winter_of(d)) is not None and d not in winters[w] for d in date], dtype=bool)
+    window = np.full(len(idx), None, dtype=object)
+    for name, hours in WINDOWS.items():
+        window[in_winter & np.isin(hour, hours)] = name
+    return pd.DataFrame({"date": date, "hour": hour, "window": pd.Series(window, index=index, dtype=object)},
+                        index=index)
+
+
+def event_window_mask(index: pd.DatetimeIndex) -> np.ndarray:
+    """The hours inside the rate's peak hours (`event_windows`)."""
+    return event_windows(index)["window"].notna().to_numpy()
+
+
+def _subset(frame: pd.DataFrame, hours: pd.Index, judged: bool = True) -> dict:
+    """A subset's size, in hours and Monday-to-Sunday weeks, and whether it is testable (at least MIN_COLD_HOURS hours
+    in at least MIN_COLD_WEEKS weeks, v2's cold-tail rule), for the subsets so ruled."""
+    weeks = int(week_of(frame.loc[hours, "day"]).nunique()) if len(hours) else 0
+    out = {"hours": int(len(hours)), "weeks": weeks}
+    if judged:
+        out["testable"] = bool(len(hours) >= MIN_COLD_HOURS and weeks >= MIN_COLD_WEEKS)
+    return out
+
+
+def _subsets(frame: pd.DataFrame, hours: pd.Index, cold_c: float) -> dict:
+    """The three subsets of section 8.2 within `hours`: all of them; the cold tail, whose noon-feed temperature
+    (`temp_forecast`) lies strictly below cold_c; the event windows (`event_window_mask`)."""
+    temp = frame.loc[hours, "temp_forecast"].to_numpy(dtype=float)
+    return {"all": hours, "cold": hours[temp < cold_c], "event_windows": hours[event_window_mask(hours)]}
+
+
+def contrasts_v3(frame: pd.DataFrame, cold_c: float, n_boot: int = N_BOOT, seed: int = 0) -> dict:
+    """The contrasts of docs/plan-v3.md section 8.1 on each subset of section 8.2, and the busiest hours.
+
+    frame: index hour-ending UTC; columns target, day, temp_forecast (the noon feed's temperature, from the noon
+    table), pred_v3, pred_v2_noon, pred_v1_noon, pred_v2_midnight and, when the caller has them, why_<key>. Each
+    contrast is v2's: the paired difference in hourly APE with its week-block bootstrap and state (`_contrast`).
+
+    - On the common set (a target and the three noon forecasts): terms = v3 - v2_noon, family = v2_noon - v1_noon and
+      whole = v3 - v1_noon, on all common hours, the cold tail and the event windows; on each set terms + family =
+      whole (`additive_check`; reported, never judged). A subset without hours has no contrast (None).
+    - horizon = v2_noon - v2_midnight on its own set, the hours with a target and both, and on each subset of it;
+      reported, never judged. Section 8.2's "each subset intersected with those hours" is read as the cold tail and
+      the event windows applied as predicates to the horizon's own hours (`_subsets` on them), not as the common
+      set's subsets intersected with them: an hour the horizon has and the common set lacks still enters its subset.
+    - peak: the busiest hours (v2's `_peak`) with all four forecasts and the noon feed's temperature."""
+    cold_c = float(cold_c)
+    if not np.isfinite(cold_c):
+        raise ValueError(f"the cold threshold must be finite, got {cold_c}")
+    hours = common_hours(frame, [f"pred_{k}" for k in NOON_KEYS])
+    if len(hours) == 0:
+        raise ValueError("no hour has a target and all three noon forecasts: nothing to compare")
+    subsets = _subsets(frame, hours, cold_c)
+    out = {"hours": int(len(hours)), "weeks": int(week_of(frame.loc[hours, "day"]).nunique()), "cold_c": cold_c,
+           "subsets": {k: _subset(frame, h, judged=k != "all") for k, h in subsets.items()},
+           "additive_check": {}}
+    for name, (a, b) in _V3_PAIRS.items():
+        out[name] = {k: _contrast(frame, h, a, b, n_boot, seed) if len(h) else None for k, h in subsets.items()}
+    for k, h in subsets.items():
+        if not len(h):
+            continue
+        additive = out["terms"][k]["difference"] + out["family"][k]["difference"] - out["whole"][k]["difference"]
+        if not abs(additive) < ADDITIVE_TOLERANCE:
+            raise ValueError(f"the contrasts are not additive on the {k} hours (terms + family - whole = {additive})")
+        out["additive_check"][k] = float(additive)
+    hz = common_hours(frame, [f"pred_{_V2_NOON}", f"pred_{_V2_MIDNIGHT}"])
+    hz_subsets = _subsets(frame, hz, cold_c)
+    out["horizon"] = {"subsets": {k: _subset(frame, h, judged=k != "all") for k, h in hz_subsets.items()},
+                      "contrast": {k: _contrast(frame, h, _V2_NOON, _V2_MIDNIGHT, n_boot, seed) if len(h) else None
+                                   for k, h in hz_subsets.items()}}
+    out["peak"] = _peak(frame, keys=(*NOON_KEYS, _V2_MIDNIGHT))
+    return out
+
+
+def terms_verdict(c: dict) -> str:
+    """The terms verdict (section 8.3), from contrasts_v3, checked in this order: the event windows not testable ->
+    not_testable; their contrast worse -> worse; not separated -> not_shown_better; better, but the all-hours
+    contrast worse, or the cold tail testable and its contrast worse -> not_shown_better (a gain in the windows paid
+    for elsewhere); better, the cold tail not testable -> better_windows_cold_untested; else better."""
+    if not c["subsets"]["event_windows"]["testable"]:
+        return "not_testable"
+    s = _state_of(c["terms"]["event_windows"])
+    if s == "worse":
+        return "worse"
+    if s == "not_separated":
+        return "not_shown_better"
+    cold_testable = c["subsets"]["cold"]["testable"]
+    if _state_of(c["terms"]["all"]) == "worse" or (cold_testable and _state_of(c["terms"]["cold"]) == "worse"):
+        return "not_shown_better"
+    return "better" if cold_testable else "better_windows_cold_untested"
+
+
+def family_verdict(c: dict) -> str:
+    """The family verdict (section 8.3): v2's rule (`_verdict`) on the family contrast at noon, all common hours
+    deciding and the cold tail guarding; its states are v2's VERDICTS."""
+    return _verdict({"family": c["family"]["all"],
+                     "cold": {"testable": c["subsets"]["cold"]["testable"], "family": c["family"]["cold"]}}, "family")
+
+
+def verdict_v3(c: dict) -> dict:
+    """The two verdicts of section 8.3, each from its own contrasts only."""
+    return {"terms": terms_verdict(c), "family": family_verdict(c)}
+
+
+def _window_key(day: pd.Timestamp, window: str) -> str:
+    return f"{pd.Timestamp(day).strftime('%Y-%m-%d')} {window}"
+
+
+def _ranked(table: pd.DataFrame, col: str) -> list[str]:
+    """Windows by `col`, highest first, ties by the earlier date, then the morning before the evening."""
+    order = table.assign(_v=-table[col], _m=(table["window"] != "morning").astype(int))
+    return list(order.sort_values(["_v", "date", "_m"], kind="mergesort")["key"])
+
+
+def rank_windows(frame: pd.DataFrame, first_day, last_day, keys=NOON_KEYS) -> list[dict]:
+    """The window ranking of section 8.3, for one scored period, its days `first_day` to `last_day` (local dates).
+
+    Each winter's part inside the period is ranked on its own, never joined to another period's days. A part's
+    windows are the morning and evening windows (`event_windows`) of each of its days that is not excluded; a window
+    is eligible when its four hours are in the frame with a finite target and a finite forecast of each key, and the
+    others are listed with their reason. The w eligible windows are ranked by mean actual demand and by each key's
+    mean forecast (`_ranked`); k = windows_k(w, W), W = winter_windows of the whole winter. For each key: how many of
+    its k highest are among the k highest by actual demand. v2's form at midnight is not ranked: it is issued after
+    the notice."""
+    first, last = pd.Timestamp(first_day).normalize(), pd.Timestamp(last_day).normalize()
+    ew = event_windows(frame.index)
+    ew = ew[ew["window"].notna() & (ew["date"] >= first) & (ew["date"] <= last)]
+    parts = []
+    for winter in sorted({winter_of(d) for d in pd.date_range(first, last, freq="D")} - {None}):
+        part_first = max(first, pd.Timestamp(winter, 12, 1))
+        part_last = min(last, pd.Timestamp(winter + 1, 3, 31))
+        days = winter_days(winter)
+        days = days[(days >= part_first) & (days <= part_last)]
+        rows, ineligible = [], []
+        for day in days:
+            for window, hours in WINDOWS.items():
+                labels = ew.index[(ew["date"] == day) & (ew["window"] == window)]
+                reason = None
+                if len(labels) != len(hours):
+                    reason = f"{len(labels)} of its {len(hours)} hours in the period's data"
+                elif not np.isfinite(frame.loc[labels, "target"].to_numpy(dtype=float)).all():
+                    reason = "no target"
+                else:
+                    for key in keys:
+                        if not np.isfinite(frame.loc[labels, f"pred_{key}"].to_numpy(dtype=float)).all():
+                            reason = f"no forecast from {key}"
+                            break
+                if reason is not None:
+                    ineligible.append({"day": day.strftime("%Y-%m-%d"), "window": window, "reason": reason})
+                    continue
+                row = {"key": _window_key(day, window), "date": day, "window": window,
+                       "actual": float(frame.loc[labels, "target"].astype(float).mean())}
+                row |= {key: float(frame.loc[labels, f"pred_{key}"].astype(float).mean()) for key in keys}
+                rows.append(row)
+        table = pd.DataFrame(rows, columns=["key", "date", "window", "actual", *keys])
+        W, w = winter_windows(winter), len(table)
+        k = windows_k(w, W)
+        top = {"actual": _ranked(table, "actual")[:k]} | {key: _ranked(table, key)[:k] for key in keys}
+        parts.append({"winter": f"{winter}-{str(winter + 1)[-2:]}", "first_day": part_first.strftime("%Y-%m-%d"),
+                      "last_day": part_last.strftime("%Y-%m-%d"), "W": W, "w": w, "k": k,
+                      "overlap": {key: len(set(top[key]) & set(top["actual"])) for key in keys}, "top": top,
+                      "ineligible": ineligible})
+    return parts
+
+
+def judge_v3(frame: pd.DataFrame, cold_c: float, first_day, last_day, n_boot: int = N_BOOT, seed: int = 0) -> dict:
+    """The one function of section 8.3: the contrasts (`contrasts_v3`), their verdicts (`verdict_v3`) and the window
+    ranking of the scored period (`rank_windows`)."""
+    c = contrasts_v3(frame, cold_c, n_boot, seed)
+    return {"contrasts": c, "verdict": verdict_v3(c), "ranking": rank_windows(frame, first_day, last_day)}
+
+
+def status_v3(test_of_record: dict | None) -> str:
+    """The model card's status (docs/plan-v3.md, section 8.5), from v3's 2025 test of record only, as v2's `status`:
+    candidate before it starts, unfinished when it did not finish, post_hoc when its standing is; from a finished
+    clean one, both_better, terms_only, family_only or neither by its two verdicts, "better in the event windows, the
+    cold tail not testable" and the family's "better on average, the cold tail not testable" counting as better and the
+    terms' "not testable" as not. test_of_record: {"finished", "standing", "verdict": verdict_v3() or None}."""
+    if test_of_record is None:
+        return "candidate"
+    finished = test_of_record.get("finished")
+    if not isinstance(finished, (bool, np.bool_)):
+        raise ValueError(f"the test of record must say whether it finished, got {finished!r}")
+    if not finished:
+        return "unfinished"
+    standing = test_of_record.get("standing")
+    if standing not in STANDINGS:
+        raise ValueError(f"the test of record's standing must be one of {STANDINGS}, got {standing!r}")
+    if standing == "post_hoc":
+        return "post_hoc"
+    v = test_of_record.get("verdict")
+    if not isinstance(v, dict) or v.get("terms") not in TERMS_VERDICTS or v.get("family") not in VERDICTS:
+        raise ValueError(f"a finished clean test of record needs both verdicts, got {v!r}")
+    terms, family = v["terms"] in TERMS_BETTER, v["family"] in _BETTER
+    return {(True, True): "both_better", (True, False): "terms_only", (False, True): "family_only",
+            (False, False): "neither"}[(terms, family)]
+
+
+def recommendation_v3(test_of_record: dict | None) -> list[str]:
+    """What the report recommends, in the monitor's form (section 8.5), from v3's status (`status_v3`): only a
+    finished clean test of record recommends; review_family when the family verdict is not better, keep_v2_noon (the
+    noon forecast without the terms) when the terms verdict is not, both in that order. Nothing switches on its own."""
+    st = status_v3(test_of_record)
+    return {"terms_only": ["review_family"], "family_only": ["keep_v2_noon"],
+            "neither": ["review_family", "keep_v2_noon"]}.get(st, [])

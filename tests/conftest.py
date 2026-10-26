@@ -42,11 +42,20 @@ def synth_temperature_c(ts: pd.DatetimeIndex, first) -> np.ndarray:
 RUN_HOURS = (1, 7, 13, 19)
 
 
-def synth_runs(first: str, last: str, seed: int = 0) -> pd.DataFrame:
+def synth_wind_kt(ts: pd.DatetimeIndex, first, seed: int = 0) -> np.ndarray:
+    """A synthetic wind in whole knots at the UTC instants `ts` (hours counted from `first`): a daily cycle around 10
+    knots plus noise from its own generator (seed + 1), never below 0, never above 29 (the archive's largest)."""
+    h = np.asarray((pd.DatetimeIndex(ts) - utc(first)) / pd.Timedelta(hours=1), dtype=float)
+    noise = np.random.default_rng(seed + 1).normal(0, 3, len(h))
+    return np.clip(np.round(10 + 5 * np.sin(2 * np.pi * h / 24) + noise), 0, 29).astype(float)
+
+
+def synth_runs(first: str, last: str, seed: int = 0, wind: bool = False) -> pd.DataFrame:
     """NBM-shaped synthetic runs, as `sources.nbm.load_runs` gives them: four runs a day at 01, 07, 13 and 19 UTC on
     every UTC day from `first`'s to `last`'s, each with a point every 3 hours of the UTC day (00, 03, ... 21) after its
     run time and out to 72 hours after it; values are synth_obs's temperature (hours counted from `first`) plus noise,
-    in whole °F."""
+    in whole °F. wind (opt-in, docs/plan-v3.md section 3.1): a fourth column wsp_kt in whole knots (synth_wind_kt),
+    from its own generator, so every other column is the same to the bit with or without it."""
     first_day, last_day = (utc(t).tz_convert(None).floor("D") for t in (first, last))
     runtimes = pd.DatetimeIndex([d + pd.Timedelta(hours=h) for d in pd.date_range(first_day, last_day, freq="D")
                                  for h in RUN_HOURS]).as_unit("ns")
@@ -59,6 +68,8 @@ def synth_runs(first: str, last: str, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     c = synth_temperature_c(ft, first) + rng.normal(0, 0.5, len(ft))
     out = pd.DataFrame({"runtime": rt, "ftime": ft, "tmp_f": np.round(c * 9 / 5 + 32).astype(float)})
+    if wind:
+        out["wsp_kt"] = synth_wind_kt(ft, first, seed)
     out = out.sort_values(["runtime", "ftime"], kind="stable").reset_index(drop=True)
     out.attrs["identical_duplicates"] = 0
     return out

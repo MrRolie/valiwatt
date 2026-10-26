@@ -238,3 +238,71 @@ def test_station_and_forecast_share_one_bounds_filter(monkeypatch, station):
                                                                                    NLAST))}  # the station's gate
     obs = synth_obs(NFIRST, NLAST)["temp_c"]
     assert s["weather_bounds"].metrics["violations"] == int((~obs.between(*narrow)).sum())
+
+
+# The forecast wind's gate (docs/plan-v3.md, sections 3.1 and 12, "Wind"), and the noon feed's findings.
+
+def test_the_wind_bounds_gate_is_pinned_at_both_edges():
+    from valiwatt.quality.weather import WIND_BOUNDS_KT, usable_wind, wind_bounds_check
+
+    assert WIND_BOUNDS_KT == (0.0, 100.0)
+    runs = synth_runs(NFIRST - D2, NLAST, wind=True)
+    clean = wind_bounds_check(runs)
+    assert clean.name == "nbm_wind_bounds" and clean.kind == "gate" and clean.passed
+    assert clean.metrics["violations"] == 0 and clean.metrics["points"] == len(runs)
+    # Literal edges, in knots, both included: a change to the constant or to a comparison must break this test.
+    for v, ok in ((100.0, True), (101.0, False), (0.0, True), (-1.0, False), (250.0, False)):
+        broken = runs.copy()
+        broken.loc[500, "wsp_kt"] = v
+        c = wind_bounds_check(broken)
+        assert c.passed is ok and c.metrics["violations"] == (0 if ok else 1), v
+        assert bool(usable_wind(broken["wsp_kt"]).notna().all()) is ok, v
+    assert c.evidence == [{"runtime": runs.loc[500, "runtime"], "ftime": runs.loc[500, "ftime"], "wsp_kt": 250.0}]
+    blank = runs.copy()
+    blank.loc[[500, 501], "wsp_kt"] = np.nan  # a blank is no value: not a bounds violation
+    c = wind_bounds_check(blank)
+    assert c.passed and c.metrics["blank_points"] == 2
+
+
+def test_the_wind_gate_refuses_runs_without_wind():
+    import pytest
+
+    from valiwatt.quality.weather import wind_bounds_check
+
+    with pytest.raises(ValueError, match="no wind"):
+        wind_bounds_check(synth_runs(NFIRST - D2, NLAST))
+
+
+def test_the_noon_feed_passes_its_gates_and_reports_its_reuse_bound():
+    """The noon feed on a synthetic winter: the midday run (13:00 UTC) feeds every day, 4 hours before the origin; the
+    run finding reads the reuse bound of the issue time it is given (sources.nbm.reuse_lead_h: 87 at noon, plan-v3
+    section 9.2), and refuses a forecast issued at another one."""
+    import pytest
+
+    from valiwatt.forecast.issue import NOON
+    from valiwatt.sources.nbm import REUSE_LEAD_H, reuse_lead_h
+
+    runs = synth_runs(NFIRST - D2, NLAST, wind=True)
+    issued = forecast_temperature(runs, NDAYS, issue=NOON)
+    observed = synth_obs(NFIRST, NLAST).set_index("ts_utc")["temp_c"]
+    c = {x.name: x for x in forecast_checks(runs, issued, observed, issue=NOON)}
+    assert c["nbm_bounds"].passed and c["nbm_coverage"].passed and c["nbm_coverage"].metrics["share"] == 1.0
+    m = c["nbm_runs"].metrics
+    assert m["run_hour_by_year"] == {2021: {13: len(NDAYS)}} and m["lead_counts"] == {4.0: len(NDAYS)}
+    assert m["reuse_lead_h"] == 87 and m["leads_at_or_above_reuse_bound"] == []
+    v2 = {x.name: x for x in forecast_checks(runs, forecast_temperature(runs, NDAYS), observed)}
+    assert v2["nbm_runs"].metrics["reuse_lead_h"] == REUSE_LEAD_H == 75  # v2's default, unchanged
+    # A run reaching 75 hours is a finding against v2's two-day argument and not against v3's.
+    long = pd.DataFrame({"runtime": [pd.Timestamp("2021-02-01T01:00Z")], "ftime": [pd.Timestamp("2021-02-04T04:00Z")],
+                         "tmp_f": [20.0], "wsp_kt": [10.0]})
+    r = pd.concat([runs, long], ignore_index=True).sort_values(["runtime", "ftime"]).reset_index(drop=True)
+    noon = {x.name: x for x in forecast_checks(r, issued, observed, issue=NOON)}
+    mid = {x.name: x for x in forecast_checks(r, forecast_temperature(r, NDAYS), observed)}
+    assert noon["nbm_runs"].metrics["leads_at_or_above_reuse_bound"] == []
+    assert mid["nbm_runs"].metrics["leads_at_or_above_reuse_bound"] == [2021]
+    assert noon["nbm_runs"].metrics["reuse_lead_h"] == reuse_lead_h(NOON) == 87
+    # The bound follows the forecast's own clock: a noon forecast checked at midnight, or v2's at noon, is refused.
+    with pytest.raises(ValueError, match="issued at another origin"):
+        forecast_checks(runs, issued, observed)
+    with pytest.raises(ValueError, match="issued at another origin"):
+        forecast_checks(runs, forecast_temperature(runs, NDAYS), observed, issue=NOON)

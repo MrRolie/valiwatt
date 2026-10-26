@@ -2,7 +2,8 @@
 forecast's gates and findings (docs/plan-v2.md, section 3.4).
 
 `usable_temperature` is the one bounds filter: the station's gate, the feature tables (design and replay), the
-forecast's covering rule and its gate all read temperatures through it."""
+forecast's covering rule and its gate all read temperatures through it. `usable_wind` is the forecast wind's
+(docs/plan-v3.md, section 3.1): the covering rule's wind clause and the gate `nbm_wind_bounds` read it."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from valiwatt.config import DEMAND_FIRST, DEMAND_LAST, DESIGN_LAST, LST_OFFSET, Station
+from valiwatt.forecast.issue import MIDNIGHT, IssueSpec, day_origin
 from valiwatt.quality.checks import CheckResult, robust_z, runs_of_true, spike_statistic
 
 if TYPE_CHECKING:  # features imports this module
@@ -19,6 +21,8 @@ if TYPE_CHECKING:  # features imports this module
 
 # Loose physical bounds for an hourly air temperature in southern Québec.
 BOUNDS_C = (-60.0, 45.0)
+# The forecast wind's bounds, in knots, both included (docs/plan-v3.md, section 3.1).
+WIND_BOUNDS_KT = (0.0, 100.0)
 # Share of demand-window hours with a temperature observation.
 MIN_COVERAGE = 0.95
 SPIKE_Z = 10.0
@@ -31,6 +35,30 @@ def usable_temperature(series: pd.Series) -> pd.Series:
     """The temperatures (°C) a model may read: values outside BOUNDS_C blanked, blanks kept blank. The one bounds
     filter, for the station and for the forecast, in design code and in the replay."""
     return series.where((series >= BOUNDS_C[0]) & (series <= BOUNDS_C[1]))
+
+
+def usable_wind(series_kt: pd.Series) -> pd.Series:
+    """The wind speeds (knots) a model may read: values outside WIND_BOUNDS_KT blanked, blanks kept blank. The one wind
+    filter (docs/plan-v3.md, sections 3.1 and 3.2)."""
+    return series_kt.where((series_kt >= WIND_BOUNDS_KT[0]) & (series_kt <= WIND_BOUNDS_KT[1]))
+
+
+def wind_bounds_check(runs: pd.DataFrame) -> CheckResult:
+    """Gate nbm_wind_bounds (docs/plan-v3.md, section 3.1): every wind point of the runs (wsp_kt, knots, as
+    `sources.nbm.load_runs` gives them) inside WIND_BOUNDS_KT, both included, as `nbm_bounds` holds the temperatures
+    to theirs. A blank is no value, not a violation; it is counted. Runs without wsp_kt are refused (ValueError): a
+    gate that cannot read the wind cannot pass it."""
+    if "wsp_kt" not in runs.columns:
+        raise ValueError("nbm_wind_bounds: the runs carry no wind (wsp_kt)")
+    knots = runs["wsp_kt"].astype(float)
+    outside = knots.notna() & usable_wind(knots).isna()
+    return CheckResult(
+        "nbm_wind_bounds", "gate", passed=not outside.any(),
+        metrics={"low_kt": WIND_BOUNDS_KT[0], "high_kt": WIND_BOUNDS_KT[1], "violations": int(outside.sum()),
+                 "points": len(runs), "blank_points": int(knots.isna().sum()), "min_kt": knots.min(),
+                 "max_kt": knots.max()},
+        evidence=[{"runtime": r.runtime, "ftime": r.ftime, "wsp_kt": r.wsp_kt}
+                  for r in runs[outside].head(20).itertuples()])
 
 
 def station_series(obs: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd.Timestamp = DEMAND_LAST) -> pd.DataFrame:
@@ -160,7 +188,7 @@ def _lst_day(ts: pd.DatetimeIndex) -> pd.DatetimeIndex:
 
 
 def forecast_checks(runs: pd.DataFrame, issued: IssuedForecast, observed: pd.Series,
-                    design_last: pd.Timestamp = DESIGN_LAST) -> list[CheckResult]:
+                    design_last: pd.Timestamp = DESIGN_LAST, *, issue: IssueSpec = MIDNIGHT) -> list[CheckResult]:
     """The NBM forecast's gates and finding over a window (docs/plan-v2.md, section 3.4).
 
     runs: the window's runs (`sources.nbm.load_runs`); issued: `forecast_temperature` on every day of the window;
@@ -171,13 +199,23 @@ def forecast_checks(runs: pd.DataFrame, issued: IssuedForecast, observed: pd.Ser
     - finding nbm_runs, never gating: the identical duplicate points; the feeding run's UTC hour by year; the rank and
       lead (from the run time to the origin) counts; every day no run fed, with why; the longest lead of any run's
       points (valid time minus run time), by year of run time (`longest_lead_h`), and the years where it reaches
-      sources.nbm.REUSE_LEAD_H (`leads_at_or_above_reuse_bound`: section 9.2 argues that a run feeds at most two
-      consecutive days while every lead is below it, so a year listed is a finding against that argument and a trigger
-      for a section 18 entry); the days fed by a run that also fed the day before; the forecast minus the observation
-      by year and season on the design days."""
+      the reuse bound of the issue time the forecast was issued at (`issue`, MIDNIGHT by default: sources.nbm
+      .reuse_lead_h(issue), 75 at MIDNIGHT, 87 at NOON) (`leads_at_or_above_reuse_bound`: section 9.2 argues that a run
+      feeds at most two consecutive days while every lead is below it, so a year listed is a finding against that
+      argument and a trigger for a section 18 entry); the days fed by a run that also fed the day before; the forecast
+      minus the observation by year and season on the design days.
+    A forecast whose record holds an origin other than `issue`'s for its day is refused (ValueError): its bound would
+    be another issue time's."""
     from valiwatt.forecast.evaluate import SEASONS  # evaluate's imports reach the feature code, which imports this
-    from valiwatt.sources.nbm import REUSE_LEAD_H
+    from valiwatt.sources.nbm import reuse_lead_h
 
+    expected = pd.DatetimeIndex([day_origin(d, issue=issue) for d in issued.record.index])
+    other = pd.DatetimeIndex(issued.record["origin"]) != expected
+    if other.any():
+        raise ValueError(f"forecast_checks at {issue.name}: {int(other.sum())} days of the forecast were issued at "
+                         f"another origin (first {issued.record.index[other][0].date()}, at "
+                         f"{issued.record['origin'][other].iloc[0]}, not {expected[other][0]})")
+    reuse = reuse_lead_h(issue)
     celsius = (runs["tmp_f"].astype(float) - 32.0) * 5.0 / 9.0
     outside = celsius.notna() & usable_temperature(celsius).isna()
     bounds = CheckResult(
@@ -202,7 +240,7 @@ def forecast_checks(runs: pd.DataFrame, issued: IssuedForecast, observed: pd.Ser
                     for y, g in pd.Series(run_hour, index=day_year).groupby(level=0)}
     lead_point_h = (runs["ftime"] - runs["runtime"]) / pd.Timedelta(hours=1)
     longest = {int(y): float(v) for y, v in lead_point_h.groupby(runs["runtime"].dt.year).max().items()}
-    at_or_above = [y for y, v in longest.items() if v >= REUSE_LEAD_H]
+    at_or_above = [y for y, v in longest.items() if v >= reuse]
     previous = f["runtime"].reindex(pd.DatetimeIndex(f.index) - pd.Timedelta(days=1)).to_numpy()
     reused = f.index[f["runtime"].to_numpy() == previous]
 
@@ -224,7 +262,7 @@ def forecast_checks(runs: pd.DataFrame, issued: IssuedForecast, observed: pd.Ser
                  "lead_counts": {float(k): int(v) for k, v in f["lead_h"].value_counts().sort_index().items()},
                  "days_not_fed": len(not_fed),
                  "reasons": {str(k): int(v) for k, v in not_fed["reason"].value_counts().items()},
-                 "longest_lead_h": longest, "reuse_lead_h": REUSE_LEAD_H,
+                 "longest_lead_h": longest, "reuse_lead_h": reuse,
                  "leads_at_or_above_reuse_bound": at_or_above,
                  "days_fed_by_the_previous_days_run": len(reused),
                  "error_vs_observed": by_year_season, "error_last_utc": pd.Timestamp(design_last)},

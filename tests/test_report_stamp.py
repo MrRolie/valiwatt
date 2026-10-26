@@ -1,16 +1,28 @@
 """The committed report sits beside the code that produced it: its stamp must match the code and rules hashes, every
 rendered file must match the hash the renderer wrote, the replay ledger must match the hash it had when the report was
-rendered, and both reports must name the runs of one chain."""
+rendered, and both reports must name the runs of one chain.
 
+On the `v3` branch (docs/plan-v3.md, section 10.1) v2's report, stamp, README box and ledger stand as rendered at the
+tag `v3-fork`: they must be byte-identical to their content there (docs/report/v3/, v3's own, excepted), and the
+stamp's code and rules hashes must be those of the code at `v3-fork`, not of the branch's code, which v3 changes."""
+
+import hashlib
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
+from test_departure_record import HistoryMissing, commit_of, require_full_history
 from valiwatt.monitor.rules import rules_sha256
-from valiwatt.paths import REPORTS
+from valiwatt.paths import REPO_ROOT, REPORTS
 from valiwatt.report import ledger
 from valiwatt.report.validation import file_hashes, make_stamp
-from valiwatt.tracking import code_sha256
+from valiwatt.tracking import CODE_PATHS
+
+FORK = "v3-fork"
+V3_REPORTS = "docs/report/v3/"  # v3's own report, rendered after the fork
+AT_FORK = ("README.md", "docs/replay-ledger.json")  # with every file under docs/report/ but v3's
 
 
 def check_ledger(stamp: dict) -> None:
@@ -18,16 +30,85 @@ def check_ledger(stamp: dict) -> None:
         "the replay ledger changed since the report was rendered: run `valiwatt report`")
 
 
+def fork_commit() -> str:
+    """The commit of `v3-fork`; a shallow clone or a clone without the tag fails loudly, as the history tests do."""
+    require_full_history(REPO_ROOT)
+    commit = commit_of(REPO_ROOT, FORK)
+    if commit is None:
+        raise HistoryMissing(f"no `{FORK}` tag in this clone: fetch the tags with the full history")
+    return commit
+
+
+def _at(commit: str, *args: str) -> bytes:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, check=True).stdout
+
+
+def code_sha256_at(commit: str) -> str:
+    """tracking.code_sha256 as the code stood at a commit: the same names and contents, read from the commit's tree."""
+    names = _at(commit, "ls-tree", "-r", "--name-only", commit, "--", *CODE_PATHS).decode().split("\n")
+    h = hashlib.sha256()
+    for name in sorted(n for n in names if n):
+        h.update(name.encode() + b"\0" + _at(commit, "show", f"{commit}:{name}") + b"\0")
+    return h.hexdigest()
+
+
+def fork_problems(root: Path, commit: str) -> list[str]:
+    """Each way v2's rendered record under `root` differs from its content at the fork commit: a file changed or
+    missing, or a file under docs/report/ that the fork did not hold (docs/report/v3/ excepted)."""
+    at_fork = [n for n in _at(commit, "ls-tree", "-r", "--name-only", commit, "--", "docs/report").decode().split("\n")
+               if n and not n.startswith(V3_REPORTS)]
+    problems = []
+    for name in [*at_fork, *AT_FORK]:
+        path = root / name
+        if not path.is_file():
+            problems.append(f"{name}: missing")
+        elif path.read_bytes() != _at(commit, "show", f"{commit}:{name}"):
+            problems.append(f"{name}: differs from {FORK}")
+    on_disk = {p.relative_to(root).as_posix() for p in (root / "docs" / "report").rglob("*") if p.is_file()}
+    problems += [f"{n}: not in {FORK}" for n in sorted(on_disk - set(at_fork)) if not n.startswith(V3_REPORTS)]
+    return problems
+
+
 def test_the_committed_report_matches_the_code():
+    """v2's record stands as rendered at the fork, and its stamp names the code and rules of the fork."""
+    commit = fork_commit()
+    assert fork_problems(REPO_ROOT, commit) == [], f"v2's report must stand as rendered at {FORK} (plan-v3 10.1)"
     stamp = json.loads((REPORTS / "stamp.json").read_text(encoding="utf-8"))
-    assert stamp["code_sha256"] == code_sha256(), "code changed since the report was rendered: run `valiwatt all`"
-    assert stamp["rules_sha256"] == rules_sha256()
+    assert stamp["code_sha256"] == code_sha256_at(commit), f"the stamp is not the code at {FORK}"
+    assert stamp["rules_sha256"] == rules_sha256(commit)
     check_ledger(stamp)
     for lang in ("fr", "en"):
         text = (REPORTS / f"validation.{lang}.md").read_text(encoding="utf-8")
         assert stamp["code_sha256"] in text and stamp["rules_sha256"] in text
         assert all(run_id in text for run_id in stamp["runs"].values())
         assert stamp["runs"]["dq"] in (REPORTS / f"dq.{lang}.md").read_text(encoding="utf-8")
+
+
+def test_a_report_file_changed_after_the_fork_fails_the_fork_check(tmp_path):
+    """The fork check can fail: a copy of v2's record passes it; one byte of a page changed, a page removed, or a file
+    added under docs/report/ fails it, by name; a file under docs/report/v3/ does not."""
+    commit = fork_commit()
+    import shutil
+
+    shutil.copytree(REPO_ROOT / "docs" / "report", tmp_path / "docs" / "report",
+                    ignore=shutil.ignore_patterns("v3"))
+    for name in AT_FORK:
+        shutil.copyfile(REPO_ROOT / name, tmp_path / name)
+    assert fork_problems(tmp_path, commit) == []
+    (tmp_path / V3_REPORTS).mkdir()
+    (tmp_path / V3_REPORTS / "validation.en.md").write_text("v3\n", encoding="utf-8")
+    assert fork_problems(tmp_path, commit) == []
+    page = tmp_path / "docs" / "report" / "validation.en.md"
+    original = page.read_bytes()
+    page.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+    assert fork_problems(tmp_path, commit) == [f"docs/report/validation.en.md: differs from {FORK}"]
+    page.unlink()
+    assert fork_problems(tmp_path, commit) == ["docs/report/validation.en.md: missing"]
+    page.write_bytes(original)
+    (tmp_path / "docs" / "report" / "extra.md").write_text("x\n", encoding="utf-8")
+    (tmp_path / "docs" / "replay-ledger.json").write_text("[]\n", encoding="utf-8")
+    assert fork_problems(tmp_path, commit) == [f"docs/replay-ledger.json: differs from {FORK}",
+                                               f"docs/report/extra.md: not in {FORK}"]
 
 
 def test_no_rendered_file_was_edited_by_hand():

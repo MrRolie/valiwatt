@@ -7,8 +7,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from valiwatt.forecast.features import day_origin
-from valiwatt.forecast.guards import require_embargo, require_known_at_origin
+from valiwatt.forecast.guards import LookaheadError, require_embargo, require_known_at_origin
+from valiwatt.forecast.issue import MIDNIGHT, IssueSpec, day_origin
 from valiwatt.forecast.model import OLSForecaster, baseline, forecaster
 
 EMBARGO_DAYS = 7
@@ -18,6 +18,7 @@ EMBARGO_DAYS = 7
 class Fold:
     test_month: pd.Period
     train_last_day: pd.Timestamp  # last LST day whose hours may be used for fitting
+    issue: IssueSpec = MIDNIGHT  # whose clock the fold is fitted at (docs/plan-v3.md, sections 2 and 6)
 
     @property
     def test_first_day(self) -> pd.Timestamp:
@@ -29,21 +30,42 @@ class Fold:
 
     @property
     def fit_clock(self) -> pd.Timestamp:
-        """When the fold's model is fitted: the origin of its first test day, the latest moment it must exist."""
-        return day_origin(self.test_first_day)
+        """When the fold's model is fitted: the origin of its first test day at the fold's issue time, the latest moment
+        it must exist (the first test day's 05:00 UTC at MIDNIGHT, the eve's 17:00 UTC at NOON)."""
+        return day_origin(self.test_first_day, issue=self.issue)
 
 
-def folds(first_month: str, last_month: str, embargo_days: int = EMBARGO_DAYS) -> list[Fold]:
+def folds(first_month: str, last_month: str, embargo_days: int = EMBARGO_DAYS, *,
+          issue: IssueSpec = MIDNIGHT) -> list[Fold]:
+    """One fold per month from `first_month` to `last_month`, each training on the days up to the embargo before it
+    and fitted at `issue`'s clock. The embargo does not move with the clock (docs/plan-v3.md, section 6)."""
     out = []
     for m in pd.period_range(first_month, last_month, freq="M"):
-        out.append(Fold(m, m.start_time - pd.Timedelta(days=embargo_days + 1)))
+        out.append(Fold(m, m.start_time - pd.Timedelta(days=embargo_days + 1), issue))
     return out
+
+
+def month_folds(first_month: str, last_month: str, *, issue: IssueSpec = MIDNIGHT) -> list[Fold]:
+    """`folds` with v2's embargo, the clock named: the monthly folds of validation, a freeze and its calibration."""
+    return folds(first_month, last_month, issue=issue)
 
 
 def split(f: pd.DataFrame, fold: Fold) -> tuple[pd.DataFrame, pd.DataFrame]:
     train = f[f["day"] <= fold.train_last_day]
     test = f[(f["day"] >= fold.test_first_day) & (f["day"] <= fold.test_last_day)]
     return train, test
+
+
+def require_fold_clock(test: pd.DataFrame, fold: Fold) -> None:
+    """The fold is fitted at the origin its table gives its first test day: every row of that day carries origin
+    fold.fit_clock (docs/plan-v3.md, sections 2 and 6). Refused (LookaheadError) otherwise, or when the day is
+    absent."""
+    first = test.loc[test["day"] == fold.test_first_day, "origin"] if "origin" in test.columns else pd.Series()
+    if first.empty or not first.eq(fold.fit_clock).all():
+        seen = sorted({str(o) for o in first}) or ["none"]
+        raise LookaheadError(f"fold {fold.test_month} is fitted at {fold.fit_clock} ({fold.issue.name}), but the "
+                             f"table's origin of its first test day {fold.test_first_day.date()} is "
+                             f"{', '.join(seen)}")
 
 
 def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persistence"),
@@ -59,12 +81,16 @@ def run(f: pd.DataFrame, fold_list: list[Fold], scenarios=("observed", "persiste
     (columns `pred_<key>`, `n_train_<key>`); given, it alone sets the forecasts and `scenarios` is unused. The least
     squares keys are v1's scenario names, so `pred_persistence` keeps its meaning.
     Each fold's training rows (from train_at when given) and test rows pass the origin guard
-    (`guards.require_known_at_origin`) before anything is fitted or forecast; a refusal names the fold and the rows."""
+    (`guards.require_known_at_origin`) before anything is fitted or forecast; a refusal names the fold and the rows.
+    Before that, a fold whose clock is not the table's origin of its first test day is refused (LookaheadError): a
+    MIDNIGHT fold on a NOON table would train 12 hours after the noon clock, and a fold whose first test day the table
+    lacks has no origin to be checked against."""
     keys = list(scenarios) if models is None else list(models)
     make = OLSForecaster if models is None else forecaster
     parts = []
     for fold in fold_list:
         train, test = split(f, fold)
+        require_fold_clock(test, fold)
         if train_at is not None:
             train, _ = split(train_at(fold.fit_clock), fold)
         if train.empty or test.empty:
