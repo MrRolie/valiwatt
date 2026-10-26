@@ -626,7 +626,15 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
 
 ### Before the first v3 run
 
-None yet.
+- 2026-10-25, from mapping the code for step 1, before any v3 code: two sentences of this page could not be built as
+  written.
+  - Section 12, "a winter whose Easter falls in April counts no excluded day for it": Good Friday and Easter Monday
+    each count when their own date falls inside the winter, so a winter can count one and not the other (Good Friday
+    2024-03-29 counts, Easter Monday 2024-04-01 does not). The rule is date membership; the break uses 2025 (both in
+    April) and 2024 (one each side).
+  - Section 11.1 lists "a wind point outside its bounds" among the reasons a day is left unfed. Section 3.1's gate
+    refuses any such point in the window, so on data that passed it the reason never arises; a run with such a point
+    does not cover, and the day takes the next run or is unfed for want of a covering run, the one reason recorded.
 
 ### After the first v3 run
 
