@@ -48,6 +48,17 @@ def require_fetchable(through: int) -> None:
                            f"{len(status.stdout.splitlines())} uncommitted changes")
 
 
+def require_fetchable_v3(through: int) -> None:
+    """May v3's fetch, whose data window ends with `through`, run (docs/plan-v3.md, section 3.1)? Through 2024 it may;
+    past 2024 never, whatever the freeze or the tree, before any request: the 2025 files are byte copies of v2's own
+    2025 fetch, made after v2's 2025 test of record (section 11.3). v2's gate, `require_fetchable`, is unchanged and
+    still runs inside each source's fetch."""
+    through = int(through)
+    if through > THROUGH_DEFAULT:
+        raise FetchRefused(f"v3 fetches nothing past {THROUGH_DEFAULT} (docs/plan-v3.md, section 3.1): the {through} "
+                           "files are byte copies of v2's own fetch, made after v2's test of record; no request made")
+
+
 def get(url: str, params: dict | None = None, *, retries: int = 4, timeout: int = 120, delay: float = 0.2) -> requests.Response:
     last: Exception | None = None
     for attempt in range(retries):

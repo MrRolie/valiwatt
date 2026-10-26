@@ -61,6 +61,45 @@ def wind_bounds_check(runs: pd.DataFrame) -> CheckResult:
                   for r in runs[outside].head(20).itertuples()])
 
 
+def wind_clause_check(issued: IssuedForecast, without_wind: IssuedForecast) -> CheckResult:
+    """Finding nbm_wind_clause (docs/plan-v3.md, section 3.2), never gating: every day whose feeding run changes because
+    of the covering rule's wind clause. issued: the noon feed (`forecast_temperature` at NOON); without_wind: the same
+    runs and days under the same rule without the wind clause (a run that would cover on its temperatures alone). A day
+    is listed when its feeding run or its reason differs between the two, with both, counted by year. The two must hold
+    the same days at the same origins, else ValueError: the clause is the only difference read."""
+    a, b = issued.record, without_wind.record
+    if not a.index.equals(b.index) or not pd.DatetimeIndex(a["origin"]).equals(pd.DatetimeIndex(b["origin"])):
+        raise ValueError("nbm_wind_clause: the two feeds hold other days or other origins")
+    same_run = (a["runtime"] == b["runtime"]) | (a["runtime"].isna() & b["runtime"].isna())
+    changed = ~same_run.to_numpy() | (a["reason"] != b["reason"]).to_numpy()
+    days = a.index[changed]
+    by_year = {int(y): int(n) for y, n in pd.Series(1, index=days.year).groupby(level=0).sum().items()}
+    return CheckResult(
+        "nbm_wind_clause", "finding", passed=True,
+        metrics={"days": int(changed.sum()), "by_year": by_year,
+                 "unfed_with_wind": int(((a["reason"] != "") & (b["reason"] == "")).sum())},
+        evidence=[{"day": d, "runtime": a.loc[d, "runtime"], "reason": a.loc[d, "reason"],
+                   "runtime_without_wind": b.loc[d, "runtime"], "reason_without_wind": b.loc[d, "reason"]}
+                  for d in days])
+
+
+def lag_day_check(means: pd.DataFrame, days) -> CheckResult:
+    """Finding lag_day_temperature (docs/plan-v3.md, sections 3.3 and 5), never gating: the days of `days` whose lag
+    day's mean (D-2's, `forecast.features.observed_day_mean` on the primary station) is missing, by year, with the
+    usable hours their lag day held. No noon model predicts them; nothing is imputed."""
+    days = pd.DatetimeIndex(sorted(set(pd.to_datetime(list(days))))).normalize()
+    lag = means.reindex(days - pd.Timedelta(days=2))
+    missing = lag["mean_c"].isna().to_numpy()
+    held = lag["n_usable"].fillna(0).astype(int).to_numpy()
+    out = days[missing]
+    by_year = {int(y): int(n) for y, n in pd.Series(1, index=out.year).groupby(level=0).sum().items()}
+    return CheckResult(
+        "lag_day_temperature", "finding", passed=True,
+        metrics={"days": len(days), "missing": int(missing.sum()), "by_year": by_year},
+        evidence=[{"day": d, "lag_day": d - pd.Timedelta(days=2), "usable_hours": int(n)}
+                  for d, n in zip(out, held[missing])])
+
+
 def station_series(obs: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd.Timestamp = DEMAND_LAST) -> pd.DataFrame:
     """Observations on the demand window's hourly UTC grid. Duplicate timestamps are kept out and counted."""
     dup = obs["ts_utc"].duplicated(keep=False)
@@ -73,7 +112,9 @@ def station_series(obs: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: 
     return frame
 
 
-def weather_checks(station: Station, frame: pd.DataFrame) -> list[CheckResult]:
+def weather_checks(station: Station, frame: pd.DataFrame, design_last: pd.Timestamp = DESIGN_LAST) -> list[CheckResult]:
+    """The station's gates (index, bounds, coverage) and its gaps-and-spikes finding, the spike scale taken on the
+    hours up to `design_last` (v2's design window by default; v3's ends with 2024, docs/plan-v3.md section 3.1)."""
     k = station.key
     temp = frame["temp_c"]
     checks = [
@@ -108,7 +149,7 @@ def weather_checks(station: Station, frame: pd.DataFrame) -> list[CheckResult]:
     gaps = runs_of_true(temp.isna())
     flags = frame["temp_flag"].fillna("").replace("nan", "")
     stat = spike_statistic(temp)
-    _, med, mad = robust_z(spike_statistic(temp[temp.index <= DESIGN_LAST]).dropna())
+    _, med, mad = robust_z(spike_statistic(temp[temp.index <= design_last]).dropna())
     z = (stat - med) / mad
     flagged = z[z.abs() > SPIKE_Z]
     checks.append(

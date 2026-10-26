@@ -106,6 +106,13 @@ def _verify_raw(through: int = THROUGH_DEFAULT) -> tuple[dict, list[dict]]:
     (eccc.load_station reads them all): a fetch stopped after writing a month's file but before its manifest leaves a
     month that was never verified, and it is refused before any of that station's files is hashed."""
     require_first_run()
+    return _verify_manifests(through)
+
+
+def _verify_manifests(through: int = THROUGH_DEFAULT) -> tuple[dict, list[dict]]:
+    """`_verify_raw` without its first-run guard: the Hydro-Québec export and every ECCC month file of the window
+    against their manifests, each station's manifest returned with the window's months only. v3's data-quality run
+    (quality/run_v3.py) calls it after v3's own guard and the byte-copy check."""
     hq = _verify_hq(through)
     window = [f"{y:04d}-{m:02d}" for y, m in fetch_months(through)]
     in_window = set(window)

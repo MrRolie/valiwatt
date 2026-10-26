@@ -38,6 +38,43 @@ def cmd_fetch(args) -> int:
     return 0
 
 
+def cmd_fetch_v3(args) -> int:
+    """v3's fetch (docs/plan-v3.md, section 3.1): a window past 2024 is refused before any source runs and before any
+    request (sources/http.py `require_fetchable_v3`); through 2024 it is `cmd_fetch`, each source behind its own gate,
+    never forced: it takes no --force, so a file already verified is never fetched again. On the machine of record
+    nothing of 2019-2024 is fetched again: the byte-copy check refuses a run on files that are not v2's."""
+    from valiwatt.sources.http import require_fetchable_v3
+
+    require_fetchable_v3(args.through)
+    args.force = False
+    return cmd_fetch(args)
+
+
+def cmd_dq_v3(args) -> int:
+    from valiwatt.quality.run_v3 import run_dq_v3
+
+    return run_dq_v3(through=args.through, fresh_clone=args.fresh_clone)
+
+
+def cmd_validate_v3(args) -> int:
+    from valiwatt.forecast.validate_v3 import run_validate_v3
+
+    return run_validate_v3()
+
+
+def cmd_freeze_v3(args) -> int:
+    from valiwatt.forecast.freeze_v3 import run_freeze_v3
+
+    return run_freeze_v3(args.year)
+
+
+def cmd_read_v2(args) -> int:
+    """The one command that opens v2's store, at the path it is given (docs/plan-v3.md, section 10.3)."""
+    from valiwatt.v2store import run_read_v2
+
+    return run_read_v2(args.path)
+
+
 def cmd_dq(args) -> int:
     from valiwatt.quality.run import run_dq
 
@@ -172,6 +209,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--through", type=int, choices=THROUGH_YEARS, default=THROUGH_DEFAULT,
                    help="the data window's last year (default %(default)s); 2025 reads the files the 2025 fetch wrote")
     p.set_defaults(func=cmd_dq)
+    p = command("fetch-v3", "v3's fetch: the public sources through 2024, as `fetch` (skips files already verified); "
+                            "a window past 2024 is refused before any request, its files being byte copies of v2's "
+                            "own fetch")
+    p.add_argument("--through", type=int, choices=THROUGH_YEARS, default=THROUGH_DEFAULT,
+                   help="the data window's last year (default %(default)s); 2025 is refused before any request")
+    p.add_argument("--only", choices=["hq", "eccc", "nbm"], help="fetch one source only")
+    p.set_defaults(func=cmd_fetch_v3)
+    p = command("dq-v3", "v3's data-quality checks (the noon feed, its wind, the lag day's mean), after the byte-copy "
+                         "check of the raw files against v2's first 2024 replay, tracked as an MLflow run")
+    p.add_argument("--through", type=int, choices=THROUGH_YEARS, default=THROUGH_DEFAULT,
+                   help="the data window's last year (default %(default)s)")
+    p.add_argument("--fresh-clone", action="store_true",
+                   help="on a fresh clone, holding neither v2's files nor its store: the byte-copy check is not run, "
+                        "and the run is labelled so; without it, a missing read of v2's store refuses")
+    p.set_defaults(func=cmd_dq_v3)
+    p = command("read-v2", "read v2's store once, read-only: v2's first 2024 replay, its data-quality run's raw-file "
+                           "hashes and its validation run's forecasts, each checked against v2's ledger entry, logged "
+                           "into v3's own store")
+    p.add_argument("path", help="v2's mlruns/ directory in place, in v2's own checkout (its mlflow.db and artifacts, "
+                                "whose recorded locations must lie under it: a copy set aside is refused); no default")
+    p.set_defaults(func=cmd_read_v2)
+    p = command("validate-v3", "v3's walk-forward validation on 2020-2024 at noon, v2's form at midnight beside it, "
+                               "the intervals by temperature and the thresholds, after the reproduction check against "
+                               "the read of v2's store, tracked as an MLflow run")
+    p.set_defaults(func=cmd_validate_v3)
+    p = command("freeze-v3", "fit, calibrate and register v3's frozen models for a replay year (2024: the rehearsal; "
+                             "2025: the models frozen for 2025), from v3's data-quality and validation runs")
+    p.add_argument("--year", type=int, required=True, choices=[2024, 2025])
+    p.set_defaults(func=cmd_freeze_v3)
     p = command("validate", "walk-forward validation on 2020-2023 (models fitted from 2019), intervals of "
                             "split-conformal shape and the monitoring thresholds")
     p.set_defaults(func=cmd_validate)

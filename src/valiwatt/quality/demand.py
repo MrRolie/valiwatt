@@ -234,7 +234,9 @@ def build_demand(raw: pd.DataFrame, first: pd.Timestamp = DEMAND_FIRST, last: pd
     return build
 
 
-def demand_checks(build: DemandBuild) -> list[CheckResult]:
+def demand_checks(build: DemandBuild, design_last: pd.Timestamp = DESIGN_LAST) -> list[CheckResult]:
+    """The demand gates and findings; the spike finding's design quantile is read on the hours before `design_last`
+    (v2's design window by default; v3's ends with 2024, docs/plan-v3.md section 3.1)."""
     f = build.frame
     usable = f["status"].isin(USABLE)
     checks = []
@@ -332,7 +334,7 @@ def demand_checks(build: DemandBuild) -> list[CheckResult]:
             passed=True,
             metrics={"threshold_z": SPIKE_Z, "flagged": len(flagged), "mad_scale": MAD_SCALE,
                      "design_quantile": DESIGN_QUANTILE,
-                     "design_quantile_abs_z": float(f.loc[f.index < DESIGN_LAST, "spike_z"].abs().quantile(DESIGN_QUANTILE)),
+                     "design_quantile_abs_z": float(f.loc[f.index < design_last, "spike_z"].abs().quantile(DESIGN_QUANTILE)),
                      "consecutive_pairs": int((f["spike_flag"] & f["spike_flag"].shift(1, fill_value=False)).sum())},
             evidence=[
                 {"utc": t, "mw": r.mw, "z": r.spike_z,

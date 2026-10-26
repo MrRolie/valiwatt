@@ -635,6 +635,14 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   - Section 11.1 lists "a wind point outside its bounds" among the reasons a day is left unfed. Section 3.1's gate
     refuses any such point in the window, so on data that passed it the reason never arises; a run with such a point
     does not cover, and the day takes the next run or is unfed for want of a covering run, the one reason recorded.
+- 2026-10-26, from building step 1, before any v3 run: two sentences read as written would contradict others.
+  - Section 11.2, "every model of section 4 fitted on 2019–2024": section 4.3 calls its models "validation only", and
+    section 10.3 lists what judges 2025 as v3 and the three comparison models. The freezes fit and store the models of
+    sections 4.1 and 4.2, and refuse the others.
+  - Section 10.3, "From it v3 reads only v2's first 2024 replay run's tags, the data-quality run they name … and the
+    validation run they name": to check each run against that replay's ledger entry, the read also takes the replay
+    run's `results/replay.json` and the tags and parameters of the two runs it names (that each is the run named,
+    passed or complete, and from the same NBM manifest). It reads nothing else, and it is refused a second time.
 
 ### After the first v3 run
 

@@ -361,3 +361,199 @@ def test_every_new_gate_named_in_the_plan_has_a_break():
     assert [gate for gate, tests in PLAN_12.items() if not tests] == []
     assert {gate: missing for gate, tests in PLAN_12.items()
             if (missing := [t for t in tests if t not in registered])} == {}
+
+
+# docs/plan-v3.md, section 12: each line, the breaks that make it fire. Every node id here must be a registered break,
+# so a v3 break dropped from BREAKS fails the test below, and every line of the section is here or in PENDING_V3.
+FN3, GN3, MV3 = "tests/test_features_noon.py::", "tests/test_guards_noon.py::", "tests/test_model_v3.py::"
+IV3, DV3, VA3 = "tests/test_intervals_v3.py::", "tests/test_decision_rule_v3.py::", "tests/test_validate_v3.py::"
+FZ3, RP3, QV3 = "tests/test_freeze_v3.py::", "tests/test_reproduction_v3.py::", "tests/test_quality_v3.py::"
+F3, FR3, V2S = "tests/test_fetch_v3.py::", "tests/test_firstrun_v3.py::", "tests/test_v2store.py::"
+
+PLAN_V3_12 = {
+    "The spike scale": (
+        QV3 + "test_the_v3_data_quality_run_at_noon_on_clean_data",
+    ),
+    "The clocks": (
+        FN3 + "test_a_noon_day_carries_exactly_its_24_labels_and_is_scored_the_next_morning",
+        IV3 + "test_a_day_is_scored_at_d_plus_1_0600_utc_whatever_the_issue_time",
+        QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-06T18:00Z--1]",
+        QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-07T05:00Z--1]",
+        QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-07T06:00Z-0]",
+        QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T05:00Z-0]",
+        QV3 + "test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T06:00Z-1]",
+    ),
+    "The noon origin": (
+        FN3 + "test_a_run_available_at_17_01_is_never_used_for_the_day_and_the_next_freshest_is",
+        FN3 + "test_the_noon_lags_are_read_as_of_the_noon_origin",
+        GN3 + "test_a_noon_table_passes_its_guards_under_the_48_hour_term",
+        GN3 + "test_no_24_hour_input_enters_a_noon_table[lag24]",
+        GN3 + "test_no_24_hour_input_enters_a_noon_table[temp_persistence]",
+        MV3 + "test_no_lag_of_24_hours_enters_a_noon_model",
+        FN3 + "test_the_lag_days_mean_reads_d_minus_2s_24_labels_and_nothing_after",
+        GN3 + "test_a_lag_days_mean_read_after_the_origin_is_refused",
+    ),
+    "Wind": (
+        NBM + "test_a_header_without_the_wind_speed_is_refused",
+        FN3 + "test_the_noon_feed_refuses_runs_without_wind",
+        FN3 + "test_a_noon_table_refuses_a_forecast_issued_without_wind",
+        WEA + "test_the_wind_gate_refuses_runs_without_wind",
+        NBM + "test_a_wind_speed_that_is_not_a_whole_number_is_refused",
+        WEA + "test_the_wind_bounds_gate_is_pinned_at_both_edges",
+        FN3 + "test_a_wind_point_outside_the_bounds_does_not_cover",
+        QV3 + "test_a_wind_point_above_100_knots_fails_the_v3_run_and_its_day_takes_the_next_run",
+        FN3 + "test_a_run_with_one_blank_wind_point_gives_way_to_the_next_though_its_temperatures_are_whole",
+        QV3 + "test_the_wind_clause_lists_the_days_whose_run_changes_and_no_other",
+        WEA + "test_the_noon_feed_passes_its_gates_and_reports_its_reuse_bound",
+    ),
+    "The lag day's mean": (
+        FN3 + "test_19_usable_hours_leave_the_lag_days_mean_missing_and_20_compute_it",
+        FN3 + "test_a_duplicated_label_is_refused_rather_than_counted_twice",
+        MV3 + "test_every_noon_model_fits_and_forecasts_v3_s_usable_rows",
+        VA3 + "test_the_lag_day_and_the_unfed_day_are_dropped_with_their_reasons",
+        QV3 + "test_the_lag_day_finding_lists_the_days_whose_lag_day_holds_19_usable_hours_and_not_20",
+        QV3 + "test_a_noon_day_without_its_feed_or_its_lag_days_mean_fails_its_verdict",
+    ),
+    "Intervals": (
+        IV3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[119-6-True]",
+        IV3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[120-3-True]",
+        IV3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[120-4-False]",
+        FZ3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[119-6-True]",
+        FZ3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[120-3-True]",
+        FZ3 + "test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[120-4-False]",
+        IV3 + "test_a_fold_whose_cold_bin_falls_back_says_so_on_every_interval",
+        VA3 + "test_every_interval_says_whether_its_cold_bin_fell_back_and_the_single_half_width_is_beside",
+        VA3 + "test_a_temperature_issued_after_a_fold_s_clock_leaves_its_bin_edge_unchanged",
+        MV3 + "test_a_binned_fit_stores_the_rule_on_its_own_usable_rows",
+        MV3 + "test_the_bin_edge_check_refuses_an_edge_that_is_not_the_rule_on_its_rows",
+        FZ3 + "test_a_freeze_whose_bin_edge_is_not_the_rule_on_its_own_rows_is_refused[v3]",
+        FZ3 + "test_a_freeze_whose_bin_edge_is_not_the_rule_on_its_own_rows_is_refused[v1_noon]",
+    ),
+    "The verdicts": (
+        DV3 + "test_each_line_of_the_terms_verdict[case0-not_testable]",
+        DV3 + "test_each_line_of_the_terms_verdict[case1-not_testable]",
+        DV3 + "test_each_line_of_the_terms_verdict[case2-worse]",
+        DV3 + "test_each_line_of_the_terms_verdict[case3-worse]",
+        DV3 + "test_each_line_of_the_terms_verdict[case4-not_shown_better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case5-not_shown_better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case6-not_shown_better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case7-not_shown_better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case8-better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case9-better]",
+        DV3 + "test_each_line_of_the_terms_verdict[case10-better_windows_cold_untested]",
+        DV3 + "test_each_line_of_the_terms_verdict[case11-better_windows_cold_untested]",
+        DV3 + "test_a_gain_in_the_event_windows_paid_for_by_worse_all_hours_is_not_shown_better",
+        DV3 + "test_a_gain_in_the_event_windows_paid_for_by_a_worse_cold_tail_is_not_shown_better",
+        DV3 + "test_too_few_event_window_hours_are_not_testable",
+        DV3 + "test_the_family_verdict_is_v2_s_rule_on_the_family_contrast",
+    ),
+    "The event windows": (
+        DV3 + "test_the_event_windows_are_the_rate_s_peak_hours_by_local_clock",
+        DV3 + "test_on_a_march_day_under_daylight_time_the_windows_are_hours_ending_11_to_14_and_21_to_00_utc",
+        DV3 + "test_excluded_days_and_days_outside_the_winter_hold_no_window[2023-12-25-0]",
+    ),
+    "The window ranking": (
+        DV3 + "test_k_rounds_half_up_and_never_exceeds_w",
+        DV3 + "test_the_window_ranking_breaks_ties_by_date_then_morning_and_counts_overlap",
+        DV3 + "test_a_window_missing_one_forecast_hour_is_not_eligible_and_is_listed",
+    ),
+    "The freeze": (
+        FZ3 + "test_a_production_model_with_a_lag_coefficient_at_or_below_zero_is_refused",
+        FZ3 + "test_a_production_model_whose_terms_are_not_the_ruled_ones_is_refused",
+        FZ3 + "test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[lag48]",
+        FZ3 + "test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[lag168]",
+        FZ3 + "test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[terms]",
+        FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[base_c-17.0]",
+        FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[lag_day_min_hours-19]",
+        FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[knots_to_kmh-1.85]",
+        FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[lag_day_first_h--48]",
+        FZ3 + "test_a_term_definition_other_than_the_ruled_one_is_refused[base_c-True]",
+        MV3 + "test_term_definitions_other_than_the_ruled_ones_are_refused",
+    ),
+    "Data": (
+        QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[hq]",
+        QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[eccc_file]",
+        QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[eccc_manifest]",
+        QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[nbm_file]",
+        QV3 + "test_a_raw_file_whose_hash_differs_from_v2s_is_refused[nbm_manifest]",
+        QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[file_symlink]",
+        QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[directory_symlink]",
+        QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[hard_link]",
+        QV3 + "test_the_v3_run_refuses_a_file_that_is_not_v2s_before_it_reads_any_file",
+        QV3 + "test_byte_copies_of_v2s_files_pass_and_a_fresh_clone_is_not_run",
+        QV3 + "test_without_a_read_of_v2s_store_dq_v3_refuses_unless_told_it_is_a_fresh_clone",
+        F3 + "test_a_v3_fetch_past_2024_is_refused_before_any_request[None]",
+        F3 + "test_a_v3_fetch_past_2024_is_refused_before_any_request[hq]",
+        F3 + "test_a_v3_fetch_past_2024_is_refused_before_any_request[eccc]",
+        F3 + "test_a_v3_fetch_past_2024_is_refused_before_any_request[nbm]",
+        F3 + "test_a_v3_fetch_through_2024_reaches_each_source[hq]",
+        F3 + "test_a_v3_fetch_through_2024_reaches_each_source[eccc]",
+        F3 + "test_a_v3_fetch_through_2024_reaches_each_source[nbm]",
+        F3 + "test_a_v3_fetch_is_never_forced",
+    ),
+    "v2's store": (
+        V2S + "test_the_read_of_v2s_store_leaves_it_byte_identical_and_logs_what_it_read",
+        V2S + "test_v2s_database_is_opened_read_only",
+        V2S + "test_no_other_v3_command_opens_v2s_store",
+        V2S + "test_v2s_store_is_read_once_and_a_second_read_is_refused_before_it_opens_anything",
+        V2S + "test_read_v2_refuses_a_path_that_is_v3s_own_store[same]",
+        V2S + "test_read_v2_refuses_a_path_that_is_v3s_own_store[path_inside_own]",
+        V2S + "test_read_v2_refuses_a_path_that_is_v3s_own_store[own_inside_path]",
+        V2S + "test_v2s_database_is_opened_immutable_and_refused_beside_a_write_ahead_log",
+        V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[dq-v3]",
+        V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[validate-v3]",
+        V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[freeze-v3]",
+        V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[read-v2]",
+    ),
+    "Calibration bins": (
+        IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
+        VA3 + "test_each_fold_bins_its_calibration_by_the_edge_of_the_fit_being_calibrated",
+    ),
+    "The window ranking's W": (
+        DV3 + "test_k_rounds_half_up_and_never_exceeds_w",
+        DV3 + "test_w_counts_each_movable_excluded_day_by_its_own_date",
+    ),
+    "First run": (
+        FR3 + "test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
+        FR3 + "test_a_v3_real_data_run_from_a_descendant_of_the_v3_first_run_tag_passes",
+        FR3 + "test_every_v3_real_data_command_calls_the_guard_before_opening_a_file",
+    ),
+    "Reproduction": (
+        RP3 + "test_the_same_hours_and_values_pass_and_say_what_was_compared",
+        RP3 + "test_a_difference_of_5e_7_mw_passes_and_one_of_2e_6_is_refused",
+        RP3 + "test_another_set_of_hours_with_a_forecast_is_refused[missing]",
+        RP3 + "test_another_set_of_hours_with_a_forecast_is_refused[extra]",
+        RP3 + "test_another_set_of_hours_with_a_forecast_is_refused[nan_in_v3]",
+        RP3 + "test_another_set_of_hours_with_a_forecast_is_refused[nan_in_v2]",
+        RP3 + "test_hours_outside_2020_2023_are_not_compared",
+        VA3 + "test_a_failed_reproduction_refuses_before_any_run_is_logged[value]",
+        VA3 + "test_a_failed_reproduction_refuses_before_any_run_is_logged[hour]",
+        VA3 + "test_v2_s_form_at_midnight_is_v2_s_validation_exactly",
+    ),
+}
+# The lines whose gates later slices build (the tags, the 2025 gate and its freeze record, the rehearsal, the 2025
+# time). PENDING_V3 must be empty at the freeze: v3-rules-frozen is not tagged while a line of section 12 has no break.
+PENDING_V3 = {"Tags", "The 2025 gate", "The rehearsal", "The freeze record", "The 2025 time"}
+
+
+def plan_v3_section_12_lines() -> list[str]:
+    """The lines of docs/plan-v3.md section 12, by their italic heads."""
+    import re
+
+    from valiwatt.paths import REPO_ROOT
+
+    text = (REPO_ROOT / "docs" / "plan-v3.md").read_text(encoding="utf-8")
+    section = text[text.index("\n## 12. "):text.index("\n## 13. ")]
+    return re.findall(r"^- \*(.+?):\*", section, flags=re.M)
+
+
+def test_every_line_of_plan_v3_section_12_has_a_break_or_is_pending():
+    """Each line of docs/plan-v3.md section 12 has at least one break, every break listed for it is in BREAKS, or the
+    line waits in PENDING_V3 for the slice that builds its gate; no line is both."""
+    registered = {b.test for b in BREAKS}
+    lines = plan_v3_section_12_lines()
+    assert len(lines) == len(set(lines)) == 21
+    assert sorted(set(PLAN_V3_12) | PENDING_V3) == sorted(lines) and not set(PLAN_V3_12) & PENDING_V3
+    assert [line for line, tests in PLAN_V3_12.items() if not tests] == []
+    assert {line: missing for line, tests in PLAN_V3_12.items()
+            if (missing := [t for t in tests if t not in registered])} == {}

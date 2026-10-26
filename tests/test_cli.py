@@ -131,6 +131,37 @@ def test_evidence_calls_run_evidence_with_departure(chain):
     assert chain["evidence"] == [False, True] and chain["replay"] == []
 
 
+# --- v3 (docs/plan-v3.md) --------------------------------------------------------------------------------------------
+
+
+def test_validate_v3_calls_run_validate_v3(monkeypatch):
+    from valiwatt.forecast import validate_v3
+
+    seen = []
+    monkeypatch.setattr(validate_v3, "run_validate_v3", lambda: seen.append("validate-v3") or 0)
+    assert cli.main(["validate-v3"]) == 0 and seen == ["validate-v3"]
+
+
+def test_freeze_v3_calls_run_freeze_v3_with_its_year(monkeypatch):
+    """v3 freezes for the 2024 rehearsal and for 2025 (docs/plan-v3.md, sections 11.1 and 11.2), and no other year."""
+    from valiwatt.forecast import freeze_v3
+
+    seen = []
+    monkeypatch.setattr(freeze_v3, "run_freeze_v3", lambda year: seen.append(year) or 0)
+    assert cli.main(["freeze-v3", "--year", "2024"]) == 0 and cli.main(["freeze-v3", "--year", "2025"]) == 0
+    assert seen == [2024, 2025]
+    assert rejected(["freeze-v3"]) and rejected(["freeze-v3", "--year", "2023"])
+
+
+def test_dq_v3_passes_its_window_and_whether_it_runs_on_a_fresh_clone(monkeypatch):
+    from valiwatt.quality import run_v3
+
+    seen = []
+    monkeypatch.setattr(run_v3, "run_dq_v3", lambda through, fresh_clone: seen.append((through, fresh_clone)) or 0)
+    assert cli.main(["dq-v3"]) == 0 and cli.main(["dq-v3", "--fresh-clone"]) == 0
+    assert seen == [(2024, False), (2024, True)]
+
+
 # --- fetch -----------------------------------------------------------------------------------------------------------
 
 def stand_in_sources(monkeypatch) -> list[tuple]:

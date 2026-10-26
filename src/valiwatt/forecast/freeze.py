@@ -14,6 +14,10 @@ A frozen model is a JSON file of numbers, no pickle (`FrozenModel`), whose SHA-2
 depends on. One MLflow run per replayed year holds the production model, registered as a model version with the alias
 `replay-<year>`, and the two comparison models as hashed files; the replay loads them through the alias and the run,
 and refuses any whose hash differs (docs/plan-v2.md, section 4.4).
+
+A v3 model (docs/plan-v3.md, section 4.4) is the same file with more fields, each absent from a v2 model's file and
+hash: its demand lags (lag48 and lag168 at noon), its terms and their definitions, the rows it forecasts (its required
+inputs) and its interval layer by temperature (section 7). v3's freeze itself is forecast/freeze_v3.py.
 """
 
 from __future__ import annotations
@@ -28,7 +32,14 @@ import pandas as pd
 from valiwatt.config import DESIGN_LAST
 from valiwatt.forecast import features, model
 from valiwatt.forecast import walkforward as wf
-from valiwatt.forecast.evaluate import ALPHA, CALIBRATION_FOLDS, calibration_rows, conformal_quantile
+from valiwatt.forecast.evaluate import (
+    ALPHA,
+    CALIBRATION_FOLDS,
+    bin_of,
+    calibration_rows,
+    check_interval_layer,
+    conformal_quantile,
+)
 from valiwatt.forecast.features import BASE_C
 from valiwatt.forecast.guards import LookaheadError, require_design_window, require_embargo, require_known_at_origin
 from valiwatt.forecast.model import COMPARATORS, MODELS, PRODUCTION, design, usable_rows
@@ -58,12 +69,17 @@ class FrozenModelError(RuntimeError):
 
 
 def frozen_sha256(family: str, scenario: str, columns, knots, degree, extrapolation, include_bias, center, scale,
-                  beta, intercept, q, hour_blocks=None, base_c=None) -> str:
+                  beta, intercept, q, hour_blocks=None, base_c=None, *, lags=None, terms=(), wind=None,
+                  term_definitions=None, required_inputs=None, interval=None) -> str:
     """The hash of what a frozen model's forecast and interval depend on: its family and input, the named columns, the
     spline's knots and its three settings, the scaler's means and scales, the coefficients and intercept, and the
     half-width; for least squares also its hour blocks (each name and its hours, in column order) and its base
     temperature, which its degree-hours are computed with (a GAM reads neither, and its hash is as before). A
-    function of the values, so the hash of any setting can be computed, a refused one included."""
+    function of the values, so the hash of any setting can be computed, a refused one included.
+
+    v3's fields (docs/plan-v3.md, section 4.4) enter the head only when given, so a v2 model's hash is as before: its
+    lags other than v2's, its terms, the wind they read, their definitions, its required inputs and its interval layer
+    (the bin edge, the two half-widths and the pooled one, the cold bin's count and weeks, and its fallback)."""
     arrays = [np.ascontiguousarray(np.asarray(a, dtype=float).ravel(), dtype="<f8")
               for a in (knots, center, scale, beta)]
     head = {"family": str(family), "scenario": str(scenario), "columns": [str(c) for c in columns],
@@ -74,6 +90,13 @@ def frozen_sha256(family: str, scenario: str, columns, knots, degree, extrapolat
             raise FrozenModelError("a least-squares model's hash needs its hour blocks and its base temperature")
         head |= {"hour_blocks": [[name, list(hours)] for name, hours in model.hour_blocks(hour_blocks)],
                  "base_c": repr(float(base_c))}
+    v3 = {"lags": None if lags is None else [str(c) for c in lags], "terms": [str(t) for t in terms] or None,
+          "wind": None if wind is None else str(wind),
+          "term_definitions": None if term_definitions is None else {k: repr(float(v)) for k, v in
+                                                                     dict(term_definitions).items()},
+          "required_inputs": None if required_inputs is None else [str(c) for c in required_inputs],
+          "interval": None if interval is None else {k: repr(v) for k, v in dict(interval).items()}}
+    head |= {k: v for k, v in v3.items() if v is not None}
     h = hashlib.sha256()
     h.update(json.dumps(head, sort_keys=True).encode())
     for a in arrays:
@@ -139,7 +162,18 @@ class FrozenModel:
     (`gam_spec`), whatever the module's settings say once it is built; least squares likewise from its stored day
     types, hour blocks and base temperature (`ols_spec`), its degree-hours computed from the temperature with that
     base. A least-squares model built without blocks or base takes the module's (model.HOUR_BLOCKS,
-    features.BASE_C) at construction, and stores and hashes them from then on."""
+    features.BASE_C) at construction, and stores and hashes them from then on.
+
+    v3's fields (docs/plan-v3.md, section 4.4), each defaulting to v2 and then absent from the file and the hash:
+    - lags: the demand lags it reads (None: v2's, model.LAGS; v2's lags given are stored as None);
+    - terms, wind, term_definitions: a GAM's terms (model.term_columns), the wind input wind with cold reads (given
+      exactly when that term is), and their definitions, which must be the ruled ones (issue.TERM_DEFINITIONS,
+      model.require_term_definitions), given exactly when it has a term;
+    - required_inputs: the columns whose finite values make a row forecast (model.required_known), so a comparison
+      model at noon forecasts only v3's usable rows (section 4.2);
+    - interval: the interval layer by temperature (section 7; evaluate.check_interval_layer), its pooled half-width
+      being `q`. q NaN: the model issues no interval (v2's form at midnight in v3).
+    Refused at construction otherwise (FrozenModelError)."""
 
     columns: tuple
     beta: np.ndarray
@@ -160,6 +194,12 @@ class FrozenModel:
     include_bias: bool = model.INCLUDE_BIAS
     hour_blocks: tuple | None = None  # least squares: (name, hours) pairs, in column order
     base_c: float | None = None  # least squares: the degree-hours' base temperature, in degrees Celsius
+    lags: tuple | None = None  # v3: the demand lags (None: v2's)
+    terms: tuple = ()  # v3: a GAM's terms, in issue.TERMS' order
+    wind: str | None = None  # v3: the wind input of wind with cold
+    term_definitions: dict | None = None  # v3: the ruled term definitions, given exactly when it has a term
+    required_inputs: tuple | None = None  # v3: the columns a forecast row must hold
+    interval: dict | None = None  # v3: the interval layer by temperature (evaluate.check_interval_layer)
 
     def __post_init__(self):
         beta = np.array(self.beta, dtype=float)
@@ -199,12 +239,59 @@ class FrozenModel:
                 features.BASE_C if self.base_c is None else self.base_c))
         object.__setattr__(self, "degree", int(self.degree))
         object.__setattr__(self, "include_bias", bool(self.include_bias))
+        self._v3_fields()
+
+    def _v3_fields(self) -> None:
+        """Normalize and check v3's fields (the class docstring); a v2 model passes with all of them at their
+        defaults."""
+        lags = None if self.lags is None else tuple(str(c) for c in self.lags)
+        if lags is not None and (not lags or not all(model.is_lag(c) for c in lags)):
+            raise FrozenModelError(f"frozen model lags {list(lags)} are not demand-lag columns")
+        object.__setattr__(self, "lags", None if lags == model.LAGS else lags)
+        try:
+            object.__setattr__(self, "terms", model._terms(self.terms))
+        except ValueError as e:
+            raise FrozenModelError(str(e)) from e
+        if self.terms and self.family != "gam":
+            raise FrozenModelError("least squares reads no term")
+        if ("wind_cold" in self.terms) != (self.wind is not None):
+            raise FrozenModelError(f"a frozen model's wind input ({self.wind!r}) is given exactly when it reads wind "
+                                   f"with cold (terms {list(self.terms)})")
+        if bool(self.terms) != (self.term_definitions is not None):
+            raise FrozenModelError(f"a frozen model stores its term definitions exactly when it has a term (terms "
+                                   f"{list(self.terms)}, definitions {self.term_definitions!r})")
+        if self.term_definitions is not None:
+            try:
+                defs = model.require_term_definitions(self.term_definitions, "the frozen model")
+            except ValueError as e:
+                raise FrozenModelError(str(e)) from e
+            object.__setattr__(self, "term_definitions", {k: self.term_definitions[k] for k in defs})
+        if self.required_inputs is not None:
+            object.__setattr__(self, "required_inputs", tuple(str(c) for c in self.required_inputs))
+        if self.interval is not None:
+            try:
+                layer = check_interval_layer(dict(self.interval))
+            except ValueError as e:
+                raise FrozenModelError(f"the frozen model's interval layer: {e}") from e
+            if float(self.q) != layer["q_pooled"]:
+                raise FrozenModelError(f"the frozen model's half-width q={self.q!r} is not its interval layer's pooled "
+                                       f"one ({layer['q_pooled']!r})")
+            object.__setattr__(self, "interval", layer)
+
+    def _design_lags(self) -> dict:
+        """The lags, terms and their reading of `model.design` / `model.gam_design` for this model: v2's when none."""
+        out: dict = {"lags": self.lags}
+        if self.family == "gam":
+            out |= {"terms": self.terms, "wind": self.wind, "term_definitions": self.term_definitions}
+        return out
 
     def sha256(self) -> str:
         """Hash of everything the forecast and its interval depend on (`frozen_sha256`)."""
         return frozen_sha256(self.family, self.scenario, self.columns, self.knots, self.degree, self.extrapolation,
                              self.include_bias, self.center, self.scale, self.beta, self.intercept, self.q,
-                             hour_blocks=self.hour_blocks, base_c=self.base_c)
+                             hour_blocks=self.hour_blocks, base_c=self.base_c, lags=self.lags, terms=self.terms,
+                             wind=self.wind, term_definitions=self.term_definitions,
+                             required_inputs=self.required_inputs, interval=self.interval)
 
     def ols_spec(self) -> dict:
         """What a frozen least squares' design is rebuilt from, all of it stored and hashed: the day types in the order
@@ -212,7 +299,7 @@ class FrozenModel:
         Refused (FrozenModelError) unless the columns those day types and blocks generate (model.ols_columns) are its
         stored columns, name for name and in order."""
         day_types = tuple(dict.fromkeys(c.split(":")[1] for c in self.columns if c.startswith("cell:")))
-        generated = tuple(model.ols_columns(day_types=day_types, blocks=self.hour_blocks))
+        generated = tuple(model.ols_columns(day_types=day_types, blocks=self.hour_blocks, lags=self.lags))
         if generated != self.columns:
             i = next(i for i, (a, b) in enumerate(zip(self.columns + (None,), generated + (None,))) if a != b)
             raise FrozenModelError(
@@ -230,7 +317,7 @@ class FrozenModel:
         spline = {"degree": self.degree, "extrapolation": self.extrapolation, "include_bias": self.include_bias}
         knots = np.asarray(self.knots)
         n_basis = model.gam_basis(knots[:1], knots, **spline).shape[1]
-        generated = tuple(model.gam_columns(day_types=day_types, n_basis=n_basis))
+        generated = tuple(model.gam_columns(day_types=day_types, n_basis=n_basis, lags=self.lags, terms=self.terms))
         if generated != self.columns:
             i = next(i for i, (a, b) in enumerate(zip(self.columns + (None,), generated + (None,))) if a != b)
             raise FrozenModelError(
@@ -247,33 +334,49 @@ class FrozenModel:
         types, hour blocks and base temperature (`ols_spec`): its degree-hours are computed from temp_<scenario> with
         that base, never read from the table's hdh_ and cdh_ columns. For both, a row whose day type the stored cells
         do not cover is refused (FrozenModelError); a row with a missing day type or an hour outside 0 to 23 is a row
-        with a missing input, NaN."""
+        with a missing input, NaN. A v3 model reads its stored lags and terms, and forecasts no row missing one of its
+        required inputs (model.required_known)."""
         out = pd.Series(np.nan, index=f.index)
         if self.family == "gam":
             spec = self.gam_spec()
             _refuse_uncovered_day_types(f, spec["day_types"], "GAM's")
-            X = model.gam_design(f, self.scenario, np.asarray(self.knots), **spec)
+            X = model.gam_design(f, self.scenario, np.asarray(self.knots), **spec, **self._design_lags())
             ok = np.isfinite(X).all(axis=1)
+            if self.required_inputs is not None:
+                ok &= model.required_known(f, self.required_inputs)
             if ok.any():
                 out[ok] = model.gam_predict(X[ok], self.center, self.scale, self.beta, self.intercept)
             return out
         spec = self.ols_spec()
         _refuse_uncovered_day_types(f, spec["day_types"], "least squares'")
-        X = design(f, self.scenario, **spec)[list(self.columns)]
+        X = design(f, self.scenario, **spec, **self._design_lags())[list(self.columns)]
         ok = usable_rows(X)
+        if self.required_inputs is not None:
+            ok &= model.required_known(f, self.required_inputs)
         out[ok] = X[ok].to_numpy() @ self.beta
         return out
 
     def predict(self, f: pd.DataFrame) -> pd.DataFrame:
+        """The forecast and its interval, forecast x (1 - q, 1 + q). With an interval layer (docs/plan-v3.md, section
+        7), q is the half-width of each row's bin, its temp_<scenario> against the stored edge (evaluate.bin_of:
+        cold strictly below it), with columns bin (None without a temperature) and fallback (the layer's: the cold bin
+        took the pooled half-width), on every row, so every interval issued says so."""
         forecast = self.forecast(f)
-        return pd.DataFrame({"forecast": forecast, "lower": forecast * (1 - self.q),
-                             "upper": forecast * (1 + self.q)}, index=f.index)
+        if self.interval is None:
+            return pd.DataFrame({"forecast": forecast, "lower": forecast * (1 - self.q),
+                                 "upper": forecast * (1 + self.q)}, index=f.index)
+        layer = self.interval
+        b = bin_of(f[f"temp_{self.scenario}"].to_numpy(dtype=float), layer["bin_edge"])
+        q = np.where(b == "cold", layer["q_cold"], np.where(b == "rest", layer["q_rest"], np.nan))
+        return pd.DataFrame({"forecast": forecast, "lower": forecast * (1 - q), "upper": forecast * (1 + q),
+                             "bin": pd.Series(b, index=f.index, dtype=object), "fallback": layer["fallback"]},
+                            index=f.index)
 
     def lag_coefficients(self) -> dict:
-        """The two demand lags' coefficients in MW per MW: the GAM's ridge coefficient over its scale, the least
-        squares' coefficient."""
+        """The demand lags' coefficients in MW per MW, each by its stored column (v2's lag24 and lag168, v3's at noon
+        lag48 and lag168): the GAM's ridge coefficient over its scale, the least squares' coefficient."""
         out = {}
-        for lag in model.LAGS:
+        for lag in model._lags(self.lags):
             i = self.columns.index(lag)
             out[lag] = float(self.beta[i] / self.scale[i]) if self.family == "gam" else float(self.beta[i])
         return out
@@ -304,27 +407,37 @@ class FrozenModel:
 
     def to_json(self) -> str:
         """Every field, the spline's three settings included, and the hash; least squares' hour blocks as a mapping of
-        each name to its hours, in column order, and its base temperature (a GAM's file holds neither, as before)."""
+        each name to its hours, in column order, and its base temperature (a GAM's file holds neither, as before).
+        Strict JSON: a model that issues no interval (q NaN) writes q as null, and no other value may be NaN."""
         d = {f.name: getattr(self, f.name) for f in fields(self)}
-        d |= {"columns": list(self.columns), "beta": [float(b) for b in self.beta], "q": float(self.q),
+        q = None if np.isnan(self.q) else float(self.q)
+        d |= {"columns": list(self.columns), "beta": [float(b) for b in self.beta], "q": q,
               "calibration_folds": list(self.calibration_folds), "knots": list(self.knots),
               "center": list(self.center), "scale": list(self.scale)}
         if self.family == "gam":
             del d["hour_blocks"], d["base_c"]
         else:
             d["hour_blocks"] = {name: list(hours) for name, hours in self.hour_blocks}
-        return json.dumps(d | {"sha256": self.sha256()}, indent=2)
+        # v3's fields: written when given, so a v2 model's file is as before.
+        for name in ("lags", "terms", "wind", "term_definitions", "required_inputs", "interval"):
+            if getattr(self, name) in (None, ()):
+                del d[name]
+            elif isinstance(d[name], tuple):
+                d[name] = list(d[name])
+        return json.dumps(d | {"sha256": self.sha256()}, indent=2, allow_nan=False)
 
     @classmethod
     def from_json(cls, text: str) -> "FrozenModel":
         """Refused (FrozenModelError): a file that no longer matches its own hash, and, at construction, a setting
         other than the ruled one. A file without the spline settings reads the ruled defaults, and its hash must still
         match. A least-squares file is checked on load as its forecast checks it (`ols_spec`): its columns must be
-        those its stored day types and hour blocks generate."""
+        those its stored day types and hour blocks generate. q null: the model issues no interval (q NaN)."""
         d = json.loads(text)
         if not isinstance(d, dict) or "sha256" not in d:
             raise FrozenModelError("frozen model file holds no hash")
         expected = d.pop("sha256")
+        if "q" in d and d["q"] is None:
+            d["q"] = float("nan")
         try:
             m = cls(**d)
         except TypeError as e:
@@ -375,13 +488,15 @@ def frozen_table(raw_demand: pd.DataFrame, weather: pd.DataFrame, replay_year: i
     return training_table(AsOf(raw_demand, last=last), temperature_sources(weather)["primary"], replay_year, forecasts)
 
 
-def _no_lag_gam(rows: pd.DataFrame, scenario: str, knots: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _no_lag_gam(rows: pd.DataFrame, scenario: str, knots: np.ndarray, **lags) -> tuple[np.ndarray, np.ndarray]:
     """The GAM without its two lags, on the same rows and knots, for interpretation only (plan section 4.5): its
-    ridge coefficients and the scaler's scales, in model.gam_design's order without the last two columns."""
+    ridge coefficients and the scaler's scales, in model.gam_design's order without the last two columns. lags: a v3
+    model's lags and terms (FrozenModel._design_lags; v2's when none), the lags being its last columns and its terms
+    kept."""
     from sklearn.linear_model import Ridge
     from sklearn.preprocessing import StandardScaler
 
-    X = model.gam_design(rows, scenario, knots)[:, :-len(model.LAGS)]
+    X = model.gam_design(rows, scenario, knots, **lags)[:, :-len(model._lags(lags.get("lags")))]
     scaler = StandardScaler().fit(X)
     ridge = Ridge(alpha=model.RIDGE_ALPHA).fit(scaler.transform(X), rows["target"].to_numpy(dtype=float))
     return np.asarray(ridge.coef_, dtype=float), np.asarray(scaler.scale_, dtype=float)
@@ -499,11 +614,14 @@ def run_freeze(replay_year: int) -> int:
 
 
 def log_frozen(frozen: FrozenModel, coef: pd.DataFrame, example: pd.DataFrame, tags: dict,
-               comparators: dict | None = None, extras: dict | None = None):
+               comparators: dict | None = None, extras: dict | None = None, *, model_name: str = MODEL_NAME,
+               params: dict | None = None):
     """Log the frozen model as an MLflow run and a registered model version with the alias replay-<year>.
 
     comparators: {model key: FrozenModel}, each logged as comparators/<key>.json and its hash as the tag
-    comparator_sha256.<key> (load_comparators); extras: {file name: DataFrame}, each logged as a CSV."""
+    comparator_sha256.<key> (load_comparators); extras: {file name: DataFrame}, each logged as a CSV. model_name: the
+    registered model (v2's MODEL_NAME unless given: v3's freeze registers its own, so its aliases never move v2's);
+    params: more parameters to log (v3's interval layer, terms and variance inflation factors)."""
     import tempfile
     from pathlib import Path
 
@@ -547,23 +665,26 @@ def log_frozen(frozen: FrozenModel, coef: pd.DataFrame, example: pd.DataFrame, t
                 mlflow.log_artifact(str(p), artifact_path="comparators")
             info = mlflow.pyfunc.log_model(
                 name="model", python_model=str(Path(pyfunc_module.__file__)), artifacts={"frozen": str(path)},
-                input_example=example, registered_model_name=MODEL_NAME,
+                input_example=example, registered_model_name=model_name,
                 pip_requirements=[f"mlflow=={mlflow.__version__}", f"pandas=={pd.__version__}",
                                   f"numpy=={np.__version__}", f"scikit-learn=={sklearn.__version__}"])
-        client().set_registered_model_alias(MODEL_NAME, f"replay-{replay_year}", info.registered_model_version)
+        if params:
+            mlflow.log_params(params)
+        client().set_registered_model_alias(model_name, f"replay-{replay_year}", info.registered_model_version)
         mlflow.set_tag("model_version", str(info.registered_model_version))
         mlflow.set_tag("status", "complete")
     return run, info.registered_model_version
 
 
-def load_frozen(replay_year: int):
-    """The registered production model for a replay year and its run; refused if its hash differs from the run's."""
+def load_frozen(replay_year: int, model_name: str = MODEL_NAME):
+    """The registered production model for a replay year and its run; refused if its hash differs from the run's.
+    model_name: v2's registered model unless given (v3's, freeze_v3.MODEL_NAME_V3)."""
     import mlflow
 
     from valiwatt.tracking import client
 
     client()
-    py = mlflow.pyfunc.load_model(f"models:/{MODEL_NAME}@replay-{replay_year}")
+    py = mlflow.pyfunc.load_model(f"models:/{model_name}@replay-{replay_year}")
     frozen = py.unwrap_python_model().frozen
     run = client().get_run(py.metadata.run_id)
     if frozen.sha256() != run.data.tags.get("coefficient_sha256"):

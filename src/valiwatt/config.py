@@ -44,6 +44,13 @@ FREEZES = {"rules-frozen": {"heading": "## Departures from the frozen monitoring
 # (docs/plan-v2.md, section 10.4).
 FIRST_RUN_TAG = "v2-first-run"
 
+# v3 (docs/plan-v3.md, sections 3.1, 6, 10.2): its design window ends with 2024; every v3 command that computes on
+# real data refuses unless V3_FIRST_RUN_TAG exists and is an ancestor of the head; the thresholds of each replayed
+# year come from these validation years.
+V3_DESIGN_LAST = data_last(2024)
+V3_FIRST_RUN_TAG = "v3-first-run"
+V3_THRESHOLD_YEARS = {2024: (2021, 2023), 2025: (2022, 2024)}
+
 # Design-informing analysis (station representativeness, descriptive figures) uses 2019-2023 only. 2024 is replayed
 # later as production with a frozen model, so nothing about 2024 may shape a design choice.
 DESIGN_LAST = pd.Timestamp("2024-01-01T05:00Z")

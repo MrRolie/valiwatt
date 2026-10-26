@@ -46,6 +46,7 @@ from valiwatt.forecast.evaluate import (
 )
 from valiwatt.forecast.features import BASE_C, FORECAST_LAGS, AsOf, IssuedForecast, forecast_temperature
 from valiwatt.forecast.guards import DESIGN_LAST_DAY, LookaheadError, require_design_window, require_known_at_origin
+from valiwatt.forecast.issue import MIDNIGHT, IssueSpec
 from valiwatt.forecast.model import (
     COMPARATORS,
     DEGREE,
@@ -93,29 +94,35 @@ class LineageError(RuntimeError):
     pass
 
 
-def load_inputs():
+def load_inputs(dq=None, paths: dict | None = None, command: str = "valiwatt dq"):
+    """The latest passed data-quality run and the canonical series it wrote, refused unless each file is the one it
+    hashed. dq, paths: another run and its files (v3's, forecast/validate_v3.py), `command` the one that writes them;
+    v2's unless given."""
     from valiwatt.tracking import latest_run
 
-    dq = latest_run(DQ_EXPERIMENT, "tags.kind = 'dq' and tags.gates = 'passed' and attributes.status = 'FINISHED'")
-    paths = {"demand": INTERIM / "demand.parquet", "weather": INTERIM / "weather.parquet"}
+    if dq is None:
+        dq = latest_run(DQ_EXPERIMENT, "tags.kind = 'dq' and tags.gates = 'passed' and attributes.status = 'FINISHED'")
+    if paths is None:
+        paths = {"demand": INTERIM / "demand.parquet", "weather": INTERIM / "weather.parquet"}
     for name, path in paths.items():
         if not path.exists():
-            raise FetchRefused(f"{path.name} missing: run `valiwatt dq` first")
+            raise FetchRefused(f"{path.name} missing: run `{command}` first")
         if sha256_file(path) != dq.data.params.get(f"{name}_parquet_sha256"):
-            raise LineageError(f"{path.name} does not match data-quality run {dq.info.run_id}; run `valiwatt dq` again")
+            raise LineageError(f"{path.name} does not match data-quality run {dq.info.run_id}; run `{command}` again")
     return dq, pd.read_parquet(paths["demand"]), pd.read_parquet(paths["weather"])
 
 
-def load_validation(dq):
+def load_validation(dq, kind: str = "validation"):
     """The latest complete validation run built on this data-quality run and these rules, and its out-of-sample
-    frame. Refused when either changed since: thresholds and calibration scores would no longer match."""
+    frame. Refused when either changed since: thresholds and calibration scores would no longer match. kind: the
+    run's kind tag, v2's unless given (v3's validation runs are their own kind, forecast/validate_v3.py)."""
     import mlflow
 
     from valiwatt.tracking import client, latest_run
 
     if dq.data.tags.get("rules_sha256") != rules_sha256():
         raise LineageError(f"data-quality run {dq.info.run_id} was made under other rules; run `valiwatt dq` again")
-    run = latest_run(EXPERIMENT, "tags.kind = 'validation' and tags.status = 'complete'")
+    run = latest_run(EXPERIMENT, f"tags.kind = '{kind}' and tags.status = 'complete'")
     if run.data.tags.get("dq_run_id") != dq.info.run_id:
         raise LineageError(f"validation run {run.info.run_id} was built on another data-quality run; "
                            "run `valiwatt validate` again")
@@ -149,7 +156,8 @@ def design_days(last: pd.Timestamp = DESIGN_LAST) -> pd.DatetimeIndex:
     return pd.date_range(first, last_day, freq="D")
 
 
-def forecast_inputs(runs: pd.DataFrame, days, last: pd.Timestamp = DESIGN_LAST) -> dict[str, IssuedForecast]:
+def forecast_inputs(runs: pd.DataFrame, days, last: pd.Timestamp = DESIGN_LAST, *,
+                    issue: IssueSpec = MIDNIGHT) -> dict[str, IssuedForecast]:
     """The forecast issued for each of `days` by the run rule (features.forecast_temperature), with the assumed
     availability ("forecast", sources.nbm.AVAILABILITY_LAG) and with the six-hour margin of the sensitivity
     ("forecast_late", SENSITIVITY_LAG).
@@ -158,7 +166,9 @@ def forecast_inputs(runs: pd.DataFrame, days, last: pd.Timestamp = DESIGN_LAST) 
     information when it is available, runtime + AVAILABILITY_LAG, by `last`, even where its points are valid after it;
     a design feed holding a run available after `last` is refused (LookaheadError). The runtime's year never decides:
     the file of 2023 ends with a run of 2024-01-01 01:00 UTC, available at 03:00, before the end of the design window,
-    and it is kept. The six-hour margin only delays when a run may feed a day; it never admits a run the cut refuses."""
+    and it is kept. The six-hour margin only delays when a run may feed a day; it never admits a run the cut refuses.
+    issue: whose origin each day is fed at (v2's, MIDNIGHT, unless given; v3's noon feed reads the wind too,
+    docs/plan-v3.md section 3.2)."""
     runtime = pd.to_datetime(runs["runtime"], utc=True)
     late = np.array(runtime + AVAILABILITY_LAG > pd.Timestamp(last), dtype=bool)
     if "available_utc" in runs:
@@ -166,15 +176,15 @@ def forecast_inputs(runs: pd.DataFrame, days, last: pd.Timestamp = DESIGN_LAST) 
     if late.any():
         raise LookaheadError(f"{int(late.sum())} forecast points come from runs available after {last}, the end of "
                              f"the design window (first run {runtime[late].min()}): design code may not read them")
-    return {s: forecast_temperature(runs, days, lag) for s, lag in FORECAST_LAGS.items()}
+    return {s: forecast_temperature(runs, days, lag, issue=issue) for s, lag in FORECAST_LAGS.items()}
 
 
-def design_features(asof: AsOf, temperature: pd.Series,
-                    forecasts: dict[str, IssuedForecast] | None = None) -> pd.DataFrame:
-    """The test rows of the design window, each as the replay issues and scores it. The guards run where the table is
-    consumed (run_validation)."""
+def design_features(asof: AsOf, temperature: pd.Series, forecasts: dict[str, IssuedForecast] | None = None,
+                    last_day: pd.Timestamp = DESIGN_LAST_DAY) -> pd.DataFrame:
+    """The test rows of the design window (up to `last_day`, v2's unless given), each as the replay issues and scores
+    it. The guards run where the table is consumed (run_validation)."""
     f = asof.issued(temperature, forecasts)
-    return f[f["day"] <= DESIGN_LAST_DAY]
+    return f[f["day"] <= last_day]
 
 
 def validation_inputs(raw_demand: pd.DataFrame, raw_temperature: pd.DataFrame, weather: pd.DataFrame,
@@ -317,11 +327,12 @@ def peak_case(f: pd.DataFrame, out: pd.DataFrame, iv: pd.DataFrame, keys=("persi
             == PEAK_MONTH, "named_month": PEAK_MONTH}
 
 
-def design_cold_c(f_primary: pd.DataFrame) -> float:
+def design_cold_c(f_primary: pd.DataFrame, last_day: pd.Timestamp = DESIGN_LAST_DAY) -> float:
     """cold_c (plan section 6.2): evaluate.cold_threshold of the NBM forecast temperature of every design hour that
-    has one, 2019-2023, test rows of every fold and the hours before the first fold alike. Inputs only: no target, no
-    forecast of demand, no hour after the design window."""
-    rows = f_primary[f_primary["day"] <= DESIGN_LAST_DAY]
+    has one, 2019-2023 (to `last_day`: v3's 2019-2024 on the noon feed, docs/plan-v3.md section 6), test rows of every
+    fold and the hours before the first fold alike. Inputs only: no target, no forecast of demand, no hour after the
+    design window."""
+    rows = f_primary[f_primary["day"] <= last_day]
     return cold_threshold(rows["temp_forecast"])
 
 
@@ -337,12 +348,17 @@ def _deciles(pred: pd.Series, exact_v1: bool) -> pd.Series:
 
 
 def _coverage(out: pd.DataFrame, ivx: pd.DataFrame, pred_col: str, decile: pd.Series, hour_group: pd.Series,
-              n_boot: int) -> dict:
+              n_boot: int, groups: dict[str, pd.Series] | None = None) -> dict:
+    """Coverage overall and by season, year, hour group and load decile; groups: more groupings by name (v3's interval
+    bin, docs/plan-v3.md section 7)."""
+    extra = groups or {}
     c = errors(out.loc[ivx.index], pred_col)
     c["covered"] = ivx["covered"].reindex(c.index)
-    c = c.dropna(subset=["covered"]).assign(decile=decile.reindex(c.index), hour_group=hour_group.reindex(c.index))
+    c = c.dropna(subset=["covered"]).assign(decile=decile.reindex(c.index), hour_group=hour_group.reindex(c.index),
+                                            **{g: v.reindex(c.index) for g, v in extra.items()})
     return {"overall": mean_with_ci(c, "covered", n_boot),
-            **{g: by_group(c, g, values=("covered",), n_boot=n_boot) for g in ("season", "year", "hour_group", "decile")},
+            **{g: by_group(c, g, values=("covered",), n_boot=n_boot)
+               for g in ("season", "year", "hour_group", "decile", *extra)},
             "mean_half_width_pct": float(100 * (ivx["upper"] - ivx["lower"]).div(2).div(out.loc[ivx.index, pred_col]).mean())}
 
 
@@ -375,11 +391,11 @@ def _why(f: pd.DataFrame, out: pd.DataFrame, key: str, forecast_record: dict) ->
     return why.where(out[f"pred_{key}"].isna(), "")
 
 
-def _lacking(frame: pd.DataFrame) -> dict:
+def _lacking(frame: pd.DataFrame, keys=COMPARED) -> dict:
     """The out-of-sample hours left out of the common set of hours, by reason (plan section 5): no usable target, and
-    for each compared model, why it has no forecast."""
+    for each compared model (`keys`, v2's three unless given), why it has no forecast."""
     out = {"oos_hours": int(len(frame)), "no_target": int(frame["target"].isna().sum())}
-    for key in COMPARED:
+    for key in keys:
         why = frame.loc[frame[f"pred_{key}"].isna(), f"why_{key}"]
         out[key] = {str(k): int(v) for k, v in why.value_counts().sort_index().items()}
     return out
@@ -407,29 +423,38 @@ def _extrapolation(out: pd.DataFrame, f: pd.DataFrame, ranges: dict, key: str) -
     """Per fold: the production model's training temperature range, and its forecast hours whose input lies outside
     it (plan section 4.6), each with its APE when the hour has a target."""
     _, scenario = MODELS[key]
-    temp = f[f"temp_{scenario}"].reindex(out.index)
+    return outside_training_range(out, f[f"temp_{scenario}"].reindex(out.index), ranges, key)
+
+
+def outside_training_range(out: pd.DataFrame, values: pd.Series, ranges: dict, key: str, unit: str = "c",
+                           value: str = "temp_c") -> list[dict]:
+    """Per fold: the (min, max) of an input over the fold's training rows (`ranges`, fold -> pair), and the hours
+    model `key` forecasts whose input (`values`, on out's index) lies outside it, each with its APE when the hour has
+    a target. The range keys end in `unit` when one is given and each hour's input is keyed `value` (v2's
+    temperature: train_min_c, temp_c)."""
+    suffix = f"_{unit}" if unit else ""
     pred = out[f"pred_{key}"]
     ape = ((out["target"] - pred).abs() / out["target"]).where(out["target"].notna() & pred.notna())
     rows = []
     for fold, part in out.groupby("fold", sort=True):
         lo, hi = ranges[fold]
         idx = part.index[pred.loc[part.index].notna().to_numpy()]
-        t = temp.loc[idx]
+        t = values.loc[idx]
         below, above = idx[(t < lo).to_numpy()], idx[(t > hi).to_numpy()]
         outside = below.append(above).sort_values()
         scored = ape.loc[outside].dropna()
-        rows.append({"fold": fold, "train_min_c": lo, "train_max_c": hi, "hours": int(len(idx)),
+        rows.append({"fold": fold, f"train_min{suffix}": lo, f"train_max{suffix}": hi, "hours": int(len(idx)),
                      "hours_below": int(len(below)), "hours_above": int(len(above)),
                      "mape_outside": float(scored.mean()) if len(scored) else None,
-                     "outside": [{"utc": u, "temp_c": float(temp.loc[u]), "ape": ape.loc[u]} for u in outside]})
+                     "outside": [{"utc": u, value: float(values.loc[u]), "ape": ape.loc[u]} for u in outside]})
     return rows
 
 
-def _forecast_input(record: pd.DataFrame, f: pd.DataFrame) -> dict:
-    """What fed the production model's input on the design days (plan sections 3.2 and 3.4): the days no run fed, with
-    why; the rank and lead counts; the feeding run's UTC hour by year; and the forecast minus the ECCC observation at
-    the target hour, by year and season, on the design hours."""
-    record = record[pd.DatetimeIndex(record.index) <= DESIGN_LAST_DAY]
+def _forecast_input(record: pd.DataFrame, f: pd.DataFrame, last_day: pd.Timestamp = DESIGN_LAST_DAY) -> dict:
+    """What fed the production model's input on the design days (plan sections 3.2 and 3.4; to `last_day`, v2's
+    unless given): the days no run fed, with why; the rank and lead counts; the feeding run's UTC hour by year; and
+    the forecast minus the ECCC observation at the target hour, by year and season, on the design hours."""
+    record = record[pd.DatetimeIndex(record.index) <= pd.Timestamp(last_day)]
     fed = record["reason"] == ""
     r = record[fed]
     hour_by_year = {int(y): {int(h): int(n) for h, n in g.value_counts().sort_index().items()}

@@ -65,6 +65,11 @@ T_FRO, T_R2, T_REND = "tests/test_frozen.py", "tests/test_replay_v2.py", "tests/
 T_E2E, T_STAMP, T_CLI = "tests/test_report_end_to_end.py", "tests/test_report_stamp.py", "tests/test_cli.py"
 T_DEP, T_TAGS, T_PLAN = "tests/test_departure_record.py", "tests/test_tags.py", "tests/test_plan_record.py"
 T_SND = "tests/test_soundness.py"
+# v3's (docs/plan-v3.md, section 12)
+T_FN, T_GN, T_MV3 = "tests/test_features_noon.py", "tests/test_guards_noon.py", "tests/test_model_v3.py"
+T_IV3, T_DV3, T_VA3 = "tests/test_intervals_v3.py", "tests/test_decision_rule_v3.py", "tests/test_validate_v3.py"
+T_FZ3, T_RP3, T_QV3 = "tests/test_freeze_v3.py", "tests/test_reproduction_v3.py", "tests/test_quality_v3.py"
+T_F3, T_FR3, T_V2S = "tests/test_fetch_v3.py", "tests/test_firstrun_v3.py", "tests/test_v2store.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -1890,6 +1895,476 @@ BREAKS = [
        "de l'exécution omis, fait refuser le rapport, rapport anglais",
        "A soundness finding or measure without the label \"added after the freeze; decides nothing\", or a finding of "
        "the run left out, makes the report refuse, English report"),
+    # v3, a forecast issued at noon the day before: the breaks of docs/plan-v3.md section 12, in its order.
+    # The spike scale
+    _b(CLOCK, f"{T_QV3}::test_the_v3_data_quality_run_at_noon_on_clean_data",
+       "L'échelle des pointes de l'exécution de qualité de v3 est coupée au 2025-01-01 05:00 UTC, la dernière étiquette "
+       "de 2024, jamais à celle de v2 : une année 2024 plus bruitée la déplace, et les statistiques de pointes de la "
+       "demande et des stations sont celles de cette coupure",
+       "The spike scale of v3's data-quality run is cut at 2025-01-01 05:00 UTC, the last label of 2024, never at "
+       "v2's: a noisier 2024 moves it, and the demand's and the stations' spike statistics are those of that cut"),
+    # The clocks
+    _b(CLOCK, f"{T_FN}::test_a_noon_day_carries_exactly_its_24_labels_and_is_scored_the_next_morning",
+       "Témoin : un jour émis à midi porte exactement les 24 étiquettes de D 06:00 à D+1 05:00 UTC, est noté à D+1 "
+       "06:00 UTC, et aucune cible n'est vide à cause de l'horloge",
+       "Control: a day issued at noon carries exactly the 24 labels D 06:00 to D+1 05:00 UTC, is scored "
+       "at D+1 06:00 UTC, and no target is blank because of the clock", control=True),
+    _b(CLOCK, f"{T_IV3}::test_a_day_is_scored_at_d_plus_1_0600_utc_whatever_the_issue_time",
+       "Un jour est noté à D+1 06:00 UTC quelle que soit l'heure d'émission : il ne calibre pas une demi-largeur fixée "
+       "une minute avant",
+       "A day is scored at D+1 06:00 UTC whatever the issue time: it calibrates no half-width fixed a minute before"),
+    _b(CLOCK, f"{T_QV3}::test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-06T18:00Z--1]",
+       "Le verdict d'un jour à midi ne lit que les enregistrements bruts horodatés dans ses propres heures : une "
+       "valeur hors bornes horodatée à D-1 18:00 UTC, après l'origine de D à midi, fait échouer D-1 seul",
+       "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at "
+       "D-1 18:00 UTC, after D's noon origin, fails D-1 alone"),
+    _b(CLOCK, f"{T_QV3}::test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-07T05:00Z--1]",
+       "Le verdict d'un jour à midi ne lit que les enregistrements bruts horodatés dans ses propres heures : une "
+       "valeur hors bornes horodatée à D 05:00 UTC fait échouer D-1 seul",
+       "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at D "
+       "05:00 UTC fails D-1 alone"),
+    _b(CLOCK, f"{T_QV3}::test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-07T06:00Z-0]",
+       "Le verdict d'un jour à midi ne lit que les enregistrements bruts horodatés dans ses propres heures : une "
+       "valeur hors bornes horodatée à D 06:00 UTC fait échouer D seul",
+       "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at D "
+       "06:00 UTC fails D alone"),
+    _b(CLOCK, f"{T_QV3}::test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T05:00Z-0]",
+       "Le verdict d'un jour à midi ne lit que les enregistrements bruts horodatés dans ses propres heures : une "
+       "valeur hors bornes horodatée à D+1 05:00 UTC fait échouer D seul",
+       "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at "
+       "D+1 05:00 UTC fails D alone"),
+    _b(CLOCK, f"{T_QV3}::test_a_noon_days_verdict_reads_only_the_raw_records_stamped_in_its_own_hours[2019-01-08T06:00Z-1]",
+       "Le verdict d'un jour à midi ne lit que les enregistrements bruts horodatés dans ses propres heures : une "
+       "valeur hors bornes horodatée à D+1 06:00 UTC fait échouer D+1 seul",
+       "A noon day's verdict reads only the raw records stamped in its own hours: an out-of-bounds value stamped at "
+       "D+1 06:00 UTC fails D+1 alone"),
+    # The noon origin
+    _b(LOOK, f"{T_FN}::test_a_run_available_at_17_01_is_never_used_for_the_day_and_the_next_freshest_is",
+       "Une prévision disponible à D-1 17:01 UTC n'est jamais utilisée pour D, même absurde, et la suivante l'est",
+       "A run available at D-1 17:01 UTC is never used for D, even with absurd values, and the next-freshest is"),
+    _b(LOOK, f"{T_FN}::test_the_noon_lags_are_read_as_of_the_noon_origin",
+       "Un enregistrement de demande horodaté après l'origine de midi n'atteint jamais un retard, même par la "
+       "réparation d'un enregistrement mal placé",
+       "A demand record stamped after the noon origin never reaches a lag, not even through the repair of a misplaced "
+       "record"),
+    _b(LOOK, f"{T_GN}::test_a_noon_table_passes_its_guards_under_the_48_hour_term",
+       "Témoin : une table émise à midi passe ses gardes sous le terme de 48 heures",
+       "Control: a table issued at noon passes its guards under the 48-hour term", control=True),
+    _b(LOOK, f"{T_GN}::test_no_24_hour_input_enters_a_noon_table[lag24]",
+       "Un retard de 24 heures injecté dans une table de midi fait échouer la garde de 24 heures, et elle seule",
+       "A 24-hour lag injected into a noon table fires the 24-hour guard, and it alone"),
+    _b(LOOK, f"{T_GN}::test_no_24_hour_input_enters_a_noon_table[temp_persistence]",
+       "Une température de persistance de 24 heures injectée dans une table de midi fait échouer la garde de 24 "
+       "heures, et elle seule",
+       "A 24-hour persistence temperature injected into a noon table fires the 24-hour guard, and it alone"),
+    _b(LOOK, f"{T_MV3}::test_no_lag_of_24_hours_enters_a_noon_model",
+       "Aucun retard de 24 heures n'entre dans un modèle de midi : la forme de v2 à minuit ne s'ajuste pas sur une "
+       "table de midi",
+       "No lag of 24 hours enters a noon model: v2's form at midnight does not fit on a noon table"),
+    _b(LOOK, f"{T_FN}::test_the_lag_days_mean_reads_d_minus_2s_24_labels_and_nothing_after",
+       "L'observation de D-2 05:00 UTC n'entre pas dans la moyenne de D-2, celle de D-1 05:00 UTC y entre, et aucune "
+       "heure d'ECCC après D-1 05:00 UTC ne l'atteint",
+       "The observation at D-2 05:00 UTC is not in D-2's mean, the one at D-1 05:00 UTC is, and no ECCC hour after "
+       "D-1 05:00 UTC reaches it"),
+    _b(LOOK, f"{T_GN}::test_a_lag_days_mean_read_after_the_origin_is_refused",
+       "Une moyenne du jour décalé lue après l'origine est refusée ; lue jusqu'à l'origine même, elle passe",
+       "A lag day's mean read after the origin is refused; read up to the origin itself, it passes"),
+    # Wind
+    _b(DQ, f"{T_NBM}::test_a_header_without_the_wind_speed_is_refused",
+       "Un fichier de prévision sans la colonne du vent (wsp) est refusé",
+       "A forecast file without the wind column (wsp) is refused"),
+    _b(DQ, f"{T_FN}::test_the_noon_feed_refuses_runs_without_wind",
+       "L'alimentation de midi refuse des prévisions sans vent",
+       "The noon feed refuses runs without wind"),
+    _b(DQ, f"{T_FN}::test_a_noon_table_refuses_a_forecast_issued_without_wind",
+       "Une table de midi refuse une prévision émise sans le vent",
+       "A noon table refuses a forecast issued without wind"),
+    _b(DQ, f"{T_WEA}::test_the_wind_gate_refuses_runs_without_wind",
+       "La porte du vent refuse des prévisions sans vent",
+       "The wind gate refuses runs without wind"),
+    _b(DQ, f"{T_NBM}::test_a_wind_speed_that_is_not_a_whole_number_is_refused",
+       "Une vitesse du vent qui n'est pas un nombre entier est refusée",
+       "A wind speed that is not a whole number is refused"),
+    _b(DQ, f"{T_WEA}::test_the_wind_bounds_gate_is_pinned_at_both_edges",
+       "Un vent au-dessus de 100 nœuds ou sous zéro fait échouer la porte des bornes du vent ; 0 et 100 nœuds la "
+       "passent",
+       "A wind above 100 knots or below zero fails the wind bounds gate; 0 and 100 knots pass it"),
+    _b(DQ, f"{T_FN}::test_a_wind_point_outside_the_bounds_does_not_cover",
+       "Une prévision dont un point de vent d'encadrement est hors de 0 à 100 nœuds ne couvre pas le jour",
+       "A run with a bracketing wind point outside 0 to 100 knots does not cover the day"),
+    _b(DQ, f"{T_QV3}::test_a_wind_point_above_100_knots_fails_the_v3_run_and_its_day_takes_the_next_run",
+       "Un point de vent au-dessus de 100 nœuds fait échouer l'exécution de qualité de v3, aucune donnée canonique "
+       "n'est écrite, et son jour prend la prévision suivante",
+       "A wind point above 100 knots fails v3's data-quality run, no canonical data is written, and its day takes the "
+       "next run"),
+    _b(DQ, f"{T_FN}::test_a_run_with_one_blank_wind_point_gives_way_to_the_next_though_its_temperatures_are_whole",
+       "Une prévision dont un point de vent est vide cède la place à la suivante, bien que ses températures soient "
+       "complètes",
+       "A run with one blank wind point gives way to the next, though its temperatures are whole"),
+    _b(DQ, f"{T_QV3}::test_the_wind_clause_lists_the_days_whose_run_changes_and_no_other",
+       "Le constat de la clause du vent liste les jours dont la prévision change à cause du vent, et aucun autre",
+       "The wind clause's finding lists the days whose run changes because of the wind, and no other"),
+    _b(DQ, f"{T_WEA}::test_the_noon_feed_passes_its_gates_and_reports_its_reuse_bound",
+       "L'alimentation de midi passe ses portes et rapporte la borne de réutilisation de midi (87 h) ; une prévision "
+       "vérifiée à une autre heure d'émission est refusée",
+       "The noon feed passes its gates and reports the noon reuse bound (87 h); a forecast checked at another issue "
+       "time is refused"),
+    # The lag day's mean
+    _b(DQ, f"{T_FN}::test_19_usable_hours_leave_the_lag_days_mean_missing_and_20_compute_it",
+       "19 heures utilisables laissent la moyenne du jour décalé manquante, 20 la calculent ; une valeur hors bornes "
+       "ne compte pas",
+       "19 usable hours leave the lag day's mean missing and 20 compute it; a value out of bounds does not count"),
+    _b(DQ, f"{T_FN}::test_a_duplicated_label_is_refused_rather_than_counted_twice",
+       "Une étiquette en double dans le jour décalé est refusée plutôt que comptée deux fois",
+       "A duplicated label in the lag day is refused rather than counted twice"),
+    _b(DQ, f"{T_MV3}::test_every_noon_model_fits_and_forecasts_v3_s_usable_rows",
+       "Un jour dont la moyenne du jour décalé manque est écarté de l'entraînement et n'est prévu par aucun modèle de "
+       "midi, les formes de v2 et de v1 comprises",
+       "A day whose lag day's mean is missing is dropped from training and forecast by no noon model, v2's and v1's "
+       "forms included"),
+    _b(DQ, f"{T_VA3}::test_the_lag_day_and_the_unfed_day_are_dropped_with_their_reasons",
+       "La validation écarte le jour sans moyenne du jour décalé et le jour sans prévision, chacun avec sa raison",
+       "Validation drops the day without its lag day's mean and the day without a forecast, each with its reason"),
+    _b(DQ, f"{T_QV3}::test_the_lag_day_finding_lists_the_days_whose_lag_day_holds_19_usable_hours_and_not_20",
+       "Le constat de qualité liste les jours dont le jour décalé a 19 heures utilisables, et non ceux qui en ont 20",
+       "The data-quality finding lists the days whose lag day holds 19 usable hours, and not those holding 20"),
+    _b(DQ, f"{T_QV3}::test_a_noon_day_without_its_feed_or_its_lag_days_mean_fails_its_verdict",
+       "Un jour de midi sans prévision ou sans la moyenne de son jour décalé échoue à son verdict, avec sa raison",
+       "A noon day without its forecast or its lag day's mean fails its verdict, with its reason"),
+    # Intervals
+    _b(MON, f"{T_IV3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[119-6-True]",
+       "Une case froide de 119 notes prend la demi-largeur commune et l'enregistre",
+       "A cold bin of 119 scores takes the pooled half-width and records it"),
+    _b(MON, f"{T_IV3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[120-3-True]",
+       "Une case froide de 120 notes en 3 semaines prend la demi-largeur commune et l'enregistre",
+       "A cold bin of 120 scores in 3 weeks takes the pooled half-width and records it"),
+    _b(MON, f"{T_IV3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width[120-4-False]",
+       "Témoin : une case froide de 120 notes en 4 semaines garde sa propre demi-largeur",
+       "Control: a cold bin of 120 scores in 4 weeks keeps its own half-width", control=True),
+    _b(MON, f"{T_FZ3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[119-6-True]",
+       "Un modèle figé dont la case froide a 119 notes enregistre la demi-largeur commune, et ses intervalles le "
+       "disent",
+       "A frozen model whose cold bin holds 119 scores records the pooled half-width, and its intervals say so"),
+    _b(MON, f"{T_FZ3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[120-3-True]",
+       "Un modèle figé dont la case froide a 120 notes en 3 semaines enregistre la demi-largeur commune, et ses "
+       "intervalles le disent",
+       "A frozen model whose cold bin holds 120 scores in 3 weeks records the pooled half-width, and its intervals "
+       "say so"),
+    _b(MON, f"{T_FZ3}::test_a_cold_bin_of_119_scores_or_of_120_in_3_weeks_takes_the_pooled_half_width_and_says_so[120-4-False]",
+       "Témoin : un modèle figé dont la case froide a 120 notes en 4 semaines garde sa propre demi-largeur",
+       "Control: a frozen model whose cold bin holds 120 scores in 4 weeks keeps its own half-width", control=True),
+    _b(MON, f"{T_IV3}::test_a_fold_whose_cold_bin_falls_back_says_so_on_every_interval",
+       "Un pli dont la case froide se rabat sur la demi-largeur commune le dit sur chacun de ses intervalles",
+       "A fold whose cold bin falls back to the pooled half-width says so on every interval"),
+    _b(MON, f"{T_VA3}::test_every_interval_says_whether_its_cold_bin_fell_back_and_the_single_half_width_is_beside",
+       "Chaque intervalle de la validation dit si sa case froide s'est rabattue, la demi-largeur unique de v2 à côté",
+       "Every validation interval says whether its cold bin fell back, with v2's single half-width beside it"),
+    _b(LOOK, f"{T_VA3}::test_a_temperature_issued_after_a_fold_s_clock_leaves_its_bin_edge_unchanged",
+       "Changer une température émise après l'horloge d'un pli laisse la limite de case de ce pli inchangée",
+       "Changing a temperature issued after a fold's clock leaves that fold's bin edge unchanged"),
+    _b(LOOK, f"{T_MV3}::test_a_binned_fit_stores_the_rule_on_its_own_usable_rows",
+       "La limite de case d'un ajustement est la règle sur ses propres lignes utilisables : changer la température "
+       "d'une autre ligne la laisse inchangée",
+       "A fit's bin edge is the rule on its own usable rows: changing another row's temperature leaves it unchanged"),
+    _b(LOOK, f"{T_MV3}::test_the_bin_edge_check_refuses_an_edge_that_is_not_the_rule_on_its_rows",
+       "Une limite de case écartée de la règle de 1,1e-12 °C, ou calculée avec une ligne de plus que celles de "
+       "l'ajustement, est refusée",
+       "A bin edge 1.1e-12 C off the rule, or computed with one row more than the fit's own, is refused"),
+    _b(LOOK, f"{T_FZ3}::test_a_freeze_whose_bin_edge_is_not_the_rule_on_its_own_rows_is_refused[v3]",
+       "Un gel de v3 dont la limite de case n'est pas la règle sur ses propres lignes est refusé",
+       "A freeze of v3 whose bin edge is not the rule on its own rows is refused"),
+    _b(LOOK, f"{T_FZ3}::test_a_freeze_whose_bin_edge_is_not_the_rule_on_its_own_rows_is_refused[v1_noon]",
+       "Un gel de la forme de v1 à midi dont la limite de case n'est pas la règle sur ses propres lignes est refusé",
+       "A freeze of v1's form at noon whose bin edge is not the rule on its own rows is refused"),
+    # The verdicts
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case0-not_testable]",
+       "Verdict des termes : fenêtres d'événement non testables, tout le reste meilleur : non testable",
+       "Terms verdict: event windows not testable, all else better: not testable"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case1-not_testable]",
+       "Verdict des termes : fenêtres d'événement non testables et moins bonnes : non testable",
+       "Terms verdict: event windows not testable and worse: not testable"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case2-worse]",
+       "Verdict des termes : fenêtres d'événement moins bonnes, toutes les heures et la queue froide meilleures : "
+       "moins bon",
+       "Terms verdict: event windows worse, all hours and cold tail better: worse"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case3-worse]",
+       "Verdict des termes : fenêtres d'événement moins bonnes, queue froide non testable : moins bon",
+       "Terms verdict: event windows worse, cold tail not testable: worse"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case4-not_shown_better]",
+       "Verdict des termes : fenêtres d'événement non séparées : pas montré meilleur",
+       "Terms verdict: event windows not separated: not shown better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case5-not_shown_better]",
+       "Verdict des termes : fenêtres d'événement meilleures, toutes les heures moins bonnes : pas montré meilleur",
+       "Terms verdict: event windows better, all hours worse: not shown better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case6-not_shown_better]",
+       "Verdict des termes : fenêtres d'événement meilleures, queue froide moins bonne : pas montré meilleur",
+       "Terms verdict: event windows better, cold tail worse: not shown better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case7-not_shown_better]",
+       "Verdict des termes : fenêtres d'événement meilleures, toutes les heures moins bonnes, queue froide non "
+       "testable : pas montré meilleur",
+       "Terms verdict: event windows better, all hours worse, cold tail not testable: not shown better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case8-better]",
+       "Verdict des termes : fenêtres d'événement meilleures, toutes les heures et la queue froide non séparées : "
+       "meilleur",
+       "Terms verdict: event windows better, all hours and cold tail not separated: better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case9-better]",
+       "Verdict des termes : fenêtres d'événement, toutes les heures et queue froide meilleures : meilleur",
+       "Terms verdict: event windows, all hours and cold tail better: better"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case10-better_windows_cold_untested]",
+       "Verdict des termes : fenêtres d'événement meilleures, toutes les heures non séparées, queue froide non "
+       "testable : meilleur dans les fenêtres, queue froide non testée",
+       "Terms verdict: event windows better, all hours not separated, cold tail not testable: better in the event "
+       "windows, the cold tail not testable"),
+    _b(MON, f"{T_DV3}::test_each_line_of_the_terms_verdict[case11-better_windows_cold_untested]",
+       "Verdict des termes : fenêtres d'événement et toutes les heures meilleures, queue froide non testable : "
+       "meilleur dans les fenêtres, queue froide non testée",
+       "Terms verdict: event windows and all hours better, cold tail not testable: better in the event windows, the "
+       "cold tail not testable"),
+    _b(MON, f"{T_DV3}::test_a_gain_in_the_event_windows_paid_for_by_worse_all_hours_is_not_shown_better",
+       "Un gain dans les fenêtres d'événement payé par un contraste moins bon sur toutes les heures n'est pas montré "
+       "meilleur",
+       "A gain in the event windows paid for by a worse all-hours contrast is not shown better"),
+    _b(MON, f"{T_DV3}::test_a_gain_in_the_event_windows_paid_for_by_a_worse_cold_tail_is_not_shown_better",
+       "Un gain dans les fenêtres d'événement payé par une queue froide moins bonne n'est pas montré meilleur",
+       "A gain in the event windows paid for by a worse cold tail is not shown better"),
+    _b(MON, f"{T_DV3}::test_too_few_event_window_hours_are_not_testable",
+       "Moins de 120 heures de fenêtres d'événement ne sont pas testables, quel que soit leur contraste",
+       "Fewer than 120 event-window hours are not testable, whatever their contrast"),
+    _b(MON, f"{T_DV3}::test_the_family_verdict_is_v2_s_rule_on_the_family_contrast",
+       "Le verdict de la famille est la règle de v2 sur le contraste de la famille ; les fenêtres d'événement n'y "
+       "jouent aucun rôle",
+       "The family verdict is v2's rule on the family contrast; the event windows play no part in it"),
+    # The event windows
+    _b(MON, f"{T_DV3}::test_the_event_windows_are_the_rate_s_peak_hours_by_local_clock",
+       "Les heures finissant à 06:00, 11:00, 16:00 et 21:00 locales sont hors des fenêtres, celles finissant à 07:00, "
+       "10:00, 17:00 et 20:00 dedans",
+       "The hours ending 06:00, 11:00, 16:00 and 21:00 local are outside the windows, those ending 07:00, 10:00, "
+       "17:00 and 20:00 inside"),
+    _b(MON, f"{T_DV3}::test_on_a_march_day_under_daylight_time_the_windows_are_hours_ending_11_to_14_and_21_to_00_utc",
+       "Un jour de mars à l'heure avancée, les fenêtres sont les heures finissant de 11:00 à 14:00 et de 21:00 à 00:00 "
+       "UTC",
+       "On a March day under daylight time the windows are the hours ending 11:00 to 14:00 and 21:00 to 00:00 UTC"),
+    _b(MON, f"{T_DV3}::test_excluded_days_and_days_outside_the_winter_hold_no_window[2023-12-25-0]",
+       "Le 25 décembre ne compte aucune fenêtre d'événement",
+       "December 25 holds no event window"),
+    # The window ranking
+    _b(MON, f"{T_DV3}::test_k_rounds_half_up_and_never_exceeds_w",
+       "k suit w et W comme écrit : une demie s'arrondit vers le haut, et k ne dépasse jamais w",
+       "k follows w and W as written: a half rounds up, and k never exceeds w"),
+    _b(MON, f"{T_DV3}::test_the_window_ranking_breaks_ties_by_date_then_morning_and_counts_overlap",
+       "Des moyennes égales sont classées par date, puis le matin d'abord",
+       "Equal means are ordered by date, then morning first"),
+    _b(MON, f"{T_DV3}::test_a_window_missing_one_forecast_hour_is_not_eligible_and_is_listed",
+       "Une fenêtre à qui il manque une heure de prévision n'est pas admissible et est listée avec sa raison",
+       "A window missing one forecast hour is not eligible and is listed with its reason"),
+    _b(MON, f"{T_DV3}::test_w_counts_each_movable_excluded_day_by_its_own_date",
+       "Un hiver dont Pâques tombe en avril ne compte pour W aucun jour exclu de Pâques",
+       "A winter whose Easter falls in April counts no Easter excluded day for W"),
+    # The freeze
+    _b(FREEZE, f"{T_FZ3}::test_a_production_model_with_a_lag_coefficient_at_or_below_zero_is_refused",
+       "Un modèle de production v3 dont un coefficient de retard est nul ou négatif est refusé",
+       "A v3 production model with a lag coefficient at or below zero is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_a_production_model_whose_terms_are_not_the_ruled_ones_is_refused",
+       "Un modèle de production v3 dont les termes ne sont pas ceux fixés est refusé",
+       "A v3 production model whose terms are not the ruled ones is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[lag48]",
+       "Le gel de v3 refuse, avant d'enregistrer quoi que ce soit, un modèle de production dont le coefficient de "
+       "lag48 n'est pas positif",
+       "v3's freeze refuses, before logging anything, a production model whose lag48 coefficient is not positive"),
+    _b(FREEZE, f"{T_FZ3}::test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[lag168]",
+       "Le gel de v3 refuse, avant d'enregistrer quoi que ce soit, un modèle de production dont le coefficient de "
+       "lag168 n'est pas positif",
+       "v3's freeze refuses, before logging anything, a production model whose lag168 coefficient is not positive"),
+    _b(FREEZE, f"{T_FZ3}::test_freeze_v3_refuses_before_logging_a_production_model_the_rules_refuse[terms]",
+       "Le gel de v3 refuse, avant d'enregistrer quoi que ce soit, un modèle de production dont les termes ne sont pas "
+       "ceux fixés",
+       "v3's freeze refuses, before logging anything, a production model whose terms are not the ruled ones"),
+    _b(FREEZE, f"{T_FZ3}::test_a_term_definition_other_than_the_ruled_one_is_refused[base_c-17.0]",
+       "Un modèle figé dont la définition d'un terme n'est pas celle fixée (base de 17 °C) est refusé",
+       "A frozen model whose term definition is not the ruled one (a base of 17 C) is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_a_term_definition_other_than_the_ruled_one_is_refused[lag_day_min_hours-19]",
+       "Un modèle figé dont la définition d'un terme n'est pas celle fixée (19 heures minimum) est refusé",
+       "A frozen model whose term definition is not the ruled one (a minimum of 19 hours) is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_a_term_definition_other_than_the_ruled_one_is_refused[knots_to_kmh-1.85]",
+       "Un modèle figé dont la définition d'un terme n'est pas celle fixée (1,85 km/h par nœud) est refusé",
+       "A frozen model whose term definition is not the ruled one (1.85 km/h per knot) is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_a_term_definition_other_than_the_ruled_one_is_refused[lag_day_first_h--48]",
+       "Un modèle figé dont la définition d'un terme n'est pas celle fixée (jour décalé commençant à -48 h) est refusé",
+       "A frozen model whose term definition is not the ruled one (a lag day starting at -48 h) is refused"),
+    _b(FREEZE, f"{T_FZ3}::test_a_term_definition_other_than_the_ruled_one_is_refused[base_c-True]",
+       "Un modèle figé dont la définition d'un terme n'est pas celle fixée (un booléen pour la base) est refusé",
+       "A frozen model whose term definition is not the ruled one (a boolean for the base) is refused"),
+    _b(FREEZE, f"{T_MV3}::test_term_definitions_other_than_the_ruled_ones_are_refused",
+       "Des définitions de termes autres que celles fixées, une clé manquante ou en trop, ou un booléen pour un "
+       "nombre, sont refusées",
+       "Term definitions other than the ruled ones, a missing or extra key, or a boolean for a number, are refused"),
+    # Data
+    _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[hq]",
+       "Le fichier d'Hydro-Québec dont l'empreinte diffère de celle du premier rejeu 2024 de v2 est refusé",
+       "The Hydro-Québec file whose hash differs from v2's first 2024 replay's is refused"),
+    _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[eccc_file]",
+       "Un fichier mensuel d'ECCC dont l'empreinte diffère de celle du premier rejeu 2024 de v2 est refusé",
+       "An ECCC month file whose hash differs from v2's first 2024 replay's is refused"),
+    _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[eccc_manifest]",
+       "Un manifeste d'ECCC (un mois téléchargé à nouveau) dont l'empreinte diffère de celle du premier rejeu 2024 de "
+       "v2 est refusé",
+       "An ECCC manifest (a month fetched again) whose hash differs from v2's first 2024 replay's is refused"),
+    _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[nbm_file]",
+       "Un fichier annuel du NBM dont l'empreinte diffère de celle du premier rejeu 2024 de v2 est refusé",
+       "An NBM year file whose hash differs from v2's first 2024 replay's is refused"),
+    _b(DQ, f"{T_QV3}::test_a_raw_file_whose_hash_differs_from_v2s_is_refused[nbm_manifest]",
+       "Un manifeste du NBM (une entrée de 2021) dont l'empreinte diffère de celle du premier rejeu 2024 de v2 est "
+       "refusé",
+       "An NBM manifest (a 2021 entry) whose hash differs from v2's first 2024 replay's is refused"),
+    _b(DQ, f"{T_QV3}::test_a_link_in_place_of_a_byte_copy_is_refused[file_symlink]",
+       "Un lien symbolique vers un fichier à la place d'une copie octet pour octet est refusé",
+       "A symbolic link to a file in place of a byte copy is refused"),
+    _b(DQ, f"{T_QV3}::test_a_link_in_place_of_a_byte_copy_is_refused[directory_symlink]",
+       "Un lien symbolique vers un dossier à la place d'une copie octet pour octet est refusé",
+       "A symbolic link to a directory in place of a byte copy is refused"),
+    _b(DQ, f"{T_QV3}::test_a_link_in_place_of_a_byte_copy_is_refused[hard_link]",
+       "Un lien physique à la place d'une copie octet pour octet est refusé",
+       "A hard link in place of a byte copy is refused"),
+    _b(DQ, f"{T_QV3}::test_the_v3_run_refuses_a_file_that_is_not_v2s_before_it_reads_any_file",
+       "L'exécution de qualité de v3 refuse un fichier qui n'est pas celui de v2 avant de lire aucun fichier",
+       "v3's data-quality run refuses a file that is not v2's before it reads any file"),
+    _b(DQ, f"{T_QV3}::test_byte_copies_of_v2s_files_pass_and_a_fresh_clone_is_not_run",
+       "Témoin : des copies octet pour octet des fichiers de v2 passent, et un clone neuf, ainsi désigné, est déclaré "
+       "non vérifié",
+       "Control: byte copies of v2's files pass, and a fresh clone, told so, is reported not run", control=True),
+    _b(DQ, f"{T_QV3}::test_without_a_read_of_v2s_store_dq_v3_refuses_unless_told_it_is_a_fresh_clone",
+       "Sans lecture du magasin de v2, l'exécution de qualité de v3 refuse, sauf sur un clone neuf ainsi désigné ; "
+       "ainsi désigné alors qu'une lecture existe, elle refuse aussi, avant de lire aucun fichier",
+       "Without a read of v2's store, v3's data-quality run refuses unless told it is on a fresh clone; told so while "
+       "a read exists, it refuses too, before it reads any file"),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_past_2024_is_refused_before_any_request[None]",
+       "Le téléchargement de v3 au-delà de 2024 (toutes les sources) est refusé avant toute requête",
+       "v3's fetch past 2024 (every source) is refused before any request"),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_past_2024_is_refused_before_any_request[hq]",
+       "Le téléchargement de v3 au-delà de 2024 (Hydro-Québec) est refusé avant toute requête",
+       "v3's fetch past 2024 (Hydro-Québec) is refused before any request"),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_past_2024_is_refused_before_any_request[eccc]",
+       "Le téléchargement de v3 au-delà de 2024 (ECCC) est refusé avant toute requête",
+       "v3's fetch past 2024 (ECCC) is refused before any request"),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_past_2024_is_refused_before_any_request[nbm]",
+       "Le téléchargement de v3 au-delà de 2024 (NBM) est refusé avant toute requête",
+       "v3's fetch past 2024 (NBM) is refused before any request"),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_through_2024_reaches_each_source[hq]",
+       "Témoin : le téléchargement de v3 jusqu'en 2024 atteint la source Hydro-Québec",
+       "Control: v3's fetch through 2024 reaches the Hydro-Québec source", control=True),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_through_2024_reaches_each_source[eccc]",
+       "Témoin : le téléchargement de v3 jusqu'en 2024 atteint la source ECCC",
+       "Control: v3's fetch through 2024 reaches the ECCC source", control=True),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_through_2024_reaches_each_source[nbm]",
+       "Témoin : le téléchargement de v3 jusqu'en 2024 atteint la source NBM",
+       "Control: v3's fetch through 2024 reaches the NBM source", control=True),
+    _b(DQ, f"{T_F3}::test_a_v3_fetch_is_never_forced",
+       "Le téléchargement de v3 n'est jamais forcé : --force est refusé avant qu'aucune source ne s'exécute",
+       "v3's fetch is never forced: --force is refused before any source runs"),
+    # v2's store
+    _b(FREEZE, f"{T_V2S}::test_the_read_of_v2s_store_leaves_it_byte_identical_and_logs_what_it_read",
+       "La lecture de l'étape 2 laisse la base et les artefacts de v2 identiques octet pour octet, et enregistre ce "
+       "qu'elle a lu dans le magasin de v3",
+       "The step-2 read leaves v2's database and artifacts byte-identical, and logs what it read in v3's store"),
+    _b(FREEZE, f"{T_V2S}::test_v2s_database_is_opened_read_only",
+       "La base de v2 est ouverte en lecture seule : une écriture échoue, et une base absente n'est pas créée",
+       "v2's database is opened read-only: a write fails, and a missing database is not created"),
+    _b(FREEZE, f"{T_V2S}::test_no_other_v3_command_opens_v2s_store",
+       "Aucune autre commande de v3 n'ouvre le magasin de v2",
+       "No other v3 command opens v2's store"),
+    _b(FREEZE, f"{T_V2S}::test_v2s_store_is_read_once_and_a_second_read_is_refused_before_it_opens_anything",
+       "Le magasin de v2 est lu une fois : une seconde lecture est refusée avant de rien ouvrir, et il reste "
+       "identique",
+       "v2's store is read once: a second read is refused before anything is opened, and it stays identical"),
+    _b(FREEZE, f"{T_V2S}::test_read_v2_refuses_a_path_that_is_v3s_own_store[same]",
+       "La lecture refuse un chemin qui est le magasin de v3 avant de rien ouvrir",
+       "The read refuses a path that is v3's store before anything is opened"),
+    _b(FREEZE, f"{T_V2S}::test_read_v2_refuses_a_path_that_is_v3s_own_store[path_inside_own]",
+       "La lecture refuse un chemin qui est dans le magasin de v3 avant de rien ouvrir",
+       "The read refuses a path that lies inside v3's store before anything is opened"),
+    _b(FREEZE, f"{T_V2S}::test_read_v2_refuses_a_path_that_is_v3s_own_store[own_inside_path]",
+       "La lecture refuse un chemin qui contient le magasin de v3 avant de rien ouvrir",
+       "The read refuses a path that holds v3's store before anything is opened"),
+    _b(FREEZE, f"{T_V2S}::test_v2s_database_is_opened_immutable_and_refused_beside_a_write_ahead_log",
+       "La base de v2 est ouverte immuable : rien n'est créé à côté d'elle, et un journal d'écriture anticipée à "
+       "côté d'elle est refusé",
+       "v2's database is opened immutable: nothing is created beside it, and a write-ahead log beside it is refused"),
+    _b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[dq-v3]",
+       "L'exécution de qualité de v3 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire "
+       "ni enregistrer",
+       "v3's data-quality run refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    _b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[validate-v3]",
+       "La validation de v3 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire ni "
+       "enregistrer",
+       "v3's validation refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    _b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[freeze-v3]",
+       "Le gel de v3 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire ni enregistrer",
+       "v3's freeze refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    _b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[read-v2]",
+       "La lecture du magasin de v2 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire "
+       "ni enregistrer",
+       "The read of v2's store refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    # Calibration bins
+    _b(LOOK, f"{T_IV3}::test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
+       "Deux plis dont les limites diffèrent classent la même note de calibration selon la limite de l'ajustement "
+       "calibré",
+       "Two folds whose edges differ bin the same calibration score by the edge of the fit being calibrated"),
+    _b(LOOK, f"{T_VA3}::test_each_fold_bins_its_calibration_by_the_edge_of_the_fit_being_calibrated",
+       "Dans la validation, chaque pli classe sa calibration selon la limite de l'ajustement calibré",
+       "In validation, each fold bins its calibration by the edge of the fit being calibrated"),
+    # First run
+    _b(FREEZE, f"{T_FR3}::test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
+       "Un calcul de v3 sur données réelles hors de la descendance de l'étiquette v3-first-run est refusé",
+       "A v3 real-data run from a commit that does not descend from the v3-first-run tag is refused"),
+    _b(FREEZE, f"{T_FR3}::test_a_v3_real_data_run_from_a_descendant_of_the_v3_first_run_tag_passes",
+       "Témoin : un calcul de v3 sur données réelles depuis un descendant de l'étiquette v3-first-run passe",
+       "Control: a v3 real-data run from a descendant of the v3-first-run tag passes", control=True),
+    _b(FREEZE, f"{T_FR3}::test_every_v3_real_data_command_calls_the_guard_before_opening_a_file",
+       "Les commandes dq-v3 et read-v2 refusent hors de la descendance de v3-first-run avant d'ouvrir aucun fichier",
+       "The dq-v3 and read-v2 commands refuse off the v3-first-run descent before they open any file"),
+    # Reproduction
+    _b(FREEZE, f"{T_RP3}::test_the_same_hours_and_values_pass_and_say_what_was_compared",
+       "Témoin : les mêmes heures et les mêmes valeurs que la validation enregistrée de v2 passent la vérification de "
+       "reproduction",
+       "Control: the same hours and values as v2's recorded validation pass the reproduction check", control=True),
+    _b(FREEZE, f"{T_RP3}::test_a_difference_of_5e_7_mw_passes_and_one_of_2e_6_is_refused",
+       "La forme de v2 à minuit à plus de 1e-6 MW de la validation enregistrée de v2 sur une heure est refusée ; à "
+       "5e-7 MW elle passe",
+       "v2's form at midnight more than 1e-6 MW from v2's recorded validation on one hour is refused; 5e-7 MW passes"),
+    _b(FREEZE, f"{T_RP3}::test_another_set_of_hours_with_a_forecast_is_refused[missing]",
+       "Un autre ensemble d'heures de 2020 à 2023 que celui de la validation enregistrée de v2 est refusé : une heure "
+       "que v3 prévoit et que v2 n'a pas enregistrée",
+       "Another set of 2020-2023 hours than v2's recorded validation is refused: an hour v3 forecasts and v2 never "
+       "recorded"),
+    _b(FREEZE, f"{T_RP3}::test_another_set_of_hours_with_a_forecast_is_refused[extra]",
+       "Un autre ensemble d'heures de 2020 à 2023 que celui de la validation enregistrée de v2 est refusé : une heure "
+       "que v2 a enregistrée et que v3 ne prévoit pas",
+       "Another set of 2020-2023 hours than v2's recorded validation is refused: an hour v2 recorded and v3 does not "
+       "forecast"),
+    _b(FREEZE, f"{T_RP3}::test_another_set_of_hours_with_a_forecast_is_refused[nan_in_v3]",
+       "Un autre ensemble d'heures de 2020 à 2023 que celui de la validation enregistrée de v2 est refusé : une "
+       "prévision vide chez v3 contre une valeur chez v2",
+       "Another set of 2020-2023 hours than v2's recorded validation is refused: a blank forecast in v3's against a "
+       "value in v2's"),
+    _b(FREEZE, f"{T_RP3}::test_another_set_of_hours_with_a_forecast_is_refused[nan_in_v2]",
+       "Un autre ensemble d'heures de 2020 à 2023 que celui de la validation enregistrée de v2 est refusé : une "
+       "prévision vide chez v2 contre une valeur chez v3",
+       "Another set of 2020-2023 hours than v2's recorded validation is refused: a blank forecast in v2's against a "
+       "value in v3's"),
+    _b(FREEZE, f"{T_RP3}::test_hours_outside_2020_2023_are_not_compared",
+       "Les heures hors de 2020 à 2023 ne sont pas comparées ; la dernière heure de 2023 l'est",
+       "Hours outside 2020-2023 are not compared; the last hour of 2023 is"),
+    _b(FREEZE, f"{T_VA3}::test_a_failed_reproduction_refuses_before_any_run_is_logged[value]",
+       "Une reproduction qui échoue (une heure à 2e-6 MW) arrête la validation de v3 avant qu'aucune exécution ne soit "
+       "enregistrée",
+       "A failed reproduction (one hour 2e-6 MW off) stops v3's validation before any run is logged"),
+    _b(FREEZE, f"{T_VA3}::test_a_failed_reproduction_refuses_before_any_run_is_logged[hour]",
+       "Une reproduction qui échoue (une heure manquante) arrête la validation de v3 avant qu'aucune exécution ne soit "
+       "enregistrée",
+       "A failed reproduction (one hour missing) stops v3's validation before any run is logged"),
+    _b(FREEZE, f"{T_VA3}::test_v2_s_form_at_midnight_is_v2_s_validation_exactly",
+       "Témoin : dans le cadre de v3, la forme de v2 à minuit reproduit au bit près la validation de v2",
+       "Control: in v3's harness, v2's form at midnight reproduces v2's validation to the bit", control=True),
 ]
 
 
