@@ -371,6 +371,7 @@ FZ3, RP3, QV3 = "tests/test_freeze_v3.py::", "tests/test_reproduction_v3.py::", 
 F3, FR3, V2S = "tests/test_fetch_v3.py::", "tests/test_firstrun_v3.py::", "tests/test_v2store.py::"
 RN3, RH3, GT3 = "tests/test_replay_noon.py::", "tests/test_rehearsal_v3.py::", "tests/test_gate_v3.py::"
 TG3, FRC, DR3 = "tests/test_tags_v3.py::", "tests/test_freeze_record.py::", "tests/test_departure_record_v3.py::"
+RV3 = "tests/test_report_v3.py::"
 
 PLAN_V3_12 = {
     "The spike scale": (
@@ -544,6 +545,10 @@ PLAN_V3_12 = {
         GT3 + "test_a_commit_between_the_gate_and_the_run_refuses[before_open]",
         GT3 + "test_a_commit_between_the_gate_and_the_run_refuses[at_open]",
         GT3 + "test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start",
+        *(GT3 + f"test_a_rule_file_named_with_a_line_separator_after_the_2025_time_is_seen_by_a_and_i[{c}]"
+          for c in ("separator", "quote")),
+        GT3 + "test_a_later_data_quality_run_through_2024_is_never_d_s_latest_run",
+        GT3 + "test_a_deleted_data_quality_run_that_finished_and_passed_passes_d",
     ),
     "Calibration bins": (
         IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
@@ -564,7 +569,12 @@ PLAN_V3_12 = {
         FRC + "test_the_record_is_read_as_the_commit_that_added_it_holds_it",
         GT3 + "test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
         *(GT3 + f"test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[{c}]"
-          for c in ("sibling", "off_head", "control")),
+          for c in ("sibling", "keep_ref", "stash_ref", "off_head", "control")),
+        *(GT3 + f"test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history[{c}]"
+          for c in ("clean", "post_hoc")),
+        *(FRC + f"test_a_plain_merge_carrying_the_record_adds_nothing[{c}]" for c in ("changed", "dropped", "plain")),
+        *(GT3 + f"test_a_plain_merge_of_the_record_s_branch_is_no_second_addition[{c}]" for c in ("changed", "plain")),
+        *(RV3 + f"test_a_freeze_record_off_head_s_history_is_shown_and_said_so[{c}]" for c in ("off_head", "control")),
     ),
     "First run": (
         FR3 + "test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
@@ -581,6 +591,8 @@ PLAN_V3_12 = {
           for t in ("dq_retrieved", "earlier_start")),
         GT3 + "test_a_data_quality_run_s_start_time_is_no_reading_of_the_2025_time",
         GT3 + "test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch",
+        *(GT3 + f"test_an_early_retrieval_on_a_later_page_of_data_quality_runs_still_fires_h[{c}]"
+          for c in ("paged", "control")),
     ),
     "Reproduction": (
         RP3 + "test_the_same_hours_and_values_pass_and_say_what_was_compared",

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import subprocess
+import re
 
 import pandas as pd
 import pytest
@@ -205,23 +205,24 @@ def test_the_writer_refuses_without_the_tag_or_its_pin(chain, case):
     assert not (chain.repo / fr.PATH).exists()
 
 
-@pytest.mark.parametrize("case", ["file", "commit", "branch"])
+@pytest.mark.parametrize("case", ["file", "commit", "branch", "other_ref"])
 def test_the_writer_writes_once(chain, case):
-    """Written once: refused when the file is in the working tree, when any commit of the history touched it, even
-    one whose file was deleted since, or when a commit of another branch added it (the head reset to before it)."""
+    """Written once: refused when the file is in the working tree, when any commit of the history added it, even one
+    whose file was deleted since, or when a commit kept by another branch, or by a ref outside heads, remotes and tags
+    (refs/keep/r), added it (the head reset to before it)."""
     path = chain.repo / fr.PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{}\n", encoding="utf-8")
     if case == "commit":
-        commit(chain.repo, message="a record")
+        added = commit(chain.repo, message="a record")
         path.unlink()
         commit(chain.repo, message="removed")
-        match = "touch docs/freeze-v3.json: the freeze record is written once"
-    elif case == "branch":
+        match = rf"commits \['{added[:12]}'\] of the repository's refs add docs/freeze-v3.json"
+    elif case in ("branch", "other_ref"):
         added = commit(chain.repo, message="a record")
-        git(chain.repo, "branch", "keep")
+        git(chain.repo, *(["branch", "keep"] if case == "branch" else ["update-ref", "refs/keep/r", added]))
         git(chain.repo, "reset", "--quiet", "--hard", f"{added}^")
-        assert not path.exists() and fr.record_commits() == []
+        assert not path.exists() and fr.touching_commits(added) == []
         match = rf"commits \['{added[:12]}'\] of the repository's refs add docs/freeze-v3.json"
     else:
         match = "exists: the freeze record is written once"
@@ -447,28 +448,23 @@ def test_the_record_shape_refuses_anything_else(record, case):
 # ------------------------------------------------------------------------------------------------ the reader
 
 
-def record_problems(root, head: str = "HEAD") -> list[str]:
-    """What is wrong with the freeze record's history in `root` up to `head` (none: no commit touches it, or exactly
-    one commit adds it and none touches it again)."""
-    log = subprocess.run(["git", "log", "--format=%H", "--full-history", head, "--", fr.PATH], cwd=root,
-                         capture_output=True, text=True, check=True).stdout.split()
-    added = subprocess.run(["git", "log", "--format=%H", "--full-history", "--diff-filter=A", head, "--", fr.PATH],
-                           cwd=root, capture_output=True, text=True, check=True).stdout.split()
-    if not log:
-        return []
-    problems = []
-    if len(log) > 1:
-        problems.append(f"{len(log)} commits touch {fr.PATH}: {[c[:12] for c in reversed(log)]}")
-    if added[-1:] != log[-1:]:
-        problems.append(f"the first commit touching {fr.PATH}, {log[-1][:12]}, does not add it")
-    return problems
+def record_problems(head: str = "HEAD") -> list[str]:
+    """What is wrong with the freeze record's history up to `head` and across the repository's refs, read by the
+    writer's and the reader's one definition (freeze_record.anchor): none when no commit adds it, or when exactly one
+    commit adds it and no commit of `head`'s history touches it after."""
+    try:
+        fr.anchor(head)
+    except FreezeRecordError as e:
+        return [str(e)]
+    return []
 
 
 def test_the_freeze_record_is_added_by_one_commit_and_never_touched_again():
-    """This repository's history: no commit touches docs/freeze-v3.json yet (step 5 commits it), or exactly one adds it
+    """This repository's history: no commit adds docs/freeze-v3.json yet (step 5 commits it), or exactly one adds it
     and none touches it later; a record present reads as its commit holds it."""
-    assert record_problems(REPO_ROOT) == []
-    if fr.record_commits():
+    assert fr.paths.REPO_ROOT == REPO_ROOT
+    assert record_problems() == []
+    if fr.anchor():
         fr.read_freeze_record()
 
 
@@ -477,62 +473,105 @@ def test_a_second_commit_touching_the_freeze_record_fails(tmp_path, monkeypatch,
     touching the file, even one that writes the same record again after an edit, fails both."""
     s = scratch_store(tmp_path, monkeypatch)
     path = s.repo / fr.PATH
-    commit(s.repo, {fr.PATH: fr.dumps(record)}, "the freeze record")
-    assert record_problems(s.repo) == [] and fr.read_freeze_record()["data"] == record
+    added = commit(s.repo, {fr.PATH: fr.dumps(record)}, "the freeze record")
+    assert record_problems() == [] and fr.read_freeze_record()["data"] == record
     second = commit(s.repo, {fr.PATH: fr.dumps(record).replace("\n", "\n ", 1)}, "touched")
-    assert record_problems(s.repo) == [f"2 commits touch {fr.PATH}: {[fr.record_commits()[0][:12], second[:12]]}"]
-    with pytest.raises(FreezeRecordError, match="2 commits touch"):
+    touched = f"commits {[second[:12]]} touch {fr.PATH} after {added[:12]} added it"
+    assert record_problems() == [f"{touched}: it is written once, by one commit"]
+    with pytest.raises(FreezeRecordError, match=re.escape(touched)):
         fr.read_freeze_record()
     assert path.exists()
 
 
 def test_a_record_deleted_and_added_again_fails(tmp_path, monkeypatch, record):
-    """A deletion and a re-addition are touches too: the record is then added by another commit than its first, and
-    the reader refuses."""
+    """A deletion touches the record, and a re-addition is a second addition: the record is then added by another
+    commit than its first, and the reader refuses (as the anchor, and on the deletion alone before the re-addition)."""
+    from valiwatt.freeze_record import FreezeRecordAnchorError
+
     s = scratch_store(tmp_path, monkeypatch)
-    commit(s.repo, {fr.PATH: fr.dumps(record)}, "added")
+    added = commit(s.repo, {fr.PATH: fr.dumps(record)}, "added")
     (s.repo / fr.PATH).unlink()
-    commit(s.repo, message="removed")
-    commit(s.repo, {fr.PATH: fr.dumps(record)}, "added again")
-    with pytest.raises(FreezeRecordError, match="3 commits touch"):
+    removed = commit(s.repo, message="removed")
+    with pytest.raises(FreezeRecordError, match=re.escape(f"commits {[removed[:12]]} touch {fr.PATH} after "
+                                                          f"{added[:12]} added it")):
+        fr.read_freeze_record()
+    again = commit(s.repo, {fr.PATH: fr.dumps(record)}, "added again")
+    with pytest.raises(FreezeRecordAnchorError, match=re.escape(f"2 commits across the repository's refs add {fr.PATH} "
+                                                                f"({[added[:12], again[:12]]})")):
         fr.read_freeze_record()
 
 
-@pytest.mark.parametrize("case", ["sibling", "off_head", "tag", "remote", "unreferenced"])
+@pytest.mark.parametrize("case", ["plain", "changed", "dropped"])
+def test_a_plain_merge_carrying_the_record_adds_nothing(tmp_path, monkeypatch, record, case):
+    """Section 12, the freeze record: R committed on branch `a`; branch `b`, forked before it, without it; `a` merged
+    into `b`. A plain merge (its tree holds R as `a` holds it) neither adds the record nor touches it: one adding
+    commit across the refs, R, and the reader reads R (control), although git lists the merge in the record's history
+    (one of its sides lacks it). A merge whose result changes the record's bytes (changed), or drops it (dropped),
+    touches it, and the reader refuses, naming the merge."""
+    s = scratch_store(tmp_path, monkeypatch)
+    text = fr.dumps(record)
+    fork = git(s.repo, "rev-parse", "HEAD")
+    git(s.repo, "checkout", "-q", "-b", "a")
+    r = commit(s.repo, {fr.PATH: text}, "the freeze record")
+    git(s.repo, "checkout", "-q", "-b", "b", fork)
+    commit(s.repo, {"README.md": "b's own\n"}, "b's own commit")
+    git(s.repo, "merge", "--no-ff", "--no-commit", "a")
+    if case == "changed":
+        (s.repo / fr.PATH).write_text(text.replace("\n", "\n ", 1), encoding="utf-8")
+    elif case == "dropped":
+        (s.repo / fr.PATH).unlink()
+    merge = commit(s.repo, message="a merged into b")
+    assert git(s.repo, "rev-parse", f"{merge}^2") == r
+    assert merge in [c for c, _ in fr._history("HEAD")]  # listed: one of its sides lacks the record
+    assert fr.adding_commits() == [r]
+    if case == "plain":
+        assert fr.touching_commits(r) == [] and record_problems() == []
+        rec = fr.read_freeze_record()
+        assert (rec["commit"], rec["data"]) == (r, record)
+        return
+    touched = f"commits {[merge[:12]]} touch {fr.PATH} after {r[:12]} added it"
+    assert fr.touching_commits(r) == [merge] and record_problems() == [f"{touched}: it is written once, by one commit"]
+    with pytest.raises(FreezeRecordError, match=re.escape(touched)):
+        fr.read_freeze_record()
+
+
+@pytest.mark.parametrize("case", ["sibling", "off_head", "tag", "remote", "keep_ref", "stash_ref", "unreferenced"])
 def test_the_record_s_anchor_is_its_one_addition_across_the_repository_s_refs(tmp_path, monkeypatch, record, case):
-    """The record's anchor: the one commit of HEAD's history, local branches, remote-tracking refs and tags that adds
-    it, an ancestor of HEAD. Record R committed and kept by a branch (or a tag, or a remote-tracking ref); the working
-    branch reset to R's parent: a second record R' written there and committed (the same bytes) is refused (sibling),
-    and so, before R', is a head whose history holds no record while a ref holds R (off_head). The control: R kept by
-    no ref (reachable from the reflog only), R' reads as the record; the anchor reads refs, never the reflog."""
+    """The record's anchor: the one commit of HEAD's history and every ref (`--all`) that adds it. Record R committed
+    and kept by a branch (or a tag, a remote-tracking ref, a ref of another namespace, refs/keep/r, or refs/stash of
+    the scratch repository); the working branch reset to R's parent: a second record R' written there and committed
+    (the same bytes) is refused (sibling). Before R', a head whose history holds no record while a ref holds R reads R
+    through its anchor (off_head: the 2025 gate makes that an (a) cause). The control: R kept by no ref (reachable from
+    the reflog only), R' reads as the record; the anchor reads refs, never the reflog."""
     from valiwatt.freeze_record import FreezeRecordAnchorError
 
     s = scratch_store(tmp_path, monkeypatch)
     text = fr.dumps(record)
     r = commit(s.repo, {fr.PATH: text}, "the freeze record")
     keep = {"sibling": ["branch", "keep"], "off_head": ["branch", "keep"], "tag": ["tag", "keep"],
-            "remote": ["update-ref", "refs/remotes/origin/v3"], "unreferenced": None}[case]
+            "remote": ["update-ref", "refs/remotes/origin/v3"], "keep_ref": ["update-ref", "refs/keep/r"],
+            "stash_ref": ["update-ref", "refs/stash"], "unreferenced": None}[case]
     if keep:
         git(s.repo, *keep, r)
     git(s.repo, "reset", "--quiet", "--hard", f"{r}^")
     if case == "off_head":
-        with pytest.raises(FreezeRecordAnchorError, match=rf"the one commit that adds docs/freeze-v3.json, {r[:12]}, "
-                                                          "is not HEAD or an ancestor of it"):
-            fr.read_freeze_record()
+        assert fr.touching_commits(r) == [] and fr.anchor() == r
+        rec = fr.read_freeze_record()
+        assert (rec["commit"], rec["data"]) == (r, record)
         return
     again = commit(s.repo, {fr.PATH: text}, "the freeze record, again")
     if case == "unreferenced":
         assert fr.adding_commits() == [again] and fr.read_freeze_record()["commit"] == again
         return
-    assert fr.record_commits() == [again] and fr.adding_commits() == [r, again]
-    with pytest.raises(FreezeRecordAnchorError, match=r"2 commits across the repository's branches, remote-tracking "
-                                                      r"refs and tags add docs/freeze-v3.json"):
+    assert fr.touching_commits(again) == [] and fr.adding_commits() == [r, again]
+    with pytest.raises(FreezeRecordAnchorError, match=r"2 commits across the repository's refs add docs/freeze-v3.json"):
         fr.read_freeze_record()
 
 
 def test_the_record_is_read_as_the_commit_that_added_it_holds_it(tmp_path, monkeypatch, record):
     """Section 12, the freeze record: an edited working copy, or a deleted one, changes nothing the reader returns;
-    the committed bytes read back (control)."""
+    the committed bytes read back (control); read up to a head before it, the record is still its adding commit's (the
+    2025 gate makes that head's start an (a) cause); with no ref holding it, there is no record."""
     s = scratch_store(tmp_path, monkeypatch)
     text = fr.dumps(record)
     added = commit(s.repo, {fr.PATH: text}, "the freeze record")
@@ -544,9 +583,7 @@ def test_the_record_is_read_as_the_commit_that_added_it_holds_it(tmp_path, monke
     (s.repo / fr.PATH).unlink()
     assert fr.read_freeze_record() == first
     before = git(s.repo, "rev-parse", f"{added}^")
-    with pytest.raises(FreezeRecordError, match=f"the one commit that adds docs/freeze-v3.json, {added[:12]}, is not "
-                                                f"{before} or an ancestor of it"):
-        fr.read_freeze_record(head=before)  # the record is in the repository, after this head
+    assert fr.read_freeze_record(head=before) == first  # the record is in the repository, after this head
     git(s.repo, "reset", "--quiet", "--hard", before)
-    with pytest.raises(FreezeRecordError, match="history adds docs/freeze-v3.json: commit the freeze record first"):
+    with pytest.raises(FreezeRecordError, match="refs adds docs/freeze-v3.json: commit the freeze record first"):
         fr.read_freeze_record()  # no ref holds it: no record at all

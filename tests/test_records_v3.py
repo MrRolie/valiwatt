@@ -61,6 +61,11 @@ def test_an_unlisted_v3_freeze_tag_is_refused(tmp_path, monkeypatch):
     tag(s.repo, V3_FREEZE_TAG)
     with pytest.raises(V3FreezeError, match=r"\['v3-rules-frozen-2'\] are not listed"):
         records_v3.current_freeze()
+    git(s.repo, "tag", "-d", f"{V3_FREEZE_TAG}-2")
+    assert records_v3.unlisted_v3_tags() == []
+    separated = f"{V3_FREEZE_TAG}\u2028"  # a name Python's split() would cut back to the listed tag's
+    tag(s.repo, separated)
+    assert records_v3.unlisted_v3_tags() == [separated]
 
 
 # ----------------------------------------------------------------------------------------------------- the pins
@@ -100,6 +105,40 @@ def test_a_merge_dropping_the_pin_never_hides_the_first_pin(tmp_path, monkeypatc
     pin(s.repo, V3_FREEZE_TAG, g)
     assert records_v3.pinned_commits() == [s.f0, g]
     assert records_v3.first_pin() == s.f0
+
+
+@pytest.mark.parametrize("case", ["sibling", "off_head", "control"])
+def test_the_first_pin_is_anchored_across_every_ref(tmp_path, monkeypatch, case):
+    """The first pin is read across every ref, never the head's history alone. Sibling (the reviewer's scenario): F0
+    pinned in P, P kept on a branch; the working branch restarted from F0, a rule changed in G, the tag moved to G and
+    pinned there: two histories pin the tag first to different commits, and the first pin is refused (the head's
+    history alone would read G). Off_head: F0 tagged and a later commit F1 pinned on a branch only, the head reset
+    before F1: the original pin is no ancestor of the head, refused. The control: the sibling scenario with P kept by
+    no ref; the first pin is G, the head's own."""
+    s = scratch_store(tmp_path, monkeypatch, pinned=case != "off_head")
+    if case == "off_head":
+        f1 = commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "F1")
+        tag(s.repo, V3_FREEZE_TAG, f1)
+        pinned = pin(s.repo, V3_FREEZE_TAG, f1)
+        git(s.repo, "branch", "keep", pinned)
+        git(s.repo, "reset", "--quiet", "--hard", s.f0)
+        with pytest.raises(V3FreezeError, match=rf"first pinned to {f1[:12]} \(set by {pinned[:12]}\), which is not "
+                                                "HEAD or an ancestor of it"):
+            records_v3.first_pin()
+        return
+    if case == "sibling":
+        git(s.repo, "branch", "keep", s.pin)
+    git(s.repo, "reset", "--quiet", "--hard", s.f0)
+    g = commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "G, a rule change")
+    tag(s.repo, V3_FREEZE_TAG, g)
+    pinned = pin(s.repo, V3_FREEZE_TAG, g)
+    assert records_v3.pinned_commits() == [g]  # the head's history alone
+    if case == "control":
+        assert records_v3.first_pin() == g
+        return
+    with pytest.raises(V3FreezeError, match="first pinned on more than one history, to different commits") as e:
+        records_v3.first_pin()
+    assert f"{s.pin[:12]} pins {s.f0[:12]}" in str(e.value) and f"{pinned[:12]} pins {g[:12]}" in str(e.value)
 
 
 def test_before_any_pin_there_is_no_first_pin(tmp_path, monkeypatch):

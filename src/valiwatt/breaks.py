@@ -2512,6 +2512,25 @@ BREAKS = [
        "(le contrôle du gel, avant (a) et (i))",
        "A rule file named outside ASCII, committed after the 2025 time, is read by its name and refuses the start (the "
        "freeze check, before (a) and (i))"),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_file_named_with_a_line_separator_after_the_2025_time_is_seen_by_a_and_i[separator]",
+       "(a) et (i) Un fichier de règles dont le nom contient U+2028, ajouté puis supprimé après l'heure de 2025, est lu "
+       "en entier (sortie de git séparée par NUL) : (a) et (i) se déclenchent",
+       "(a) and (i) A rule file whose name holds U+2028, added then deleted after the 2025 time, is read whole (git's "
+       "NUL-separated output): (a) and (i) fire"),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_file_named_with_a_line_separator_after_the_2025_time_is_seen_by_a_and_i[quote]",
+       "Témoin : un fichier de docs dont le nom contient un guillemet, validé après l'heure de 2025, ne refuse rien",
+       "Control: a docs file whose name holds a double quote, committed after the 2025 time, refuses nothing",
+       control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_through_2024_is_never_d_s_latest_run",
+       "Témoin : une exécution de qualité des données jusqu'à 2024, lancée après celle jusqu'à 2025 qui a passé, n'est "
+       "pas la plus récente que (d) lit : la porte passe",
+       "Control: a data-quality run through 2024, started after the through-2025 run that passed, is not the latest "
+       "run (d) reads: the gate passes", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_deleted_data_quality_run_that_finished_and_passed_passes_d",
+       "Témoin : une exécution de qualité des données jusqu'à 2025 terminée et passée, puis supprimée, passe (d) et le "
+       "départ s'achève, tenu à l'écart",
+       "Control: a data-quality run through 2025 that finished and passed, then was deleted, passes (d) and the start "
+       "finishes, held out", control=True),
     # Calibration bins
     _b(LOOK, f"{T_IV3}::test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
        "Deux plis dont les limites diffèrent classent la même note de calibration selon la limite de l'ajustement "
@@ -2573,21 +2592,71 @@ BREAKS = [
        "The freeze record is read as the commit that added it holds it: an edited or deleted working copy changes "
        "nothing"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
-       "(a) Un registre de gel dont le commit n'est pas un ancêtre du départ refuse ; témoin sur un descendant. Le "
-       "lecteur y est substitué ; un vrai départ le refuse aussi par l'ancre du registre (cas suivants)",
-       "(a) A freeze record whose commit is not an ancestor of the start refuses; control on a descendant. The reader "
-       "is substituted here; a real start refuses it too through the record's anchor (the cases below)"),
+       "(a) Un registre de gel dont le commit, gardé par une branche, n'est pas un ancêtre du départ est lu par son "
+       "ancre et refuse (a) ; témoin sur un descendant",
+       "(a) A freeze record whose commit, kept by a branch, is not an ancestor of the start is read through its anchor "
+       "and refuses (a); control on a descendant"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[sibling]",
        "(a) Un second registre de gel validé sur une branche sœur, remise au parent du premier que garde une branche, "
        "refuse : deux commits l'ajoutent parmi les références du dépôt",
        "(a) A second freeze record committed on a sibling branch, reset to the parent of the first, which a branch "
        "keeps, refuses: two commits add it among the repository's refs"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[keep_ref]",
+       "(a) Un second registre de gel, le premier gardé par une référence hors des branches, des suivis distants et "
+       "des étiquettes (refs/keep/r), est refusé à l'écriture et à la porte",
+       "(a) A second freeze record, the first kept by a ref outside branches, remote-tracking refs and tags "
+       "(refs/keep/r), is refused by the writer and by the gate"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[stash_ref]",
+       "(a) Un second registre de gel, le premier gardé par une référence de type remise (refs/stash du dépôt de "
+       "travail), est refusé à l'écriture et à la porte",
+       "(a) A second freeze record, the first kept by a stash-like ref (refs/stash of the scratch repository), is "
+       "refused by the writer and by the gate"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[off_head]",
-       "(a) Un registre de gel que n'ajoute qu'une branche hors de l'historique de HEAD refuse",
-       "(a) A freeze record added only by a branch off HEAD's history refuses"),
+       "(a) Un registre de gel que n'ajoute qu'une branche hors de l'historique de HEAD est lu par son ancre et refuse "
+       "(a), sans décision",
+       "(a) A freeze record added only by a branch off HEAD's history is read through its anchor and refuses (a), with "
+       "no ruling"),
+    _b(FREEZE, f"{T_GT3}::test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history[clean]",
+       "(a) Le registre de gel hors de l'historique du départ refuse (a) sans décision ; une décision « propre » et sa "
+       "preuve (evidence-v3, qui lit le registre par son ancre) la lèvent, et le départ s'achève, tenu à l'écart",
+       "(a) The freeze record off the start's history refuses (a) with no ruling; a \"clean\" ruling and its evidence "
+       "(evidence-v3, which reads the record through its anchor) lift it, and the start finishes, held out"),
+    _b(FREEZE, f"{T_GT3}::test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history[post_hoc]",
+       "(a) Le même cas, levé par une décision « post hoc » : debout post hoc",
+       "(a) The same case, lifted by a \"post hoc\" ruling: post-hoc standing"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[control]",
        "Témoin : le premier registre gardé par aucune référence, le second passe la porte",
        "Control: the first record kept by no ref, the second passes the gate", control=True),
+    _b(FREEZE, f"{T_FRC}::test_a_plain_merge_carrying_the_record_adds_nothing[changed]",
+       "Une fusion dont le résultat change les octets du registre de gel le touche : la lecture refuse, nommant la "
+       "fusion",
+       "A merge whose result changes the freeze record's bytes touches it: the reading refuses, naming the merge"),
+    _b(FREEZE, f"{T_FRC}::test_a_plain_merge_carrying_the_record_adds_nothing[dropped]",
+       "Une fusion dont le résultat supprime le registre de gel le touche : la lecture refuse, nommant la fusion",
+       "A merge whose result drops the freeze record touches it: the reading refuses, naming the merge"),
+    _b(FREEZE, f"{T_FRC}::test_a_plain_merge_carrying_the_record_adds_nothing[plain]",
+       "Témoin : une fusion simple de la branche du registre dans une branche qui ne l'a pas ne l'ajoute pas une "
+       "seconde fois ; un seul commit l'ajoute et la lecture rend ce registre",
+       "Control: a plain merge of the record's branch into a branch without it does not add it a second time; one "
+       "commit adds it and the reading returns that record", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_plain_merge_of_the_record_s_branch_is_no_second_addition[changed]",
+       "(c) Sur la branche qui fusionne celle du registre, une fusion qui change les octets du registre refuse la "
+       "porte, nommant la fusion",
+       "(c) On the branch that merges the record's, a merge that changes the record's bytes refuses the gate, naming "
+       "the merge"),
+    _b(FREEZE, f"{T_GT3}::test_a_plain_merge_of_the_record_s_branch_is_no_second_addition[plain]",
+       "Témoin : la branche du registre fusionnée simplement dans une branche qui ne l'a pas, la porte lit le "
+       "registre, un seul commit l'ajoutant parmi les références du dépôt, et passe sans cause",
+       "Control: the record's branch merged plainly into a branch without it, the gate reads the record, one commit "
+       "adding it among the repository's refs, and passes with no cause", control=True),
+    _b(FREEZE, f"{T_RV3}::test_a_freeze_record_off_head_s_history_is_shown_and_said_so[off_head]",
+       "Après un départ de 2025 décidé sous (a), le registre hors de l'historique de HEAD, le rapport de v3 lit le "
+       "registre par son ancre, le nomme et dit que son commit n'est pas dans cet historique",
+       "After a 2025 start ruled under (a), the record off HEAD's history, v3's report reads the record through its "
+       "anchor, names it and says its commit is not in this history"),
+    _b(FREEZE, f"{T_RV3}::test_a_freeze_record_off_head_s_history_is_shown_and_said_so[control]",
+       "Témoin : le registre dans l'historique de HEAD, le rapport le nomme sans cette phrase",
+       "Control: the record in HEAD's history, the report names it without that sentence", control=True),
     # First run
     _b(FREEZE, f"{T_FR3}::test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
        "Un calcul de v3 sur données réelles hors de la descendance de l'étiquette v3-first-run est refusé",
@@ -2635,6 +2704,14 @@ BREAKS = [
        "refuse encore (h) ; avec une nouvelle entrée (h), le départ est post hoc",
        "After a stopped start whose (h) fired, an export re-fetched after v2's 2025 start still refuses (h); with a "
        "new (h) entry the start is post hoc"),
+    _b(FREEZE, f"{T_GT3}::test_an_early_retrieval_on_a_later_page_of_data_quality_runs_still_fires_h[paged]",
+       "(h) Une exécution de qualité des données qui a lu l'export avant le commit du registre de gel, sur la dernière "
+       "page de la recherche (une exécution par page), déclenche encore (h) : chaque page est lue",
+       "(h) A data-quality run that read the export before the freeze record's commit, on the search's last page (one "
+       "run a page), still fires (h): every page is read"),
+    _b(FREEZE, f"{T_GT3}::test_an_early_retrieval_on_a_later_page_of_data_quality_runs_still_fires_h[control]",
+       "Témoin : les mêmes pages sans cette exécution, la porte passe",
+       "Control: the same pages without that run, the gate passes", control=True),
     _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch",
        "Après un départ arrêté dont (i) s'est déclenché, un export récupéré de nouveau après le départ 2025 de v2 "
        "refuse encore (i) ; avec de nouvelles entrées, le départ est post hoc",

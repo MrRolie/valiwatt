@@ -20,7 +20,8 @@ step it reaches and the class of any error that stops it, and logs no metric or 
 it has passed, as v2's does. The replay function runs behind v3's gate (`gate_v3`), never v2's. No diagnostics run
 here (their noon measures are a later slice's).
 
-Every git read goes through `_git`, which reads paths.REPO_ROOT at call time.
+Every git read goes through `_git`, or, for the paths a history touches, `dated_commits`'s byte read; each reads
+paths.REPO_ROOT at call time.
 """
 
 from __future__ import annotations
@@ -264,13 +265,29 @@ def time_2025(manifest_retrieved_utc: str, v2: dict, earlier: list[dict] = ()) -
             "v2_earliest_2025_started_utc": v2_first, "source": source, "source_run_id": run_id}
 
 
+PAGE = 50_000  # the most runs MLflow gives in one page of a search
+
+
+def every_run(c, experiment_id: str, filter_string: str, view) -> list:
+    """Every run of `experiment_id` matching `filter_string` under `view`, page after page until the store gives no
+    next page (MLflow's page token): never one bounded page, so no run is left out however many the store holds."""
+    out, token = [], None
+    while True:
+        page = c.search_runs([experiment_id], filter_string, run_view_type=view, max_results=PAGE, page_token=token)
+        out.extend(page)
+        token = page.token
+        if not token:
+            return out
+
+
 def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     """Every earlier reading of the 2025 time v3's store holds (section 11.3 (4): a start after a stopped one stays post
     hoc, and nothing seen in 2025 buys a held-out label): the 2025 time each earlier 2025 start's gate recorded
     (results/held_out_gate.json, read by records_v3.replay_starts_v3); and, for every v3 data-quality run through 2025,
     whatever its status, deleted included, the retrieval time of the export it read: each an earlier reading of the
     export's retrieval time. A run's own start time is no reading of it (the plan defines the 2025 time by the
-    retrieval time and v2's first 2025 start only). Each {"utc", "source" ("earlier_start" or "dq_retrieved"),
+    retrieval time and v2's first 2025 start only). The data-quality runs are read to the last page of the search
+    (`every_run`). Each {"utc", "source" ("earlier_start" or "dq_retrieved"),
     "run_id"}. A reading that cannot be parsed as a time is refused (FreezeError, (h)): an unreadable earlier time is
     not a later one."""
     from mlflow.entities import ViewType
@@ -280,8 +297,8 @@ def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     out = [{"utc": (s["gate"].get("t2025") or {}).get("utc"), "source": "earlier_start", "run_id": s["run_id"]}
            for s in starts if s.get("gate") is not None]
     exp = c.get_experiment_by_name(dq_v3.EXPERIMENT)
-    runs = c.search_runs([exp.experiment_id], f"tags.kind = '{dq_v3.KIND}' and params.through = '{HELD_OUT_YEAR}'",
-                         run_view_type=ViewType.ALL, max_results=50000) if exp else []
+    runs = every_run(c, exp.experiment_id, f"tags.kind = '{dq_v3.KIND}' and params.through = '{HELD_OUT_YEAR}'",
+                     ViewType.ALL) if exp else []
     for r in runs:
         out.append({"utc": r.data.params.get("hq_retrieved_utc"), "source": "dq_retrieved", "run_id": r.info.run_id})
     for x in out:
@@ -294,36 +311,42 @@ def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     return out
 
 
-COMMIT_LINE = "\x01C "  # git quotes every path holding a control character, so no path line starts with it
+COMMIT_LINE = "/C "  # a path in a tree never starts with "/", so no path is read as a commit's line
 
 
 def dated_commits(a: str | None, b: str) -> list[dict]:
     """Each commit of a..b (every ancestor of b when `a` is None), oldest first: {"commit", "parents", "committer_utc"
-    (UTC timestamp), "paths" (those it touched, a rename read as a deletion and an addition)}. The paths are read as
-    the tree names them (`core.quotepath=off`), so a rule file named with letters outside ASCII is a rule file here
-    too; a path git still quotes (one holding a double quote, a backslash or a control character) cannot be read as a
-    path and is refused (FreezeError), never passed over. monitor/run.py `_commits` is untouched."""
+    (UTC timestamp), "paths" (those it touched, a rename read as a deletion and an addition)}. Read NUL-separated
+    (`-z`): each path whole, as the tree names it, whatever it holds (letters outside ASCII, a double quote, a line or
+    paragraph separator, a newline), never quoted and never split, so a rule file is a rule file here whatever its
+    name. Output not in that form is refused (FreezeError), never passed over. monitor/run.py `_commits` is
+    untouched."""
     span = [f"{a}..{b}"] if a else [b]
-    out = _git("-c", "core.quotepath=off", "log", "--no-renames", "--format=%x01C %H %cI %P", "--name-only", *span)
+    out = subprocess.run(["git", "log", "-z", "--no-renames", f"--format={COMMIT_LINE}%H %cI %P", "--name-only",
+                          *span], cwd=paths.REPO_ROOT, capture_output=True, check=False)
     if out.returncode != 0:
-        raise FreezeError(f"the history {' '.join(span)} cannot be read: {out.stderr.strip()}")
+        raise FreezeError(f"the history {' '.join(span)} cannot be read: "
+                          f"{out.stderr.decode('utf-8', 'replace').strip()}")
+    # Each commit is its line, NUL, then, when it touched paths, a newline and each path followed by NUL.
     commits: list[dict] = []
-    for line in out.stdout.splitlines():
-        if line.startswith(COMMIT_LINE):
-            commit, date, *parents = line[len(COMMIT_LINE):].split()
+    first = False
+    for token in out.stdout.decode("utf-8", "surrogateescape").split("\0"):
+        if token.startswith(COMMIT_LINE):
+            commit, date, *parents = token[len(COMMIT_LINE):].split()
             commits.append({"commit": commit, "parents": parents, "committer_utc": _utc(date), "paths": []})
-        elif line.startswith('"'):
-            raise FreezeError(f"commit {commits[-1]['commit'][:12]} touches a path git can only quote ({line}): the "
-                              "rule files and dependencies a commit touches are read by their names, so it is refused")
-        elif line:
-            commits[-1]["paths"].append(line)
+            first = True
+        elif token and commits and (not first or token.startswith("\n")):
+            commits[-1]["paths"].append(token[1:] if first else token)
+            first = False
+        elif token:
+            raise FreezeError(f"the history {' '.join(span)} cannot be read path by path: {token!r} follows no commit")
     return list(reversed(commits))
 
 
 def _rule_commits_v3(first_pin: str) -> list[dict]:
     """(a)'s walk (section 11.3 (3)): every commit after the commit `v3-rules-frozen` was first pinned to, up to HEAD,
     that touches a rule file or a dependency, with those paths, oldest first, read commit by commit (`dated_commits`,
-    which reads paths unquoted, as (i) does), so a change since reverted counts. Refused, as v2's (monitor/run.py
+    which reads each path whole, as (i) does), so a change since reverted counts. Refused, as v2's (monitor/run.py
     `_rule_commits`): a shallow clone, a HEAD that does not descend from the first pin, a merge commit."""
     if _git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
         raise FreezeError("(a) a shallow clone: the commits since the freeze are read one by one from the full history")
@@ -492,24 +515,28 @@ def files_past_2024() -> list[Path]:
 
 
 def latest_dq_v3(c):
-    """(d)'s "latest data-quality run" (v2's section 11.3.4 (d)): the v3 data-quality run started last, whatever its
-    status, deleted included, so a later run that failed, stopped or is still running is the latest and refuses,
-    never passed over for an older one that passed. Refused (FreezeError, (d)) when the store holds none."""
+    """(d)'s "latest data-quality run" (v2's section 11.3.4 (d), read by plan-v3's section 18 of 2026-10-26): the v3
+    data-quality run through 2025 started last, whatever its status, deleted included, so a later run through 2025
+    that failed, stopped or is still running is the latest and refuses, never passed over for an older one that
+    passed; a run through another year is not read. Refused (FreezeError, (d)) when the store holds none."""
     from mlflow.entities import ViewType
 
     from valiwatt.quality import run_v3 as dq_v3
 
     exp = c.get_experiment_by_name(dq_v3.EXPERIMENT)
-    runs = c.search_runs([exp.experiment_id], f"tags.kind = '{dq_v3.KIND}'", run_view_type=ViewType.ALL,
-                         order_by=["attributes.start_time DESC"], max_results=1) if exp else []
+    runs = c.search_runs([exp.experiment_id], f"tags.kind = '{dq_v3.KIND}' and params.through = '{HELD_OUT_YEAR}'",
+                         run_view_type=ViewType.ALL, order_by=["attributes.start_time DESC"],
+                         max_results=1) if exp else []
     if not runs:
-        raise FreezeError("(d) no v3 data-quality run in the run store: run `valiwatt dq-v3 --through 2025` first")
+        raise FreezeError(f"(d) no v3 data-quality run through {HELD_OUT_YEAR} in the run store: run `valiwatt dq-v3 "
+                          f"--through {HELD_OUT_YEAR}` first")
     return runs[0]
 
 
 def _check_dq_2025_v3(c) -> tuple:
-    """(d) and (e), checked without reading a demand record: the latest v3 data-quality run (`latest_dq_v3`, whatever
-    its status) finished, is not deleted, passed its gates, reaches the end of 2025 and ran under the current rules;
+    """(d) and (e), checked without reading a demand record: the latest v3 data-quality run through 2025
+    (`latest_dq_v3`, whatever its status, deleted included) finished, passed its gates, reaches the end of 2025 and ran
+    under the current rules (a deleted run is read as any other: section 18 includes it);
     the raw files agree with it by hash only (each against its manifest, then the manifests' hashes against the run's
     params); every file and manifest
     past 2024 the replay reads is a byte copy (quality/byte_copies.py `require_copy`: no link, one name); and the
@@ -526,12 +553,8 @@ def _check_dq_2025_v3(c) -> tuple:
     problems = []
     if dq.info.status != "FINISHED":
         problems.append(f"it is {dq.info.status}, not FINISHED")
-    if dq.info.lifecycle_stage != "active":
-        problems.append("it is deleted")
     if t.get("gates") != "passed":
         problems.append(f"its gates are {t.get('gates')!r}, not passed")
-    if p.get("through") != str(HELD_OUT_YEAR):
-        problems.append(f"its window ends with {p.get('through')}, not {HELD_OUT_YEAR}")
     if p.get("window_last_utc") != data_last(HELD_OUT_YEAR).isoformat():
         problems.append(f"its last hour is {p.get('window_last_utc')}, not {data_last(HELD_OUT_YEAR).isoformat()}")
     if t.get("rules_sha256") != rules_sha256():
@@ -636,12 +659,13 @@ def held_out_2025_v3(freeze: dict) -> dict:
     (`_reconcile_ledger_v3`), before the starts are built (records_v3.replay_starts_v3 on that ledger); 1. (c) no
     other 2025 replay is RUNNING; 2. (c) every 2025 diagnostic run names its finished replay; 3. (c) the
     freeze record is committed, read as the commit that added it holds it (freeze_record.read_freeze_record), and (a)
-    that commit is the one commit of the repository's branches, remote-tracking refs and tags that adds it; 4. (b) its
-    first pin and rules hash are the tag's first pin (records_v3.first_pin) and the rules at it; 5. (a) the record's
-    commit is HEAD or an ancestor of HEAD, and descends from the first pin; 6. (c) ledger-v3 holds the record's
-    rehearsal under the first pin; 7. (d), (e) the data (`_check_dq_2025_v3`); 8. (b) the named runs against the
-    record (`_check_record_runs`), the artifacts that judge 2025 (freeze_record.frozen_chain_v3 of the record's frozen
-    2025 and validation runs) against its hashes, each item that differs named, then the record derived again by its
+    that commit is the one commit of the repository's refs (HEAD and `--all`) that adds it; 4. (b) its first pin and
+    rules hash are the tag's first pin (records_v3.first_pin) and the rules at it; 5. (a) the record's commit
+    descends from the first pin, and, a cause the owner's ruling can lift (section 11.3 (3) and (4)), is HEAD or an
+    ancestor of HEAD: every check after it runs on the record as its commit holds it; 6. (c) ledger-v3 holds the
+    record's rehearsal under the first pin; 7. (d), (e) the data (`_check_dq_2025_v3`); 8. (b) the named runs against
+    the record (`_check_record_runs`), the artifacts that judge 2025 (freeze_record.frozen_chain_v3 of the record's
+    frozen 2025 and validation runs) against its hashes, each item that differs named, then the record derived again by its
     own writer (freeze_record.make_record on the record's rehearsal and frozen 2025 runs), which must refuse nothing
     and give the committed record field for field: every lineage claim (byte copies, fresh clone, reproduction, each
     run finished and complete, its kind, its commit between the first pin and HEAD) is checked against the store,
@@ -674,7 +698,7 @@ def held_out_2025_v3(freeze: dict) -> dict:
                           "still counts as an unfinished start")
     _check_diagnostics_v3(c)
     # 3. (c) the freeze record, as its commit holds it; (a) its anchor, the one commit of the repository's refs that
-    # adds it, an ancestor of HEAD.
+    # adds it, wherever it lies (step 5 reads whether it is an ancestor of HEAD).
     try:
         rec = read_freeze_record()
     except FreezeRecordAnchorError as e:
@@ -691,11 +715,9 @@ def held_out_2025_v3(freeze: dict) -> dict:
         raise FreezeError(f"(b) the freeze record names the first pin {data['first_pin'][:12]} and its rules hash; "
                           f"`{V3_FREEZE_TAG}` was first pinned to {first[:12]}, whose rules hash "
                           f"{rules_sha256(first)[:12]} the record must hold")
-    # 5. (a) the record's commit.
+    # 5. (a) the record's commit: off HEAD's history, a cause (13), ruled on as any (a) cause.
     head = mrun._head()
-    if not mrun._is_ancestor(rec["commit"], head):
-        raise FreezeError(f"(a) the commit that adds the freeze record, {rec['commit'][:12]}, is not HEAD "
-                          f"({head[:12]}) or an ancestor of it: the start does not run the code the record froze")
+    record_off_head = not mrun._is_ancestor(rec["commit"], head)
     if not mrun._is_ancestor(first, rec["commit"]):
         raise FreezeError(f"(a) the commit that adds the freeze record, {rec['commit'][:12]}, does not descend from "
                           f"{first[:12]}, the commit `{V3_FREEZE_TAG}` was first pinned to")
@@ -749,13 +771,18 @@ def held_out_2025_v3(freeze: dict) -> dict:
         raise FreezeError(f"(i) {e}") from e
     after = [x for x in span if x["committer_utc"] > t and any(mrun._is_change(p) for p in x["paths"])]
     # 13. The causes, in CAUSES' order.
-    fired = {"a": bool(rule_commits), "f": bool(starts) and not any(s["finished"] for s in starts),
+    fired = {"a": bool(rule_commits) or record_off_head, "f": bool(starts) and not any(s["finished"] for s in starts),
              "g": v2["test_of_record"] is None, "h": h_fires, "i": bool(after)}
     causes = [x for x in CAUSES if fired[x]]
     latest = starts[-1] if starts else None
     said = {
-        "a": "(a) commits since " + first[:12] + ", the commit `" + V3_FREEZE_TAG + "` was first pinned to, touch rule "
-             "files or dependencies: " + "; ".join(f"{x['commit'][:12]} {x['paths']}" for x in rule_commits) + ".",
+        "a": " ".join(([f"(a) the commit that adds the freeze record, {rec['commit'][:12]}, is not HEAD ({head[:12]}) "
+                        "or an ancestor of it: the start does not run the code the record froze."]
+                       if record_off_head else [])
+                      + (["(a) commits since " + first[:12] + ", the commit `" + V3_FREEZE_TAG + "` was first pinned "
+                          "to, touch rule files or dependencies: "
+                          + "; ".join(f"{x['commit'][:12]} {x['paths']}" for x in rule_commits) + "."]
+                         if rule_commits else [])),
         "f": "" if latest is None else (
             f"(f) the 2025 test of record did not finish: the latest start, of {latest['started_utc']} (run "
             f"{latest['run_id']}), stopped at stage {latest['stage'] or 'unknown'!r} with error "
@@ -1241,10 +1268,11 @@ def run_evidence_v3(departure: bool = False) -> int:
     """`valiwatt evidence-v3` (section 11.3 (3), v2's section 11.3.5): what the owner rules on; it decides nothing, and
     no gate reads what it holds (the 2025 gate checks only that a finished one, made from a clean tree, exists for the
     ruling's commit, on its data-quality run). In order: v3's first-run guard, a clean tree, the freeze record as its
-    commit holds it; the record's rehearsal run in the store with its frames/hourly.parquet; the latest v3 data-quality
-    run, whatever its status, a finished, passing through-2025 run whose raw files agree with it (the gate's (d) and
-    (e)); the rehearsal's
-    frozen artifacts (freeze_record.frozen_chain_v3 of the record's frozen 2024 and validation runs), their digest and
+    one adding commit holds it (freeze_record.read_freeze_record, as the gate reads it: a record whose commit is not an
+    ancestor of HEAD is the gate's (a), which a ruling resting on this evidence lifts); the record's rehearsal run in
+    the store with its frames/hourly.parquet; the latest v3 data-quality run through 2025, whatever its status, a
+    finished, passing run whose raw files agree with it (the gate's (d) and (e)); the rehearsal's frozen artifacts
+    (freeze_record.frozen_chain_v3 of the record's frozen 2024 and validation runs), their digest and
     production model the record's for the rehearsal. Then the rehearsal's noon replay run again on that newest export,
     every raw record and run point labelled or available after the end of 2024 dropped at load and counted, with
     exactly those artifacts and the code at HEAD, compared hour by hour with the rehearsal on every column either

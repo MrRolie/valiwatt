@@ -176,13 +176,14 @@ def _client(c=None):
 
 
 def _record() -> dict | None:
-    """The freeze record as the commit that added it holds it (freeze_record.read_freeze_record), None when no commit
-    touches it and the working tree does not hold it either; refused when the working tree holds it and no commit adds
-    it, or when it cannot be read as written."""
+    """The freeze record as the commit that added it holds it (freeze_record.read_freeze_record, through its anchor
+    across the repository's refs, as the 2025 gate reads it, so a record off HEAD's history after a start ruled under
+    (a) is shown), None when no commit adds it and the working tree does not hold it either; refused when the working
+    tree holds it and no commit adds it, or when it cannot be read as written."""
     from valiwatt import freeze_record
 
     try:
-        if not freeze_record.record_commits():
+        if freeze_record.anchor() is None:
             if (paths.REPO_ROOT / V3_FREEZE_RECORD).exists():
                 raise ReportRefused(f"{V3_FREEZE_RECORD} is in the working tree but no commit adds it: commit it, "
                                     "alone, before the report is rendered (docs/plan-v3.md, section 10.3)")
@@ -190,6 +191,14 @@ def _record() -> dict | None:
         return freeze_record.read_freeze_record()
     except freeze_record.FreezeRecordError as e:
         raise ReportRefused(f"the freeze record cannot be read as committed: {e}") from e
+
+
+def _off_head(commit: str) -> bool:
+    """The record's commit is not HEAD or an ancestor of it (a start ruled under (a), section 11.3 (3)): the page says
+    so."""
+    from valiwatt import freeze_record
+
+    return not freeze_record._is_ancestor(commit, "HEAD")
 
 
 def _tag_exists() -> bool:
@@ -590,7 +599,7 @@ def context_v3(f: dict, entries: list[dict], starts: list[dict], code_sha: str, 
         "frozen": {y: _frozen(c, ch) for y, ch in f["chains"].items()},
         "rehearsal": reh, "held": held, "entries": entries,
         "record": None if record is None else {"commit": record["commit"], "sha256": record["sha256"],
-                                               "data": record["data"]},
+                                               "data": record["data"], "off_head": _off_head(record["commit"])},
         "runs": {role: _run_row(role, run) for role, run in runs.items() if run is not None},
         "absent": [role for role, run in runs.items() if run is None],
         "exports": _exports(_json(c, dq.info.run_id, "results/dq_results.json"), dq),
@@ -854,7 +863,7 @@ def stamp_problems(root: Path | None = None) -> list[str]:
                             + ("no freeze record is committed" if now is None else
                                f"committed: {now['commit'][:12]}") + "): run `valiwatt report`")
     try:
-        frozen = bool(freeze_record.record_commits()) or _tag_exists()
+        frozen = freeze_record.anchor() is not None or _tag_exists()
     except freeze_record.FreezeRecordError:
         frozen = True
     if stamp.get("lineage") == "pre_freeze" and frozen:

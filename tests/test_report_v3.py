@@ -112,6 +112,48 @@ def test_the_v3_report_renders_from_the_runs_of_record(tmp_path, monkeypatch):
         assert R3.labels(lang, "of_record")["held_out"] not in text
 
 
+OFF_HEAD = {"fr": ("qui n'est pas dans cet historique", "Le commit qui ajoute le registre n'est ni HEAD ni un de ses "
+                    "ancêtres"),
+            "en": ("which is not in this history", "The commit that adds the record is not HEAD or an ancestor of it")}
+
+
+@pytest.mark.parametrize("case", ["off_head", "control"])
+def test_a_freeze_record_off_head_s_history_is_shown_and_said_so(case, tmp_path, monkeypatch):
+    """The report reads the freeze record through its anchor across the repository's refs, as the 2025 gate does
+    (monitor/run_v3.py `held_out_2025_v3`, step 5): the record R kept by branch `keep`, the working branch reset to R's
+    parent, a clean ruling on its code and `valiwatt evidence-v3`, then the 2025 start run and finished, ruled under (a)
+    (off_head). The pages are those of the runs of record: they name R and say its commit is not in this history; the
+    stamp holds R and the 2025 standing, and the report matches it. The control: the runs of record, R on HEAD's
+    history, render without that sentence."""
+    from replay_world import ruling
+    from valiwatt.freeze_record import read_freeze_record
+    from valiwatt.monitor import run_v3
+    from valiwatt.report import ledger_v3
+
+    chain = RW.copy("of_record", tmp_path, monkeypatch)
+    record = chain.ids["record"]
+    if case == "off_head":
+        rw.git(chain.repo, "branch", "keep", record)
+        rw.git(chain.repo, "reset", "--quiet", "--hard", f"{record}^")
+        target = rw.git(chain.repo, "rev-parse", "HEAD")
+        rw.commit(chain.repo, {"AGENTS.md": rw.agents(ruling("clean", target))}, "v3 departures")
+        assert run_v3.run_evidence_v3() == 0
+        assert run_v3.run_replay_v3(2025, n_boot=RW.N_BOOT) == 0
+        ledger_v3.sync()
+        assert subprocess.run(["git", "merge-base", "--is-ancestor", record, "HEAD"], cwd=chain.repo).returncode == 1
+    pages = RW.render(chain)
+    stamp = pages["stamp"]
+    assert stamp["lineage"] == "of_record" and stamp["freeze_record"]["commit"] == record
+    assert stamp["freeze_record"]["sha256"] == read_freeze_record()["sha256"]
+    assert (stamp["standing_2025"] or {}).get("standing") == ("clean" if case == "off_head" else None)
+    assert R3.stamp_problems() == []
+    for lang in LANGS:
+        text = pages[lang]
+        assert record[:12] in text and record in text.split("## 7. Provenance", 1)[1]
+        said = [phrase in text for phrase in OFF_HEAD[lang]]
+        assert said == [case == "off_head"] * 2, lang
+
+
 def test_the_report_holds_the_validation_s_numbers_each_labelled():
     """The contrasts of each subset, the verdicts, the bins and the frozen models' terms are the runs' own, printed in
     tables whose header carries the label of section 8.4."""

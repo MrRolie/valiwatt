@@ -354,16 +354,24 @@ NON_ASCII_RULE = "src/valiwatt/monitor/règle.py"
 
 
 def test_dated_commits_read_a_non_ascii_path_as_the_tree_names_it(tmp_path, monkeypatch):
-    """A rule file named with letters outside ASCII is read by its name (git's quoting off), so it is a rule file to
-    (a)'s walk and to (i); a path git quotes even so (a double quote in it) is refused, never passed over."""
+    """A rule file named with letters outside ASCII is read by its name (NUL-separated, never quoted), so it is a rule
+    file to (a)'s walk and to (i); so is one holding a double quote, read whole, and a commit touching no path."""
     s = rw.scratch_store(tmp_path, monkeypatch)
     c = rw.commit(s.repo, {NON_ASCII_RULE: "MIN = 6\n"}, "a rule file named in French")
     (got,) = run_v3.dated_commits(s.pin, c)
     assert got["paths"] == [NON_ASCII_RULE] and mrun._is_change(NON_ASCII_RULE)
     assert run_v3._rule_commits_v3(s.f0) == [{"commit": c, "paths": [NON_ASCII_RULE]}]
-    q = rw.commit(s.repo, {'src/valiwatt/monitor/r"q.py': "MIN = 7\n"}, "a quoted path")
-    with pytest.raises(FreezeError, match=rf"commit {q[:12]} touches a path git can only quote"):
-        run_v3.dated_commits(c, q)
+    quoted = 'src/valiwatt/monitor/r"q.py'
+    q = rw.commit(s.repo, {quoted: "MIN = 7\n", "docs/a.md": "a\n"}, "a quoted path")
+    e = rw.commit(s.repo, message="nothing", empty=True)
+    assert [(x["commit"], sorted(x["paths"])) for x in run_v3.dated_commits(c, e)] == [
+        (q, ["docs/a.md", quoted]), (e, [])]
+    assert run_v3._rule_commits_v3(s.f0)[-1] == {"commit": q, "paths": [quoted]}
+
+
+# A rule file whose name holds U+2028 (a line separator to Python's splitlines, never to git): cut at it, it would read
+# as "src/valiwatt/x.pyc" and ".py", neither of them a rule file.
+SEPARATED_RULE = "src/valiwatt/x.pyc\u2028.py"
 
 
 # ------------------------------------------------------------------------------------------- on the chain
@@ -674,6 +682,28 @@ def test_a_rule_change_committed_after_the_2025_time_refuses_i(chain, when):
     assert ("(i) commits committed after the 2025 time" in msg) == (when == "after")
 
 
+@pytest.mark.parametrize("case", ["separator", "quote"])
+def test_a_rule_file_named_with_a_line_separator_after_the_2025_time_is_seen_by_a_and_i(chain, case):
+    """(a)'s walk and (i) read each path a commit touches whole (git's NUL-separated output): a rule file named with
+    U+2028, added after the 2025 time and deleted in the next commit (the tree the frozen one again), fires (a) and
+    (i), naming both commits (separator). A docs file whose name holds a double quote, committed after the 2025 time,
+    refuses nothing (quote): no path is refused for its name."""
+    after = chain.v2_started + H
+    if case == "quote":
+        rw.commit(chain.repo, {'docs/a"b.md': "notes\n"}, "a docs file with a quote", date=after.isoformat())
+        assert gate()["causes"] == []
+        return
+    added = rw.commit(chain.repo, {SEPARATED_RULE: "MIN = 6\n"}, "a rule file named with U+2028",
+                      date=after.isoformat())
+    (chain.repo / SEPARATED_RULE).unlink()
+    removed = rw.commit(chain.repo, {}, "its removal", date=(after + H).isoformat())
+    assert mrun._is_change(SEPARATED_RULE) and not any(mrun._is_change(p) for p in SEPARATED_RULE.split("\u2028"))
+    assert run_v3._rule_commits_v3(chain.f0) == [{"commit": added, "paths": [SEPARATED_RULE]},
+                                                 {"commit": removed, "paths": [SEPARATED_RULE]}]
+    msg = refused(r"\(a\) commits since")
+    assert "(i) commits committed after the 2025 time" in msg and added[:12] in msg and removed[:12] in msg
+
+
 def test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start(chain):
     """A rule file named with letters outside ASCII, added after the 2025 time: the start is refused, naming it. Since
     monitor/rules.py `rule_files` reads git's names NUL-separated, such a file is a rule file, so the earliest check
@@ -881,40 +911,69 @@ def test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch(chain)
     assert rec["causes"] == ["a", "f", "i"] and rec["standing"] == "post_hoc"
 
 
-def test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a(chain, monkeypatch):
-    """(a): the record read is the one a branch holds; the start runs elsewhere, on a commit that does not descend from
-    the record's. (The reader is pointed at the branch here, so step 5's own check fires; a real reader refuses this
-    head by the record's anchor, test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[off_head].) The
-    control: a start on a descendant of the record's commit."""
-    from valiwatt import freeze_record
+OFF_HEAD = (r"\(a\) the commit that adds the freeze record, {record}, is not HEAD \([0-9a-f]{{12}}\) or an ancestor "
+            r"of it: the start does not run the code the record froze\. .*\(a\) is lifted only by")
 
+
+def test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a(chain):
+    """(a), section 11.3 (3): the record R, the one commit of the repository's refs that adds it, kept by a branch; the
+    start runs elsewhere, on a commit that does not descend from R (a branch forked at R's parent, which holds the
+    first pin, every named run's commit and the rehearsal's ledger entry). The gate reads R through its anchor and
+    refuses (a), no ruling applying. The control: a start on a descendant of R."""
     rw.commit(chain.repo, {"README.md": "later\n"}, "a descendant")
     assert gate()["causes"] == []
-    read = freeze_record.read_freeze_record
     rw.git(chain.repo, "branch", "with-record")
     rw.git(chain.repo, "checkout", "-q", "-b", "elsewhere", f"{chain.record}^")
     rw.commit(chain.repo, {"README.md": "elsewhere\n"}, "not a descendant")
-    monkeypatch.setattr(freeze_record, "read_freeze_record", lambda head="HEAD": read("refs/heads/with-record"))
-    refused(r"\(a\) the commit that adds the freeze record, .* is not HEAD")
+    refused(OFF_HEAD.format(record=chain.record[:12]))
 
 
-@pytest.mark.parametrize("case", ["sibling", "off_head", "control"])
+@pytest.mark.parametrize("outcome", ["clean", pytest.param("post hoc", id="post_hoc")])
+def test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history(chain, outcome):
+    """(a), the record's ancestry, is ruled on as any (a) cause (section 11.3 (4)): the record R kept by a branch, the
+    working branch reset to R's parent. Without a ruling the start is refused (a); `valiwatt evidence-v3` reads the
+    record through its anchor as the gate does, and runs; with an entry in v2's form on the start's code and that
+    evidence, the gate passes, (a) among its causes, the standing the entry's. With a clean entry the start then runs
+    and finishes, held out."""
+    rw.git(chain.repo, "branch", "keep", chain.record)
+    rw.git(chain.repo, "reset", "--quiet", "--hard", f"{chain.record}^")
+    refused(OFF_HEAD.format(record=chain.record[:12]))
+    target = head(chain)
+    section(chain, on(target, outcome))
+    assert run_v3.run_evidence_v3() == 0
+    (ev,) = [r for r in mrun._replay_runs(tracking.client(), kind=run_v3.EVIDENCE_KIND)]
+    assert ev.data.tags["freeze_record_commit"] == chain.record
+    rec = gate()
+    assert (rec["causes"], rec["standing"]) == (["a"], outcome.replace(" ", "_"))
+    assert rec["freeze_record"]["commit"] == chain.record and rec["ruling"]["commit"] == target
+    assert rec["rulings"][0]["evidence_run_id"] == ev.info.run_id
+    if outcome == "clean":
+        assert run_v3.run_replay_v3(2025, n_boot=20) == 0
+        (run,) = vw.replay_runs_v3(2025)
+        assert (run.data.tags["status"], run.data.tags["evaluation"]) == ("complete", "held_out")
+
+
+@pytest.mark.parametrize("case", ["sibling", "keep_ref", "stash_ref", "off_head", "control"])
 def test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a(chain, case):
-    """(a), the record's anchor (section 11.3 (3)): the record R committed and kept by a branch; the working branch
-    reset to R's parent. The writer refuses to write a record there (R is the first one); a second record R' committed
-    by hand, the same bytes, is refused (a), the gate reading two additions across the repository's refs (sibling); so
-    is the head before R', whose history holds no record while a branch holds R (off_head). The control: R kept by no
+    """(a), the record's anchor (section 11.3 (3)): the record R committed and kept by a ref; the working branch reset
+    to R's parent. The writer refuses to write a record there (R is the first one); a second record R' committed by
+    hand, the same bytes, is refused (a), the gate reading two additions across the repository's refs, whatever ref
+    keeps R: a branch (sibling), a ref outside heads, remotes and tags (keep_ref, refs/keep/r), or a stash-like ref
+    (stash_ref, refs/stash of the scratch repository). The head before R', whose history holds no record while a
+    branch holds R, reads R and is refused (a) as a cause, no ruling applying (off_head). The control: R kept by no
     ref, R' passes the gate."""
     from valiwatt.freeze_record import PATH, FreezeRecordError, write_freeze_record
 
     text = rw.git(chain.repo, "show", f"{chain.record}:{PATH}") + "\n"
-    if case != "control":
-        rw.git(chain.repo, "branch", "keep", chain.record)
+    keep = {"sibling": ["branch", "keep"], "off_head": ["branch", "keep"], "keep_ref": ["update-ref", "refs/keep/r"],
+            "stash_ref": ["update-ref", "refs/stash"], "control": None}[case]
+    if keep:
+        rw.git(chain.repo, *keep, chain.record)
     rw.git(chain.repo, "reset", "--quiet", "--hard", f"{chain.record}^")
     if case == "off_head":
-        refused(rf"\(a\) the freeze record: the one commit that adds {PATH}, {chain.record[:12]}, is not HEAD")
+        refused(OFF_HEAD.format(record=chain.record[:12]))
         return
-    if case == "sibling":
+    if case != "control":
         with pytest.raises(FreezeRecordError, match=rf"commits \['{chain.record[:12]}'\] of the repository's refs add"):
             write_freeze_record(chain.rehearsal)
     again = rw.commit(chain.repo, {PATH: text}, "the freeze record, again", date=chain.record_date.isoformat())
@@ -922,8 +981,37 @@ def test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a(chain, c
         rec = gate()
         assert rec["freeze_record"]["commit"] == again and rec["causes"] == []
         return
-    refused(rf"\(a\) the freeze record: 2 commits across the repository's branches, remote-tracking refs and tags "
-            rf"add {PATH} \(\['{chain.record[:12]}', '{again[:12]}'\]\)")
+    refused(rf"\(a\) the freeze record: 2 commits across the repository's refs add {PATH} "
+            rf"\(\['{chain.record[:12]}', '{again[:12]}'\]\)")
+
+
+@pytest.mark.parametrize("case", ["plain", "changed"])
+def test_a_plain_merge_of_the_record_s_branch_is_no_second_addition(chain, case):
+    """(a) and (c), the record written once (section 10.3): the working branch holds the record R; branch `main`,
+    forked at R's parent and given a commit of its own, merges the working branch (v3 merged into a branch without the
+    record). The plain merge adds nothing: back on the working branch, the gate reads R, the one adding commit across
+    the repository's refs, and passes with no cause (control); on `main`, the record reads as R. A merge whose result
+    changes the record's bytes touches it: on `main`, the gate refuses (c), naming the merge; the working branch, whose
+    history does not hold that merge, still reads R as committed."""
+    from valiwatt.freeze_record import PATH, adding_commits, read_freeze_record
+
+    work = rw.git(chain.repo, "rev-parse", "--abbrev-ref", "HEAD")
+    text = rw.git(chain.repo, "show", f"{chain.record}:{PATH}") + "\n"
+    rw.git(chain.repo, "checkout", "-q", "-b", "main", f"{chain.record}^")
+    rw.commit(chain.repo, {"README.md": "main's own\n"}, "a commit of the branch without the record")
+    rw.git(chain.repo, "merge", "--no-ff", "--no-commit", work)
+    if case == "changed":
+        (chain.repo / PATH).write_text(text.replace("\n", "\n ", 1), encoding="utf-8")
+    merge = rw.commit(chain.repo, message=f"{work} merged into main")
+    assert adding_commits() == [chain.record]
+    if case == "plain":
+        assert read_freeze_record()["commit"] == chain.record
+    else:
+        refused(rf"\(c\) the freeze record: commits \['{merge[:12]}'\] touch {PATH} after {chain.record[:12]} added "
+                "it")
+    rw.git(chain.repo, "checkout", "-q", work)
+    rec = gate()
+    assert rec["freeze_record"]["commit"] == chain.record and rec["causes"] == []
 
 
 def test_another_v3_2025_replay_running_refuses(chain):
@@ -957,6 +1045,53 @@ def test_a_later_data_quality_run_that_did_not_pass_refuses_d(chain, case):
         c.delete_run(later)
     refused(rf"\(d\) the latest v3 data-quality run {later} is not a finished, passing through-2025 run under the "
             rf"current rules: it is {'RUNNING' if case == 'running' else 'FAILED'}, not FINISHED")
+
+
+def test_a_later_data_quality_run_through_2024_is_never_d_s_latest_run(chain):
+    """(d) reads the latest data-quality run through 2025 (plan-v3's section 18 of 2026-10-26): a run through 2024,
+    started after the through-2025 run that passed, on the same rules and files, is not that run, and the gate reads the
+    run through 2025 and passes."""
+    later = rw.log_dq_v3(chain.repo, 2024)
+    vw.date_dq_run(later)  # started after every other
+    rec = gate()
+    assert (rec["dq_run_id"], rec["causes"]) == (chain.dq25, [])
+
+
+def test_a_deleted_data_quality_run_that_finished_and_passed_passes_d(chain):
+    """(d) reads the latest data-quality run through 2025 whatever its lifecycle (section 18 includes deleted runs): a
+    run soft-deleted after it finished and passed, its parameters, tags and checked files unchanged, is read and
+    passes; the start runs and finishes on it, held out. (Status, gates, rules and files refuse it as any other:
+    test_a_later_data_quality_run_that_did_not_pass_refuses_d, test_the_gate_s_hard_refusals_name_their_condition.)"""
+    c = tracking.client()
+    c.delete_run(chain.dq25)
+    assert c.get_run(chain.dq25).info.lifecycle_stage == "deleted"
+    rec = gate()
+    assert (rec["dq_run_id"], rec["causes"], rec["standing"]) == (chain.dq25, [], "clean")
+    assert run_v3.run_replay_v3(2025, n_boot=20) == 0
+    (run,) = vw.replay_runs_v3(2025)
+    assert (run.data.tags["status"], run.data.tags["evaluation"], run.data.tags["dq_run_id"]) == (
+        "complete", "held_out", chain.dq25)
+
+
+@pytest.mark.parametrize("case", ["paged", "control"])
+def test_an_early_retrieval_on_a_later_page_of_data_quality_runs_still_fires_h(chain, monkeypatch, case):
+    """(h), the 2025 time never later than an earlier reading of it: data-quality run D0 read the export retrieved
+    before the freeze record's commit; the export was then re-fetched after v2's 2025 start and read by newer runs
+    through 2025. The search for those runs is read page by page, one run a page here (run_v3.PAGE), so D0, the oldest,
+    falls on the last page: (h) still fires, naming D0 (paged). The control: no D0, the same pages, the start passes."""
+    monkeypatch.setattr(run_v3, "PAGE", 1)
+    before = chain.record_date - H
+    d0 = None
+    if case == "paged":
+        d0 = refetch(chain, before)
+        vw.date_dq_run(d0, at=(chain.record_date - 2 * H).isoformat())  # the oldest run: the last page
+    for _ in range(3):
+        refetch(chain, chain.v2_started + H)
+    if case == "control":
+        assert gate()["causes"] == []
+        return
+    assert len(dq_2025_runs()) == 5
+    refused(rf"\(h\) the 2025 time is {re.escape(before.isoformat())} \(dq_retrieved of run {d0}\)")
 
 
 @pytest.mark.parametrize("link", ["symbolic", "hard"])
@@ -1095,8 +1230,8 @@ def test_a_second_2025_start_while_the_lock_is_held_opens_no_run(chain):
                                   "unknown_start", "unreadable_time"])
 def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
     """The refusals no ruling lifts, each naming its condition: (c) no `v3-rules-frozen` tag; (c) the freeze record
-    touched by a second commit; (c) ledger-v3 without the record's rehearsal; (d) the latest data-quality run not
-    through 2025; (a) a merge commit after the first pin; (c) an uncommitted change; (c) the tag moved with no
+    touched by a second commit; (c) ledger-v3 without the record's rehearsal; (d) the latest data-quality run through
+    2025 not reaching its end; (a) a merge commit after the first pin; (c) an uncommitted change; (c) the tag moved with no
     departure recorded; (d) the latest data-quality run failed, or its gates failed or its rules are other; (e) a
     raw file whose hash differs from the data-quality run's, or a copied manifest with no retrieval time; (b) a record
     naming another first pin; (c) a 2025 start in the committed ledger-v3 that the run store lacks; (h) a data-quality
@@ -1154,14 +1289,14 @@ def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
         match = r"\(c\) no `v3-rules-frozen` tag"
     elif case == "record":
         rw.git(repo, "rm", "-q", "docs/freeze-v3.json")
-        rw.commit(repo, {}, "the record removed")
-        match = r"\(c\) the freeze record: 2 commits touch"
+        removed = rw.commit(repo, {}, "the record removed")
+        match = rf"\(c\) the freeze record: commits \['{removed[:12]}'\] touch docs/freeze-v3.json after"
     elif case == "ledger_v3":
         rw.commit(repo, {"docs/replay-ledger-v3.json": '{"replays": []}\n'}, "ledger-v3 emptied")
         match = r"\(c\) the committed ledger-v3 holds no entry of the freeze record's rehearsal"
     elif case == "dq_window":
-        vw.date_dq_run(rw.log_dq_v3(repo, 2024))  # the latest
-        match = r"\(d\) the latest v3 data-quality run .* window ends with 2024"
+        vw.log_dq_2025(vw.ledger_time(chain.retrieved), window_last_utc=data_last(2024).isoformat())  # the latest
+        match = rf"\(d\) the latest v3 data-quality run .* its last hour is {re.escape(data_last(2024).isoformat())}"
     else:
         branch = rw.git(repo, "symbolic-ref", "--short", "HEAD")
         rw.git(repo, "checkout", "-q", "-b", "side")

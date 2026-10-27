@@ -4,9 +4,12 @@
   `v3-pre-freeze` and no freeze commit. Once it exists, no run is pre-freeze: a v3 run is under the tag, so its rule
   files and dependencies must be the tag's (monitor/run.py `check_freeze` on v3's tag), or it is refused. A tag named
   like v3's freeze that config.FREEZES does not list is refused either way.
-- **The tag's pins** (`pinned_commits`, `first_pin`). "The commit `v3-rules-frozen` was first pinned to" is the first
-  commit `PINS` gives the tag in the history of tests/test_tags.py, read as the history test reads v2's tag's pins
-  (tests/test_departure_record.py `pins_at`, `pinned_freezes`), every parent of a merge followed. Before any pin,
+- **The tag's pins** (`pinned_commits`, `first_pin`). `pinned_commits` reads the successive commits `PINS` gives the
+  tag in the history of tests/test_tags.py up to a head, as the history test reads v2's tag's pins
+  (tests/test_departure_record.py `pins_at`, `pinned_freezes`), every parent of a merge followed. "The commit
+  `v3-rules-frozen` was first pinned to" (`first_pin`) is anchored across every ref, not only the head's history: the
+  pin set by the earliest commit, among those of HEAD and `--all` that set it, that no other such commit precedes;
+  refused when two such histories set different pins, or when that pin is not an ancestor of HEAD. Before any pin,
   nothing has a first pin.
 - **The v3 departures section** (`v3_section`, `rulings_v3`): v2's forms on v3's tag, and the two more of section
   11.3 (4): "<date>, the owner's ruling on 2025 (h): post hoc" or "(i)", which can only say post hoc, and "<date>, the
@@ -55,6 +58,11 @@ def _commit_of(rev: str) -> str | None:
     return out.stdout.strip() or None if out.returncode == 0 else None
 
 
+def _is_ancestor(a: str, b: str) -> bool:
+    """a is b or an ancestor of b."""
+    return bool(a) and bool(b) and _git("merge-base", "--is-ancestor", a, b).returncode == 0
+
+
 def _resolve(prefix: str) -> str | None:
     """The full commit a prefix names in this history, None when it names none."""
     return _commit_of(prefix)
@@ -65,7 +73,8 @@ def _resolve(prefix: str) -> str | None:
 def unlisted_v3_tags() -> list[str]:
     """The tags named like v3's freeze (`v3-rules-frozen*`) that config.FREEZES does not list, sorted. v2's check
     lists `rules-frozen*` only, so it never sees them; this is v3's half of that refusal."""
-    return sorted(t for t in _git("tag", "--list", f"{V3_FREEZE_TAG}*").stdout.split() if t and t not in FREEZES)
+    # One name per line: a tag's name holds no newline, but may hold other separators (U+2028) that split() cuts at.
+    return sorted(t for t in _git("tag", "--list", f"{V3_FREEZE_TAG}*").stdout.split("\n") if t and t not in FREEZES)
 
 
 def current_freeze() -> dict:
@@ -134,13 +143,57 @@ def pinned_commits(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[str]:
     return out
 
 
+def pin_settings(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[dict]:
+    """Every commit of `head`'s history and of every ref the repository holds (`--all`: branches, remote-tracking
+    refs, tags, the stash, any other namespace) that sets `PINS[tag]` in tests/test_tags.py: its pin is set and no
+    parent's pin is that one (a merge carrying a side's pin sets nothing). Oldest first (topological order), each
+    {"commit", "pin"}. Read whole (`--full-history`). A shallow clone, or a history that cannot be read, is refused."""
+    if _git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
+        raise V3FreezeError("a shallow clone: the pins of the freeze tag are read from the full history")
+    log = _git("log", "--full-history", "--topo-order", "--reverse", "--format=%H %P", head, "--all", "--", PINS_FILE)
+    if log.returncode != 0:
+        raise V3FreezeError(f"the history of {PINS_FILE} across the repository's refs cannot be read: "
+                            f"{log.stderr.strip()}")
+    pins: dict[str, str | None] = {}
+
+    def pin_at(commit: str) -> str | None:
+        if commit not in pins:
+            pins[commit] = _pins_at(commit).get(tag) or None
+        return pins[commit]
+
+    out = []
+    for line in log.stdout.split("\n"):
+        if not line:
+            continue
+        commit, *parents = line.split()
+        pin = pin_at(commit)
+        if pin and all(pin_at(p) != pin for p in parents):
+            out.append({"commit": commit, "pin": pin})
+    return out
+
+
 def first_pin(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> str:
     """The commit `tag` was first pinned to (section 11.3 (3)): the rules hash every run of the freeze record must
-    carry is the rules hash at it, and the walk of (a) starts from it. Refused (V3FreezeError) before any pin."""
-    pins = pinned_commits(tag, head)
-    if not pins:
+    carry is the rules hash at it, and the walk of (a) starts from it. Anchored across every ref, never the head's
+    history alone (`pin_settings`): the pin set by the earliest of the root settings, those no other setting precedes
+    in history. Refused (V3FreezeError): before any pin; when root settings disagree (a sibling history, kept by any
+    ref, that pinned the tag elsewhere first: which pin is the original cannot be read, and the head's history alone
+    would choose its own); when the original pin is not `head` or an ancestor of it."""
+    settings = pin_settings(tag, head)
+    if not settings:
         raise V3FreezeError(f"`{tag}` is not pinned yet: pin the tag in {PINS_FILE} first")
-    return pins[0]
+    roots = [s for s in settings if not any(o["commit"] != s["commit"] and _is_ancestor(o["commit"], s["commit"])
+                                            for o in settings)]
+    if len({s["pin"] for s in roots}) > 1:
+        raise V3FreezeError(f"`{tag}` was first pinned on more than one history, to different commits: "
+                            + "; ".join(f"{s['commit'][:12]} pins {s['pin'][:12]}" for s in roots)
+                            + ": the original pin is the one every history across the repository's refs agrees on, and "
+                              "these do not agree")
+    original = roots[0]["pin"]
+    if not _is_ancestor(original, head):
+        raise V3FreezeError(f"`{tag}` was first pinned to {original[:12]} (set by {roots[0]['commit'][:12]}), which is "
+                            f"not {head} or an ancestor of it")
+    return original
 
 
 # ------------------------------------------------------------------------------------------ the departures section

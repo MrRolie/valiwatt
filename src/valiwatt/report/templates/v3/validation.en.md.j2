@@ -60,7 +60,7 @@
 {% endmacro %}
 # Validation and monitoring of a forecast of Québec's electricity demand, v3: the noon forecast
 
-Report generated from v3's MLflow runs ({% if lineage == 'of_record' %}the runs of record the freeze record `docs/freeze-v3.json` names, added in commit `{{ record.commit|short }}`{% elif lineage == 'fresh_clone' %}a fresh clone: the runs of record that `docs/freeze-v3.json` and `docs/replay-ledger-v3.json` name are not in this store; every computed number comes from a rerun on a later vintage (plan section 3.1), and the recorded runs are named in section 7{% else %}the latest v3 runs that passed, all made before the freeze, under the tag `{{ pre_freeze_tag }}`: they are not the runs of record{% endif %}), code hash `{{ code_sha|short }}`, rules hash `{{ rules_sha|short }}`. Every measured value comes from these runs and carries its evaluation label (plan section 8.4): "in sample for the choice of the terms, the interval bins and the deciding subset" for {{ Y.first }}–{{ Y.last }}, "seen by the developers" for the {{ Y.seen }} rehearsal, and for {{ Y.held }} "held-out data" only when its test of record is clean; a sensitivity is never judged.{% if lineage != 'of_record' %} Every label also says where the number comes from: "{{ say.lineage[lineage] }}".{% endif %} "The developers" are the AI agents that built this project and the owner who directs them. The design constants this report writes in numerals are read from the code that applies them. v2's report (`docs/report/`) stands as rendered; this report does not change it. This English version is derived from the French one.
+Report generated from v3's MLflow runs ({% if lineage == 'of_record' %}the runs of record the freeze record `docs/freeze-v3.json` names, added in commit `{{ record.commit|short }}`{% if record.off_head %}, which is not in this history{% endif %}{% elif lineage == 'fresh_clone' %}a fresh clone: the runs of record that `docs/freeze-v3.json` and `docs/replay-ledger-v3.json` name are not in this store; every computed number comes from a rerun on a later vintage (plan section 3.1), and the recorded runs are named in section 7{% else %}the latest v3 runs that passed, all made before the freeze, under the tag `{{ pre_freeze_tag }}`: they are not the runs of record{% endif %}), code hash `{{ code_sha|short }}`, rules hash `{{ rules_sha|short }}`. Every measured value comes from these runs and carries its evaluation label (plan section 8.4): "in sample for the choice of the terms, the interval bins and the deciding subset" for {{ Y.first }}–{{ Y.last }}, "seen by the developers" for the {{ Y.seen }} rehearsal, and for {{ Y.held }} "held-out data" only when its test of record is clean; a sensitivity is never judged.{% if lineage != 'of_record' %} Every label also says where the number comes from: "{{ say.lineage[lineage] }}".{% endif %} "The developers" are the AI agents that built this project and the owner who directs them. The design constants this report writes in numerals are read from the code that applies them. v2's report (`docs/report/`) stands as rendered; this report does not change it. This English version is derived from the French one.
 
 {% for line in attribution %}
 > {{ line }}
@@ -341,7 +341,7 @@ The busiest hours of {{ Y.held }} (reported, never judged):
 ## 7. Provenance
 
 {% if lineage == 'of_record' %}
-Runs of record, named by `docs/freeze-v3.json` (commit `{{ record.commit }}`, hash `{{ record.sha256|short }}`), under the tag `{{ freeze_tag }}` first pinned to commit `{{ first_pin|short }}`.
+Runs of record, named by `docs/freeze-v3.json` (commit `{{ record.commit }}`, hash `{{ record.sha256|short }}`), under the tag `{{ freeze_tag }}` first pinned to commit `{{ first_pin|short }}`.{% if record.off_head %} The commit that adds the record is not HEAD or an ancestor of it: this history does not hold it (condition (a) of plan section 11.3).{% endif %}
 {% elif lineage == 'fresh_clone' %}
 A fresh clone: these runs are a rerun on a later vintage. The Hydro-Québec export was retrieved on {{ exports.hq_retrieved }}{% if exports.hq_modified %} (the dataset modified on {{ exports.hq_modified }}){% endif %}, ECCC's observations from {{ exports.eccc_first }} to {{ exports.eccc_last }}, the NBM forecasts from {{ exports.nbm_first }} to {{ exports.nbm_last }}.
 {% else %}
@@ -362,7 +362,7 @@ Runs made before the freeze (`{{ pre_freeze_tag }}`): none is a run of record.
 - The exports the data-quality run read: Hydro-Québec retrieved on {{ exports.hq_retrieved }}{% if exports.hq_modified %}, the dataset modified on {{ exports.hq_modified }}{% endif %}; ECCC retrieved from {{ exports.eccc_first }} to {{ exports.eccc_last }}; NBM from {{ exports.nbm_first }} to {{ exports.nbm_last }}.
 {% if lineage == 'fresh_clone' %}
 
-The recorded runs, which this store does not hold, as `docs/freeze-v3.json` (commit `{{ record.commit }}`) names them:
+The recorded runs, which this store does not hold, as `docs/freeze-v3.json` (commit `{{ record.commit }}`{% if record.off_head %}, which is not in this history{% endif %}) names them:
 
 | Role ({{ L.recorded }}) | Run | Commit | Ended | Rules |
 |---|---|---|---|---|
