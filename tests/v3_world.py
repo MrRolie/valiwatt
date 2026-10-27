@@ -292,9 +292,10 @@ def validation_frames(year: int = 2024) -> dict[str, pd.DataFrame]:
     return {"oos": oos, "forecast_record_noon": record, "bins": bins, "intervals_v3": iv}
 
 
-def log_validation(dq_run_id: str, frames: dict | None = None) -> str:
+def log_validation(dq_run_id: str, frames: dict | None = None, **more) -> str:
     """A complete v3 validation run on `dq_run_id`, as validate-v3 logs it: `validation_frames` and
-    results/validation.json, the thresholds of 2024 and 2025 and the cold threshold of the world's models."""
+    results/validation.json, the thresholds of 2024 and 2025 and the cold threshold of the world's models. more: tags
+    to replace (a fresh clone's: reproduction and byte copies not run)."""
     import json
     import tempfile
     from pathlib import Path as P
@@ -308,7 +309,7 @@ def log_validation(dq_run_id: str, frames: dict | None = None) -> str:
     freeze = records_v3.current_freeze()
     tags = {"kind": "validation_v3", "version": "v3", "freeze_tag": freeze["freeze_tag"],
             "freeze_commit": freeze["freeze_commit"], "dq_run_id": dq_run_id, "rules_sha256": rules_sha256(),
-            "reproduction": "passed", "byte_copies": "passed", "fresh_clone": "false", "issue": "noon"}
+            "reproduction": "passed", "byte_copies": "passed", "fresh_clone": "false", "issue": "noon", **more}
     with tracking.start_run(vd.EXPERIMENT, "validation-v3", tags=tags) as run:
         with tempfile.TemporaryDirectory() as tmp:
             for name, frame in (frames or validation_frames()).items():
@@ -320,8 +321,9 @@ def log_validation(dq_run_id: str, frames: dict | None = None) -> str:
     return run.info.run_id
 
 
-def log_frozen(year: int, validation_run_id: str, dq_run_id: str, model=None) -> str:
-    """The world's models frozen for `year`, as freeze-v3 logs them (v3's registered model, alias replay-<year>)."""
+def log_frozen(year: int, validation_run_id: str, dq_run_id: str, model=None, **more) -> str:
+    """The world's models frozen for `year`, as freeze-v3 logs them (v3's registered model, alias replay-<year>).
+    more: tags to replace, as for `log_validation`."""
     from valiwatt import records_v3
     from valiwatt.forecast import freeze as fz_
     from valiwatt.forecast.freeze_v3 import MODEL_NAME_V3
@@ -333,7 +335,7 @@ def log_frozen(year: int, validation_run_id: str, dq_run_id: str, model=None) ->
     freeze = records_v3.current_freeze()
     tags = {"version": "v3", "freeze_tag": freeze["freeze_tag"], "validation_run_id": validation_run_id,
             "dq_run_id": dq_run_id, "rules_sha256": rules_sha256(), "issue": "noon", "reproduction": "passed",
-            "byte_copies": "passed", "fresh_clone": "false"}
+            "byte_copies": "passed", "fresh_clone": "false", **more}
     run, _ = fz_.log_frozen(model or fz.model, fz.coef, example, tags, comparators=fz.comparators,
                             model_name=MODEL_NAME_V3)
     return run.info.run_id
@@ -359,8 +361,8 @@ def date_dq_run(run_id: str, not_before: str | None = None, at: str | None = Non
     """The v3 data-quality run `run_id` dated as started (its end moved with it) at `at`, or else after every other v3
     data-quality run and no earlier than `not_before`. The chain's clocks are synthetic (the freeze record is
     committed a day after the build, the export through 2025 retrieved thirty days after it), so a run that read that
-    export is dated no earlier than its retrieval, as on a real machine (the 2025 gate reads every such run's start),
-    and a run logged later stays the latest (tracking.latest_run orders by start)."""
+    export is dated no earlier than its retrieval, as on a real machine, and a run logged later stays the latest (the
+    2025 gate's (d) reads the latest data-quality run by start)."""
     import sqlite3
 
     from mlflow.entities import ViewType

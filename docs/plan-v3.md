@@ -643,6 +643,17 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
     validation run they name": to check each run against that replay's ledger entry, the read also takes the replay
     run's `results/replay.json` and the tags and parameters of the two runs it names (that each is the run named,
     passed or complete, and from the same NBM manifest). It reads nothing else, and it is refused a second time.
+- 2026-10-26, from the review of the 2025 gate, before any v3 run: section 11.3 (h) reads "the retrieval time of the
+  Hydro-Québec export that reaches 2025, as the copied manifest records it", and a forced fetch rewrites that time.
+  The gate takes the earliest retrieval time the machine has recorded for that export: the copied manifest's, the one
+  each earlier 2025 start's gate logged, and the one each data-quality run through 2025 logged, whatever its status.
+  So a start after a stopped one cannot move the 2025 time later and turn post hoc into clean. No other clock enters
+  it.
+- 2026-10-26, same review: v2's section 11.3.4 (d) asks that "the latest data-quality run" passed, and v2's section 18
+  reads it as the latest finished one. v3's gate reads it as written: the latest v3 data-quality run through 2025,
+  whatever its status, deleted runs included, must be finished, passed and under the current rules, so a later failed
+  run is never passed over. And the rule files are listed with git's NUL-separated output, so a file whose name is not
+  plain ASCII is a rule file like any other (none exists at `v3-fork`, so no rules hash recorded before changes).
 
 ### After the first v3 run
 

@@ -59,7 +59,6 @@ PRED_V3 = f"pred_{V3_PRODUCTION}"
 NOON_COMPARATORS = (V3_COMPARATORS["terms"], V3_COMPARATORS["family"])  # v2_noon, v1_noon
 MIDNIGHT_KEY = V3_COMPARATORS["horizon"]  # v2_midnight
 CAUSES = ("a", "f", "g", "h", "i")
-DQ_FINISHED = "tags.kind = 'dq_v3' and attributes.status = 'FINISHED'"
 N_BOOT = mrun.N_BOOT
 assert HELD_OUT_YEAR == _V2_HELD_OUT_YEAR  # one held-out year for v2 and v3
 
@@ -112,7 +111,9 @@ def check_2025_run_v3(run_id: str | None) -> None:
     """replay() reads 2025 only for its started run (v2's section 11.3.5, monitor/run.py `check_2025_run`, on v3's
     kinds and tag): `v3-rules-frozen` exists and the rule files and dependencies are its; the run store holds `run_id`
     as a run of year 2025, kind replay_v3 or diagnostic_v3, status tag started, MLflow status RUNNING, git_commit HEAD
-    and the tag's freeze commit; a diagnostic run names a finished, complete 2025 replay of the same commits."""
+    and the tag's freeze commit; a replay run holds the gate record it logged at its opening, whose head_commit is
+    its git_commit (the code its gate passed on); a diagnostic run names a finished, complete 2025 replay of the same
+    commits."""
     from mlflow.exceptions import MlflowException
 
     from valiwatt import tracking
@@ -142,6 +143,14 @@ def check_2025_run_v3(run_id: str | None) -> None:
         problems.append(f"it runs commit {str(t.get('git_commit'))[:12]}, not HEAD {head[:12]}")
     if t.get("freeze_commit") != freeze["freeze_commit"]:
         problems.append(f"its freeze commit is {str(t.get('freeze_commit'))[:12]}, not {freeze['freeze_commit'][:12]}")
+    if t.get("kind") == KIND:
+        try:
+            gated = mrun._load_json_artifact(c, run_id, mrun.GATE_RECORD).get("head_commit")
+        except Exception:  # noqa: BLE001 - a run without its gate record was never let through a gate
+            gated = None
+        if gated != t.get("git_commit"):
+            problems.append(f"its gate record names the commit {str(gated)[:12]}, not its own" if gated else
+                            "it holds no gate record")
     if t.get("kind") == DIAGNOSTIC_KIND and not _names_finished_replay(c, t):
         problems.append(f"its replay_run_id {t.get('replay_run_id') or 'none'!r} names no finished, complete 2025 "
                         "replay of its commits")
@@ -241,7 +250,7 @@ def time_2025(manifest_retrieved_utc: str, v2: dict, earlier: list[dict] = ()) -
     `earlier_2025_times`: {"utc", "source", "run_id"}), so a re-fetch, or a v2 ledger read otherwise, never moves it
     later. Each is parsed to a UTC time; the earliest wins, the first read on a tie. Returns {"utc" (ISO),
     "manifest_retrieved_utc", "v2_earliest_2025_started_utc" (None when v2's ledger holds no 2025 entry), "source"
-    ("manifest", "v2_ledger", or the earlier reading's: "earlier_start", "dq_retrieved", "dq_started"), "source_run_id"
+    ("manifest", "v2_ledger", or the earlier reading's: "earlier_start" or "dq_retrieved"), "source_run_id"
     (the run of an earlier reading, else None)}."""
     v2_first = v2.get("earliest_2025_started_utc")
     readings = [{"utc": manifest_retrieved_utc, "source": "manifest", "run_id": None}]
@@ -259,9 +268,11 @@ def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     """Every earlier reading of the 2025 time v3's store holds (section 11.3 (4): a start after a stopped one stays post
     hoc, and nothing seen in 2025 buys a held-out label): the 2025 time each earlier 2025 start's gate recorded
     (results/held_out_gate.json, read by records_v3.replay_starts_v3); and, for every v3 data-quality run through 2025,
-    whatever its status, deleted included, the retrieval time it read and its start, by each of which 2025 was on the
-    machine. Each {"utc", "source" ("earlier_start", "dq_retrieved" or "dq_started"), "run_id"}. A reading that cannot
-    be parsed as a time is refused (FreezeError, (h)): an unreadable earlier time is not a later one."""
+    whatever its status, deleted included, the retrieval time of the export it read: each an earlier reading of the
+    export's retrieval time. A run's own start time is no reading of it (the plan defines the 2025 time by the
+    retrieval time and v2's first 2025 start only). Each {"utc", "source" ("earlier_start" or "dq_retrieved"),
+    "run_id"}. A reading that cannot be parsed as a time is refused (FreezeError, (h)): an unreadable earlier time is
+    not a later one."""
     from mlflow.entities import ViewType
 
     from valiwatt.quality import run_v3 as dq_v3
@@ -273,7 +284,6 @@ def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
                          run_view_type=ViewType.ALL, max_results=50000) if exp else []
     for r in runs:
         out.append({"utc": r.data.params.get("hq_retrieved_utc"), "source": "dq_retrieved", "run_id": r.info.run_id})
-        out.append({"utc": mrun._utc(r.info.start_time), "source": "dq_started", "run_id": r.info.run_id})
     for x in out:
         try:
             if x["utc"] is None or pd.isna(_utc(x["utc"])):
@@ -284,41 +294,52 @@ def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     return out
 
 
+COMMIT_LINE = "\x01C "  # git quotes every path holding a control character, so no path line starts with it
+
+
 def dated_commits(a: str | None, b: str) -> list[dict]:
-    """Each commit of a..b (every ancestor of b when `a` is None), oldest first: {"commit", "committer_utc" (UTC
-    timestamp), "paths" (those it touched, a rename read as a deletion and an addition)}. monitor/run.py `_commits`
-    without the dates is untouched."""
+    """Each commit of a..b (every ancestor of b when `a` is None), oldest first: {"commit", "parents", "committer_utc"
+    (UTC timestamp), "paths" (those it touched, a rename read as a deletion and an addition)}. The paths are read as
+    the tree names them (`core.quotepath=off`), so a rule file named with letters outside ASCII is a rule file here
+    too; a path git still quotes (one holding a double quote, a backslash or a control character) cannot be read as a
+    path and is refused (FreezeError), never passed over. monitor/run.py `_commits` is untouched."""
     span = [f"{a}..{b}"] if a else [b]
-    out = _git("log", "--no-renames", "--format=C %H %cI", "--name-only", *span)
+    out = _git("-c", "core.quotepath=off", "log", "--no-renames", "--format=%x01C %H %cI %P", "--name-only", *span)
     if out.returncode != 0:
         raise FreezeError(f"the history {' '.join(span)} cannot be read: {out.stderr.strip()}")
     commits: list[dict] = []
     for line in out.stdout.splitlines():
-        if line.startswith("C "):
-            commit, date = line[2:].split()
-            commits.append({"commit": commit, "committer_utc": _utc(date), "paths": []})
-        elif line.strip():
-            commits[-1]["paths"].append(line.strip())
+        if line.startswith(COMMIT_LINE):
+            commit, date, *parents = line[len(COMMIT_LINE):].split()
+            commits.append({"commit": commit, "parents": parents, "committer_utc": _utc(date), "paths": []})
+        elif line.startswith('"'):
+            raise FreezeError(f"commit {commits[-1]['commit'][:12]} touches a path git can only quote ({line}): the "
+                              "rule files and dependencies a commit touches are read by their names, so it is refused")
+        elif line:
+            commits[-1]["paths"].append(line)
     return list(reversed(commits))
 
 
 def _rule_commits_v3(first_pin: str) -> list[dict]:
     """(a)'s walk (section 11.3 (3)): every commit after the commit `v3-rules-frozen` was first pinned to, up to HEAD,
-    that touches a rule file or a dependency, with those paths, oldest first, read commit by commit (mrun._commits), so
-    a change since reverted counts. Refused, as v2's (monitor/run.py `_rule_commits`): a shallow clone, a HEAD that
-    does not descend from the first pin, a merge commit."""
+    that touches a rule file or a dependency, with those paths, oldest first, read commit by commit (`dated_commits`,
+    which reads paths unquoted, as (i) does), so a change since reverted counts. Refused, as v2's (monitor/run.py
+    `_rule_commits`): a shallow clone, a HEAD that does not descend from the first pin, a merge commit."""
     if _git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
         raise FreezeError("(a) a shallow clone: the commits since the freeze are read one by one from the full history")
     if not mrun._is_ancestor(first_pin, "HEAD"):
         raise FreezeError(f"(a) HEAD ({mrun._head()[:12]}) does not descend from {first_pin[:12]}, the commit "
                           f"`{V3_FREEZE_TAG}` was first pinned to")
-    commits = mrun._commits(first_pin, "HEAD")
-    merges = [c for c, parents, _ in commits if len(parents) > 1]
+    try:
+        commits = dated_commits(first_pin, "HEAD")
+    except FreezeError as e:
+        raise FreezeError(f"(a) {e}") from e
+    merges = [x["commit"] for x in commits if len(x["parents"]) > 1]
     if merges:
         raise FreezeError(f"(a) merge commits {[c[:12] for c in merges]} lie after {first_pin[:12]}, the commit "
                           f"`{V3_FREEZE_TAG}` was first pinned to: the changes are read one commit at a time")
-    return [{"commit": c, "paths": hit} for c, _, files in reversed(commits)
-            if (hit := sorted(p for p in files if mrun._is_change(p)))]
+    return [{"commit": x["commit"], "paths": hit} for x in commits
+            if (hit := sorted(p for p in x["paths"] if mrun._is_change(p)))]
 
 
 # ------------------------------------------------------------------------------------------- the standing (D9)
@@ -420,6 +441,39 @@ def _check_diagnostics_v3(c) -> None:
                           "commits")
 
 
+def _reconcile_ledger_v3(c, entries: list[dict]) -> None:
+    """(c) the run store and the committed ledger-v3 agree (v2's section 11.3.4 (c): a disagreement between them
+    refuses): every `replay_v3` run of the store, of any year and status, deleted included, that a committed entry
+    records is FINISHED with status tag complete, and its entry derived again from the store (report/ledger_v3.py
+    `entry`, from its tags and results/replay.json) is the committed one field for field (`disagreement`). A run the
+    ledger records as finished, held out, post hoc or seen by the developers, is never read as a stopped start because
+    its store status changed since; nor is any other field of the store taken over the committed record. Refused
+    (FreezeError, (c)), naming each run and what differs."""
+    from valiwatt.report import ledger as v2_ledger
+    from valiwatt.report import ledger_v3
+
+    recorded = {e["run_id"]: e for e in entries}
+    problems = []
+    for run in mrun._replay_runs(c, kind=KIND):
+        e, rid, t = recorded.get(run.info.run_id), run.info.run_id, run.data.tags
+        if e is None:
+            continue
+        if run.info.status != "FINISHED" or t.get("status") != "complete":
+            problems.append(f"run {rid} is {run.info.status} in the store, status tag {t.get('status')!r}, yet the "
+                            f"ledger records it finished ({e['year']}, {e['evaluation']}, started {e['started_utc']}): "
+                            "a recorded completion never becomes an unfinished start")
+            continue
+        try:
+            stored = ledger_v3.entry(run, v2_ledger.results_of(c, run))
+        except Exception as ex:  # noqa: BLE001 - a run that cannot be read as its entry disagrees with it
+            problems.append(f"run {rid} cannot be read as its ledger-v3 entry: {ex}")
+            continue
+        if diff := ledger_v3.disagreement(stored, e):
+            problems.append(f"run {rid} in the store disagrees with its ledger-v3 entry on {diff}")
+    if problems:
+        raise FreezeError("(c) the run store and the committed ledger-v3 disagree: " + "; ".join(problems))
+
+
 def files_past_2024() -> list[Path]:
     """Every raw file and manifest past 2024 a 2025 replay reads (section 11.3 (1): byte copies of the 2025 files and
     their manifests): the Hydro-Québec export through 2025 and its manifest; each station's month files of the window
@@ -437,27 +491,43 @@ def files_past_2024() -> list[Path]:
     return out
 
 
+def latest_dq_v3(c):
+    """(d)'s "latest data-quality run" (v2's section 11.3.4 (d)): the v3 data-quality run started last, whatever its
+    status, deleted included, so a later run that failed, stopped or is still running is the latest and refuses,
+    never passed over for an older one that passed. Refused (FreezeError, (d)) when the store holds none."""
+    from mlflow.entities import ViewType
+
+    from valiwatt.quality import run_v3 as dq_v3
+
+    exp = c.get_experiment_by_name(dq_v3.EXPERIMENT)
+    runs = c.search_runs([exp.experiment_id], f"tags.kind = '{dq_v3.KIND}'", run_view_type=ViewType.ALL,
+                         order_by=["attributes.start_time DESC"], max_results=1) if exp else []
+    if not runs:
+        raise FreezeError("(d) no v3 data-quality run in the run store: run `valiwatt dq-v3 --through 2025` first")
+    return runs[0]
+
+
 def _check_dq_2025_v3(c) -> tuple:
-    """(d) and (e), checked without reading a demand record: the latest FINISHED v3 data-quality run, whatever its
-    gates, passed them, reaches the end of 2025 and ran under the current rules; the raw files agree with it by hash
-    only (each against its manifest, then the manifests' hashes against the run's params); every file and manifest
+    """(d) and (e), checked without reading a demand record: the latest v3 data-quality run (`latest_dq_v3`, whatever
+    its status) finished, is not deleted, passed its gates, reaches the end of 2025 and ran under the current rules;
+    the raw files agree with it by hash only (each against its manifest, then the manifests' hashes against the run's
+    params); every file and manifest
     past 2024 the replay reads is a byte copy (quality/byte_copies.py `require_copy`: no link, one name); and the
     copied 2025 Hydro-Québec manifest's retrieval time is the run's `hq_retrieved_utc`. Returns (the run, that
     retrieval time as the manifest writes it)."""
     from valiwatt.monitor.rules import rules_sha256
     from valiwatt.quality import run as qrun
-    from valiwatt.quality import run_v3 as dq_v3
     from valiwatt.quality.byte_copies import require_copy
     from valiwatt.sources import hydroquebec, nbm
     from valiwatt.sources.http import FetchRefused
-    from valiwatt.tracking import latest_run
 
-    try:
-        dq = latest_run(dq_v3.EXPERIMENT, DQ_FINISHED)
-    except LookupError as e:
-        raise FreezeError(f"(d) no finished v3 data-quality run: {e}") from e
+    dq = latest_dq_v3(c)
     p, t = dq.data.params, dq.data.tags
     problems = []
+    if dq.info.status != "FINISHED":
+        problems.append(f"it is {dq.info.status}, not FINISHED")
+    if dq.info.lifecycle_stage != "active":
+        problems.append("it is deleted")
     if t.get("gates") != "passed":
         problems.append(f"its gates are {t.get('gates')!r}, not passed")
     if p.get("through") != str(HELD_OUT_YEAR):
@@ -467,7 +537,7 @@ def _check_dq_2025_v3(c) -> tuple:
     if t.get("rules_sha256") != rules_sha256():
         problems.append("it ran under other rules")
     if problems:
-        raise FreezeError(f"(d) the latest finished v3 data-quality run {dq.info.run_id} is not a passing through-"
+        raise FreezeError(f"(d) the latest v3 data-quality run {dq.info.run_id} is not a finished, passing through-"
                           f"{HELD_OUT_YEAR} run under the current rules: {'; '.join(problems)}")
     try:
         for f in files_past_2024():
@@ -562,8 +632,11 @@ def held_out_2025_v3(freeze: dict) -> dict:
     """The rest of v3's 2025 gate (section 11.3 (3)), after the first-run guard, the clean tree, the freeze and the
     moved tag, in this order, each refusal a FreezeError naming its condition and its evidence. Reads no demand record.
 
-    1. (c) no other 2025 replay is RUNNING; 2. (c) every 2025 diagnostic run names its finished replay; 3. (c) the
-    freeze record is committed, read as the commit that added it holds it (freeze_record.read_freeze_record); 4. (b) its
+    0. (c) the committed ledger-v3 read, and every run of the store it records reconciled with its entry
+    (`_reconcile_ledger_v3`), before the starts are built (records_v3.replay_starts_v3 on that ledger); 1. (c) no
+    other 2025 replay is RUNNING; 2. (c) every 2025 diagnostic run names its finished replay; 3. (c) the
+    freeze record is committed, read as the commit that added it holds it (freeze_record.read_freeze_record), and (a)
+    that commit is the one commit of the repository's branches, remote-tracking refs and tags that adds it; 4. (b) its
     first pin and rules hash are the tag's first pin (records_v3.first_pin) and the rules at it; 5. (a) the record's
     commit is HEAD or an ancestor of HEAD, and descends from the first pin; 6. (c) ledger-v3 holds the record's
     rehearsal under the first pin; 7. (d), (e) the data (`_check_dq_2025_v3`); 8. (b) the named runs against the
@@ -579,23 +652,33 @@ def held_out_2025_v3(freeze: dict) -> dict:
     (`standing_v3`). Returns the gate's record, which run_replay_v3 logs at once as results/held_out_gate.json: v2's
     `causes`, `ruling` and `standing`, so evaluate.evaluation_label reads it unchanged."""
     from valiwatt import tracking
-    from valiwatt.freeze_record import (FreezeRecordError, ROLES, dumps, frozen_chain_v3, make_record,
-                                        read_freeze_record)
+    from valiwatt.freeze_record import (FreezeRecordAnchorError, FreezeRecordError, ROLES, dumps, frozen_chain_v3,
+                                        make_record, read_freeze_record)
     from valiwatt.monitor.rules import rules_sha256
     from valiwatt.report import ledger_v3
 
     c = tracking.client()
+    # 0. (c) the committed ledger-v3, and every run of the store it records reconciled with its entry, before the
+    # starts are built from both.
+    try:
+        entries = ledger_v3.read()
+    except ledger_v3.LedgerError as e:
+        raise FreezeError(f"(c) the committed ledger-v3 cannot be read: {e}") from e
+    _reconcile_ledger_v3(c, entries)
     # 1-2. (c) one start at a time, and the diagnostics.
-    starts = records_v3.replay_starts_v3(HELD_OUT_YEAR, client=c)
+    starts = records_v3.replay_starts_v3(HELD_OUT_YEAR, client=c, ledger={"replays": entries})
     running = [s["run_id"] for s in starts if s["running"]]
     if running:
         raise FreezeError(f"(c) another v3 2025 replay is RUNNING in the run store: {running}. One start at a time; a "
                           "run a killed process left RUNNING is ended as FAILED with the MLflow client first, and "
                           "still counts as an unfinished start")
     _check_diagnostics_v3(c)
-    # 3. (c) the freeze record, as its commit holds it.
+    # 3. (c) the freeze record, as its commit holds it; (a) its anchor, the one commit of the repository's refs that
+    # adds it, an ancestor of HEAD.
     try:
         rec = read_freeze_record()
+    except FreezeRecordAnchorError as e:
+        raise FreezeError(f"(a) the freeze record: {e}") from e
     except FreezeRecordError as e:
         raise FreezeError(f"(c) the freeze record: {e}") from e
     data = rec["data"]
@@ -618,10 +701,6 @@ def held_out_2025_v3(freeze: dict) -> dict:
                           f"{first[:12]}, the commit `{V3_FREEZE_TAG}` was first pinned to")
     # 6. (c) ledger-v3 holds the rehearsal.
     rehearsal_id = data["runs"]["rehearsal_2024"]["run_id"]
-    try:
-        entries = ledger_v3.read()
-    except ledger_v3.LedgerError as e:
-        raise FreezeError(f"(c) the committed ledger-v3 cannot be read: {e}") from e
     entry = next((e for e in entries if e["run_id"] == rehearsal_id), None)
     if entry is None or entry["freeze_commit"] != first:
         raise FreezeError(f"(c) the committed ledger-v3 holds no entry of the freeze record's rehearsal {rehearsal_id} "
@@ -664,8 +743,11 @@ def held_out_2025_v3(freeze: dict) -> dict:
     h_fires = rec["committer_utc"] >= t or bool(late_ends)
     # 12. (i) no change after 2025.
     parent = _commit_of(f"{rec['commit']}^")
-    after = [x for x in dated_commits(parent, "HEAD") if x["committer_utc"] > t
-             and any(mrun._is_change(p) for p in x["paths"])]
+    try:
+        span = dated_commits(parent, "HEAD")
+    except FreezeError as e:
+        raise FreezeError(f"(i) {e}") from e
+    after = [x for x in span if x["committer_utc"] > t and any(mrun._is_change(p) for p in x["paths"])]
     # 13. The causes, in CAUSES' order.
     fired = {"a": bool(rule_commits), "f": bool(starts) and not any(s["finished"] for s in starts),
              "g": v2["test_of_record"] is None, "h": h_fires, "i": bool(after)}
@@ -887,7 +969,8 @@ def _locate_v3(year: int, record: dict) -> dict:
     and the frozen production model's hash. 2024: the latest v3 data-quality run that passed, which must be of the
     2019-2024 window with its byte copies checked (quality/run_v3.py `require_design_run`), the latest complete v3
     validation run, and the run of v3's registered model's alias replay-2024. 2025: exactly the gate's record's (the
-    freeze record's runs, the gate's data-quality run)."""
+    freeze record's runs, the gate's data-quality run). "fresh_clone": whether the data-quality run is labelled a fresh
+    clone's (2025: never), which the run's tags carry (section 3.1)."""
     from valiwatt.forecast import validate as vd
     from valiwatt.forecast.freeze_v3 import MODEL_NAME_V3
     from valiwatt.quality import run_v3 as dq_v3
@@ -895,14 +978,16 @@ def _locate_v3(year: int, record: dict) -> dict:
 
     if year == HELD_OUT_YEAR:
         return {"dq_run_id": record["dq_run_id"], "validation_run_id": record["validation_run_id"],
-                "frozen_run_id": record["frozen_run_id"], "coefficient_sha256": record["model_sha256"]}
+                "frozen_run_id": record["frozen_run_id"], "coefficient_sha256": record["model_sha256"],
+                "fresh_clone": False}
     dq = dq_v3.latest_passed()
-    dq_v3.require_design_run(dq)
+    lineage = dq_v3.require_design_run(dq)
     val = latest_run(vd.EXPERIMENT, "tags.kind = 'validation_v3' and tags.status = 'complete'")
     c = client()
     frozen = c.get_run(c.get_model_version_by_alias(MODEL_NAME_V3, f"replay-{year}").run_id)
     return {"dq_run_id": dq.info.run_id, "validation_run_id": val.info.run_id, "frozen_run_id": frozen.info.run_id,
-            "coefficient_sha256": frozen.data.tags.get("coefficient_sha256", "")}
+            "coefficient_sha256": frozen.data.tags.get("coefficient_sha256", ""),
+            "fresh_clone": bool(lineage["fresh_clone"])}
 
 
 def _read_inputs_v3(year: int, freeze: dict, located: dict, record: dict) -> dict:
@@ -1013,7 +1098,7 @@ def _results_v3(year: int, r, inputs: dict, freeze: dict, departure_from: list, 
                 "judgement": judgement | {"label": evaluation},
                 "verdict": judgement["verdict"] | {"label": evaluation},
                 "coverage_by_bin": coverage_by_bin(r.hourly, n_boot), "forecast_error": mrun.forecast_error(r.hourly),
-                "evaluation": evaluation}
+                "evaluation": evaluation, "n_boot": n_boot}  # the resamples of every bootstrap interval above
     if year == REHEARSAL_YEAR:
         results["refitted"] = compare_refitted_v3(r, inputs["oos"], inputs["frames"][f"intervals_{V3_PRODUCTION}"],
                                                   thresholds, chain["reference"], year, n_boot)
@@ -1041,21 +1126,47 @@ def _open_v3(year: int, departure: bool) -> dict:
             "coefficient_sha256": located["coefficient_sha256"], "departure": str(bool(departure_from)).lower(),
             "departure_from": ",".join(departure_from), "evaluation": evaluation,
             "dq_run_id": located["dq_run_id"], "frozen_run_id": located["frozen_run_id"],
-            "validation_run_id": located["validation_run_id"], "status": "started", "stage": "opened"}
+            "validation_run_id": located["validation_run_id"], "status": "started", "stage": "opened",
+            # A fresh clone's rerun (section 3.1) says so: it never enters ledger-v3 (report/ledger_v3.py).
+            "fresh_clone": str(located["fresh_clone"]).lower()}
     if year == HELD_OUT_YEAR:
         tags |= {"standing": record["standing"], "freeze_record_commit": record["freeze_record"]["commit"]}
     return {"freeze": freeze, "departure_from": departure_from, "record": record, "located": located,
             "evaluation": evaluation, "tags": tags}
 
 
+def _bind_to_gate_v3(record: dict, run_id: str | None = None) -> None:
+    """A 2025 start runs the code its gate passed on (v2's section 11.3.5, every start's trace): HEAD is still the
+    gate record's `head_commit` and the tree still clean; with `run_id`, the opened run also records that commit as its
+    `git_commit`, from a clean tree. A commit made between the gate and the run (a rule change and its revert leave
+    the tree as frozen, on a commit whose (a) and (i) no gate read) refuses (FreezeError, (c)): before the run opens,
+    no run; after, the run stops before any input is read."""
+    from valiwatt import tracking
+
+    head = mrun._head()
+    problems = [] if head == record["head_commit"] else [f"HEAD is {head[:12]}"]
+    if run_id is not None:
+        t = tracking.client().get_run(run_id).data.tags
+        if t.get("git_commit") != record["head_commit"]:
+            problems.append(f"run {run_id} records commit {str(t.get('git_commit'))[:12]}")
+        if t.get("git_dirty") != "false":
+            problems.append(f"run {run_id} was opened from a tree that was not clean (git_dirty "
+                            f"{t.get('git_dirty')!r})")
+    if problems:
+        raise FreezeError(f"(c) the 2025 gate passed on {record['head_commit'][:12]}, but {'; '.join(problems)}: a "
+                          "start runs only the commit its gate read")
+    mrun.require_clean_tree()
+
+
 def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     """`valiwatt replay-v3 --year Y`, in v2's order (monitor/run.py `run_replay`): the gate (`held_out_gate_v3`); the
     tracked run, kind replay_v3, opened with every tag it will carry (status started, stage opened), and for 2025 the
     gate's record logged at once as results/held_out_gate.json, the gate, the label and this opening all under
-    start_lock_v3(); then, inside the run, the inputs read (stage inputs_read), the noon replay (stage replayed), every
-    check that can stop it (the never-acts check, the rehearsal's identity, the results, the Evidently cross-check in a
-    temporary folder; stage checked), and only then the metrics, frames/hourly.parquet, the Evidently files and, last,
-    results/replay.json (stage logged), then status complete. An exception after the run opens leaves it in the store,
+    start_lock_v3(), HEAD still the commit the gate passed on before the run opens and the run's own commit after
+    (`_bind_to_gate_v3`); then, inside the run, the inputs read (stage inputs_read), the noon replay (stage replayed),
+    every check that can stop it (the never-acts check, the rehearsal's identity, the results, the Evidently
+    cross-check in a temporary folder; stage checked), and only then the metrics, frames/hourly.parquet, the Evidently
+    files and, last, results/replay.json (stage logged), then status complete. An exception after the run opens leaves it in the store,
     status started, its stage the last it reached and tag error the exception's class name, never its message. No
     diagnostics."""
     import mlflow
@@ -1072,6 +1183,8 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
             if year == HELD_OUT_YEAR:
                 locked.enter_context(start_lock_v3())
             plan = _open_v3(year, departure)
+            if year == HELD_OUT_YEAR:
+                _bind_to_gate_v3(plan["record"])  # before the run opens: a moved HEAD opens no run
             run = opened.enter_context(start_run(mrun.EXPERIMENT, KIND, tags=plan["tags"]))
             if year == HELD_OUT_YEAR:
                 try:  # the run exists: a stop while its gate record is logged keeps its error class too
@@ -1081,6 +1194,8 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
                     mrun._set("error", type(e).__name__)
                     raise
         try:
+            if year == HELD_OUT_YEAR:
+                _bind_to_gate_v3(plan["record"], run.info.run_id)  # the code the run records, before any input
             inputs = _read_inputs_v3(year, plan["freeze"], plan["located"], plan["record"])
             mrun._set("stage", "inputs_read")
             r = _replay_v3(inputs, first_day, last_day, departure, run.info.run_id if year == HELD_OUT_YEAR else None)
@@ -1126,8 +1241,9 @@ def run_evidence_v3(departure: bool = False) -> int:
     """`valiwatt evidence-v3` (section 11.3 (3), v2's section 11.3.5): what the owner rules on; it decides nothing, and
     no gate reads what it holds (the 2025 gate checks only that a finished one, made from a clean tree, exists for the
     ruling's commit, on its data-quality run). In order: v3's first-run guard, a clean tree, the freeze record as its
-    commit holds it; the record's rehearsal run in the store with its frames/hourly.parquet; the latest finished v3
-    data-quality run a passing through-2025 run whose raw files agree with it (the gate's (d) and (e)); the rehearsal's
+    commit holds it; the record's rehearsal run in the store with its frames/hourly.parquet; the latest v3 data-quality
+    run, whatever its status, a finished, passing through-2025 run whose raw files agree with it (the gate's (d) and
+    (e)); the rehearsal's
     frozen artifacts (freeze_record.frozen_chain_v3 of the record's frozen 2024 and validation runs), their digest and
     production model the record's for the rehearsal. Then the rehearsal's noon replay run again on that newest export,
     every raw record and run point labelled or available after the end of 2024 dropped at load and counted, with

@@ -87,11 +87,9 @@ def on_v2_first(c: str) -> str:
 
 
 def evidence(chain, rev: str = "HEAD", **tags) -> str:
-    """A finished evidence run from a clean tree at `rev`, on the gate's data-quality run (the latest finished one), as
+    """A finished evidence run from a clean tree at `rev`, on the gate's data-quality run (the latest one), as
     evidence-v3 logs one (the evidence itself is tested in tests/test_evidence_v3.py); tags: any to replace."""
-    from valiwatt.quality import run_v3 as dq_v3
-
-    dq = tracking.latest_run(dq_v3.EXPERIMENT, run_v3.DQ_FINISHED).info.run_id
+    dq = run_v3.latest_dq_v3(tracking.client()).info.run_id
     return rw.fake_run({"kind": run_v3.EVIDENCE_KIND, "status": "complete", "dq_run_id": dq,
                         "rehearsal_run_id": chain.rehearsal, **rw.git_tags(chain.repo, rev), **tags})
 
@@ -333,10 +331,10 @@ def test_time_2025_is_never_later_than_an_earlier_reading_of_it():
     """The earliest of the current reading and every earlier one, read as times; the current reading on a tie."""
     v2 = {"earliest_2025_started_utc": "2026-12-03T00:00:00.000Z"}
     earlier = [{"utc": "2026-12-01T05:00:00-05:00", "source": "earlier_start", "run_id": "1" * 32},
-               {"utc": "2026-12-01T09:00:00.000Z", "source": "dq_started", "run_id": "2" * 32}]
+               {"utc": "2026-12-01T09:00:00.000Z", "source": "dq_retrieved", "run_id": "2" * 32}]
     t = run_v3.time_2025("2026-12-02T00:00:00Z", v2, earlier)
     assert (pd.Timestamp(t["utc"]), t["source"], t["source_run_id"]) == (pd.Timestamp("2026-12-01T09:00Z"),
-                                                                          "dq_started", "2" * 32)
+                                                                          "dq_retrieved", "2" * 32)
     t = run_v3.time_2025("2026-12-01T09:00:00Z", v2, earlier)
     assert (t["source"], t["source_run_id"]) == ("manifest", None)
 
@@ -350,6 +348,22 @@ def test_dated_commits_gives_each_commit_its_date_and_paths_oldest_first(tmp_pat
     assert [g["commit"] for g in got] == [a, b]
     assert got[0]["committer_utc"] == pd.Timestamp("2026-12-01T15:00Z") and got[0]["paths"] == ["x.txt"]
     assert sorted(got[1]["paths"]) == ["x.txt", "y.txt"]
+
+
+NON_ASCII_RULE = "src/valiwatt/monitor/règle.py"
+
+
+def test_dated_commits_read_a_non_ascii_path_as_the_tree_names_it(tmp_path, monkeypatch):
+    """A rule file named with letters outside ASCII is read by its name (git's quoting off), so it is a rule file to
+    (a)'s walk and to (i); a path git quotes even so (a double quote in it) is refused, never passed over."""
+    s = rw.scratch_store(tmp_path, monkeypatch)
+    c = rw.commit(s.repo, {NON_ASCII_RULE: "MIN = 6\n"}, "a rule file named in French")
+    (got,) = run_v3.dated_commits(s.pin, c)
+    assert got["paths"] == [NON_ASCII_RULE] and mrun._is_change(NON_ASCII_RULE)
+    assert run_v3._rule_commits_v3(s.f0) == [{"commit": c, "paths": [NON_ASCII_RULE]}]
+    q = rw.commit(s.repo, {'src/valiwatt/monitor/r"q.py': "MIN = 7\n"}, "a quoted path")
+    with pytest.raises(FreezeError, match=rf"commit {q[:12]} touches a path git can only quote"):
+        run_v3.dated_commits(c, q)
 
 
 # ------------------------------------------------------------------------------------------- on the chain
@@ -399,6 +413,33 @@ def test_the_v3_ledger_syncs_the_rehearsal_and_a_2025_start_from_the_runs_they_l
     assert (held["run_id"], held["year"], held["evaluation"], held["standing"]) == (run.info.run_id, 2025, "held_out",
                                                                                      "clean")
     assert held["freeze_commit"] == chain.f0 and set(held["verdict"]) == {"terms", "family"}
+
+
+@pytest.mark.parametrize("case", ["failed", "code", "control"])
+def test_a_completed_test_in_ledger_v3_never_becomes_a_stopped_start(chain, case):
+    """(c), the store against the committed ledger (v2's section 11.3.4 (c)): test A finished, held out, and its
+    ledger-v3 entry committed; then A's run made FAILED in the store (reopened, or ended wrongly), or one of its tags
+    changed (its code hash): the next start is refused (c), the store and the ledger disagreeing, never read as
+    following a stopped start (no (f)). The control: the store untouched, the next start's gate passes."""
+    from valiwatt.report import ledger_v3
+
+    assert run_v3.run_replay_v3(2025, n_boot=20) == 0
+    (a,) = vw.replay_runs_v3(2025)
+    ledger_v3.sync()
+    rw.commit(chain.repo, {}, "ledger-v3 with the test of record")
+    assert [e["evaluation"] for e in ledger_v3.read() if e["year"] == 2025] == ["held_out"]
+    c = tracking.client()
+    if case == "control":
+        assert gate()["causes"] == []
+        return
+    if case == "failed":
+        c.set_terminated(a.info.run_id, "FAILED")
+        said = rf"run {a.info.run_id} is FAILED in the store, status tag 'complete', yet the ledger records it finished"
+    else:
+        c.set_tag(a.info.run_id, "code_sha256", "d" * 64)
+        said = rf"run {a.info.run_id} in the store disagrees with its ledger-v3 entry on \['code_sha256'\]"
+    msg = refused(r"\(c\) the run store and the committed ledger-v3 disagree: " + said)
+    assert "(f)" not in msg
 
 
 def v2_ledger_at(chain, case: str) -> None:
@@ -633,6 +674,17 @@ def test_a_rule_change_committed_after_the_2025_time_refuses_i(chain, when):
     assert ("(i) commits committed after the 2025 time" in msg) == (when == "after")
 
 
+def test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start(chain):
+    """A rule file named with letters outside ASCII, added after the 2025 time: the start is refused, naming it. Since
+    monitor/rules.py `rule_files` reads git's names NUL-separated, such a file is a rule file, so the earliest check
+    that fires is the freeze check (rule files equal to `v3-rules-frozen`'s), before (a) and (i) (which read the same
+    name: test_dated_commits_read_a_non_ascii_path_as_the_tree_names_it)."""
+    rw.commit(chain.repo, {NON_ASCII_RULE: "MIN = 6\n"}, "a rule file named in French",
+              date=(chain.v2_started + H).isoformat())
+    msg = refused(r"rule files differ from `v3-rules-frozen`")
+    assert f"['{NON_ASCII_RULE}']" in msg
+
+
 @pytest.mark.parametrize("cause", ["h", "i"])
 def test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it(chain, cause):
     """An (h) or (i) entry saying clean is refused, naming the section; post hoc, with its evidence, it lifts its
@@ -760,24 +812,20 @@ def test_the_artifacts_that_judge_2025_changed_inside_the_run_stop_it(chain, mon
     assert "results/replay.json" not in mrun._artifact_paths(tracking.client(), run.info.run_id)
 
 
-@pytest.mark.parametrize("term", ["dq_retrieved", "dq_started", "earlier_start"])
+@pytest.mark.parametrize("term", ["dq_retrieved", "earlier_start"])
 def test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch(chain, term):
     """Section 11.3 (4): the 2025 time is never later than an earlier reading of it, so an export re-fetched after v2's
     2025 start, its manifest time later, still fires (h) when 2025 was on the machine before the freeze record's
-    commit; with an (h) entry for this code the start runs post hoc. Each earlier reading alone holds the time back: a
-    data-quality run that read the export before the commit; one that started before it, whatever retrieval time it
-    records (not finished, so not the gate's); the gate record of a stopped start whose (h) fired, the data-quality run
-    that read the early export gone from the store. In the last, the stopped start's (h) entry names a commit before
-    the one that start ran, so it does not apply again: the next start is refused (h) until a new entry, then runs
-    post hoc, and finishes so labelled."""
+    commit; with an (h) entry for this code the start runs post hoc. Each earlier reading of the export's retrieval
+    time alone holds the time back: a data-quality run that read the export before the commit; the gate record of a
+    stopped start whose (h) fired, the data-quality run that read the early export gone from the store (a run's start
+    time is no reading of it: the test after this one). In the last, the stopped start's (h) entry names a commit
+    before the one that start ran, so it does not apply again: the next start is refused (h) until a new entry, then
+    runs post hoc, and finishes so labelled."""
     before = chain.record_date - H
     start = None
     if term == "dq_retrieved":
         refetch(chain, before)
-    elif term == "dq_started":
-        forged = vw.log_dq_2025(vw.ledger_time(chain.retrieved))
-        tracking.client().set_terminated(forged, "FAILED")
-        vw.date_dq_run(forged, at=before.isoformat())
     else:
         early = refetch(chain, before)
         section(chain, on_hi("h", head(chain)))
@@ -799,6 +847,17 @@ def test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch(chain,
         assert run_v3.run_replay_v3(2025, n_boot=20) == 0
         run = next(r for r in vw.replay_runs_v3(2025) if r.info.run_id != start["run_id"])
         assert (run.data.tags["status"], run.data.tags["evaluation"]) == ("complete", "post_hoc")
+
+
+def test_a_data_quality_run_s_start_time_is_no_reading_of_the_2025_time(chain):
+    """The 2025 time is the export's retrieval time or v2's first 2025 start, never a clock the plan does not define:
+    a data-quality run through 2025 that read the export at its retrieval time, but whose start the machine's clock
+    put before the freeze record's commit (a clock moved back), leaves (h) quiet."""
+    early = vw.log_dq_2025(vw.ledger_time(chain.retrieved))
+    tracking.client().set_terminated(early, "FAILED")
+    vw.date_dq_run(early, at=(chain.record_date - H).isoformat())  # older than the gate's data-quality run
+    rec = gate()
+    assert rec["causes"] == [] and rec["t2025"]["source"] == "manifest" and rec["dq_run_id"] == chain.dq25
 
 
 def test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch(chain):
@@ -824,8 +883,9 @@ def test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch(chain)
 
 def test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a(chain, monkeypatch):
     """(a): the record read is the one a branch holds; the start runs elsewhere, on a commit that does not descend from
-    the record's. (The gate reads the record in the head's own history, so only a reader pointed elsewhere can reach
-    this.) The control: a start on a descendant of the record's commit."""
+    the record's. (The reader is pointed at the branch here, so step 5's own check fires; a real reader refuses this
+    head by the record's anchor, test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[off_head].) The
+    control: a start on a descendant of the record's commit."""
     from valiwatt import freeze_record
 
     rw.commit(chain.repo, {"README.md": "later\n"}, "a descendant")
@@ -838,6 +898,34 @@ def test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a(
     refused(r"\(a\) the commit that adds the freeze record, .* is not HEAD")
 
 
+@pytest.mark.parametrize("case", ["sibling", "off_head", "control"])
+def test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a(chain, case):
+    """(a), the record's anchor (section 11.3 (3)): the record R committed and kept by a branch; the working branch
+    reset to R's parent. The writer refuses to write a record there (R is the first one); a second record R' committed
+    by hand, the same bytes, is refused (a), the gate reading two additions across the repository's refs (sibling); so
+    is the head before R', whose history holds no record while a branch holds R (off_head). The control: R kept by no
+    ref, R' passes the gate."""
+    from valiwatt.freeze_record import PATH, FreezeRecordError, write_freeze_record
+
+    text = rw.git(chain.repo, "show", f"{chain.record}:{PATH}") + "\n"
+    if case != "control":
+        rw.git(chain.repo, "branch", "keep", chain.record)
+    rw.git(chain.repo, "reset", "--quiet", "--hard", f"{chain.record}^")
+    if case == "off_head":
+        refused(rf"\(a\) the freeze record: the one commit that adds {PATH}, {chain.record[:12]}, is not HEAD")
+        return
+    if case == "sibling":
+        with pytest.raises(FreezeRecordError, match=rf"commits \['{chain.record[:12]}'\] of the repository's refs add"):
+            write_freeze_record(chain.rehearsal)
+    again = rw.commit(chain.repo, {PATH: text}, "the freeze record, again", date=chain.record_date.isoformat())
+    if case == "control":
+        rec = gate()
+        assert rec["freeze_record"]["commit"] == again and rec["causes"] == []
+        return
+    refused(rf"\(a\) the freeze record: 2 commits across the repository's branches, remote-tracking refs and tags "
+            rf"add {PATH} \(\['{chain.record[:12]}', '{again[:12]}'\]\)")
+
+
 def test_another_v3_2025_replay_running_refuses(chain):
     rw.fake_run({"kind": run_v3.KIND, "year": "2025", "freeze_tag": V3_FREEZE_TAG, "freeze_commit": chain.f0,
                  "status": "started", **rw.git_tags(chain.repo)}, status="RUNNING")
@@ -848,6 +936,27 @@ def test_a_bad_v3_diagnostic_run_refuses(chain):
     rw.fake_run({"kind": run_v3.DIAGNOSTIC_KIND, "year": "2025", "replay_run_id": "0" * 32,
                  **rw.git_tags(chain.repo)})
     refused(r"\(c\) 2025 diagnostic runs .* name no finished, complete 2025 replay")
+
+
+@pytest.mark.parametrize("case", ["failed", "running", "deleted", "control"])
+def test_a_later_data_quality_run_that_did_not_pass_refuses_d(chain, case):
+    """(d) reads the latest data-quality run (v2's section 11.3.4 (d)), whatever its status: a run through 2025 started
+    after the one that passed, on the same files and recording the same retrieval time, that failed before its gates
+    passed, is still running, or failed and was deleted, refuses (d); the older passing run is never read in its
+    place. The control: the later run finished and passed, and the gate reads it."""
+    c = tracking.client()
+    later = vw.log_dq_2025(vw.ledger_time(chain.retrieved))
+    if case == "control":
+        assert gate()["dq_run_id"] == later
+        return
+    if case == "running":
+        c.update_run(later, "RUNNING")
+    else:
+        c.set_terminated(later, "FAILED")
+    if case == "deleted":
+        c.delete_run(later)
+    refused(rf"\(d\) the latest v3 data-quality run {later} is not a finished, passing through-2025 run under the "
+            rf"current rules: it is {'RUNNING' if case == 'running' else 'FAILED'}, not FINISHED")
 
 
 @pytest.mark.parametrize("link", ["symbolic", "hard"])
@@ -878,15 +987,19 @@ def test_a_manifest_time_other_than_the_data_quality_run_s_refuses_e(chain):
 
 
 @pytest.mark.parametrize("case", ["none", "other_kind", "finished", "other_commit", "control", "year", "status_tag",
-                                  "freeze_commit", "diagnostic", "no_tag"])
+                                  "freeze_commit", "diagnostic", "no_tag", "gate_head", "no_gate_record"])
 def test_a_v3_replay_reads_2025_only_for_its_started_run(chain, case):
     """replay()'s gate for a v3 replay reading 2025 (gate_v3 -> check_2025_run_v3): only under `v3-rules-frozen`, and
     only for a started, running 2025 replay_v3 run of the head and the tag's freeze commit; a diagnostic_v3 run only
     when it names a finished, complete 2025 replay of its commits. Each fault alone: no run ID, another kind, finished,
     another commit, another year, a status tag other than started, another freeze commit, a diagnostic run naming no
-    finished replay, no tag."""
+    finished replay, no tag, a gate record naming another commit than the run's (the gate passed on another code), no
+    gate record."""
+    import json
+
     tags = {"kind": run_v3.KIND, "year": "2025", "status": "started", "freeze_commit": chain.f0,
             **rw.git_tags(chain.repo)}
+    texts = {mrun.GATE_RECORD: json.dumps({"head_commit": tags["git_commit"]})}
     status = "RUNNING"
     match = "a v3 replay reads 2025 only for its started 2025 run"
     if case == "other_kind":
@@ -906,12 +1019,68 @@ def test_a_v3_replay_reads_2025_only_for_its_started_run(chain, case):
     elif case == "no_tag":
         rw.git(chain.repo, "tag", "-d", V3_FREEZE_TAG)
         match = "a v3 replay reads 2025 only under `v3-rules-frozen`, which does not exist"
-    rid = None if case == "none" else rw.fake_run(tags, status=status)
+    elif case == "gate_head":
+        texts = {mrun.GATE_RECORD: json.dumps({"head_commit": chain.f0})}
+        match = rf"its gate record names the commit {chain.f0[:12]}, not its own"
+    elif case == "no_gate_record":
+        texts = {}
+        match = "it holds no gate record"
+    rid = None if case == "none" else rw.fake_run(tags, status=status, texts=texts)
     if case == "control":
         run_v3.gate_v3("2025-01-19", data_last(2025), False, rid)
         return
     with pytest.raises(FreezeError, match=match):
         run_v3.gate_v3("2025-01-19", data_last(2025), False, rid)
+
+
+def _change_and_revert(chain) -> str:
+    """A rule change committed after the 2025 time and reverted: the tree is again the frozen one, on a new commit.
+    Returns that commit."""
+    rule = (chain.repo / rw.RULE_FILE).read_text(encoding="utf-8")
+    after = chain.v2_started + H
+    rw.commit(chain.repo, {rw.RULE_FILE: "MIN = 5\n"}, "a rule change", date=after.isoformat())
+    return rw.commit(chain.repo, {rw.RULE_FILE: rule}, "its revert", date=(after + H).isoformat())
+
+
+@pytest.mark.parametrize("when", ["before_open", "at_open"])
+def test_a_commit_between_the_gate_and_the_run_refuses(chain, monkeypatch, when):
+    """The run is bound to the code its gate passed on: the gate passes on H; then a rule change and its revert,
+    committed after the 2025 time, give J, whose tree is the frozen one. Before the run opens (J made while the run's
+    inputs are located), the start is refused and no run opens; at the opening (J made as the run is created, so the
+    run records J), the run stops before reading any input, holding no result. Either way neither (a) nor (i) was read
+    on J. The control is test_a_clean_2025_start_with_everything_in_order_passes."""
+    from valiwatt import tracking as tr
+
+    h = head(chain)
+    made = []
+    if when == "before_open":
+        locate = run_v3._locate_v3
+
+        def moved(*args, **kwargs):
+            made.append(_change_and_revert(chain))
+            return locate(*args, **kwargs)
+
+        monkeypatch.setattr(run_v3, "_locate_v3", moved)
+    else:
+        start = tr.start_run
+
+        def moved(*args, **kwargs):
+            made.append(_change_and_revert(chain))
+            return start(*args, **kwargs)
+
+        monkeypatch.setattr(tr, "start_run", moved)
+    with pytest.raises(FreezeError, match=r"\(c\) the 2025 gate passed on " + h[:12] + ", but HEAD is "):
+        run_v3.run_replay_v3(2025, n_boot=20)
+    (j,) = made
+    assert head(chain) == j != h and rw.git(chain.repo, "status", "--porcelain") == ""
+    runs = vw.replay_runs_v3(2025)
+    if when == "before_open":
+        assert runs == []
+        return
+    (run,) = runs
+    t = run.data.tags
+    assert (t["git_commit"], t["stage"], t["error"], run.data.metrics) == (j, "opened", "FreezeError", {})
+    assert mrun._artifact_paths(tracking.client(), run.info.run_id) == [mrun.GATE_RECORD]
 
 
 def test_a_second_2025_start_while_the_lock_is_held_opens_no_run(chain):
@@ -926,9 +1095,9 @@ def test_a_second_2025_start_while_the_lock_is_held_opens_no_run(chain):
                                   "unknown_start", "unreadable_time"])
 def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
     """The refusals no ruling lifts, each naming its condition: (c) no `v3-rules-frozen` tag; (c) the freeze record
-    touched by a second commit; (c) ledger-v3 without the record's rehearsal; (d) the latest finished data-quality run
-    not through 2025; (a) a merge commit after the first pin; (c) an uncommitted change; (c) the tag moved with no
-    departure recorded; (d) no finished data-quality run, or the latest one's gates failed or its rules other; (e) a
+    touched by a second commit; (c) ledger-v3 without the record's rehearsal; (d) the latest data-quality run not
+    through 2025; (a) a merge commit after the first pin; (c) an uncommitted change; (c) the tag moved with no
+    departure recorded; (d) the latest data-quality run failed, or its gates failed or its rules are other; (e) a
     raw file whose hash differs from the data-quality run's, or a copied manifest with no retrieval time; (b) a record
     naming another first pin; (c) a 2025 start in the committed ledger-v3 that the run store lacks; (h) a data-quality
     run through 2025 recording no retrieval time (an unreadable earlier reading of the 2025 time is not a later one)."""
@@ -949,13 +1118,13 @@ def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
         exp = c.get_experiment_by_name(dq_v3.EXPERIMENT)
         for r in c.search_runs([exp.experiment_id], "tags.kind = 'dq_v3'"):
             c.set_terminated(r.info.run_id, "FAILED")
-        match = r"\(d\) no finished v3 data-quality run"
+        match = r"\(d\) the latest v3 data-quality run .* it is FAILED, not FINISHED"
     elif case == "dq_gates":
         c.set_tag(chain.dq25, "gates", "failed")
-        match = r"\(d\) the latest finished v3 data-quality run .* its gates are 'failed', not passed"
+        match = r"\(d\) the latest v3 data-quality run .* its gates are 'failed', not passed"
     elif case == "dq_rules":
         c.set_tag(chain.dq25, "rules_sha256", "0" * 64)
-        match = r"\(d\) the latest finished v3 data-quality run .* it ran under other rules"
+        match = r"\(d\) the latest v3 data-quality run .* it ran under other rules"
     elif case == "raw_hash":
         vw.log_dq_2025(vw.ledger_time(chain.retrieved), hq_sha256="0" * 64)
         match = r"\(e\) \['the Hydro-Québec file'\] differ by hash"
@@ -978,6 +1147,7 @@ def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
         from valiwatt.quality import run_v3 as dq_v3
 
         rid = rw.fake_run({"kind": dq_v3.KIND}, experiment=dq_v3.EXPERIMENT, params={"through": 2025}, status="FAILED")
+        vw.date_dq_run(rid, at=(chain.retrieved - H).isoformat())  # older than the gate's: (d) passes
         match = rf"\(h\) the 2025 time: run {rid}'s dq_retrieved time None cannot be read as a time"
     elif case == "no_tag":
         rw.git(repo, "tag", "-d", V3_FREEZE_TAG)
@@ -991,7 +1161,7 @@ def test_the_gate_s_hard_refusals_name_their_condition(chain, case):
         match = r"\(c\) the committed ledger-v3 holds no entry of the freeze record's rehearsal"
     elif case == "dq_window":
         vw.date_dq_run(rw.log_dq_v3(repo, 2024))  # the latest
-        match = r"\(d\) the latest finished v3 data-quality run .* window ends with 2024"
+        match = r"\(d\) the latest v3 data-quality run .* window ends with 2024"
     else:
         branch = rw.git(repo, "symbolic-ref", "--short", "HEAD")
         rw.git(repo, "checkout", "-q", "-b", "side")

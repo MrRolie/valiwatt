@@ -84,11 +84,12 @@ def _is_rule(path: str) -> bool:
 
 def rule_files(commit: str | None = None) -> list[str]:
     """The rule files in the working tree (tracked or not ignored), or in a commit."""
+    # NUL-separated (-z): git would otherwise quote a path that is not plain ASCII, and no rule file would match it.
     if commit:
-        args = ["git", "ls-tree", "-r", "--name-only", commit, "--", *RULE_ROOTS]
+        args = ["git", "ls-tree", "-r", "-z", "--name-only", commit, "--", *RULE_ROOTS]
     else:
-        args = ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", *RULE_ROOTS]
-    out = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.split("\n")
+        args = ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *RULE_ROOTS]
+    out = subprocess.run(args, cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.split("\0")
     return sorted(p for p in out if p and _is_rule(p) and (commit or (REPO_ROOT / p).is_file()))
 
 

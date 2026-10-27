@@ -1,0 +1,373 @@
+{% from 'v3/sentences.fr.md.j2' import MODEL, TERM, UNIT, CONTRAST, SUBSET, STATE, TERMS_VERDICT, FAMILY_VERDICT, EVAL, STANDING, REC, ROLE, role_name, WINDOW, pp, ppci, ci, why, yes, and_list, recommendation_line %}
+{% set c = v.contrasts %}
+{% set P = v.performance %}
+{% set Cv = v.coverage.v3 %}
+{% set FI = v.forecast_input.noon %}
+{% macro entry_label(e) %}{% if lineage == 'fresh_clone' %}{{ L.recorded }} ({{ EVAL[e.evaluation] }}){% else %}{{ L[e.evaluation] }}{% endif %}{% endmacro %}
+{% macro contrast_table(cc, lbl) %}
+| Contraste ({{ lbl }}) | Sous-ensemble | Heures | Différence d'EAMP | IC {{ K.ci_level|pct(0) }} | État |
+|---|---|---|---|---|---|
+{% for name in ['terms', 'family', 'whole'] %}
+{% for s in ['all', 'cold', 'event_windows'] %}
+| {{ CONTRAST[name] }} | {{ SUBSET[s] }} | {{ cc.subsets[s].hours|num }} | {% if cc[name][s] %}{{ pp(cc[name][s].difference) }} | {{ ppci(cc[name][s].ci95_low, cc[name][s].ci95_high) }} | {{ STATE[cc[name][s].state] }}{% if s != 'all' and not cc.subsets[s].testable %} (sous-ensemble non testable){% endif %} |{% else %}— | — | aucune heure |{% endif %}
+
+{% endfor %}
+{% endfor %}
+{% endmacro %}
+{% macro subsets_line(cc, lbl) %}Les sous-ensembles ({{ lbl }}) : {{ cc.subsets.all.hours|num }} heures communes sur {{ cc.subsets.all.weeks }} semaines du lundi au dimanche ; la queue froide, les heures dont la température prévue (prévision de midi) est sous {{ cc.cold_c|num(1) }} °C, {{ cc.subsets.cold.hours|num }} heures sur {{ cc.subsets.cold.weeks }} semaines, {% if cc.subsets.cold.testable %}testable{% else %}non testable{% endif %} ; les fenêtres d'événements, {{ cc.subsets.event_windows.hours|num }} heures sur {{ cc.subsets.event_windows.weeks }} semaines, {% if cc.subsets.event_windows.testable %}testables{% else %}non testables{% endif %}.{% endmacro %}
+{% macro horizon_table(h, lbl) %}
+| Horizon : la forme de v2 à midi moins la forme de v2 à minuit, rapporté, jamais jugé ({{ lbl }}) | Heures | Différence d'EAMP | IC {{ K.ci_level|pct(0) }} |
+|---|---|---|---|
+{% for s in ['all', 'cold', 'event_windows'] %}
+| {{ SUBSET[s] }} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | aucune heure |{% endif %}
+
+{% endfor %}
+{% endmacro %}
+{% macro day_list(ranges) %}{% for r in ranges %}{% if r.first == r.last %}le {{ r.first }}{% if r.windows %} ({% for w in r.windows %}{{ WINDOW[w] }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% else %}du {{ r.first }} au {{ r.last }}{% endif %}{% if loop.revindex == 2 %} et {% elif not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+{% macro ranking_table(parts, period, lbl) %}
+| {{ period }}, hiver ({{ lbl }}) | Jours | W | w | k | {{ MODEL['v3'] }} | {{ MODEL['v2_noon'] }} | {{ MODEL['v1_noon'] }} | Fenêtres non admissibles |
+|---|---|---|---|---|---|---|---|---|
+{% for p in parts %}
+| {{ p.winter }} | {{ p.first_day }} au {{ p.last_day }} | {{ p.W }} | {{ p.w }} | {{ p.k }} | {{ p.overlap.v3 }} sur {{ p.k }} | {{ p.overlap.v2_noon }} sur {{ p.k }} | {{ p.overlap.v1_noon }} sur {{ p.k }} | {{ p.ineligible|length }} |
+{% endfor %}
+
+{% for p in parts if p.ineligible_by_reason %}
+- Hiver {{ p.winter }} dans la période {{ period }} ({{ lbl }}), les fenêtres non admissibles et leur raison : {% for g in p.ineligible_by_reason %}{{ g.count }} {% if g.count == 1 %}fenêtre{% else %}fenêtres{% endif %} {% if g.kind == 'outside' %}dont aucune heure n'est dans les données de la période{% elif g.kind == 'partial' %}dont seules {{ g.present }} des {{ g.of }} heures sont dans les données de la période{% elif g.kind == 'no_target' %}sans demande réelle{% else %}sans prévision de {{ MODEL[g.model] }}{% endif %}, {{ day_list(g.ranges) }}{% if not loop.last %} ; {% endif %}{% endfor %}.
+{% endfor %}
+{% endmacro %}
+{% macro model_table(rs, lbl) %}
+| Modèle ({{ lbl }}) | EAMP | IC {{ K.ci_level|pct(0) }} | Couverture |
+|---|---|---|---|
+| {{ MODEL['v3'] }} | {{ rs.summary.mape.mean|pct(2) }} | {{ ci(rs.summary.mape.ci95_low, rs.summary.mape.ci95_high) }} | {{ rs.summary.coverage.mean|pct(1) }} |
+{% for k, x in rs.comparators.items() %}
+| {{ MODEL[k] }} | {{ x.mape.mean|pct(2) }} | {{ ci(x.mape.ci95_low, x.mape.ci95_high) }} | {% if x.coverage %}{{ x.coverage.mean|pct(1) }}{% else %}aucun intervalle{% endif %} |
+{% endfor %}
+{% endmacro %}
+{% macro bin_table(cb, lbl) %}
+| Classe de v3 ({{ lbl }}) | Couverture (nominale : {{ K.nominal|pct(0) }}) | IC {{ K.ci_level|pct(0) }} | Heures |
+|---|---|---|---|
+{% for b in ['cold', 'rest', 'all'] %}
+| {% if b == 'cold' %}froide{% elif b == 'rest' %}le reste{% else %}toutes{% endif %} | {% if cb[b] %}{{ cb[b].mean|pct(1) }} | {{ ci(cb[b].ci95_low, cb[b].ci95_high, 1) }} | {{ cb[b].hours|num }}{% else %}— | — | aucune heure{% endif %} |
+{% endfor %}
+{% endmacro %}
+{% macro peak_table(peak, lbl) %}
+| Heure de fin, UTC ({{ lbl }}) | Demande | Température prévue | {{ MODEL['v3'] }} | {{ MODEL['v2_noon'] }} | {{ MODEL['v1_noon'] }} | {{ MODEL['v2_midnight'] }} |
+|---|---|---|---|---|---|---|
+{% for h in peak %}
+| {{ h.utc|utc }} | {{ h.target|num }} MW | {{ h.temp_forecast|num(1) }} °C |{% for k in ['v3', 'v2_noon', 'v1_noon', 'v2_midnight'] %} {% if h['pred_' ~ k] == h['pred_' ~ k] %}{{ (100 * (h.target - h['pred_' ~ k]) / h.target)|signed(1) }} %{% else %}pas de prévision : {{ why(h.missing[k]) }}{% endif %} |{% endfor %}
+
+{% endfor %}
+{% endmacro %}
+{% macro days_fr(items) %}{% for x in items %}{% if x == 1 %}{{ x }}er{% else %}{{ x }}{% endif %}{% if loop.revindex == 2 %} et {% elif not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+# Validation et surveillance d'une prévision de la demande d'électricité au Québec, v3 : la prévision de midi
+
+Rapport généré à partir des exécutions MLflow de v3 ({% if lineage == 'of_record' %}les exécutions de référence que nomme le registre du gel `docs/freeze-v3.json`, ajouté au commit `{{ record.commit|short }}`{% elif lineage == 'fresh_clone' %}un clone neuf : les exécutions de référence que nomment `docs/freeze-v3.json` et `docs/replay-ledger-v3.json` ne sont pas dans ce magasin ; chaque nombre calculé vient d'une reprise sur un millésime plus récent (section 3.1 du plan), et les exécutions consignées sont nommées à la section 7{% else %}les dernières exécutions de v3 qui ont réussi, toutes faites avant le gel, sous l'étiquette `{{ pre_freeze_tag }}` : elles ne sont pas celles de référence{% endif %}), code d'empreinte `{{ code_sha|short }}`, règles d'empreinte `{{ rules_sha|short }}`. Chaque valeur mesurée vient de ces exécutions et porte son étiquette d'évaluation (section 8.4 du plan) : « dans l'échantillon du choix des termes, des classes d'intervalles et du sous-ensemble qui décide » pour {{ Y.first }}–{{ Y.last }}, « vu par les développeurs » pour la répétition de {{ Y.seen }}, et pour {{ Y.held }} « données réservées » seulement quand son test de référence est propre ; une sensibilité n'est jamais jugée.{% if lineage != 'of_record' %} Chaque étiquette dit aussi d'où vient le nombre : « {{ say.lineage[lineage] }} ».{% endif %} « Les développeurs » sont les agents IA qui ont construit ce projet et le propriétaire qui les dirige. Les constantes de conception que ce rapport écrit en chiffres sont lues du code qui les applique. Le rapport de v2 (`docs/report/`) reste tel que rendu ; ce rapport ne le change pas. La version anglaise est dérivée de celle-ci.
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+## En bref
+
+- {{ status_line }}
+- **La prévision du jour J est émise à midi la veille** ({{ K.origin_local_h }} h HNE le jour J−1, {{ K.origin_local_dst_h }} h HAE en heure avancée ; soit {{ K.origin_utc_h }} h UTC), et non plus à la fin de la veille comme celle de v2. Pourquoi midi : selon le tarif Flex D d'Hydro-Québec, un tarif résidentiel public (Tarifs d'électricité 2026, édition en vigueur le 2026-04-01, section 9), l'avis d'un événement de pointe est envoyé avant {{ K.notice_local_h }} h la veille (art. 2.71) ; une prévision qu'on compare à cet avis doit être émise avant lui, et celle de midi l'est {{ K.notice_lead_h }} heures avant, {{ K.notice_lead_dst_h }} en heure avancée. Le texte du tarif est cité, non reproduit. Ce rapport ne dit jamais comment un événement de pointe est déclenché, seulement comment la prévision de midi se comporte dans les heures de pointe du tarif et comment elle classe ses fenêtres.
+- Validation sur {{ Y.first }}–{{ Y.last }} ({{ L.in_sample }}) : l'erreur absolue moyenne en pourcentage (EAMP) est de {{ P['v3'].overall.mean|pct(2) }} pour v3, {{ P['v2_noon'].overall.mean|pct(2) }} pour la forme de v2 à midi, {{ P['v1_noon'].overall.mean|pct(2) }} pour la forme de v1 à midi et {{ P['v2_midnight'].overall.mean|pct(2) }} pour la forme de v2 à minuit, chacune sur ses heures. Verdict des termes : « {{ TERMS_VERDICT[v.verdict.terms] }} » ; verdict de la famille : « {{ FAMILY_VERDICT[v.verdict.family] }} ». Ces années ont suggéré les termes, les classes d'intervalles et le sous-ensemble qui décide : ces verdicts ne soutiennent aucune affirmation (section 2).
+{% if rehearsal %}
+{% set rs = rehearsal.results %}
+- Répétition de {{ Y.seen }} ({{ L.seen_by_developers }}) : EAMP de {{ rs.summary.mape.mean|pct(2) }}, couverture de {{ rs.summary.coverage.mean|pct(1) }} ; verdict des termes « {{ TERMS_VERDICT[rs.verdict.terms] }} », de la famille « {{ FAMILY_VERDICT[rs.verdict.family] }} ». Une année déjà vue ne soutient aucune affirmation (section 3).
+{% else %}
+- Répétition de {{ Y.seen }} : non exécutée dans cette lignée (section 3).
+{% endif %}
+{% if held is none %}
+- {{ Y.held }} : en attente ; le test de référence sera le premier rejeu de {{ Y.held }} commencé sous `{{ freeze_tag }}`, après le test de référence de v2 (section 4).
+{% elif held.numbers %}
+{% set e = held.numbers.entry %}
+- {{ Y.held }} ({{ entry_label(e) }}) : EAMP de {{ e.mape|pct(2) }}, couverture de {{ e.coverage|pct(1) }} ; verdict des termes « {{ TERMS_VERDICT[e.verdict.terms] }} », de la famille « {{ FAMILY_VERDICT[e.verdict.family] }} » ; position {{ STANDING[e.standing] }} (section 4).
+{% else %}
+- {{ Y.held }} : le test de référence `{{ held.record.run_id }}` a commencé et n'a pas fini (section 4).
+{% endif %}
+{% if recommendation %}
+- {{ recommendation_line(recommendation) }}
+{% endif %}
+
+## Fiche du modèle
+
+| | |
+|---|---|
+| **Statut** | {{ status_line }} |
+| **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à midi la veille (section 1), avec un intervalle de prévision dont la demi-largeur dépend de la température prévue. |
+| **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
+| **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision, et tout déclenchement d'un événement de pointe. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
+| **Modèle** | Le modèle additif de v2, ajusté de la même façon, avec la demande {{ K.lags_noon[0] }} h et {{ K.lags_noon[1] }} h avant l'heure visée et trois termes de plus : le froid moyen du jour, le froid moyen de l'avant-veille et le vent par le froid (section 1).{% for y in [2025, 2024] if frozen[y] %}{% if loop.first %} Le modèle figé pour {{ y }} compte {{ frozen[y].columns }} colonnes, ajusté sur les données jusqu'au {{ frozen[y].train_last_day }} ; empreinte `{{ frozen[y].sha|short }}`{% if lineage != 'of_record' %} (_{{ say.lineage[lineage] }}_){% endif %}.{% endif %}{% endfor %}{% if lineage == 'fresh_clone' %} Le modèle de production consigné par `docs/freeze-v3.json` a l'empreinte `{{ record.data.model_sha256|short }}` ({{ L.recorded }}).{% endif %} Comparé à la forme de v2 à midi, à la forme de v1 à midi et à la forme de v2 à minuit, qui ne recommandent jamais rien. |
+{% for y in [2025, 2024] if frozen[y] %}
+{% if loop.first %}
+{% set iv = frozen[y].interval %}
+| **Intervalle** ({{ L.in_sample }}) | Modèle figé pour {{ y }} : sous {{ iv.bin_edge|num(1) }} °C, prévision × (1 ± {{ iv.q_cold|pct(2) }}){% if iv.fallback %}, la demi-largeur commune faute d'assez de scores froids ({{ iv.cold_n|num }} scores sur {{ iv.cold_weeks }} semaines){% endif %} ; ailleurs, prévision × (1 ± {{ iv.q_rest|pct(2) }}) (section 2.4). |
+{% endif %}
+{% endfor %}
+| **Validation** ({{ L.in_sample }}) | EAMP de v3 de {{ P['v3'].overall.mean|pct(2) }} {{ ci(P['v3'].overall.ci95_low, P['v3'].overall.ci95_high) }} ; verdicts : termes « {{ TERMS_VERDICT[v.verdict.terms] }} », famille « {{ FAMILY_VERDICT[v.verdict.family] }} » (section 2). |
+{% if rehearsal %}
+| **Répétition de {{ Y.seen }}** ({{ L.seen_by_developers }}) | EAMP de {{ rehearsal.results.summary.mape.mean|pct(2) }}, couverture de {{ rehearsal.results.summary.coverage.mean|pct(1) }} (section 3). |
+{% else %}
+| **Répétition de {{ Y.seen }}** | Non exécutée dans cette lignée (section 3). |
+{% endif %}
+| **{{ Y.held }}** | {% if held is none %}En attente (section 4).{% elif held.numbers %}Test de référence `{{ held.record.run_id }}` (section 4).{% else %}Test de référence commencé, inachevé (section 4).{% endif %} |
+| **Mise en garde météo** | Une prévision météo du NBM (une exécution) est disponible, par hypothèse, {{ K.availability_lag_h|num }} heures après son heure d'émission, et une heure observée d'ECCC dès son propre libellé ; tout résultat qui lit la prévision ou la moyenne de l'avant-veille repose sur ces hypothèses (section 1). La température observée de l'heure visée n'est qu'une borne optimiste. |
+| **Limites** | Section 6. |
+| **Auteur** | Construit avec Claude Code sous la direction du propriétaire du dépôt. |
+
+## 1. La prévision de midi, et ce que v3 change
+
+- **Trois horloges.** La prévision du jour J (en heure normale) est émise à son origine, le jour J−1 à {{ K.origin_utc_h }} h UTC, soit {{ K.origin_local_h }} h HNE, ou {{ K.origin_local_dst_h }} h HAE en heure avancée. Les heures de J ne bougent pas : chacune porte l'heure UTC de sa fin, du jour J à {{ K.first_label_utc_h }} h UTC au lendemain à {{ K.last_label_utc_h }} h UTC. J est noté une heure après sa dernière heure, comme dans v2. La forme de v2 à minuit garde l'origine de v2, le jour J à {{ K.midnight_utc_h }} h UTC.
+- **Les entrées, connues à l'origine.** La demande {{ K.lags_noon[0] }} h et {{ K.lags_noon[1] }} h avant l'heure visée (celle de {{ K.lags_midnight[0] }} h avant ne l'est pas pour la moitié de J) ; l'heure locale et le type de jour ; la température et le vent prévus par le NBM à l'heure visée, par l'exécution qui alimente J ; la moyenne des températures prévues des 24 heures de J ; la moyenne des températures observées par ECCC à la station principale sur les 24 heures de l'avant-veille (J−2), qui n'existe qu'avec au moins {{ K.lag_day_min_hours }} heures utilisables : sinon elle manque, et rien n'est imputé.
+- **L'hypothèse de disponibilité.** Une prévision météo du NBM (une exécution) est réputée disponible {{ K.availability_lag_h|num }} heures après son heure d'émission, et une heure d'ECCC dès son propre libellé, avec sa valeur telle que téléchargée : ni le délai de publication ni le contrôle de qualité ultérieur ne sont modélisés. Une variante de validation rend chaque exécution disponible {{ K.sensitivity_lag_h|num }} heures après son émission (section 2.6).
+- **Les trois termes**, tous linéaires, chacun de base {{ K.base_c|num }} °C : le froid moyen du jour, max(0, {{ K.base_c|num }} − la moyenne prévue des heures de J) ; le froid moyen de l'avant-veille, max(0, {{ K.base_c|num }} − la moyenne observée de J−2), qui permet au modèle de retirer de la demande {{ K.lags_noon[0] }} h plus tôt la part qui tenait à la météo de J−2 ; le vent par le froid, le vent prévu en km/h (nœuds × {{ K.knots_to_kmh|num(3) }}) multiplié par max(0, {{ K.base_c|num }} − la température prévue de l'heure), nul par temps doux. Le vent prévu doit rester entre {{ K.wind_min_kt|num }} et {{ K.wind_max_kt|num }} nœuds, bornes comprises. Aucun terme ne lit la demande.
+- **Les modèles comparés**, qui ne recommandent jamais rien : la forme de v2 à midi (v2 exactement, sur les mêmes lignes que v3, sans les termes) ; la forme de v1 à midi (les moindres carrés de v1 sur la même prévision) ; la forme de v2 à minuit (v2 avec toutes ses horloges et entrées, pour mesurer ce que coûte une émission douze heures plus tôt).
+- **L'erreur.** L'erreur absolue moyenne en pourcentage (EAMP) dit de combien, en moyenne, la prévision s'écarte de la demande réelle, en pourcentage de celle-ci. Le biais signé dit dans quel sens : biais = (demande − prévision) / demande, positif quand la prévision est trop basse.
+- **L'intervalle, et sa couverture.** Chaque prévision porte un intervalle, prévision × (1 ± q). La demi-largeur q est le quantile de rang ⌈(n + 1) × {{ K.nominal|num(2) }}⌉ des n erreurs relatives |demande − prévision| / prévision des {{ v.conformal.calibration_folds }} mois précédents déjà notés : la forme d'un intervalle conforme « split », sans sa garantie, car ces erreurs horaires sont autocorrélées. La couverture est la part des heures dont la demande tombe dans l'intervalle ; sa cible est {{ K.nominal|pct(0) }}. Elle n'est mesurée qu'à partir du premier mois précédé de {{ v.conformal.calibration_folds }} mois notés, sur moins d'heures que l'erreur.
+- **Les intervalles par température.** Ce quantile est pris à part pour les heures froides, sous le seuil de chaque ajustement (le {{ (100 * K.bin_quantile)|num }}ᵉ centile des températures prévues de ses propres lignes d'entraînement), et pour les autres. Une classe froide de moins de {{ K.min_hours }} erreurs, ou d'erreurs de moins de {{ K.min_weeks }} semaines du lundi au dimanche, prend la demi-largeur commune de toutes les erreurs, et le modèle le consigne.
+- **Le facteur d'inflation de la variance** d'un coefficient dit de combien sa variance grandit parce que sa colonne recoupe les autres colonnes du modèle : plus il est grand, moins le coefficient se lit seul.
+- **La règle de décision.** Sur les heures communes (la demande et les trois prévisions de midi), la différence appariée d'erreur absolue en pourcentage, heure par heure, avec un intervalle à {{ K.ci_level|pct(0) }} par blocs de semaines ({{ v.config.n_boot|num }} rééchantillonnages dans cette validation ; chaque rejeu donne le sien, sections 3 et 4) : **termes**, v3 moins la forme de v2 à midi ; **famille**, la forme de v2 à midi moins celle de v1 à midi ; leur somme, le changement entier, rapporté et jamais jugé ; et l'**horizon**, la forme de v2 à midi moins celle à minuit, rapporté et jamais jugé. Une différence négative est une erreur plus basse : elle est meilleure quand la borne haute de son intervalle est sous zéro, pire quand la borne basse est au-dessus, non séparée sinon. Les sous-ensembles : toutes les heures communes ; la queue froide, celles dont la température prévue (prévision de midi) est sous le {{ (100 * K.bin_quantile)|num }}ᵉ centile des années de conception ; les fenêtres d'événements, celles des heures de pointe du tarif : du 1er décembre au 31 mars, sauf les {{ days_fr(K.excluded_december) }} décembre, les {{ days_fr(K.excluded_january) }} janvier, le Vendredi saint et le lundi de Pâques (art. 2.67), les heures se terminant à {{ and_list(K.windows.morning) }} et à {{ and_list(K.windows.evening) }} heures, heure locale. Un sous-ensemble est non testable sous {{ K.min_hours }} heures ou {{ K.min_weeks }} semaines. **Le verdict des termes** : meilleur quand le contraste des fenêtres est meilleur, celui de toutes les heures pas pire et la queue froide testable et pas pire ; « meilleur dans les fenêtres d'événements, la queue froide non testable » si elle ne l'est pas ; pas montré meilleur quand le contraste des fenêtres est non séparé, ou meilleur mais payé ailleurs ; pire quand il est pire ; non testable quand les fenêtres le sont. **Le verdict de la famille** suit la règle de v2 : toutes les heures communes décident et la queue froide sert de garde-fou ; meilleur quand le contraste de toutes les heures est meilleur et que la queue froide, testable, n'est pas pire ; « meilleur en moyenne, la queue froide non testable » quand elle ne l'est pas ; pas montré meilleur quand ce contraste est non séparé, ou meilleur avec une queue froide pire ; pire quand il est pire. « Les termes améliorent la prévision de midi dans les fenêtres d'événements de pointe » ne se dit que du verdict des termes, « le modèle additif mérite sa place face à la forme de v1 à midi » que de celui de la famille, et seulement sur données réservées.
+- **Le classement des fenêtres.** Dans chaque période notée, chaque partie d'hiver est classée seule : ses w fenêtres admissibles (les quatre heures avec une demande et les trois prévisions de midi) sont rangées par demande moyenne réelle et par la moyenne prévue de chaque modèle de midi ; k = plancher({{ K.rate_events }} × w / W + 0,5), où {{ K.rate_events }} est le plus grand nombre d'événements d'un hiver ({{ K.winter_event_hours }} heures en événements de {{ K.event_hours }} heures, art. 2.70) et W le nombre de fenêtres de tout l'hiver, deux par jour hors jours exclus ; pour chaque modèle, combien de ses k plus hautes sont parmi les k plus hautes réelles. La forme de v2 à minuit n'est pas classée : elle est émise après l'avis.
+
+## 2. Validation sur {{ Y.first }}–{{ Y.last }} ({{ L.in_sample }})
+
+Chaque mois de {{ v.folds.first }} à {{ v.folds.last }} ({{ v.folds.count }} plis) est prévu par des modèles réajustés sur les heures qui le précèdent, moins les {{ v.folds.embargo_days }} derniers jours, chaque modèle de midi à l'origine de midi de son pli. Ces années ont suggéré les termes, les classes d'intervalles et les fenêtres d'événements comme sous-ensemble qui décide : chaque résultat est dans l'échantillon de ces choix, et seul {{ Y.held }} peut les tester.
+
+### 2.1 Les contrastes
+
+{{ subsets_line(c, L.in_sample) }}
+
+{{ contrast_table(c, L.in_sample) }}
+Sur chaque sous-ensemble, les termes plus la famille donnent le changement entier, au calcul près.
+
+{{ horizon_table(c.horizon, L.in_sample) }}
+### 2.2 Les verdicts
+
+- **Verdict des termes** ({{ L.in_sample }}) : « {{ TERMS_VERDICT[v.verdict.terms] }} ».
+- **Verdict de la famille** ({{ L.in_sample }}) : « {{ FAMILY_VERDICT[v.verdict.family] }} ».
+- Sur des années qui ont suggéré les choix, ni l'un ni l'autre ne soutient d'affirmation ; chacun ne se dit que de son propre contraste.
+
+### 2.3 L'erreur de chaque modèle
+
+| Modèle ({{ L.in_sample }}) | EAMP | IC {{ K.ci_level|pct(0) }} | Biais signé | Heures |
+|---|---|---|---|---|
+{% for k in ['v3', 'v2_noon', 'v1_noon', 'v2_midnight', 'baseline'] %}
+| {{ MODEL[k] }} | {{ P[k].overall.mean|pct(2) }} | {{ ci(P[k].overall.ci95_low, P[k].overall.ci95_high) }} | {{ (100 * P[k].overall.bias.mean)|signed(2) }} % | {{ P[k].overall.hours|num }} |
+{% endfor %}
+
+### 2.4 Les intervalles par température
+
+| Classe de v3 ({{ L.in_sample }}) | Couverture (nominale : {{ K.nominal|pct(0) }}) | IC {{ K.ci_level|pct(0) }} | Heures |
+|---|---|---|---|
+{% for b in Cv.binned.bin %}
+| {% if b.key == 'cold' %}froide{% else %}le reste{% endif %} | {{ b.covered|pct(1) }} | {{ ci(b.covered_low, b.covered_high, 1) }} | {{ b.hours|num }} |
+{% endfor %}
+| toutes | {{ Cv.binned.overall.mean|pct(1) }} | {{ ci(Cv.binned.overall.ci95_low, Cv.binned.overall.ci95_high, 1) }} | {{ Cv.binned.overall.hours|num }} |
+| une seule demi-largeur, comme v2 (sensibilité) | {{ Cv.single.overall.mean|pct(1) }} | {{ ci(Cv.single.overall.ci95_low, Cv.single.overall.ci95_high, 1) }} | {{ Cv.single.overall.hours|num }} |
+
+La couverture n'est jamais un critère de la règle de décision. Chaque pli calibré, son seuil et ses demi-largeurs :
+
+| Pli de v3 ({{ L.in_sample }}) | Seuil | Froide | Le reste | Commune | Erreurs froides | Semaines froides | Repli |
+|---|---|---|---|---|---|---|---|
+{% for b in bins %}
+| {{ b.fold }} | {{ b.edge_c|num(1) }} °C | {{ b.q_cold|pct(2) }} | {{ b.q_rest|pct(2) }} | {{ b.q_pooled|pct(2) }} | {{ b.cold_n|num }} | {{ b.cold_weeks }} | {{ yes(b.fallback) }} |
+{% endfor %}
+
+{% for y in [2024, 2025] if frozen[y] %}
+{% set iv = frozen[y].interval %}
+- Modèle figé pour {{ y }} ({{ L.in_sample }}) : seuil {{ iv.bin_edge|num(1) }} °C ; demi-largeurs froide {{ iv.q_cold|pct(2) }}, du reste {{ iv.q_rest|pct(2) }}, commune {{ iv.q_pooled|pct(2) }} ; {{ iv.cold_n|num }} erreurs froides sur {{ iv.cold_weeks }} semaines ; repli : {{ yes(iv.fallback) }}.
+{% endfor %}
+
+### 2.5 Les termes : coefficients et facteurs d'inflation de la variance
+
+{% for y in [2025, 2024] if frozen[y] %}
+| Modèle figé pour {{ y }} ({{ L.in_sample }}) | Coefficient | Unité | Facteur d'inflation de la variance |
+|---|---|---|---|
+{% for t in frozen[y].terms %}
+| {% if t.term %}{{ TERM[t.name] }}{% else %}demande {{ t.name[3:] }} h avant{% endif %} | {{ t.mw_per_unit|num(3) }} | {% if t.term %}{{ UNIT[t.name] }} (sous {{ K.base_c|num }} °C){% else %}MW par MW{% endif %} | {{ t.vif|num(2) }} |
+{% endfor %}
+
+{% endfor %}
+{% if not frozen[2024] and not frozen[2025] %}
+Aucun modèle figé dans cette lignée : aucun coefficient à montrer.
+
+{% endif %}
+Chaque coefficient est imprimé par unité de sa colonne, sans normalisation, à côté de son facteur d'inflation de la variance contre les autres colonnes du modèle. Un signe est descriptif et n'est la preuve d'aucun mécanisme : le froid moyen du jour est proche des températures de chaque heure, et le coefficient du froid moyen de l'avant-veille est le net de deux effets, la correction de la demande {{ K.lags_noon[0] }} h plus tôt et le froid qui persiste depuis J−2. La preuve de chaque terme est son contraste « laissé de côté » (section 2.6).
+
+| Entrée de v3, hors de la plage d'entraînement de son pli ({{ L.in_sample }}) | Heures prévues | Sous la plage | Au-dessus | EAMP hors plage |
+|---|---|---|---|---|
+{% for x in extrapolation %}
+| {% if x.name in TERM %}{{ TERM[x.name] }}{% else %}la température prévue{% endif %} | {{ x.hours|num }} | {{ x.below|num }} | {{ x.above|num }} | {% if x.mape is not none %}{{ x.mape|pct(2) }}{% else %}—{% endif %} |
+{% endfor %}
+
+### 2.6 Bornes et sensibilités ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }})
+
+Chacune est la différence appariée d'EAMP de la variante moins v3, sur les heures communes où la variante prévoit, et sur chaque sous-ensemble ainsi réduit ; jamais jugée. Le sens est l'inverse de celui des contrastes : une différence positive dit que la variante fait pire que v3, donc que ce qu'elle retire ou change aidait v3 ; une différence négative, qu'elle fait mieux.
+
+| Variante ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }}) | Sous-ensemble | Heures | Différence d'EAMP | IC {{ K.ci_level|pct(0) }} |
+|---|---|---|---|---|
+{% for k, s in v.sensitivity.items() %}
+{% for sub in ['all', 'cold', 'event_windows'] %}
+| {{ MODEL[k] }} | {{ SUBSET[sub] }} | {{ s.subsets[sub].hours|num }} | {% if s.contrast[sub] %}{{ pp(s.contrast[sub].difference) }} | {{ ppci(s.contrast[sub].ci95_low, s.contrast[sub].ci95_high) }} |{% else %}— | aucune heure |{% endif %}
+
+{% endfor %}
+{% endfor %}
+
+{% for k, s in v.sensitivity.items() if s.dropped %}
+- {{ MODEL[k] }} ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }}) : heures communes sans sa prévision, par raison : {% for r, n in s.dropped.items() %}{{ why(r) }} ({{ n|num }} {% if n == 1 %}heure{% else %}heures{% endif %}){% if not loop.last %} ; {% endif %}{% endfor %}.
+{% endfor %}
+
+### 2.7 Les heures les plus chargées (rapportées, jamais jugées)
+
+{{ peak_table(c.peak, L.in_sample) }}
+
+L'erreur signée de chaque modèle est (demande − prévision) / demande (section 1).
+
+### 2.8 Le classement des fenêtres (rapporté, jamais jugé)
+
+{% for year, parts in v.ranking.years.items() %}
+{{ ranking_table(parts, year, L.in_sample) }}
+{% endfor %}
+Chaque case de modèle dit combien de ses k fenêtres les plus hautes sont parmi les k plus hautes réelles.
+
+### 2.9 L'entrée de midi
+
+| Jours de conception ({{ L.in_sample }}) | Nombre |
+|---|---|
+| jours | {{ FI.days|num }} |
+| jours alimentés par une prévision | {{ FI.fed_days|num }} |
+| jours sans prévision couvrante | {{ FI.days_not_fed|length }} |
+| jours sans moyenne de l'avant-veille | {{ FI.lag_day_missing_days|length }} |
+
+{% for d in FI.days_not_fed %}
+- {{ d.day|day }} ({{ L.in_sample }}) : pas de prévision, {{ why(d.reason) }}.
+{% endfor %}
+{% if lag_day_missing %}
+- Jours sans moyenne de l'avant-veille ({{ L.in_sample }}) : {{ day_list(lag_day_missing) }} ; aucun modèle de midi ne les prévoit, et leurs heures sont écartées pour la raison « {{ why('lag_day_temperature_missing') }} ».
+{% endif %}
+
+### 2.10 La vérification de reproduction
+
+{% if reproduction.status == 'passed' %}
+La forme de v2 à minuit, dans le harnais de v3, reproduit les prévisions de validation consignées de v2 sur {{ reproduction.hours|num }} heures, du {{ reproduction.first_day }} au {{ reproduction.last_day }} ({{ L.in_sample }}) : {% if reproduction.max_abs_mw > 0 %}écart absolu maximal de {{ reproduction.max_abs_mw|sci }} MW{% else %}aucun écart{% endif %}, pour une tolérance de {{ reproduction.tolerance_mw|sci(0) }} MW.
+{% else %}
+{{ say.reproduction_not_run }}{% if reproduction.fresh_clone %}, faute du magasin de v2, qu'un clone neuf n'a pas, comme le dit son exécution de qualité des données{% endif %}.
+{% endif %}
+
+## 3. La répétition de {{ Y.seen }} ({{ L.seen_by_developers }})
+
+{% if rehearsal %}
+{% set rs = rehearsal.results %}
+Les modèles figés pour {{ Y.seen }}, ajustés sur les données jusqu'au {{ rs.model.train_last_day }}, rejouent {{ Y.seen }} heure par heure à midi (exécution `{{ rehearsal.run_id }}`). {{ Y.seen }} est une année de validation : chaque nombre est vu par les développeurs et ne soutient aucune affirmation. La répétition a vérifié qu'elle lit exactement l'entrée de la validation : {{ rs.identity.hours|num }} heures et {{ rs.identity.days|num }} jours, {{ rs.identity.differences }} différence. Ses intervalles par blocs de semaines viennent de {{ rs.n_boot|num }} rééchantillonnages.
+
+{{ model_table(rs, L.seen_by_developers) }}
+
+{{ bin_table(rs.coverage_by_bin, L.seen_by_developers) }}
+
+{{ subsets_line(rs.judgement.contrasts, L.seen_by_developers) }}
+
+{{ contrast_table(rs.judgement.contrasts, L.seen_by_developers) }}
+{{ horizon_table(rs.judgement.contrasts.horizon, L.seen_by_developers) }}
+- Verdicts ({{ L.seen_by_developers }}) : termes « {{ TERMS_VERDICT[rs.verdict.terms] }} », famille « {{ FAMILY_VERDICT[rs.verdict.family] }} ».
+- Jours en échec de qualité des données : {{ rs.summary.days_failed }} sur {{ rs.summary.days }} ; recommandations du moniteur : {% if rs.summary.recommendations %}{% for k, n in rs.summary.recommendations.items() %}{{ REC[k] }} {{ n }} fois{% if not loop.last %}, {% endif %}{% endfor %}{% else %}aucune{% endif %}.
+
+Les heures les plus chargées de {{ Y.seen }} (rapportées, jamais jugées) :
+
+{{ peak_table(rs.judgement.contrasts.peak, L.seen_by_developers) }}
+
+{{ ranking_table(rs.judgement.ranking, Y.seen, L.seen_by_developers) }}
+{% else %}
+Non exécutée dans cette lignée : aucune répétition de {{ Y.seen }} n'est bâtie sur ses modèles figés.
+{% endif %}
+
+## 4. {{ Y.held }}, le test de référence
+
+{% if held is none %}
+En attente. Le test de référence sera le premier rejeu de {{ Y.held }} commencé sous `{{ freeze_tag }}`, après le test de référence de v2 et derrière la barrière de {{ Y.held }} de v3 (section 11.3 du plan) ; aucun nombre de {{ Y.held }} n'est montré avant.
+{% else %}
+{% for s in held.stopped %}
+- Départ `{{ s.run_id }}`, commencé le {{ s.started_utc }}, arrêté sans finir ; la décision du propriétaire a laissé courir le suivant.
+{% endfor %}
+{% if held.numbers %}
+{% set e = held.numbers.entry %}
+- Test de référence `{{ e.run_id }}`, commencé le {{ e.started_utc }}, position {{ STANDING[e.standing] }} ({{ entry_label(e) }}) : EAMP de {{ e.mape|pct(2) }}, couverture de {{ e.coverage|pct(1) }} ; verdict des termes « {{ TERMS_VERDICT[e.verdict.terms] }} », de la famille « {{ FAMILY_VERDICT[e.verdict.family] }} ». Ses nombres viennent de son entrée de `docs/replay-ledger-v3.json`{% if held.numbers.results %}, et le détail ci-dessous de son exécution, dont les intervalles par blocs de semaines viennent de {{ held.numbers.results.n_boot|num }} rééchantillonnages{% endif %}.
+{% if held.numbers.results %}
+{% set hr = held.numbers.results %}
+
+{{ model_table(hr, entry_label(e)) }}
+
+{{ bin_table(hr.coverage_by_bin, entry_label(e)) }}
+
+{{ subsets_line(hr.judgement.contrasts, entry_label(e)) }}
+
+{{ contrast_table(hr.judgement.contrasts, entry_label(e)) }}
+{{ horizon_table(hr.judgement.contrasts.horizon, entry_label(e)) }}
+Les heures les plus chargées de {{ Y.held }} (rapportées, jamais jugées) :
+
+{{ peak_table(hr.judgement.contrasts.peak, entry_label(e)) }}
+
+{{ ranking_table(hr.judgement.ranking, Y.held, entry_label(e)) }}
+{% endif %}
+{% else %}
+- Test de référence `{{ held.record.run_id }}`, commencé le {{ held.record.started_utc }}, inachevé (étape {{ held.record.stage or 'aucune' }}) : aucun nombre.
+{% endif %}
+{% for x in held.reruns %}
+- Reprise `{{ x.entry.run_id }}` ({{ entry_label(x.entry) }}) : EAMP de {{ x.entry.mape|pct(2) }}, couverture de {{ x.entry.coverage|pct(1) }}. Une reprise ne remplace jamais le test de référence.
+{% endfor %}
+{% endif %}
+
+## 5. Le registre des rejeux de v3
+
+{% if entries %}
+| Exécution | Année | Commencée | Étiquette | EAMP | Couverture | Termes | Famille | Position |
+|---|---|---|---|---|---|---|---|---|
+{% for e in entries %}
+| `{{ e.run_id }}` | {{ e.year }} | {{ e.started_utc }} | {{ entry_label(e) }} | {{ e.mape|pct(2) }} | {{ e.coverage|pct(1) }} | {{ TERMS_VERDICT[e.verdict.terms] }} | {{ FAMILY_VERDICT[e.verdict.family] }} | {{ STANDING[e.standing] }} |
+{% endfor %}
+{% else %}
+`docs/replay-ledger-v3.json` ne contient aucune entrée : aucun rejeu de v3 n'a fini sous `{{ freeze_tag }}`.
+{% endif %}
+
+## 6. Limites
+
+- Les termes, les classes d'intervalles et les fenêtres d'événements ont été choisis après avoir lu les résultats de v2 sur les années de validation : sur ces années, tout résultat est dans l'échantillon de ces choix ; seul {{ Y.held }} peut les tester.
+- Tout résultat qui lit la prévision ou la moyenne de l'avant-veille repose sur l'hypothèse de disponibilité (section 1).
+- Les conditions actuelles du tarif sont appliquées à chaque hiver comme convention de notation, pas comme les conditions en vigueur à l'époque.
+- Le vent n'entre que dans un terme ; il n'est pas surveillé pour la dérive.
+
+## 7. Provenance
+
+{% if lineage == 'of_record' %}
+Exécutions de référence, nommées par `docs/freeze-v3.json` (commit `{{ record.commit }}`, empreinte `{{ record.sha256|short }}`), sous l'étiquette `{{ freeze_tag }}` épinglée d'abord au commit `{{ first_pin|short }}`.
+{% elif lineage == 'fresh_clone' %}
+Un clone neuf : ces exécutions sont une reprise sur un millésime plus récent. L'export d'Hydro-Québec a été récupéré le {{ exports.hq_retrieved }}{% if exports.hq_modified %} (jeu de données modifié le {{ exports.hq_modified }}){% endif %}, les observations d'ECCC du {{ exports.eccc_first }} au {{ exports.eccc_last }}, les prévisions NBM du {{ exports.nbm_first }} au {{ exports.nbm_last }}.
+{% else %}
+Exécutions d'avant le gel (`{{ pre_freeze_tag }}`) : aucune n'est de référence.
+{% endif %}
+
+| Rôle | Exécution | Commit | Arbre propre | Étiquette de gel | Règles |
+|---|---|---|---|---|---|
+{% for role, r in runs.items() %}
+| {{ role_name(role, Y) }} | `{{ r.id }}` | `{{ r.commit|short }}` | {{ yes(not r.dirty) }} | `{{ r.freeze_tag }}` | `{{ r.rules|short }}` |
+{% endfor %}
+{% for role in absent %}
+| {{ role_name(role, Y) }} | aucune exécution dans cette lignée | | | | |
+{% endfor %}
+
+- {% if byte_copies == 'passed' %}Vérification des copies à l'identique : réussie{% else %}{{ say.byte_copies_not_run }}{% endif %}.
+- {% if reproduction.status == 'passed' %}Vérification de reproduction : réussie{% else %}{{ say.reproduction_not_run }}{% endif %}.
+- Exports lus par l'exécution de qualité des données : Hydro-Québec récupéré le {{ exports.hq_retrieved }}{% if exports.hq_modified %}, jeu de données modifié le {{ exports.hq_modified }}{% endif %} ; ECCC récupéré du {{ exports.eccc_first }} au {{ exports.eccc_last }} ; NBM du {{ exports.nbm_first }} au {{ exports.nbm_last }}.
+{% if lineage == 'fresh_clone' %}
+
+Les exécutions consignées, que ce magasin ne contient pas, telles que les nomme `docs/freeze-v3.json` (commit `{{ record.commit }}`) :
+
+| Rôle ({{ L.recorded }}) | Exécution | Commit | Fin | Règles |
+|---|---|---|---|---|
+{% for role, r in record.data.runs.items() %}
+| {{ role_name(role, Y) }} | `{{ r.run_id }}` | `{{ r.git_commit|short }}` | {{ r.ended_utc }} | `{{ r.rules_sha256|short }}` |
+{% endfor %}
+{% endif %}

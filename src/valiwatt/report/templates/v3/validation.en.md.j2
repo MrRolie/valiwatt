@@ -1,0 +1,372 @@
+{% from 'v3/sentences.en.md.j2' import MODEL, TERM, UNIT, CONTRAST, SUBSET, STATE, TERMS_VERDICT, FAMILY_VERDICT, EVAL, STANDING, REC, ROLE, role_name, WINDOW, pp, ppci, ci, why, yes, and_list, recommendation_line %}
+{% set c = v.contrasts %}
+{% set P = v.performance %}
+{% set Cv = v.coverage.v3 %}
+{% set FI = v.forecast_input.noon %}
+{% macro entry_label(e) %}{% if lineage == 'fresh_clone' %}{{ L.recorded }} ({{ EVAL[e.evaluation] }}){% else %}{{ L[e.evaluation] }}{% endif %}{% endmacro %}
+{% macro contrast_table(cc, lbl) %}
+| Contrast ({{ lbl }}) | Subset | Hours | MAPE difference | {{ K.ci_level|pct(0) }} CI | State |
+|---|---|---|---|---|---|
+{% for name in ['terms', 'family', 'whole'] %}
+{% for s in ['all', 'cold', 'event_windows'] %}
+| {{ CONTRAST[name] }} | {{ SUBSET[s] }} | {{ cc.subsets[s].hours|num }} | {% if cc[name][s] %}{{ pp(cc[name][s].difference) }} | {{ ppci(cc[name][s].ci95_low, cc[name][s].ci95_high) }} | {{ STATE[cc[name][s].state] }}{% if s != 'all' and not cc.subsets[s].testable %} (subset not testable){% endif %} |{% else %}— | — | no hours |{% endif %}
+
+{% endfor %}
+{% endfor %}
+{% endmacro %}
+{% macro subsets_line(cc, lbl) %}The subsets ({{ lbl }}): {{ cc.subsets.all.hours|num }} common hours over {{ cc.subsets.all.weeks }} Monday-to-Sunday weeks; the cold tail, the hours whose forecast temperature (noon issue) is below {{ cc.cold_c|num(1) }} °C, {{ cc.subsets.cold.hours|num }} hours over {{ cc.subsets.cold.weeks }} weeks, {% if cc.subsets.cold.testable %}testable{% else %}not testable{% endif %}; the event windows, {{ cc.subsets.event_windows.hours|num }} hours over {{ cc.subsets.event_windows.weeks }} weeks, {% if cc.subsets.event_windows.testable %}testable{% else %}not testable{% endif %}.{% endmacro %}
+{% macro horizon_table(h, lbl) %}
+| Horizon: v2's form at noon minus v2's form at midnight, reported, never judged ({{ lbl }}) | Hours | MAPE difference | {{ K.ci_level|pct(0) }} CI |
+|---|---|---|---|
+{% for s in ['all', 'cold', 'event_windows'] %}
+| {{ SUBSET[s] }} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | no hours |{% endif %}
+
+{% endfor %}
+{% endmacro %}
+{% macro day_list(ranges) %}{% for r in ranges %}{% if r.first == r.last %}{{ r.first }}{% if r.windows %} ({% for w in r.windows %}{{ WINDOW[w] }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}{% else %}{{ r.first }} to {{ r.last }}{% endif %}{% if loop.revindex == 2 %} and {% elif not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+{% macro ranking_table(parts, period, lbl) %}
+| {{ period }}, winter ({{ lbl }}) | Days | W | w | k | {{ MODEL['v3'] }} | {{ MODEL['v2_noon'] }} | {{ MODEL['v1_noon'] }} | Windows not eligible |
+|---|---|---|---|---|---|---|---|---|
+{% for p in parts %}
+| {{ p.winter }} | {{ p.first_day }} to {{ p.last_day }} | {{ p.W }} | {{ p.w }} | {{ p.k }} | {{ p.overlap.v3 }} of {{ p.k }} | {{ p.overlap.v2_noon }} of {{ p.k }} | {{ p.overlap.v1_noon }} of {{ p.k }} | {{ p.ineligible|length }} |
+{% endfor %}
+
+{% for p in parts if p.ineligible_by_reason %}
+- Winter {{ p.winter }} in the {{ period }} period ({{ lbl }}), the windows not eligible and their reason: {% for g in p.ineligible_by_reason %}{{ g.count }} {% if g.count == 1 %}window{% else %}windows{% endif %} {% if g.kind == 'outside' %}with none of their hours in the period's data{% elif g.kind == 'partial' %}with only {{ g.present }} of their {{ g.of }} hours in the period's data{% elif g.kind == 'no_target' %}without actual demand{% else %}without a forecast from {{ MODEL[g.model] }}{% endif %}, {{ day_list(g.ranges) }}{% if not loop.last %}; {% endif %}{% endfor %}.
+{% endfor %}
+{% endmacro %}
+{% macro model_table(rs, lbl) %}
+| Model ({{ lbl }}) | MAPE | {{ K.ci_level|pct(0) }} CI | Coverage |
+|---|---|---|---|
+| {{ MODEL['v3'] }} | {{ rs.summary.mape.mean|pct(2) }} | {{ ci(rs.summary.mape.ci95_low, rs.summary.mape.ci95_high) }} | {{ rs.summary.coverage.mean|pct(1) }} |
+{% for k, x in rs.comparators.items() %}
+| {{ MODEL[k] }} | {{ x.mape.mean|pct(2) }} | {{ ci(x.mape.ci95_low, x.mape.ci95_high) }} | {% if x.coverage %}{{ x.coverage.mean|pct(1) }}{% else %}no interval{% endif %} |
+{% endfor %}
+{% endmacro %}
+{% macro bin_table(cb, lbl) %}
+| v3's bin ({{ lbl }}) | Coverage (nominal: {{ K.nominal|pct(0) }}) | {{ K.ci_level|pct(0) }} CI | Hours |
+|---|---|---|---|
+{% for b in ['cold', 'rest', 'all'] %}
+| {% if b == 'cold' %}cold{% elif b == 'rest' %}the rest{% else %}all{% endif %} | {% if cb[b] %}{{ cb[b].mean|pct(1) }} | {{ ci(cb[b].ci95_low, cb[b].ci95_high, 1) }} | {{ cb[b].hours|num }}{% else %}— | — | no hours{% endif %} |
+{% endfor %}
+{% endmacro %}
+{% macro peak_table(peak, lbl) %}
+| Hour ending, UTC ({{ lbl }}) | Demand | Forecast temperature | {{ MODEL['v3'] }} | {{ MODEL['v2_noon'] }} | {{ MODEL['v1_noon'] }} | {{ MODEL['v2_midnight'] }} |
+|---|---|---|---|---|---|---|
+{% for h in peak %}
+| {{ h.utc|utc }} | {{ h.target|num }} MW | {{ h.temp_forecast|num(1) }} °C |{% for k in ['v3', 'v2_noon', 'v1_noon', 'v2_midnight'] %} {% if h['pred_' ~ k] == h['pred_' ~ k] %}{{ (100 * (h.target - h['pred_' ~ k]) / h.target)|signed(1) }}%{% else %}no forecast: {{ why(h.missing[k]) }}{% endif %} |{% endfor %}
+
+{% endfor %}
+{% endmacro %}
+# Validation and monitoring of a forecast of Québec's electricity demand, v3: the noon forecast
+
+Report generated from v3's MLflow runs ({% if lineage == 'of_record' %}the runs of record the freeze record `docs/freeze-v3.json` names, added in commit `{{ record.commit|short }}`{% elif lineage == 'fresh_clone' %}a fresh clone: the runs of record that `docs/freeze-v3.json` and `docs/replay-ledger-v3.json` name are not in this store; every computed number comes from a rerun on a later vintage (plan section 3.1), and the recorded runs are named in section 7{% else %}the latest v3 runs that passed, all made before the freeze, under the tag `{{ pre_freeze_tag }}`: they are not the runs of record{% endif %}), code hash `{{ code_sha|short }}`, rules hash `{{ rules_sha|short }}`. Every measured value comes from these runs and carries its evaluation label (plan section 8.4): "in sample for the choice of the terms, the interval bins and the deciding subset" for {{ Y.first }}–{{ Y.last }}, "seen by the developers" for the {{ Y.seen }} rehearsal, and for {{ Y.held }} "held-out data" only when its test of record is clean; a sensitivity is never judged.{% if lineage != 'of_record' %} Every label also says where the number comes from: "{{ say.lineage[lineage] }}".{% endif %} "The developers" are the AI agents that built this project and the owner who directs them. The design constants this report writes in numerals are read from the code that applies them. v2's report (`docs/report/`) stands as rendered; this report does not change it. This English version is derived from the French one.
+
+{% for line in attribution %}
+> {{ line }}
+{% if not loop.last %}
+>
+{% endif %}
+{% endfor %}
+
+## In brief
+
+- {{ status_line }}
+- **The forecast for day D is issued at noon the day before** ({{ K.origin_local_hm }} EST on D−1, {{ K.origin_local_dst_hm }} EDT under daylight time; that is {{ K.origin_utc_hm }} UTC), no longer at the end of the day before as v2's is. Why noon: under Hydro-Québec's Rate Flex D, a public residential rate (2026 Electricity Rates, edition effective 2026-04-01, Section 9), the notice of a peak event is sent before {{ K.notice_local_hm }} the day before (art. 2.71); a forecast compared with that notice must be issued before it, and the noon forecast is issued {{ K.notice_lead_h }} hours before it, {{ K.notice_lead_dst_h }} under daylight time. The rate's text is cited, not reproduced. This report never says how a peak event is called, only how well the noon forecast does in the rate's peak hours and how well it ranks its windows.
+- Validation on {{ Y.first }}–{{ Y.last }} ({{ L.in_sample }}): the mean absolute percentage error (MAPE) is {{ P['v3'].overall.mean|pct(2) }} for v3, {{ P['v2_noon'].overall.mean|pct(2) }} for v2's form at noon, {{ P['v1_noon'].overall.mean|pct(2) }} for v1's form at noon and {{ P['v2_midnight'].overall.mean|pct(2) }} for v2's form at midnight, each on its own hours. Terms verdict: "{{ TERMS_VERDICT[v.verdict.terms] }}"; family verdict: "{{ FAMILY_VERDICT[v.verdict.family] }}". These years suggested the terms, the interval bins and the deciding subset: these verdicts support no claim (section 2).
+{% if rehearsal %}
+{% set rs = rehearsal.results %}
+- The {{ Y.seen }} rehearsal ({{ L.seen_by_developers }}): MAPE {{ rs.summary.mape.mean|pct(2) }}, coverage {{ rs.summary.coverage.mean|pct(1) }}; terms verdict "{{ TERMS_VERDICT[rs.verdict.terms] }}", family verdict "{{ FAMILY_VERDICT[rs.verdict.family] }}". A year already seen supports no claim (section 3).
+{% else %}
+- The {{ Y.seen }} rehearsal: not run in this lineage (section 3).
+{% endif %}
+{% if held is none %}
+- {{ Y.held }}: pending; the test of record will be the first {{ Y.held }} replay started under `{{ freeze_tag }}`, after v2's test of record (section 4).
+{% elif held.numbers %}
+{% set e = held.numbers.entry %}
+- {{ Y.held }} ({{ entry_label(e) }}): MAPE {{ e.mape|pct(2) }}, coverage {{ e.coverage|pct(1) }}; terms verdict "{{ TERMS_VERDICT[e.verdict.terms] }}", family verdict "{{ FAMILY_VERDICT[e.verdict.family] }}"; standing {{ STANDING[e.standing] }} (section 4).
+{% else %}
+- {{ Y.held }}: the test of record `{{ held.record.run_id }}` started and did not finish (section 4).
+{% endif %}
+{% if recommendation %}
+- {{ recommendation_line(recommendation) }}
+{% endif %}
+
+## Model card
+
+| | |
+|---|---|
+| **Status** | {{ status_line }} |
+| **What it forecasts** | Québec's hourly electricity demand as Hydro-Québec publishes it, for the 24 hours of day D, issued at noon the day before (section 1), with a forecast interval whose half-width depends on the forecast temperature. |
+| **Intended use** | To demonstrate, on a real forecast, validation and monitoring of the kind a model-risk team performs. |
+| **Out of scope** | Any operational dispatch, trading or pricing, any decision, and any call of a peak event. Hydro-Québec publishes this data for information only; it is not official data. |
+| **Model** | v2's additive model, fitted the same way, with demand {{ K.lags_noon[0] }} h and {{ K.lags_noon[1] }} h before the target hour and three more terms: the day's mean cold, the lag day's mean cold and wind with cold (section 1).{% for y in [2025, 2024] if frozen[y] %}{% if loop.first %} The model frozen for {{ y }} has {{ frozen[y].columns }} columns, fitted on the data up to {{ frozen[y].train_last_day }}; hash `{{ frozen[y].sha|short }}`{% if lineage != 'of_record' %} (_{{ say.lineage[lineage] }}_){% endif %}.{% endif %}{% endfor %}{% if lineage == 'fresh_clone' %} The production model `docs/freeze-v3.json` records has hash `{{ record.data.model_sha256|short }}` ({{ L.recorded }}).{% endif %} Compared with v2's form at noon, v1's form at noon and v2's form at midnight, which never recommend anything. |
+{% for y in [2025, 2024] if frozen[y] %}
+{% if loop.first %}
+{% set iv = frozen[y].interval %}
+| **Interval** ({{ L.in_sample }}) | The model frozen for {{ y }}: below {{ iv.bin_edge|num(1) }} °C, forecast × (1 ± {{ iv.q_cold|pct(2) }}){% if iv.fallback %}, the pooled half-width for want of enough cold errors ({{ iv.cold_n|num }} errors over {{ iv.cold_weeks }} weeks){% endif %}; elsewhere, forecast × (1 ± {{ iv.q_rest|pct(2) }}) (section 2.4). |
+{% endif %}
+{% endfor %}
+| **Validation** ({{ L.in_sample }}) | v3's MAPE {{ P['v3'].overall.mean|pct(2) }} {{ ci(P['v3'].overall.ci95_low, P['v3'].overall.ci95_high) }}; verdicts: terms "{{ TERMS_VERDICT[v.verdict.terms] }}", family "{{ FAMILY_VERDICT[v.verdict.family] }}" (section 2). |
+{% if rehearsal %}
+| **The {{ Y.seen }} rehearsal** ({{ L.seen_by_developers }}) | MAPE {{ rehearsal.results.summary.mape.mean|pct(2) }}, coverage {{ rehearsal.results.summary.coverage.mean|pct(1) }} (section 3). |
+{% else %}
+| **The {{ Y.seen }} rehearsal** | Not run in this lineage (section 3). |
+{% endif %}
+| **{{ Y.held }}** | {% if held is none %}Pending (section 4).{% elif held.numbers %}Test of record `{{ held.record.run_id }}` (section 4).{% else %}Test of record started, unfinished (section 4).{% endif %} |
+| **Weather caveat** | An NBM weather forecast (one run) is assumed available {{ K.availability_lag_h|num }} hours after its run time, and an ECCC observed hour from its own label; every result that reads the forecast or the lag day's mean rests on these assumptions (section 1). The observed temperature at the target hour is an optimistic bound only. |
+| **Limitations** | Section 6. |
+| **Author** | Built with Claude Code under the repository owner's direction. |
+
+## 1. The noon forecast, and what v3 changes
+
+- **Three clocks.** The forecast for day D (in standard time) is issued at its origin, D−1 at {{ K.origin_utc_hm }} UTC, that is {{ K.origin_local_hm }} EST, or {{ K.origin_local_dst_hm }} EDT under daylight time. D's hours do not move: each carries the UTC hour it ends at, from D at {{ K.first_label_hm }} UTC to the next day at {{ K.last_label_hm }} UTC. D is scored one hour after its last hour, as in v2. v2's form at midnight keeps v2's origin, D at {{ K.midnight_utc_hm }} UTC.
+- **The inputs, known at the origin.** Demand {{ K.lags_noon[0] }} h and {{ K.lags_noon[1] }} h before the target hour (the demand {{ K.lags_midnight[0] }} h before is not known for half of D); the local hour and the day type; the NBM forecast temperature and wind at the target hour, from the run that feeds D; the mean of the forecast temperatures of D's 24 hours; the mean of ECCC's observed temperatures at the primary station over the 24 hours of D−2 (the lag day), which exists only with at least {{ K.lag_day_min_hours }} usable hours: otherwise it is missing, and nothing is imputed.
+- **The availability assumption.** An NBM weather forecast (one run) is assumed available {{ K.availability_lag_h|num }} hours after its run time, and an ECCC hour from its own label, with its value as fetched: neither the publication delay nor later quality control is modelled. A validation variant makes each run available {{ K.sensitivity_lag_h|num }} hours after its run time (section 2.6).
+- **The three terms**, all linear, each with base {{ K.base_c|num }} °C: the day's mean cold, max(0, {{ K.base_c|num }} − the forecast mean of D's hours); the lag day's mean cold, max(0, {{ K.base_c|num }} − D−2's observed mean), which lets the model take out of the demand {{ K.lags_noon[0] }} hours earlier the share that was D−2's own weather; wind with cold, the forecast wind in km/h (knots × {{ K.knots_to_kmh|num(3) }}) times max(0, {{ K.base_c|num }} − the hour's forecast temperature), zero in the warm. The forecast wind must lie between {{ K.wind_min_kt|num }} and {{ K.wind_max_kt|num }} knots, both included. No term reads demand.
+- **The comparison models**, which never recommend anything: v2's form at noon (v2 exactly, on v3's rows, without the terms); v1's form at noon (v1's least squares on the same forecast); v2's form at midnight (v2 with all of its clocks and inputs, to measure what issuing twelve hours earlier costs).
+- **The error.** The mean absolute percentage error (MAPE) says by how much, on average, the forecast misses actual demand, as a percentage of it. The signed bias says in which direction: bias = (demand − forecast) / demand, positive when the forecast is too low.
+- **The interval, and its coverage.** Each forecast carries an interval, forecast × (1 ± q). The half-width q is the ⌈(n + 1) × {{ K.nominal|num(2) }}⌉-th smallest of the n relative errors |demand − forecast| / forecast of the {{ v.conformal.calibration_folds }} months before, already scored: the form of a split conformal interval, without its guarantee, since these hourly errors are autocorrelated. Coverage is the share of hours whose demand falls inside the interval; its target is {{ K.nominal|pct(0) }}. It is measured only from the first month preceded by {{ v.conformal.calibration_folds }} scored months, on fewer hours than the error.
+- **Intervals by temperature.** That quantile is taken separately for the cold hours, below each fit's edge (the {{ (100 * K.bin_quantile)|num }}th percentile of the forecast temperatures of its own training rows), and for the rest. A cold bin of fewer than {{ K.min_hours }} errors, or of errors from fewer than {{ K.min_weeks }} Monday-to-Sunday weeks, takes the pooled half-width of all the errors, and the model records it.
+- **The variance inflation factor** of a coefficient says how much its variance grows because its column overlaps the model's other columns: the larger it is, the less the coefficient reads on its own.
+- **The decision rule.** On the common hours (the target and the three noon forecasts), the paired difference in hourly absolute percentage error, with a {{ K.ci_level|pct(0) }} week-block interval ({{ v.config.n_boot|num }} resamples in this validation; each replay gives its own, sections 3 and 4): **terms**, v3 minus v2's form at noon; **family**, v2's form at noon minus v1's form at noon; their sum, the whole change, reported and never judged; and the **horizon**, v2's form at noon minus its form at midnight, reported and never judged. A negative difference is a lower error: it is better when its interval's upper bound is below zero, worse when its lower bound is above it, not separated otherwise. The subsets: all common hours; the cold tail, those whose forecast temperature (noon issue) lies below the {{ (100 * K.bin_quantile)|num }}th percentile of the design years'; the event windows, those inside the rate's peak hours: December 1 to March 31, less December {{ and_list(K.excluded_december) }}, January {{ and_list(K.excluded_january) }}, Good Friday and Easter Monday (art. 2.67), the hours ending at {{ and_list(K.windows.morning) }} and at {{ and_list(K.windows.evening) }} o'clock, local time. A subset is not testable under {{ K.min_hours }} hours or {{ K.min_weeks }} weeks. **The terms verdict**: better when the event-window contrast is better, the all-hours one not worse and the cold tail testable and not worse; "better in the event windows, the cold tail not testable" when it is not testable; not shown better when the event-window contrast is not separated, or better but paid for elsewhere; worse when it is worse; not testable when the windows are not. **The family verdict** follows v2's rule: all common hours decide and the cold tail guards; better when the all-hours contrast is better and the cold tail, testable, is not worse; "better on average, the cold tail not testable" when it is not testable; not shown better when that contrast is not separated, or better with a worse cold tail; worse when it is worse. "The terms improve the noon forecast in the peak-event windows" is said only from the terms verdict, "the additive model earns its place over v1's form at noon" only from the family verdict, and both only on held-out data.
+- **The window ranking.** In each scored period, each part of a winter is ranked on its own: its w eligible windows (four hours with a target and the three noon forecasts) are ranked by actual mean demand and by each noon model's mean forecast; k = floor({{ K.rate_events }} × w / W + 0.5), where {{ K.rate_events }} is the most events a winter holds ({{ K.winter_event_hours }} hours in events of {{ K.event_hours }} hours, art. 2.70) and W the windows of the whole winter, two a day outside the excluded days; for each model, how many of its k highest are among the k highest by actual demand. v2's form at midnight is not ranked: it is issued after the notice.
+
+## 2. Validation on {{ Y.first }}–{{ Y.last }} ({{ L.in_sample }})
+
+Each month from {{ v.folds.first }} to {{ v.folds.last }} ({{ v.folds.count }} folds) is forecast by models refitted on the hours before it, less the last {{ v.folds.embargo_days }} days, each noon model at its fold's noon origin. These years suggested the terms, the interval bins and the event windows as the deciding subset: every result is in sample for those choices, and only {{ Y.held }} can test them.
+
+### 2.1 The contrasts
+
+{{ subsets_line(c, L.in_sample) }}
+
+{{ contrast_table(c, L.in_sample) }}
+On each subset, the terms plus the family give the whole change, to rounding.
+
+{{ horizon_table(c.horizon, L.in_sample) }}
+### 2.2 The verdicts
+
+- **Terms verdict** ({{ L.in_sample }}): "{{ TERMS_VERDICT[v.verdict.terms] }}".
+- **Family verdict** ({{ L.in_sample }}): "{{ FAMILY_VERDICT[v.verdict.family] }}".
+- On years that suggested the choices, neither supports a claim; each is said only from its own contrast.
+
+### 2.3 Each model's error
+
+| Model ({{ L.in_sample }}) | MAPE | {{ K.ci_level|pct(0) }} CI | Signed bias | Hours |
+|---|---|---|---|---|
+{% for k in ['v3', 'v2_noon', 'v1_noon', 'v2_midnight', 'baseline'] %}
+| {{ MODEL[k] }} | {{ P[k].overall.mean|pct(2) }} | {{ ci(P[k].overall.ci95_low, P[k].overall.ci95_high) }} | {{ (100 * P[k].overall.bias.mean)|signed(2) }}% | {{ P[k].overall.hours|num }} |
+{% endfor %}
+
+### 2.4 Intervals by temperature
+
+| v3's bin ({{ L.in_sample }}) | Coverage (nominal: {{ K.nominal|pct(0) }}) | {{ K.ci_level|pct(0) }} CI | Hours |
+|---|---|---|---|
+{% for b in Cv.binned.bin %}
+| {% if b.key == 'cold' %}cold{% else %}the rest{% endif %} | {{ b.covered|pct(1) }} | {{ ci(b.covered_low, b.covered_high, 1) }} | {{ b.hours|num }} |
+{% endfor %}
+| all | {{ Cv.binned.overall.mean|pct(1) }} | {{ ci(Cv.binned.overall.ci95_low, Cv.binned.overall.ci95_high, 1) }} | {{ Cv.binned.overall.hours|num }} |
+| one half-width, as v2's (sensitivity) | {{ Cv.single.overall.mean|pct(1) }} | {{ ci(Cv.single.overall.ci95_low, Cv.single.overall.ci95_high, 1) }} | {{ Cv.single.overall.hours|num }} |
+
+Coverage is never a criterion of the decision rule. Each calibrated fold, its edge and its half-widths:
+
+| v3's fold ({{ L.in_sample }}) | Edge | Cold | The rest | Pooled | Cold errors | Cold weeks | Fallback |
+|---|---|---|---|---|---|---|---|
+{% for b in bins %}
+| {{ b.fold }} | {{ b.edge_c|num(1) }} °C | {{ b.q_cold|pct(2) }} | {{ b.q_rest|pct(2) }} | {{ b.q_pooled|pct(2) }} | {{ b.cold_n|num }} | {{ b.cold_weeks }} | {{ yes(b.fallback) }} |
+{% endfor %}
+
+{% for y in [2024, 2025] if frozen[y] %}
+{% set iv = frozen[y].interval %}
+- The model frozen for {{ y }} ({{ L.in_sample }}): edge {{ iv.bin_edge|num(1) }} °C; half-widths cold {{ iv.q_cold|pct(2) }}, the rest {{ iv.q_rest|pct(2) }}, pooled {{ iv.q_pooled|pct(2) }}; {{ iv.cold_n|num }} cold errors over {{ iv.cold_weeks }} weeks; fallback: {{ yes(iv.fallback) }}.
+{% endfor %}
+
+### 2.5 The terms: coefficients and variance inflation factors
+
+{% for y in [2025, 2024] if frozen[y] %}
+| The model frozen for {{ y }} ({{ L.in_sample }}) | Coefficient | Unit | Variance inflation factor |
+|---|---|---|---|
+{% for t in frozen[y].terms %}
+| {% if t.term %}{{ TERM[t.name] }}{% else %}demand {{ t.name[3:] }} h before{% endif %} | {{ t.mw_per_unit|num(3) }} | {% if t.term %}{{ UNIT[t.name] }} (below {{ K.base_c|num }} °C){% else %}MW per MW{% endif %} | {{ t.vif|num(2) }} |
+{% endfor %}
+
+{% endfor %}
+{% if not frozen[2024] and not frozen[2025] %}
+No frozen model in this lineage: no coefficient to show.
+
+{% endif %}
+Each coefficient is printed per unit of its column, unscaled, beside its variance inflation factor against the model's other columns. A sign is descriptive and is evidence for no mechanism: the day's mean cold is close to the hours' own temperatures, and the lag day's mean cold nets the correction to the demand {{ K.lags_noon[0] }} hours earlier against cold persisting from D−2. Each term's evidence is its leave-one-out contrast (section 2.6).
+
+| v3's input, outside its fold's training range ({{ L.in_sample }}) | Hours forecast | Below the range | Above | MAPE outside |
+|---|---|---|---|---|
+{% for x in extrapolation %}
+| {% if x.name in TERM %}{{ TERM[x.name] }}{% else %}the forecast temperature{% endif %} | {{ x.hours|num }} | {{ x.below|num }} | {{ x.above|num }} | {% if x.mape is not none %}{{ x.mape|pct(2) }}{% else %}—{% endif %} |
+{% endfor %}
+
+### 2.6 Bounds and sensitivities ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }})
+
+Each is the paired MAPE difference of the variant minus v3, on the common hours where the variant forecasts, and on each subset so reduced; never judged. Its direction is the reverse of the contrasts': a positive difference says the variant does worse than v3, so what it removes or changes helped v3; a negative one, that it does better.
+
+| Variant ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }}) | Subset | Hours | MAPE difference | {{ K.ci_level|pct(0) }} CI |
+|---|---|---|---|---|
+{% for k, s in v.sensitivity.items() %}
+{% for sub in ['all', 'cold', 'event_windows'] %}
+| {{ MODEL[k] }} | {{ SUBSET[sub] }} | {{ s.subsets[sub].hours|num }} | {% if s.contrast[sub] %}{{ pp(s.contrast[sub].difference) }} | {{ ppci(s.contrast[sub].ci95_low, s.contrast[sub].ci95_high) }} |{% else %}— | no hours |{% endif %}
+
+{% endfor %}
+{% endfor %}
+
+{% for k, s in v.sensitivity.items() if s.dropped %}
+- {{ MODEL[k] }} ({{ L.in_sample }}{{ say.sep }}{{ L.sensitivity }}): common hours without its forecast, by reason: {% for r, n in s.dropped.items() %}{{ why(r) }} ({{ n|num }} {% if n == 1 %}hour{% else %}hours{% endif %}){% if not loop.last %}; {% endif %}{% endfor %}.
+{% endfor %}
+
+### 2.7 The busiest hours (reported, never judged)
+
+{{ peak_table(c.peak, L.in_sample) }}
+
+Each model's signed error is (demand − forecast) / demand (section 1).
+
+### 2.8 The window ranking (reported, never judged)
+
+{% for year, parts in v.ranking.years.items() %}
+{{ ranking_table(parts, year, L.in_sample) }}
+{% endfor %}
+Each model's cell says how many of its k highest windows are among the k highest by actual demand.
+
+### 2.9 The noon input
+
+| Design days ({{ L.in_sample }}) | Count |
+|---|---|
+| days | {{ FI.days|num }} |
+| days fed by a forecast | {{ FI.fed_days|num }} |
+| days without a covering forecast | {{ FI.days_not_fed|length }} |
+| days without the lag day's mean | {{ FI.lag_day_missing_days|length }} |
+
+{% for d in FI.days_not_fed %}
+- {{ d.day|day }} ({{ L.in_sample }}): no forecast, {{ why(d.reason) }}.
+{% endfor %}
+{% if lag_day_missing %}
+- Days without the lag day's mean ({{ L.in_sample }}): {{ day_list(lag_day_missing) }}; no noon model forecasts them, and their hours are left out for the reason "{{ why('lag_day_temperature_missing') }}".
+{% endif %}
+
+### 2.10 The reproduction check
+
+{% if reproduction.status == 'passed' %}
+v2's form at midnight, in v3's harness, reproduces v2's recorded validation forecasts on {{ reproduction.hours|num }} hours, from {{ reproduction.first_day }} to {{ reproduction.last_day }} ({{ L.in_sample }}): {% if reproduction.max_abs_mw > 0 %}largest absolute difference {{ reproduction.max_abs_mw|sci }} MW{% else %}no difference{% endif %}, against a tolerance of {{ reproduction.tolerance_mw|sci(0) }} MW.
+{% else %}
+{{ say.reproduction_not_run }}{% if reproduction.fresh_clone %}, for want of v2's store, which a fresh clone lacks, as its data-quality run says{% endif %}.
+{% endif %}
+
+## 3. The {{ Y.seen }} rehearsal ({{ L.seen_by_developers }})
+
+{% if rehearsal %}
+{% set rs = rehearsal.results %}
+The models frozen for {{ Y.seen }}, fitted on the data up to {{ rs.model.train_last_day }}, replay {{ Y.seen }} hour by hour at noon (run `{{ rehearsal.run_id }}`). {{ Y.seen }} is a validation year: every number is seen by the developers and supports no claim. The rehearsal checked that it reads exactly validation's input: {{ rs.identity.hours|num }} hours and {{ rs.identity.days|num }} days, {{ rs.identity.differences }} differences. Its week-block intervals come from {{ rs.n_boot|num }} resamples.
+
+{{ model_table(rs, L.seen_by_developers) }}
+
+{{ bin_table(rs.coverage_by_bin, L.seen_by_developers) }}
+
+{{ subsets_line(rs.judgement.contrasts, L.seen_by_developers) }}
+
+{{ contrast_table(rs.judgement.contrasts, L.seen_by_developers) }}
+{{ horizon_table(rs.judgement.contrasts.horizon, L.seen_by_developers) }}
+- Verdicts ({{ L.seen_by_developers }}): terms "{{ TERMS_VERDICT[rs.verdict.terms] }}", family "{{ FAMILY_VERDICT[rs.verdict.family] }}".
+- Days failing data quality: {{ rs.summary.days_failed }} of {{ rs.summary.days }}; the monitor's recommendations: {% if rs.summary.recommendations %}{% for k, n in rs.summary.recommendations.items() %}{{ REC[k] }} {{ n }} times{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}.
+
+The busiest hours of {{ Y.seen }} (reported, never judged):
+
+{{ peak_table(rs.judgement.contrasts.peak, L.seen_by_developers) }}
+
+{{ ranking_table(rs.judgement.ranking, Y.seen, L.seen_by_developers) }}
+{% else %}
+Not run in this lineage: no {{ Y.seen }} rehearsal is built on its frozen models.
+{% endif %}
+
+## 4. {{ Y.held }}, the test of record
+
+{% if held is none %}
+Pending. The test of record will be the first {{ Y.held }} replay started under `{{ freeze_tag }}`, after v2's test of record and behind v3's {{ Y.held }} gate (plan section 11.3); no {{ Y.held }} number is shown before it.
+{% else %}
+{% for s in held.stopped %}
+- Start `{{ s.run_id }}`, started {{ s.started_utc }}, stopped without finishing; the owner's ruling let the next one run.
+{% endfor %}
+{% if held.numbers %}
+{% set e = held.numbers.entry %}
+- Test of record `{{ e.run_id }}`, started {{ e.started_utc }}, standing {{ STANDING[e.standing] }} ({{ entry_label(e) }}): MAPE {{ e.mape|pct(2) }}, coverage {{ e.coverage|pct(1) }}; terms verdict "{{ TERMS_VERDICT[e.verdict.terms] }}", family verdict "{{ FAMILY_VERDICT[e.verdict.family] }}". Its numbers come from its entry in `docs/replay-ledger-v3.json`{% if held.numbers.results %}, and the detail below from its run, whose week-block intervals come from {{ held.numbers.results.n_boot|num }} resamples{% endif %}.
+{% if held.numbers.results %}
+{% set hr = held.numbers.results %}
+
+{{ model_table(hr, entry_label(e)) }}
+
+{{ bin_table(hr.coverage_by_bin, entry_label(e)) }}
+
+{{ subsets_line(hr.judgement.contrasts, entry_label(e)) }}
+
+{{ contrast_table(hr.judgement.contrasts, entry_label(e)) }}
+{{ horizon_table(hr.judgement.contrasts.horizon, entry_label(e)) }}
+The busiest hours of {{ Y.held }} (reported, never judged):
+
+{{ peak_table(hr.judgement.contrasts.peak, entry_label(e)) }}
+
+{{ ranking_table(hr.judgement.ranking, Y.held, entry_label(e)) }}
+{% endif %}
+{% else %}
+- Test of record `{{ held.record.run_id }}`, started {{ held.record.started_utc }}, unfinished (stage {{ held.record.stage or 'none' }}): no number.
+{% endif %}
+{% for x in held.reruns %}
+- Rerun `{{ x.entry.run_id }}` ({{ entry_label(x.entry) }}): MAPE {{ x.entry.mape|pct(2) }}, coverage {{ x.entry.coverage|pct(1) }}. A rerun never replaces the test of record.
+{% endfor %}
+{% endif %}
+
+## 5. v3's replay ledger
+
+{% if entries %}
+| Run | Year | Started | Label | MAPE | Coverage | Terms | Family | Standing |
+|---|---|---|---|---|---|---|---|---|
+{% for e in entries %}
+| `{{ e.run_id }}` | {{ e.year }} | {{ e.started_utc }} | {{ entry_label(e) }} | {{ e.mape|pct(2) }} | {{ e.coverage|pct(1) }} | {{ TERMS_VERDICT[e.verdict.terms] }} | {{ FAMILY_VERDICT[e.verdict.family] }} | {{ STANDING[e.standing] }} |
+{% endfor %}
+{% else %}
+`docs/replay-ledger-v3.json` holds no entry: no v3 replay has finished under `{{ freeze_tag }}`.
+{% endif %}
+
+## 6. Limitations
+
+- The terms, the interval bins and the event windows were chosen after reading v2's results on the validation years: on those years, every result is in sample for these choices; only {{ Y.held }} can test them.
+- Every result that reads the forecast or the lag day's mean rests on the availability assumption (section 1).
+- The rate's current terms are applied to every winter as a scoring convention, not as the terms in force at the time.
+- Wind enters one term only; it is not watched for drift.
+
+## 7. Provenance
+
+{% if lineage == 'of_record' %}
+Runs of record, named by `docs/freeze-v3.json` (commit `{{ record.commit }}`, hash `{{ record.sha256|short }}`), under the tag `{{ freeze_tag }}` first pinned to commit `{{ first_pin|short }}`.
+{% elif lineage == 'fresh_clone' %}
+A fresh clone: these runs are a rerun on a later vintage. The Hydro-Québec export was retrieved on {{ exports.hq_retrieved }}{% if exports.hq_modified %} (the dataset modified on {{ exports.hq_modified }}){% endif %}, ECCC's observations from {{ exports.eccc_first }} to {{ exports.eccc_last }}, the NBM forecasts from {{ exports.nbm_first }} to {{ exports.nbm_last }}.
+{% else %}
+Runs made before the freeze (`{{ pre_freeze_tag }}`): none is a run of record.
+{% endif %}
+
+| Role | Run | Commit | Clean tree | Freeze tag | Rules |
+|---|---|---|---|---|---|
+{% for role, r in runs.items() %}
+| {{ role_name(role, Y) }} | `{{ r.id }}` | `{{ r.commit|short }}` | {{ yes(not r.dirty) }} | `{{ r.freeze_tag }}` | `{{ r.rules|short }}` |
+{% endfor %}
+{% for role in absent %}
+| {{ role_name(role, Y) }} | no run in this lineage | | | | |
+{% endfor %}
+
+- {% if byte_copies == 'passed' %}The byte-copy check: passed{% else %}{{ say.byte_copies_not_run }}{% endif %}.
+- {% if reproduction.status == 'passed' %}The reproduction check: passed{% else %}{{ say.reproduction_not_run }}{% endif %}.
+- The exports the data-quality run read: Hydro-Québec retrieved on {{ exports.hq_retrieved }}{% if exports.hq_modified %}, the dataset modified on {{ exports.hq_modified }}{% endif %}; ECCC retrieved from {{ exports.eccc_first }} to {{ exports.eccc_last }}; NBM from {{ exports.nbm_first }} to {{ exports.nbm_last }}.
+{% if lineage == 'fresh_clone' %}
+
+The recorded runs, which this store does not hold, as `docs/freeze-v3.json` (commit `{{ record.commit }}`) names them:
+
+| Role ({{ L.recorded }}) | Run | Commit | Ended | Rules |
+|---|---|---|---|---|
+{% for role, r in record.data.runs.items() %}
+| {{ role_name(role, Y) }} | `{{ r.run_id }}` | `{{ r.git_commit|short }}` | {{ r.ended_utc }} | `{{ r.rules_sha256|short }}` |
+{% endfor %}
+{% endif %}

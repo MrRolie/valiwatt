@@ -204,9 +204,10 @@ def digest(p: Path | None = None) -> str:
 
 def from_store(c=None) -> list[dict]:
     """The entry of every finished `replay_v3` run in the store (MLflow FINISHED and status tag `complete`), deleted
-    runs included, under `v3-rules-frozen`. A pre-freeze run (the step-2 rehearsal) is skipped, never entered; a run
-    under any other freeze tag, or none, is refused; a run of a year v3's freeze does not replay is refused by its
-    entry's check."""
+    runs included, under `v3-rules-frozen`. A pre-freeze run (the step-2 rehearsal) is skipped, never entered, and so
+    is a fresh clone's rerun (its tag `fresh_clone` true: docs/plan-v3.md section 3.1, a fresh clone writes no ledger
+    entry); a run under any other freeze tag, or none, is refused; a run of a year v3's freeze does not replay is
+    refused by its entry's check."""
     from mlflow.entities import ViewType
 
     from valiwatt import tracking
@@ -222,7 +223,7 @@ def from_store(c=None) -> list[dict]:
     out = []
     for run in runs:
         t = run.data.tags.get("freeze_tag") or ""
-        if t == V3_PRE_FREEZE_TAG:
+        if t == V3_PRE_FREEZE_TAG or run.data.tags.get("fresh_clone") == "true":
             continue
         if t != V3_FREEZE_TAG:
             raise LedgerError(f"v3 replay {run.info.run_id} carries the freeze tag {t!r}: a v3 ledger entry is under "

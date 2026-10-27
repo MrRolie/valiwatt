@@ -537,6 +537,13 @@ PLAN_V3_12 = {
         GT3 + "test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[h]",
         GT3 + "test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it[i]",
         GT3 + "test_a_ruling_on_v2_first_lifts_g_only",
+        *(GT3 + f"test_a_later_data_quality_run_that_did_not_pass_refuses_d[{c}]"
+          for c in ("failed", "running", "deleted", "control")),
+        *(GT3 + f"test_a_completed_test_in_ledger_v3_never_becomes_a_stopped_start[{c}]"
+          for c in ("failed", "code", "control")),
+        GT3 + "test_a_commit_between_the_gate_and_the_run_refuses[before_open]",
+        GT3 + "test_a_commit_between_the_gate_and_the_run_refuses[at_open]",
+        GT3 + "test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start",
     ),
     "Calibration bins": (
         IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
@@ -556,6 +563,8 @@ PLAN_V3_12 = {
     "The freeze record": (
         FRC + "test_the_record_is_read_as_the_commit_that_added_it_holds_it",
         GT3 + "test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
+        *(GT3 + f"test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[{c}]"
+          for c in ("sibling", "off_head", "control")),
     ),
     "First run": (
         FR3 + "test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
@@ -569,7 +578,8 @@ PLAN_V3_12 = {
         GT3 + "test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[h]",
         GT3 + "test_a_start_after_a_stopped_one_with_a_clean_f_ruling_stays_post_hoc_when_h_or_i_fires[i]",
         *(GT3 + f"test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[{t}]"
-          for t in ("dq_retrieved", "dq_started", "earlier_start")),
+          for t in ("dq_retrieved", "earlier_start")),
+        GT3 + "test_a_data_quality_run_s_start_time_is_no_reading_of_the_2025_time",
         GT3 + "test_the_2025_time_never_moves_later_so_i_still_fires_after_a_refetch",
     ),
     "Reproduction": (

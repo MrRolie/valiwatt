@@ -171,16 +171,16 @@ def cmd_ledger(args) -> int:
 
 
 def cmd_report(args) -> int:
-    from valiwatt.report.render import render
-    from valiwatt.report.validation import render_validation
+    """`valiwatt report` on the v3 branch (docs/plan-v3.md, sections 10.3 and 13): v3's replay ledger synced first (the
+    report reads the replays it holds), then v3's validation report rendered into docs/report/v3/ with its stamp
+    (report/validation_v3.py). v2's report, stamp, README box and ledger stand as rendered at `v3-fork` (section 10.1):
+    nothing here writes them; v2's renderers (report/render.py, report/validation.py) stay as library code."""
+    from valiwatt.report.validation_v3 import render_v3
 
-    code = cmd_ledger(args)  # the ledger first: the report reads the replays it holds
+    code = cmd_ledger_v3(args)  # the ledger first: the report reads the replays it holds
     if code:
         return code
-    if args.dq_only:
-        render(run_id=args.run_id)
-    else:  # both reports from one chain: the data-quality report is the chain's own run
-        render_validation(dq_run_id=args.run_id)
+    render_v3()
     return 0
 
 
@@ -325,11 +325,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_soundness)
     p = command("breaks", "run every break (each gate and monitor made to fire) as a tracked run")
     p.set_defaults(func=cmd_breaks)
-    p = command("report", "update the replay ledger, then render the data-quality and validation "
-                          "reports into docs/report/")
-    p.add_argument("--run-id", help="the data-quality run to render: with --dq-only, default the latest that passed "
-                   "(the stamp is not rewritten); otherwise it must be the chain's own, which is the default")
-    p.add_argument("--dq-only", action="store_true", help="render the data-quality report only")
+    p = command("report", "update v3's replay ledger, then render v3's validation report and its stamp into "
+                          "docs/report/v3/ (v2's report stands as rendered at v3-fork and is never written)")
     p.set_defaults(func=cmd_report)
     p = command("ledger", "append the store's finished 2024 and 2025 replays to docs/replay-ledger.json "
                           "(append-only; `report` does it too)")

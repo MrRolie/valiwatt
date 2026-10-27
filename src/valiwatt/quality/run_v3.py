@@ -183,6 +183,12 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
         "sources": {
             "hydroquebec": {k: hq_manifest.get(k) for k in ("dataset", "export_url", "retrieved_utc", "sha256", "rows",
                                                             "dataset_modified", "license", "license_url", "publisher")},
+            # Each station's months and when they were fetched: the reports cite ECCC with its retrieval date, and a
+            # rerun on a later vintage states it (docs/plan-v3.md, section 3.1).
+            "eccc": [{"key": st.key, "climate_id": st.climate_id, "primary": st.primary, "months": len(m["months"]),
+                      "first_retrieved_utc": min(x["retrieved_utc"] for x in m["months"].values()),
+                      "last_retrieved_utc": max(x["retrieved_utc"] for x in m["months"].values())}
+                     for st, m in zip(panel_stations, eccc_manifests)],
             "nbm": {"url": nbm.URL, "station": nbm.STATION, "model": nbm.MODEL,
                     "availability_lag_h": nbm.AVAILABILITY_LAG / pd.Timedelta(hours=1),
                     "reuse_lead_h": nbm.reuse_lead_h(NOON), "knots_to_kmh": 1.852,

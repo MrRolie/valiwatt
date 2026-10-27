@@ -284,22 +284,20 @@ def test_a_departed_replay_that_disagrees_with_its_ledger_entry_is_refused(monke
         lineage.follow(CODE, RULES, FREEZE, recorded=RECORDED, entries=[{**good, "mape": 0.01}])
 
 
-def test_ledger_and_report_commands_sync_before_rendering(monkeypatch):
-    """`valiwatt report` syncs the ledger first and renders nothing when the sync is refused."""
+def test_the_ledger_command_syncs_and_refuses_what_the_sync_refuses(monkeypatch):
+    """`valiwatt ledger` syncs v2's ledger, and fails when the sync is refused. On the v3 branch `valiwatt report`
+    renders v3's report after syncing ledger-v3, never v2's (docs/plan-v3.md, section 10.1): that order is
+    tests/test_cli.py::test_report_syncs_v3_s_ledger_then_renders_v3_s_report_and_never_v2_s."""
     from valiwatt import cli
-    from valiwatt.report import validation
 
     calls = []
     monkeypatch.setattr(ledger, "sync", lambda: calls.append("sync") or [])
-    monkeypatch.setattr(validation, "render_validation", lambda dq_run_id=None: calls.append("render"))
-    assert cli.main(["report"]) == 0 and calls == ["sync", "render"]
-    calls.clear()
+    assert cli.main(["ledger"]) == 0 and calls == ["sync"]
 
     def refused():
         raise ledger.LedgerError("disagrees")
 
     monkeypatch.setattr(ledger, "sync", refused)
-    assert cli.main(["report"]) == 1 and calls == []
     assert cli.main(["ledger"]) == 1
 
 

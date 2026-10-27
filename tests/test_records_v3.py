@@ -16,6 +16,7 @@ from records_v3_world import (
     git_tags,
     log_replay_v3,
     pin,
+    pins_of,
     scratch_store,
     tag,
 )
@@ -79,6 +80,25 @@ def test_the_first_pin_is_read_from_the_pins_history(tmp_path, monkeypatch, case
         assert git(s.repo, "rev-parse", f"{V3_FREEZE_TAG}^{{commit}}") == fix
     else:
         assert records_v3.pinned_commits() == [s.f0]
+    assert records_v3.first_pin() == s.f0
+
+
+def test_a_merge_dropping_the_pin_never_hides_the_first_pin(tmp_path, monkeypatch):
+    """The first pin is read from the whole history of tests/test_tags.py: F0 pinned on branch A; branch B, forked
+    before that pin, changes a rule; A merged into B keeping B's tests/test_tags.py, without the pin; the tag moved to
+    the merge G and pinned there. The pins are F0 then G, and the first pin stays F0, whose commit a history simplified
+    at the merge (it follows only the side whose file the merge kept) would never show."""
+    s = scratch_store(tmp_path, monkeypatch, pinned=False)
+    b = git(s.repo, "symbolic-ref", "--short", "HEAD")
+    git(s.repo, "checkout", "-q", "-b", "a")
+    pin(s.repo, V3_FREEZE_TAG, s.f0)
+    git(s.repo, "checkout", "-q", b)
+    commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "a rule change on B")
+    git(s.repo, "merge", "-q", "--no-ff", "-s", "ours", "-m", "A merged into B, B's pins kept", "a")
+    g = tag(s.repo, V3_FREEZE_TAG)
+    assert pins_of(s.repo) == {}
+    pin(s.repo, V3_FREEZE_TAG, g)
+    assert records_v3.pinned_commits() == [s.f0, g]
     assert records_v3.first_pin() == s.f0
 
 
@@ -272,3 +292,35 @@ def test_the_committed_v3_ledger_joins_the_starts_and_the_moved_tag_scan(tmp_pat
     (s.repo / "docs/replay-ledger-v3.json").write_text("{", encoding="utf-8")
     with pytest.raises(V3FreezeError, match="cannot be read"):
         records_v3.ledger_v3_dict()
+
+
+def test_the_moved_tag_check_never_reads_a_v2_first_ruling_s_hash_as_a_v3_commit(tmp_path, monkeypatch):
+    """Section 11.3 (4): a "v2 first" ruling names a `v2`-branch commit read only by (g). The moved-tag check on v3's
+    section (monitor/run_v3.py `_not_moved`, v2's check_tag_not_moved and departure_record) reads departure entries
+    only: with the tag moved from F0 to a fix, the move recorded and a "v2 first" ruling in the same section naming a
+    full hash this repository does not hold, the check passes, and no reader of v3's section resolves that hash."""
+    from records_v3_world import agents
+    from replay_world import departure_entry
+    from valiwatt.monitor import run_v3
+
+    s = scratch_store(tmp_path, monkeypatch)
+    earlier = log_replay_v3(s.repo, 2024, freeze_commit=s.f0)
+    fix = commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "a fix")
+    tag(s.repo, V3_FREEZE_TAG, fix)
+    pin(s.repo, V3_FREEZE_TAG, fix)
+    v2_first = f"- **2027-03-03, the owner's ruling on v2 first.** v2's test of record is at `{V2_BRANCH}`.\n"
+    commit(s.repo, {"AGENTS.md": agents(departure_entry(s.f0, fix), v2_first)}, "the move, and a ruling on v2 first")
+    assert mrun._resolve(V2_BRANCH) is None  # no such commit here
+    resolved = []
+    resolve = mrun._resolve
+
+    def spy(prefix):
+        resolved.append(prefix)
+        return resolve(prefix)
+
+    monkeypatch.setattr(mrun, "_resolve", spy)
+    monkeypatch.setattr(records_v3, "_resolve", spy)
+    assert run_v3._not_moved(records_v3.current_freeze(), True) == [earlier]
+    (ruling,) = records_v3.rulings_v3(records_v3.v3_section())
+    assert (ruling["kind"], ruling["commit"]) == ("v2_first", V2_BRANCH)
+    assert resolved and not [p for p in resolved if V2_BRANCH.startswith(p) or p.startswith(V2_BRANCH[:12])]

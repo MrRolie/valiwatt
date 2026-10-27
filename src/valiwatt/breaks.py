@@ -72,6 +72,7 @@ T_FZ3, T_RP3, T_QV3 = "tests/test_freeze_v3.py", "tests/test_reproduction_v3.py"
 T_F3, T_FR3, T_V2S = "tests/test_fetch_v3.py", "tests/test_firstrun_v3.py", "tests/test_v2store.py"
 T_RN3, T_RH3, T_GT3 = "tests/test_replay_noon.py", "tests/test_rehearsal_v3.py", "tests/test_gate_v3.py"
 T_TG3, T_FRC, T_DR3 = "tests/test_tags_v3.py", "tests/test_freeze_record.py", "tests/test_departure_record_v3.py"
+T_RV3, T_SV3 = "tests/test_report_v3.py", "tests/test_report_stamp_v3.py"
 
 BREAKS = [
     _b(DQ, f"{T_DEM}::test_duplicate_without_known_shape_fails_the_gate",
@@ -2472,6 +2473,45 @@ BREAKS = [
        "rien",
        "A \"v2 first\" ruling lifts (g) only, with no evidence and no standing; neither (a) nor (h); another commit "
        "lifts nothing"),
+    _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_that_did_not_pass_refuses_d[failed]",
+       "(d) Une exécution de qualité des données jusqu'à 2025, lancée après celle qui a passé, sur les mêmes fichiers, "
+       "et qui a échoué avant ses portes, refuse : la plus récente est lue, quel que soit son statut",
+       "(d) A data-quality run through 2025, started after the one that passed, on the same files, that failed before "
+       "its gates, refuses: the latest one is read, whatever its status"),
+    _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_that_did_not_pass_refuses_d[running]",
+       "(d) Une exécution de qualité des données plus récente encore en cours refuse",
+       "(d) A later data-quality run still running refuses"),
+    _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_that_did_not_pass_refuses_d[deleted]",
+       "(d) Une exécution de qualité des données plus récente, échouée puis supprimée, refuse encore",
+       "(d) A later data-quality run that failed and was deleted still refuses"),
+    _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_that_did_not_pass_refuses_d[control]",
+       "Témoin : une exécution de qualité des données plus récente, terminée et passée, est celle que la porte lit",
+       "Control: a later data-quality run that finished and passed is the one the gate reads", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_test_in_ledger_v3_never_becomes_a_stopped_start[failed]",
+       "(c) Un test terminé dont l'entrée du registre de v3 est validée, puis marqué FAILED dans le magasin, refuse le "
+       "départ suivant : le magasin et le registre divergent, et il n'est jamais lu comme un départ arrêté",
+       "(c) A finished test whose ledger-v3 entry is committed, then made FAILED in the store, refuses the next start: "
+       "the store and the ledger disagree, and it is never read as a stopped start"),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_test_in_ledger_v3_never_becomes_a_stopped_start[code]",
+       "(c) Une étiquette du magasin qui diffère de l'entrée validée du registre de v3 refuse le départ",
+       "(c) A store tag differing from the committed ledger-v3 entry refuses the start"),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_test_in_ledger_v3_never_becomes_a_stopped_start[control]",
+       "Témoin : le magasin et le registre de v3 concordent, la porte du départ suivant passe",
+       "Control: the store and ledger-v3 agree, and the next start's gate passes", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_commit_between_the_gate_and_the_run_refuses[before_open]",
+       "Un changement de règle et son annulation validés entre la porte et l'ouverture de l'exécution refusent le "
+       "départ, sans ouvrir d'exécution : un départ n'exécute que le commit que sa porte a lu",
+       "A rule change and its revert committed between the gate and the run's opening refuse the start, opening no "
+       "run: a start runs only the commit its gate read"),
+    _b(FREEZE, f"{T_GT3}::test_a_commit_between_the_gate_and_the_run_refuses[at_open]",
+       "Un changement de règle et son annulation validés à l'ouverture de l'exécution l'arrêtent avant toute lecture "
+       "d'entrée, sans résultat",
+       "A rule change and its revert committed as the run opens stop it before any input is read, holding no result"),
+    _b(FREEZE, f"{T_GT3}::test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start",
+       "Un fichier de règles au nom hors ASCII, validé après l'heure de 2025, est lu par son nom et refuse le départ "
+       "(le contrôle du gel, avant (a) et (i))",
+       "A rule file named outside ASCII, committed after the 2025 time, is read by its name and refuses the start (the "
+       "freeze check, before (a) and (i))"),
     # Calibration bins
     _b(LOOK, f"{T_IV3}::test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",
        "Deux plis dont les limites diffèrent classent la même note de calibration selon la limite de l'ajustement "
@@ -2534,9 +2574,20 @@ BREAKS = [
        "nothing"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_whose_commit_is_not_an_ancestor_of_the_start_refuses_a",
        "(a) Un registre de gel dont le commit n'est pas un ancêtre du départ refuse ; témoin sur un descendant. Le "
-       "refus n'est atteint que par un lecteur substitué : celui d'un vrai départ parcourt l'historique de HEAD",
-       "(a) A freeze record whose commit is not an ancestor of the start refuses; control on a descendant. The refusal "
-       "is reached only through a substituted reader: a real start's reader walks HEAD's own history"),
+       "lecteur y est substitué ; un vrai départ le refuse aussi par l'ancre du registre (cas suivants)",
+       "(a) A freeze record whose commit is not an ancestor of the start refuses; control on a descendant. The reader "
+       "is substituted here; a real start refuses it too through the record's anchor (the cases below)"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[sibling]",
+       "(a) Un second registre de gel validé sur une branche sœur, remise au parent du premier que garde une branche, "
+       "refuse : deux commits l'ajoutent parmi les références du dépôt",
+       "(a) A second freeze record committed on a sibling branch, reset to the parent of the first, which a branch "
+       "keeps, refuses: two commits add it among the repository's refs"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[off_head]",
+       "(a) Un registre de gel que n'ajoute qu'une branche hors de l'historique de HEAD refuse",
+       "(a) A freeze record added only by a branch off HEAD's history refuses"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[control]",
+       "Témoin : le premier registre gardé par aucune référence, le second passe la porte",
+       "Control: the first record kept by no ref, the second passes the gate", control=True),
     # First run
     _b(FREEZE, f"{T_FR3}::test_a_v3_real_data_run_without_the_v3_first_run_tag_is_refused",
        "Un calcul de v3 sur données réelles hors de la descendance de l'étiquette v3-first-run est refusé",
@@ -2572,11 +2623,13 @@ BREAKS = [
        "l'export avant le commit du registre de gel : l'heure 2025 ne recule jamais",
        "An export re-fetched after v2's 2025 start still refuses (h) when a data-quality run read the export before "
        "the freeze record's commit: the 2025 time never moves later"),
-    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[dq_started]",
-       "Un export récupéré de nouveau refuse encore (h) quand une exécution de qualité jusqu'à 2025 a commencé avant "
-       "le commit du registre de gel, quelle que soit l'heure de récupération qu'elle note",
-       "A re-fetched export still refuses (h) when a data-quality run through 2025 started before the freeze record's "
-       "commit, whatever retrieval time it records"),
+    _b(FREEZE, f"{T_GT3}::test_a_data_quality_run_s_start_time_is_no_reading_of_the_2025_time",
+       "Témoin : une exécution de qualité des données dont l'horloge a mis le début avant le commit du registre de "
+       "gel, sur un export récupéré après lui, laisse (h) muette : l'heure de 2025 n'est que l'heure de récupération "
+       "ou le premier départ 2025 de v2",
+       "Control: a data-quality run whose clock put its start before the freeze record's commit, on an export "
+       "retrieved after it, leaves (h) quiet: the 2025 time is only the retrieval time or v2's first 2025 start",
+       control=True),
     _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_moves_later_so_h_still_fires_after_a_refetch[earlier_start]",
        "Après un départ arrêté dont (h) s'est déclenché, un export récupéré de nouveau après le départ 2025 de v2 "
        "refuse encore (h) ; avec une nouvelle entrée (h), le départ est post hoc",
@@ -2630,6 +2683,114 @@ BREAKS = [
     _b(FREEZE, f"{T_VA3}::test_v2_s_form_at_midnight_is_v2_s_validation_exactly",
        "Témoin : dans le cadre de v3, la forme de v2 à minuit reproduit au bit près la validation de v2",
        "Control: in v3's harness, v2's form at midnight reproduces v2's validation to the bit", control=True),
+    # v3's report (docs/plan-v3.md, sections 3.1, 8.4, 8.5 and 10.3)
+    _b(RENDER, f"{T_RV3}::test_a_held_out_number_whose_run_is_not_in_ledger_v3_is_refused",
+       "Le rapport de v3 refuse un nombre sur données réservées dont l'exécution n'est pas dans le registre de v3",
+       "v3's report refuses a held-out number whose run is not in ledger-v3"),
+    _b(RENDER, f"{T_RV3}::test_the_held_out_label_needs_a_clean_test_of_record",
+       "Une page de v3 qui étiquette un nombre « données réservées » sans test de référence propre de 2025 est refusée",
+       "A v3 page labelling a number held out without a clean 2025 test of record is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_clean_2025_not_better_without_its_recommendation_is_refused",
+       "Une page de v3 dont le 2025 propre ne montre rien de meilleur, rendue sans sa recommandation, est refusée",
+       "A v3 page whose clean 2025 shows nothing better, rendered without its recommendation, is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_page_not_opening_with_its_status_and_the_noon_sentence_is_refused",
+       "Une page de v3 qui n'ouvre pas sur son statut, ou qui donne un nombre avant de dire que la prévision est émise "
+       "à midi la veille, est refusée",
+       "A v3 page not opening with its status, or giving a number before saying the forecast is issued at noon the day "
+       "before, is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_number_without_its_label_is_refused",
+       "Une page de v3 qui imprime un nombre sans son étiquette de la section 8.4 est refusée",
+       "A v3 page printing a number without its section 8.4 label is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_template_that_drops_a_label_is_refused",
+       "Un gabarit de v3 qui laisse tomber une étiquette fait refuser le rendu",
+       "A v3 template that drops a label makes the render refuse"),
+    _b(RENDER, f"{T_RV3}::test_a_pre_freeze_number_without_the_pre_freeze_label_is_refused",
+       "Un nombre d'avant le gel de v3 sans l'étiquette d'avant le gel est refusé",
+       "A number from before v3's freeze without the before-the-freeze label is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_fresh_clone_page_must_say_what_did_not_run_and_name_the_recorded_runs",
+       "Une page de v3 rendue sur un clone neuf qui ne dit pas ce qui n'a pas été exécuté, ne date pas les exports ou "
+       "ne nomme pas les exécutions enregistrées est refusée",
+       "A v3 page rendered on a fresh clone that does not say what did not run, date the exports or name the recorded "
+       "runs is refused"),
+    _b(RENDER, f"{T_RV3}::test_a_fresh_clone_s_rerun_never_enters_ledger_v3",
+       "La reprise de la répétition sur un clone neuf n'entre jamais dans le registre de v3",
+       "A fresh clone's rerun of the rehearsal never enters ledger-v3"),
+    _b(RENDER, f"{T_RV3}::test_a_lineage_the_report_cannot_name_is_refused[tag_without_record]",
+       "Le rapport de v3 refuse `v3-rules-frozen` sans registre de gel engagé",
+       "v3's report refuses `v3-rules-frozen` without a committed freeze record"),
+    _b(RENDER, f"{T_RV3}::test_a_lineage_the_report_cannot_name_is_refused[uncommitted_record]",
+       "Le rapport de v3 refuse un registre de gel que nul commit n'ajoute",
+       "v3's report refuses a freeze record no commit adds"),
+    _b(RENDER, f"{T_RV3}::test_a_lineage_the_report_cannot_name_is_refused[other_rules]",
+       "Le rapport de v3 refuse des exécutions d'avant le gel faites sous d'autres règles que celles du code",
+       "v3's report refuses pre-freeze runs made under other rules than the code's"),
+    _b(RENDER, f"{T_RV3}::test_a_lineage_the_report_cannot_name_is_refused[none]",
+       "Témoin : la chaîne d'avant le gel de v3 se rend, étiquetée comme telle",
+       "Control: v3's pre-freeze chain renders, labelled so", control=True),
+    _b(RENDER, f"{T_RV3}::test_a_store_holding_part_of_the_record_or_other_artifacts_is_refused[some_runs]",
+       "Le rapport de v3 refuse un magasin qui ne tient qu'une partie des exécutions du registre de gel",
+       "v3's report refuses a store holding only part of the freeze record's runs"),
+    _b(RENDER, f"{T_RV3}::test_a_store_holding_part_of_the_record_or_other_artifacts_is_refused[other_artifacts]",
+       "Le rapport de v3 refuse des artefacts figés pour 2025 autres que ceux que nomme le registre de gel",
+       "v3's report refuses artifacts frozen for 2025 other than those the freeze record names"),
+    _b(RENDER, f"{T_RV3}::test_a_store_holding_part_of_the_record_or_other_artifacts_is_refused[other_2024_artifacts]",
+       "Le rapport de v3 refuse des artefacts figés pour la répétition de 2024 autres que ceux que nomme le registre de "
+       "gel",
+       "v3's report refuses artifacts frozen for the 2024 rehearsal other than those the freeze record names"),
+    _b(RENDER, f"{T_RV3}::test_a_run_without_what_the_report_prints_is_refused[no_export_dates]",
+       "Le rapport de v3 refuse une exécution de qualité des données qui ne dit pas quand ses exports ont été récupérés",
+       "v3's report refuses a data-quality run that does not say when its exports were retrieved"),
+    _b(RENDER, f"{T_RV3}::test_a_run_without_what_the_report_prints_is_refused[validation_without_ranking]",
+       "Le rapport de v3 refuse une exécution de validation sans son classement des fenêtres",
+       "v3's report refuses a validation run without its window ranking"),
+    _b(RENDER, f"{T_RV3}::test_a_run_without_what_the_report_prints_is_refused[rehearsal_held_out]",
+       "Le rapport de v3 refuse une répétition de 2024 qui n'est pas étiquetée « vu par les développeurs »",
+       "v3's report refuses a 2024 rehearsal not labelled seen by the developers"),
+    _b(RENDER, f"{T_RV3}::test_a_run_without_what_the_report_prints_is_refused[held_out_status_not_held_out]",
+       "Le rapport de v3 refuse un statut sur données réservées dont l'entrée de 2025 n'est pas étiquetée « données "
+       "réservées »",
+       "v3's report refuses a held-out status whose 2025 entry is not labelled held out"),
+    _b(RENDER, f"{T_RV3}::test_a_run_without_what_the_report_prints_is_refused[none]",
+       "Témoin : le rapport de v3 se rend après un départ propre de 2025",
+       "Control: v3's report renders after a clean 2025 start", control=True),
+    _b(RENDER, f"{T_RV3}::test_a_store_holding_part_of_the_record_or_other_artifacts_is_refused[none]",
+       "Témoin : les exécutions de référence de v3 se rendent",
+       "Control: v3's runs of record render", control=True),
+    _b(RENDER, f"{T_RV3}::test_a_store_holding_part_of_the_record_or_other_artifacts_is_refused[record_committed_twice]",
+       "Le rapport de v3 refuse un registre de gel qu'un second commit touche",
+       "v3's report refuses a freeze record a second commit touches"),
+    _b(RENDER, f"{T_RV3}::test_a_2025_number_judged_by_other_artifacts_than_the_freeze_record_s_is_refused"
+               "[ledger_digest]",
+       "Le rapport de v3 refuse un nombre de 2025 dont l'entrée du registre de v3 a été jugée par d'autres artefacts "
+       "que ceux du registre de gel",
+       "v3's report refuses a 2025 number whose ledger-v3 entry was judged by other artifacts than the freeze "
+       "record's"),
+    _b(RENDER, f"{T_RV3}::test_a_2025_number_judged_by_other_artifacts_than_the_freeze_record_s_is_refused"
+               "[results_digest]",
+       "Le rapport de v3 refuse une exécution de 2025 dont les résultats ont été jugés par d'autres artefacts que ceux "
+       "du registre de gel",
+       "v3's report refuses a 2025 run whose results were judged by other artifacts than the freeze record's"),
+    _b(RENDER, f"{T_RV3}::test_a_2025_number_judged_by_other_artifacts_than_the_freeze_record_s_is_refused[none]",
+       "Témoin : un départ propre de 2025, jugé par les artefacts du registre de gel, se rend",
+       "Control: a clean 2025 start, judged by the freeze record's artifacts, renders", control=True),
+    _b(RENDER, f"{T_RV3}::test_a_chain_the_report_cannot_print_is_refused[no_data_quality_run]",
+       "Le rapport de v3 refuse un magasin sans exécution de qualité des données de 2019 à 2024 qui a passé ses portes",
+       "v3's report refuses a store without a 2019-2024 data-quality run that passed its gates"),
+    _b(RENDER, f"{T_RV3}::test_a_chain_the_report_cannot_print_is_refused[no_validation_run]",
+       "Le rapport de v3 refuse une exécution de qualité des données sans validation complète sur elle",
+       "v3's report refuses a data-quality run with no complete validation run on it"),
+    _b(RENDER, f"{T_RV3}::test_a_chain_the_report_cannot_print_is_refused[coefficients_without_a_term]",
+       "Le rapport de v3 refuse une table de coefficients figée à laquelle manque un terme du modèle",
+       "v3's report refuses a frozen coefficient table missing one of the model's terms"),
+    _b(RENDER, f"{T_RV3}::test_a_chain_the_report_cannot_print_is_refused[none]",
+       "Témoin : la reprise d'un clone neuf se rend",
+       "Control: a fresh clone's rerun renders", control=True),
+    _b(RENDER, f"{T_SV3}::test_a_stale_or_edited_v3_report_fails_its_stamp",
+       "Un rapport de v3 périmé ou modifié (code, règles, page, registre de v3, registre de gel) échoue à son sceau",
+       "A stale or edited v3 report (code, rules, page, ledger-v3, freeze record) fails its stamp"),
+    _b(RENDER, f"{T_SV3}::test_v2_s_file_hashes_never_read_v3_s_home",
+       "Le sceau de v2 ne lit jamais le dossier du rapport de v3",
+       "v2's stamp never reads v3's report folder"),
 ]
 
 

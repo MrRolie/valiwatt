@@ -1295,3 +1295,17 @@ def test_the_replay_function_refuses_2025_on_its_own(chain):
     with pytest.raises(mrun.FreezeError, match="no run ID"):  # 2025's days with records only to the end of 2024
         rp.replay(raw, obs, w.model, w.thresholds, w.reference, "2025-01-01", "2025-01-12", data_last(2024),
                   runs=w.runs)
+
+
+def test_a_rule_file_whose_name_is_not_plain_ascii_is_a_rule_file(repo):
+    """git quotes a path that is not plain ASCII unless asked not to, and a quoted path matches no rule root: such a
+    file would be left out of the rules hash and the freeze check. Listed in the working tree and in a commit."""
+    before = rules.rules_sha256()
+    (repo / "src/valiwatt/monitor/règle.py").write_text("MIN = 5\n")
+    assert "src/valiwatt/monitor/règle.py" in rules.rule_files()
+    assert rules.rules_sha256() != before
+    git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "add", "-A")
+    git(repo, "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "règle")
+    head = git(repo, "rev-parse", "HEAD").strip()
+    assert "src/valiwatt/monitor/règle.py" in rules.rule_files(head)
+    assert rules.rules_sha256(head) == rules.rules_sha256()

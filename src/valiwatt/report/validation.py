@@ -1425,11 +1425,17 @@ def _first_point(text: str) -> str:
     return paras[0] if paras else ""
 
 
+# v3's report lives under docs/report/v3/ with its own stamp (docs/plan-v3.md, section 10.3): never v2's.
+V3_HOME = "v3"
+
+
 def file_hashes() -> dict:
-    """The sha256 of every rendered file under docs/report/, the stamp itself excepted, and of the README's "At a
-    glance" box (GLANCE_KEY: the text between its markers), so a box edited by hand fails the stamp as a page does."""
+    """The sha256 of every rendered file under docs/report/, the stamp itself and v3's own report (V3_HOME) excepted,
+    and of the README's "At a glance" box (GLANCE_KEY: the text between its markers), so a box edited by hand fails
+    the stamp as a page does."""
     out = {p.relative_to(OUT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-           for p in sorted(OUT.rglob("*")) if p.is_file() and p != STAMP}
+           for p in sorted(OUT.rglob("*"))
+           if p.is_file() and p != STAMP and p.relative_to(OUT).parts[0] != V3_HOME}
     text = README.read_text(encoding="utf-8")
     start, end = glance_span(text)
     out[GLANCE_KEY] = hashlib.sha256(text[start:end].encode("utf-8")).hexdigest()

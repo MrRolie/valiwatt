@@ -6,7 +6,8 @@
   like v3's freeze that config.FREEZES does not list is refused either way.
 - **The tag's pins** (`pinned_commits`, `first_pin`). "The commit `v3-rules-frozen` was first pinned to" is the first
   commit `PINS` gives the tag in the history of tests/test_tags.py, read as the history test reads v2's tag's pins
-  (tests/test_departure_record.py `pins_at`, `pinned_freezes`). Before any pin, nothing has a first pin.
+  (tests/test_departure_record.py `pins_at`, `pinned_freezes`), every parent of a merge followed. Before any pin,
+  nothing has a first pin.
 - **The v3 departures section** (`v3_section`, `rulings_v3`): v2's forms on v3's tag, and the two more of section
   11.3 (4): "<date>, the owner's ruling on 2025 (h): post hoc" or "(i)", which can only say post hoc, and "<date>, the
   owner's ruling on v2 first", which names a `v2`-branch commit by its full hash, is never resolved in v3's history
@@ -116,11 +117,13 @@ def _pins_at(commit: str) -> dict:
 def pinned_commits(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[str]:
     """The successive commits `PINS` gives `tag` in the history of tests/test_tags.py up to `head`, oldest first, a
     pin repeated by a later commit counted once (D4 of the slice contract; tests/test_departure_record.py
-    `pinned_freezes`). A shallow clone, or a history that cannot be read, is refused: pins it cannot see are not
-    absent."""
+    `pinned_freezes`, the same on a history without merges). The history is read whole (`--full-history`, every
+    parent of a merge followed) in topological order, parents first: a merge that keeps a side of the file without
+    the pin never hides the commit that pinned it first. A shallow clone, or a history that cannot be read, is
+    refused: pins it cannot see are not absent."""
     if _git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
         raise V3FreezeError("a shallow clone: the pins of the freeze tag are read from the full history")
-    log = _git("log", "--reverse", "--format=%H", head, "--", PINS_FILE)
+    log = _git("log", "--full-history", "--topo-order", "--reverse", "--format=%H", head, "--", PINS_FILE)
     if log.returncode != 0:
         raise V3FreezeError(f"the history of {PINS_FILE} up to {head} cannot be read: {log.stderr.strip()}")
     out: list[str] = []
