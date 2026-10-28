@@ -693,3 +693,13 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   the hashes that replay's data-quality run recorded. That run recorded the Hydro-Québec export's hash, not its
   manifest's, so the export is checked by its hash and its manifest only as a byte copy (no link); the manifest's
   retrieval time, which condition (h) reads for the export reaching 2025, is checked by (h) itself.
+- 2026-10-28, step 3, the same review's third part: commits cbd5ea38c4b3 and 3d248ed3140e change rule files to fix four
+  defects and close two gaps they left. A 2025 run that had lost its opening gate record was taken as finished or
+  skipped; it is now refused unless it stopped while opening, before any input was read, which a marker set once the
+  record is logged tells apart. A replay was tagged complete before its run was finished, so an interruption between
+  the two read as a store inconsistency no ruling lifts; it now reads as a stopped start, under (f). The check that
+  v3's store is its own ran after the 2025 start lock and the gate's first reads; it now runs before both, and on the
+  commands that only read v3's store. The ledger checks the gate runs sat in `src/valiwatt/report/`, outside the rule
+  files; they moved to a rule module, and v2's ledger code the gate calls is held byte-identical to `v3-fork` by a
+  test, so the rules hash recorded at `v3-fork` is unchanged. The fresh-clone label is refused once a read of v2's
+  store was attempted on the machine. No step-2 result changes.
