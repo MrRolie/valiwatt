@@ -109,16 +109,19 @@ def ends(chain) -> list[pd.Timestamp]:
 
 
 def amend_date(chain, date: pd.Timestamp) -> str:
-    """The head commit (the freeze record's) committed again at `date`, nothing else changed."""
+    """The head commit (the freeze record's) committed again at `date`, nothing else changed: the record committed
+    once, at `date`, so the reflogs that keep the commit amended are emptied (rw.forget_reflogs), or the anchor would
+    read two additions."""
     env = {**os.environ, "GIT_COMMITTER_DATE": date.isoformat(), "GIT_AUTHOR_DATE": date.isoformat()}
     subprocess.run(["git", *rw.SCRATCH_ID, "commit", "--amend", "--no-edit", "--quiet", "--no-verify"],
                    cwd=chain.repo, check=True, capture_output=True, env=env)
+    rw.forget_reflogs(chain.repo)
     return head(chain)
 
 
 def amend_record(chain, change) -> str:
     """The freeze record's commit (the head) made again with the record's JSON changed by change(data): still the one
-    commit touching it. Returns the commit."""
+    commit touching it, the reflogs that keep the commit amended emptied (as `amend_date`). Returns the commit."""
     import json
 
     from valiwatt.freeze_record import PATH
@@ -130,6 +133,7 @@ def amend_record(chain, change) -> str:
     rw.git(chain.repo, "add", PATH)
     subprocess.run(["git", *rw.SCRATCH_ID, "commit", "--amend", "--no-edit", "--quiet", "--no-verify"],
                    cwd=chain.repo, check=True, capture_output=True)
+    rw.forget_reflogs(chain.repo)
     return head(chain)
 
 
@@ -715,6 +719,37 @@ def test_a_non_ascii_rule_file_committed_after_the_2025_time_refuses_the_start(c
     assert f"['{NON_ASCII_RULE}']" in msg
 
 
+@pytest.mark.parametrize("path, rule", [("src/valiwatt/model__pycache__v3.py", True),
+                                         ("src/valiwatt/cli.py_helpers.py", True),
+                                         ("src/valiwatt/cli.py", False),
+                                         ("src/valiwatt/report/x.py", False),
+                                         ("src/valiwatt/monitor/__pycache__/run.cpython-312.pyc", False)])
+def test_only_the_exempt_files_folders_and_caches_themselves_are_not_rule_files(path, rule):
+    """monitor/rules.py `_is_rule`: an exempt file is exempt only itself (cli.py, never cli.py_helpers.py), an exempt
+    folder everything under it (report/), a cache only a whole __pycache__ folder or a .pyc file, never a name merely
+    holding `__pycache__` (the third review's two names)."""
+    from valiwatt.monitor.rules import _is_rule
+
+    assert _is_rule(path) is rule
+
+
+@pytest.mark.parametrize("name", ["src/valiwatt/model__pycache__v3.py", "src/valiwatt/cli.py_helpers.py"],
+                         ids=["pycache", "exempt_prefix"])
+def test_a_rule_file_named_like_an_exempt_one_after_the_2025_time_is_seen_by_a_and_i(chain, name):
+    """(a) and (i) (the third review's scenario): a rule file whose name holds `__pycache__`, or begins with an exempt
+    file's name, added after the 2025 time and deleted in the next commit (the tree the frozen one again): both commits
+    touch a rule file, so (a) and (i) fire, naming both, and no ruling applies."""
+    after = chain.v2_started + H
+    added = rw.commit(chain.repo, {name: "MIN = 6\n"}, "a rule file named like an exempt one",
+                      date=after.isoformat())
+    (chain.repo / name).unlink()
+    removed = rw.commit(chain.repo, {}, "its removal", date=(after + H).isoformat())
+    assert run_v3._rule_commits_v3(chain.f0) == [{"commit": added, "paths": [name]},
+                                                 {"commit": removed, "paths": [name]}]
+    msg = refused(r"\(a\) commits since")
+    assert "(i) commits committed after the 2025 time" in msg and added[:12] in msg and removed[:12] in msg
+
+
 @pytest.mark.parametrize("cause", ["h", "i"])
 def test_a_clean_ruling_on_h_or_i_is_refused_and_a_post_hoc_one_lifts_it(chain, cause):
     """An (h) or (i) entry saying clean is refused, naming the section; post hoc, with its evidence, it lifts its
@@ -953,36 +988,142 @@ def test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history(
         assert (run.data.tags["status"], run.data.tags["evaluation"]) == ("complete", "held_out")
 
 
-@pytest.mark.parametrize("case", ["sibling", "keep_ref", "stash_ref", "off_head", "control"])
+@pytest.mark.parametrize("case", ["sibling", "keep_ref", "stash_ref", "reflog", "off_head", "control"])
 def test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a(chain, case):
     """(a), the record's anchor (section 11.3 (3)): the record R committed and kept by a ref; the working branch reset
     to R's parent. The writer refuses to write a record there (R is the first one); a second record R' committed by
-    hand, the same bytes, is refused (a), the gate reading two additions across the repository's refs, whatever ref
-    keeps R: a branch (sibling), a ref outside heads, remotes and tags (keep_ref, refs/keep/r), or a stash-like ref
-    (stash_ref, refs/stash of the scratch repository). The head before R', whose history holds no record while a
-    branch holds R, reads R and is refused (a) as a cause, no ruling applying (off_head). The control: R kept by no
-    ref, R' passes the gate."""
+    hand, the same bytes, is refused (a), the gate reading two additions across the repository's refs and reflogs,
+    whatever keeps R: a branch (sibling), a ref outside heads, remotes and tags (keep_ref, refs/keep/r), a stash-like
+    ref (stash_ref, refs/stash of the scratch repository), or no ref at all, R left only in the reflogs the reset wrote
+    (reflog, the third review's scenario). The head before R', whose history holds no record while a branch holds R,
+    reads R and is refused (a) as a cause, no ruling applying (off_head). The control: R kept by no ref and the reflogs
+    expired, so nothing the repository records keeps R; R' passes the gate."""
     from valiwatt.freeze_record import PATH, FreezeRecordError, write_freeze_record
 
     text = rw.git(chain.repo, "show", f"{chain.record}:{PATH}") + "\n"
     keep = {"sibling": ["branch", "keep"], "off_head": ["branch", "keep"], "keep_ref": ["update-ref", "refs/keep/r"],
-            "stash_ref": ["update-ref", "refs/stash"], "control": None}[case]
+            "stash_ref": ["update-ref", "refs/stash"], "reflog": None, "control": None}[case]
     if keep:
         rw.git(chain.repo, *keep, chain.record)
     rw.git(chain.repo, "reset", "--quiet", "--hard", f"{chain.record}^")
+    if case == "reflog":
+        assert rw.git(chain.repo, "for-each-ref", "--contains", chain.record) == ""  # no ref keeps R
+    if case == "control":
+        rw.forget_reflogs(chain.repo)
     if case == "off_head":
         refused(OFF_HEAD.format(record=chain.record[:12]))
         return
     if case != "control":
-        with pytest.raises(FreezeRecordError, match=rf"commits \['{chain.record[:12]}'\] of the repository's refs add"):
+        with pytest.raises(FreezeRecordError, match=rf"commits \['{chain.record[:12]}'\] of the repository's refs and "
+                                                    "reflogs add"):
             write_freeze_record(chain.rehearsal)
     again = rw.commit(chain.repo, {PATH: text}, "the freeze record, again", date=chain.record_date.isoformat())
     if case == "control":
         rec = gate()
         assert rec["freeze_record"]["commit"] == again and rec["causes"] == []
         return
-    refused(rf"\(a\) the freeze record: 2 commits across the repository's refs add {PATH} "
+    refused(rf"\(a\) the freeze record: 2 commits across the repository's refs and reflogs add {PATH} "
             rf"\(\['{chain.record[:12]}', '{again[:12]}'\]\)")
+
+
+@pytest.mark.parametrize("case", ["replace", "replacements_off", "grafts"])
+def test_a_replaced_or_grafted_history_refuses_the_2025_gate(chain, monkeypatch, case):
+    """(a), the history as committed (the third review's scenario): after the freeze record's commit R and the 2025
+    time, C changes a rule file and D reverts it exactly. `git replace --graft D R` (replace) makes git show D as R's
+    child, with no rule change on it: C is gone from every walk, and the anchors still read R and the pin unchanged.
+    The gate refuses outright, naming the replace ref. With that refusal taken away (replacements_off:
+    records_v3.history_rewrites finds nothing), the gate still reads C, since its git reads, the walks and the
+    ancestry checks included, run with replacement objects off: (a) and (i) fire, naming C and D, no ruling applying.
+    A grafts file giving D the parent R (grafts), which git reads even with replacement objects off, is refused
+    outright the same way. Without either, the same C and D refuse (a) and (i) as in the second case
+    (test_a_commit_between_the_gate_and_the_run_refuses reads the same change and revert)."""
+    r = head(chain)
+    rule = (chain.repo / rw.RULE_FILE).read_text(encoding="utf-8")
+    after = chain.v2_started + H
+    c = rw.commit(chain.repo, {rw.RULE_FILE: "MIN = 5\n"}, "a rule change", date=after.isoformat())
+    d = rw.commit(chain.repo, {rw.RULE_FILE: rule}, "its exact revert", date=(after + H).isoformat())
+    if case == "grafts":
+        grafts = chain.repo / ".git" / "info" / "grafts"
+        grafts.parent.mkdir(exist_ok=True)
+        grafts.write_text(f"{d} {r}\n", encoding="utf-8")
+        rewrite = f"the grafts file {grafts}"
+    else:
+        rw.git(chain.repo, "replace", "--graft", d, r)
+        rewrite = f"the replace ref refs/replace/{d}"
+    shown = subprocess.run(["git", "log", "--format=%H", f"{r}..HEAD"], cwd=chain.repo, capture_output=True,
+                           text=True, check=True).stdout.split()
+    assert shown == [d]  # git, rewrites on, no longer shows C
+    if case == "replacements_off":
+        monkeypatch.setattr(records_v3, "history_rewrites", lambda: [])
+        msg = refused(r"\(a\) commits since")
+        assert "(i) commits committed after the 2025 time" in msg and c[:12] in msg and d[:12] in msg
+        assert os.environ.get("GIT_NO_REPLACE_OBJECTS") is None  # the gate's environment restored after it
+        return
+    msg = refused(r"\(a\) \['the ")
+    assert rewrite in msg and "another history than the one committed" in msg
+
+
+@pytest.mark.parametrize("case", ["freeze_tag", "year", "git_commit", "freeze_commit", "control"])
+def test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts(chain, case):
+    """(c), (f): a real 2025 start A passed its gate, logged its gate record and stopped (the third review's
+    scenario). Its tags changed afterwards with the MLflow client never take it out of the starts: its freeze tag set
+    to `v3-pre-freeze` (freeze_tag, the reviewer's retag), its year to 2024, its git_commit or its freeze_commit to
+    another commit: each disagrees with the gate record A logged at its opening, and the starts' reader refuses (c),
+    naming A, before any run is left out. The control: A untouched, a stopped start, and the next start is refused
+    (f), A named."""
+    start = stop_a_start()
+    rid = start["run_id"]
+    other = "9" * 40
+    if case == "control":
+        msg = refused(r"\(f\) the 2025 test of record did not finish")
+        assert rid in msg
+        return
+    tracking.client().set_tag(rid, case, {"freeze_tag": "v3-pre-freeze", "year": "2024", "git_commit": other,
+                                          "freeze_commit": other}[case])
+    reason = (r" of 2025 carries the freeze tag 'v3-pre-freeze'" if case == "freeze_tag" else
+              rf"'s tags disagree with the gate record it logged at its opening: {case} ")
+    with pytest.raises(records_v3.V3FreezeError, match=rf"\(c\) v3 replay run {rid}{reason}"):
+        records_v3.replay_starts_v3(2025)
+    if case == "freeze_commit":
+        # A freeze commit other than the tag's is also a moved tag, which the gate's moved-tag check reads first.
+        refused(rf"\(c\) v3 replay run {rid}{reason}|moving the tag is a departure")
+        return
+    refused(rf"\(c\) v3 replay run {rid}{reason}")
+
+
+@pytest.mark.parametrize("ruled", ["unruled", "ruled"])
+def test_named_runs_off_the_start_s_history_are_checked_against_the_record_s_commit(chain, ruled):
+    """(a), never (b) (the third review's scenario): every named run was made on L (the chain's commit of v2's ledger,
+    documentation only), and the record R committed after it on the working branch A. The start runs on B, forked
+    before L at the pin commit: it descends from the first pin and holds the committed ledgers (v2's and ledger-v3,
+    with the rehearsal's entry) on commits of its own, and lacks L and R. The gate derives the record again checking
+    each named run's commit against R, the record's commit, never B's HEAD: the runs lie between the first pin and R,
+    so only R off B's history fires, the (a) a ruling lifts. Unruled: refused (a) only, no (b). Ruled: an entry in v2's
+    form on B and its evidence run (`valiwatt evidence-v3`) lift it; the gate passes, (a) its one cause, clean."""
+    from valiwatt.freeze_record import ROLES, read_freeze_record
+
+    data = read_freeze_record()["data"]
+    (made_on,) = {data["runs"][role]["git_commit"] for role in ROLES}
+    fork = rw.git(chain.repo, "rev-parse", f"{made_on}^")
+    assert records_v3._is_ancestor(chain.f0, fork) and fork != chain.f0  # the pin commit
+    assert records_v3._is_ancestor(made_on, chain.record)
+    rw.git(chain.repo, "checkout", "-q", "-b", "b", fork)
+    rw.commit(chain.repo, {"README.md": "B's own\n"}, "a documentation commit of B")
+    rw.git(chain.repo, "checkout", chain.record, "--", "docs/replay-ledger.json", "docs/replay-ledger-v3.json")
+    rw.commit(chain.repo, {}, "the committed ledgers, on B")
+    assert not records_v3._is_ancestor(made_on, "HEAD") and not records_v3._is_ancestor(chain.record, "HEAD")
+    if ruled == "unruled":
+        msg = refused(OFF_HEAD.format(record=chain.record[:12]))
+        assert "(b)" not in msg and "not between the first pin" not in msg
+        return
+    target = head(chain)
+    section(chain, on(target, "clean"))
+    assert run_v3.run_evidence_v3() == 0
+    (ev,) = [r for r in mrun._replay_runs(tracking.client(), kind=run_v3.EVIDENCE_KIND)]
+    rec = gate()
+    assert (rec["causes"], rec["standing"]) == (["a"], "clean")
+    assert rec["freeze_record"]["commit"] == chain.record and rec["ruling"]["commit"] == target
+    assert rec["rulings"][0]["evidence_run_id"] == ev.info.run_id
 
 
 @pytest.mark.parametrize("case", ["plain", "changed"])

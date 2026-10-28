@@ -10,20 +10,23 @@ the production model frozen for 2025 and the one hash of every artifact that wil
 their bin edges and half-widths, the thresholds, cold_c and the forecast-drift reference).
 
 - `write_freeze_record` writes it once, the file created exclusively: refused when the file exists or any commit of
-  the repository's refs (HEAD and `--all`) adds it, once a 2025 file or a through-2025 data-quality run is on the
-  machine, without the tag or its pin, and for any named run that is not finished and complete, not under
-  `v3-rules-frozen`, from a dirty tree, under other rules, off the history from the first pin to HEAD, of the wrong
-  kind, of another lineage than the others, or whose byte copies, fresh-clone label or reproduction did not pass (a
-  fresh clone never gets a freeze record). It reads only.
+  the repository's refs and reflogs (HEAD, `--all` and `--reflog`) adds it, while a replace ref or a grafts file
+  exists (records_v3.history_rewrites), once a 2025 file or a through-2025 data-quality run is on the machine, without
+  the tag or its pin, and for any named run that is not finished and complete, not under `v3-rules-frozen`, from a
+  dirty tree, under other rules, off the history from the first pin to HEAD, of the wrong kind, of another lineage
+  than the others, or whose byte copies, fresh-clone label or reproduction did not pass (a fresh clone never gets a
+  freeze record). It reads only.
 - `read_freeze_record` reads it as the commit that added it holds it, never the working copy: the one commit of the
-  repository's refs (HEAD and `--all`: branches, remote-tracking refs, tags, the stash and any other namespace) that
-  adds the path, its anchor. A commit adds it when its tree holds it and none of its parents' trees does, so a plain
+  repository's refs and reflogs (HEAD, `--all`: branches, remote-tracking refs, tags, the stash and any other
+  namespace; `--reflog`: a commit a reset, an amend or a moved ref left behind) that adds the path, its anchor. A commit adds it when its tree holds it and none of its parents' trees does, so a plain
   merge that carries the record into a branch without it adds nothing; a second addition anywhere is refused as the
   anchor (`FreezeRecordAnchorError`). A commit of the head's history that touches it after (its tree holds it with
   another entry than the anchor's, merge or not, or drops it while a parent held it) is refused here and by the
   single-commit test, which reads the same definition (`adding_commits`, `touching_commits`, `anchor`). An anchor off
   the head's history is read all the same: the 2025 gate makes it an (a) cause the owner's ruling can lift (section
   11.3 (3)).
+
+Every git read goes through `_git`, replacement objects off (records_v3.git_env).
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ import pandas as pd
 from valiwatt import paths
 from valiwatt.config import V3_FREEZE_RECORD, V3_FREEZE_TAG
 from valiwatt.monitor.run import FreezeError
+from valiwatt.records_v3 import ANCHOR_REVS, git_env, replacements_off
 
 PATH = V3_FREEZE_RECORD
 ROLES = ("data_quality", "validation", "frozen_2024", "rehearsal_2024", "frozen_2025")
@@ -69,7 +73,8 @@ class FreezeRecordError(FreezeError):
 
 
 def _git(*args, text: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=paths.REPO_ROOT, capture_output=True, text=text, check=False)
+    return subprocess.run(["git", *args], cwd=paths.REPO_ROOT, capture_output=True, text=text, check=False,
+                          env=git_env())
 
 
 def _is_ancestor(a: str, b: str) -> bool:
@@ -280,11 +285,11 @@ def _named_runs(c, rehearsal_run_id: str, frozen_2025: str | None = None) -> dic
             "frozen_2024": runs["frozen_2024"], "rehearsal_2024": rehearsal, "frozen_2025": runs["frozen_2025"]}
 
 
-def _run_problems(role: str, run, first: str, rules: str) -> list[str]:
+def _run_problems(role: str, run, first: str, rules: str, head: str = "HEAD") -> list[str]:
     """What refuses one named run: not finished and complete (the data-quality run carries no status tag: FINISHED,
     and its gates are checked with its kind), not under v3's tag (a pre-freeze run is refused here), from a dirty tree,
     under other rules than the first pin's, or from a commit that is not a descendant of the first pin and an
-    ancestor of HEAD."""
+    ancestor of `head`."""
     t, rid, out = run.data.tags, run.info.run_id, []
     if run.info.status != "FINISHED" or (role != "data_quality" and t.get("status") != "complete"):
         out.append(f"{role} run {rid} is {run.info.status}, status tag {t.get('status')!r}: not finished and complete")
@@ -296,16 +301,19 @@ def _run_problems(role: str, run, first: str, rules: str) -> list[str]:
         out.append(f"{role} run {rid} ran under other rules than those at the commit `{V3_FREEZE_TAG}` was first "
                    f"pinned to ({first[:12]})")
     commit = t.get("git_commit", "")
-    if not (_is_ancestor(first, commit) and _is_ancestor(commit, "HEAD")):
+    if not (_is_ancestor(first, commit) and _is_ancestor(commit, head)):
         out.append(f"{role} run {rid} ran on commit {commit[:12] or 'none'}, which is not between the first pin "
-                   f"{first[:12]} and HEAD")
+                   f"{first[:12]} and {'HEAD' if head == 'HEAD' else head[:12]}")
     return out
 
 
-def make_record(rehearsal_run_id: str, client=None, frozen_2025: str | None = None) -> dict:
+def make_record(rehearsal_run_id: str, client=None, frozen_2025: str | None = None, head: str = "HEAD") -> dict:
     """The freeze record of the step-5 rehearsal `rehearsal_run_id` and the runs it names (section 10.3), each derived
     and checked; reads only. frozen_2025: the frozen run for 2025 (`_named_runs`); the 2025 gate derives the committed
-    record again with it and requires the two equal (monitor/run_v3.py `held_out_2025_v3`). Refused (FreezeRecordError, naming each problem) in this order: `v3-rules-frozen` absent,
+    record again with it and requires the two equal (monitor/run_v3.py `held_out_2025_v3`). head: the commit the
+    record is written on; the gate's re-derivation passes the record's adding commit, so each named run lies between
+    the first pin and the record that names it, wherever the start runs (a record off the start's history is the
+    gate's separate (a) cause). Refused (FreezeRecordError, naming each problem) in this order: `v3-rules-frozen` absent,
     not pinned, or its rules differ from the tree's; any named run not in the store; any named run unfinished, under
     another freeze tag, dirty, under other rules or off the history; a run of another kind than its role's; a lineage
     whose byte copies, fresh-clone label or reproduction did not pass; runs that name each other otherwise; and
@@ -317,7 +325,7 @@ def make_record(rehearsal_run_id: str, client=None, frozen_2025: str | None = No
     if records_v3._commit_of(f"refs/tags/{V3_FREEZE_TAG}") is None:
         raise FreezeRecordError(f"no `{V3_FREEZE_TAG}` tag: the freeze record is written on the frozen code")
     try:
-        first = records_v3.first_pin()
+        first = records_v3.first_pin(head=head)
         records_v3.current_freeze()
     except FreezeError as e:
         raise FreezeRecordError(str(e)) from e
@@ -327,7 +335,7 @@ def make_record(rehearsal_run_id: str, client=None, frozen_2025: str | None = No
     tags = {role: r.data.tags for role, r in runs.items()}
     params = {role: r.data.params for role, r in runs.items()}
 
-    problems = [p for role in ROLES for p in _run_problems(role, runs[role], first, rules)]
+    problems = [p for role in ROLES for p in _run_problems(role, runs[role], first, rules, head)]
     if problems:
         raise FreezeRecordError("; ".join(problems))
 
@@ -426,23 +434,34 @@ def _require_before_2025(c) -> None:
                                 "reached the machine before the freeze record")
 
 
+@replacements_off()
 def write_freeze_record(rehearsal_run_id: str) -> Path:
-    """Write `docs/freeze-v3.json` once (section 10.3): refused when the file exists or any commit of the repository's
-    refs adds it (`adding_commits`: a record committed on HEAD's history, on another branch, or kept by any other ref,
-    the stash included, is the first one; a commit that touches it comes after one that adds it), once 2025 is on the
-    machine, then by make_record's refusals; the record is checked against its fixed shape and the public-safety scan
-    before it is written, and the file is created exclusively (open mode "x"), so a file another writer created
-    meanwhile is refused, never replaced. Returns the path."""
-    from valiwatt import tracking
+    """Write `docs/freeze-v3.json` once (section 10.3), replacement objects off throughout (records_v3
+    `replacements_off`): refused when the file exists, while a replace ref or a grafts file exists
+    (records_v3.history_rewrites: the history read would not be the one committed), or when any commit of the
+    repository's refs and reflogs adds it (`adding_commits`: a record committed on HEAD's history, on another branch,
+    kept by any other ref, the stash included, or left in a reflog by a reset, is the first one; a commit that touches
+    it comes after one that adds it), once 2025 is on the machine, then by make_record's refusals; the record is
+    checked against its fixed shape and the public-safety scan before it is written, and the file is created
+    exclusively (open mode "x"), so a file another writer created meanwhile is refused, never replaced. Returns the
+    path."""
+    from valiwatt import records_v3, tracking
     from valiwatt.safety import private_patterns, scan_text
 
     path = paths.REPO_ROOT / PATH
     if path.exists():
         raise FreezeRecordError(f"{PATH} exists: the freeze record is written once")
+    try:
+        rewrites = records_v3.history_rewrites()
+    except FreezeError as e:
+        raise FreezeRecordError(str(e)) from e
+    if rewrites:
+        raise FreezeRecordError(f"{rewrites}: git would show another history than the one committed, so the freeze "
+                                "record is not written while they exist")
     added = adding_commits()
     if added:
-        raise FreezeRecordError(f"commits {[c[:12] for c in added]} of the repository's refs add {PATH}: the freeze "
-                                "record is written once")
+        raise FreezeRecordError(f"commits {[c[:12] for c in added]} of the repository's refs and reflogs add {PATH}: "
+                                "the freeze record is written once")
     c = tracking.client()
     _require_before_2025(c)
     data = check_record(make_record(rehearsal_run_id, client=c))
@@ -473,11 +492,13 @@ def run_write_freeze_record(rehearsal_run_id: str) -> int:
 # ------------------------------------------------------------------------------------------------- the reader
 
 class FreezeRecordAnchorError(FreezeRecordError):
-    """The freeze record is added by more than one commit across the repository's refs: the record read may not be the
-    one first committed (the 2025 gate's condition (a), which no ruling lifts)."""
+    """The freeze record is added by more than one commit across the repository's refs and reflogs: the record read
+    may not be the one first committed (the 2025 gate's condition (a), which no ruling lifts)."""
 
 
-ANCHOR_REFS = ("--all",)  # every ref under refs/ (heads, remotes, tags, the stash, any other namespace) and HEAD
+# Every ref under refs/ (heads, remotes, tags, the stash, any other namespace) and HEAD, and every reflog, every
+# worktree's included: the first pin's anchor reads the same (records_v3.ANCHOR_REVS).
+ANCHOR_REFS = ANCHOR_REVS
 
 
 def _history(*revs: str) -> list[tuple[str, list[str]]]:
@@ -498,9 +519,10 @@ def _entry(commit: str) -> str | None:
 
 
 def adding_commits(head: str = "HEAD") -> list[str]:
-    """Every commit that adds PATH, in the history of `head` and of every ref the repository holds (`--all`: local
-    branches, remote-tracking refs, tags, refs/stash and any other ref namespace, and HEAD), oldest first (topological
-    order): a commit whose tree holds PATH while none of its parents' trees does (a commit without parents holding it
+    """Every commit that adds PATH, in the history of `head`, of every ref the repository holds (`--all`: local
+    branches, remote-tracking refs, tags, refs/stash and any other ref namespace, and HEAD) and of every reflog
+    (`--reflog`: a commit a reset, an amend or a moved ref left behind, which the repository still records), oldest
+    first (topological order): a commit whose tree holds PATH while none of its parents' trees does (a commit without parents holding it
     included). A merge that carries one side's record into a side without it adds nothing (it is no second record);
     one whose sides both lack it and that holds it adds it. Read whole (`_history`), so a sibling history never hides
     an addition. With `touching_commits`, the one definition of the record's history: the writer, the reader (and so
@@ -524,16 +546,16 @@ def touching_commits(added: str, head: str = "HEAD") -> list[str]:
 
 def anchor(head: str = "HEAD") -> str | None:
     """The record's anchor (section 10.3, written once; section 11.3 (3) (a)): the one commit across the repository's
-    refs and `head`'s history that adds PATH (`adding_commits`), None when none does. Refused
+    refs, its reflogs and `head`'s history that adds PATH (`adding_commits`), None when none does. Refused
     (FreezeRecordAnchorError), naming the commits, when more than one does: a record committed again on a sibling
     history (a branch reset to the first record's parent, a second record written there), or deleted and added again,
-    has two additions, whatever ref keeps the first. Then refused (FreezeRecordError) when a commit of `head`'s history
+    has two additions, whatever ref or reflog keeps the first. Then refused (FreezeRecordError) when a commit of `head`'s history
     touches it after (`touching_commits`: an edit, a merge that changes it, a deletion). Whether the anchor is an
     ancestor of the head is the reader's caller's question (the 2025 gate's (a), a cause the owner's ruling can
     lift)."""
     added = adding_commits(head)
     if len(added) > 1:
-        raise FreezeRecordAnchorError(f"{len(added)} commits across the repository's refs add {PATH} "
+        raise FreezeRecordAnchorError(f"{len(added)} commits across the repository's refs and reflogs add {PATH} "
                                       f"({[c[:12] for c in added]}): it is written once, by one commit, and a second "
                                       "record never replaces the first")
     if not added:
@@ -551,12 +573,12 @@ def read_freeze_record(head: str = "HEAD") -> dict:
     commit's committer date, UTC)}. The anchor is read wherever it lies: one off `head`'s history is read too, and the
     2025 gate makes that an (a) cause (monitor/run_v3.py `held_out_2025_v3`), so a ruling and its evidence
     (`valiwatt evidence-v3`, which reads the record here) can lift it. Refused (`anchor`): more than one commit across
-    the repository's refs adds PATH (FreezeRecordAnchorError); a commit of `head`'s history touches it after its
-    anchor (FreezeRecordError); then no commit adds it; its content is not the fixed shape."""
+    the repository's refs and reflogs adds PATH (FreezeRecordAnchorError); a commit of `head`'s history touches it
+    after its anchor (FreezeRecordError); then no commit adds it; its content is not the fixed shape."""
     commit = anchor(head)
     if commit is None:
-        raise FreezeRecordError(f"no commit of {head}'s history or of the repository's refs adds {PATH}: commit the "
-                                "freeze record first")
+        raise FreezeRecordError(f"no commit of {head}'s history or of the repository's refs and reflogs adds {PATH}: "
+                                "commit the freeze record first")
     raw = _git("show", f"{commit}:{PATH}", text=False)
     if raw.returncode != 0:
         raise FreezeRecordError(f"{PATH} cannot be read at {commit[:12]}")

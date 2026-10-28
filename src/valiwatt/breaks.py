@@ -2521,6 +2521,55 @@ BREAKS = [
        "Témoin : un fichier de docs dont le nom contient un guillemet, validé après l'heure de 2025, ne refuse rien",
        "Control: a docs file whose name holds a double quote, committed after the 2025 time, refuses nothing",
        control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_file_named_like_an_exempt_one_after_the_2025_time_is_seen_by_a_and_i"
+       "[pycache]",
+       "(a) et (i) Un fichier de règles dont le nom contient __pycache__ sans en être un dossier, ajouté puis supprimé "
+       "après l'heure de 2025, est un fichier de règles : (a) et (i) se déclenchent",
+       "(a) and (i) A rule file whose name holds __pycache__ without being such a folder, added then deleted after the "
+       "2025 time, is a rule file: (a) and (i) fire"),
+    _b(FREEZE, f"{T_GT3}::test_a_rule_file_named_like_an_exempt_one_after_the_2025_time_is_seen_by_a_and_i"
+       "[exempt_prefix]",
+       "(a) et (i) Un fichier de règles dont le nom commence par celui d'un fichier exempté (cli.py_helpers.py), "
+       "ajouté puis supprimé après l'heure de 2025, est un fichier de règles : (a) et (i) se déclenchent",
+       "(a) and (i) A rule file whose name begins with an exempt file's (cli.py_helpers.py), added then deleted after "
+       "the 2025 time, is a rule file: (a) and (i) fire"),
+    _b(FREEZE, f"{T_GT3}::test_a_replaced_or_grafted_history_refuses_the_2025_gate[replace]",
+       "(a) Un changement de règle et son annulation exacte après l'heure de 2025, cachés par `git replace --graft` "
+       "qui fait de l'annulation l'enfant du registre : la porte refuse d'emblée, nommant la référence de "
+       "remplacement",
+       "(a) A rule change and its exact revert after the 2025 time, hidden by `git replace --graft` making the revert "
+       "the record's child: the gate refuses outright, naming the replace ref"),
+    _b(FREEZE, f"{T_GT3}::test_a_replaced_or_grafted_history_refuses_the_2025_gate[replacements_off]",
+       "(a) et (i) Le même remplacement, ce refus retiré : la porte lit l'historique tel que validé (objets de "
+       "remplacement désactivés), voit le changement et refuse (a) et (i)",
+       "(a) and (i) The same replacement, that refusal taken away: the gate reads the history as committed "
+       "(replacement objects off), sees the change and refuses (a) and (i)"),
+    _b(FREEZE, f"{T_GT3}::test_a_replaced_or_grafted_history_refuses_the_2025_gate[grafts]",
+       "(a) Un fichier de greffes (info/grafts) qui cache le même changement est refusé d'emblée par la porte",
+       "(a) A grafts file (info/grafts) hiding the same change is refused outright by the gate"),
+    _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[freeze_tag]",
+       "(c) Un départ de 2025 arrêté dont on a changé après coup l'étiquette de gel (en v3-pre-freeze) n'est jamais écarté des départs : il est "
+       "refusé, ses étiquettes ne s'accordant pas avec l'enregistrement de porte consigné à son ouverture",
+       "(c) A stopped 2025 start whose freeze tag (to v3-pre-freeze) was changed afterwards is never left out of the starts: it is refused, "
+       "its tags disagreeing with the gate record it logged at its opening"),
+    _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[year]",
+       "(c) Un départ de 2025 arrêté dont on a changé après coup l'année (en 2024) n'est jamais écarté des départs : il est "
+       "refusé, ses étiquettes ne s'accordant pas avec l'enregistrement de porte consigné à son ouverture",
+       "(c) A stopped 2025 start whose year (to 2024) was changed afterwards is never left out of the starts: it is refused, "
+       "its tags disagreeing with the gate record it logged at its opening"),
+    _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[git_commit]",
+       "(c) Un départ de 2025 arrêté dont on a changé après coup le commit de code n'est jamais écarté des départs : il est "
+       "refusé, ses étiquettes ne s'accordant pas avec l'enregistrement de porte consigné à son ouverture",
+       "(c) A stopped 2025 start whose code commit was changed afterwards is never left out of the starts: it is refused, "
+       "its tags disagreeing with the gate record it logged at its opening"),
+    _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[freeze_commit]",
+       "(c) Un départ de 2025 arrêté dont on a changé après coup le commit de gel n'est jamais écarté des départs : il est "
+       "refusé, ses étiquettes ne s'accordant pas avec l'enregistrement de porte consigné à son ouverture",
+       "(c) A stopped 2025 start whose freeze commit was changed afterwards is never left out of the starts: it is refused, "
+       "its tags disagreeing with the gate record it logged at its opening"),
+    _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[control]",
+       "Témoin : le départ arrêté intact, le départ suivant est refusé (f), le nommant",
+       "Control: the stopped start untouched, the next start is refused (f), naming it", control=True),
     _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_through_2024_is_never_d_s_latest_run",
        "Témoin : une exécution de qualité des données jusqu'à 2024, lancée après celle jusqu'à 2025 qui a passé, n'est "
        "pas la plus récente que (d) lit : la porte passe",
@@ -2624,9 +2673,36 @@ BREAKS = [
     _b(FREEZE, f"{T_GT3}::test_a_ruling_and_its_evidence_lift_a_freeze_record_off_the_start_s_history[post_hoc]",
        "(a) Le même cas, levé par une décision « post hoc » : debout post hoc",
        "(a) The same case, lifted by a \"post hoc\" ruling: post-hoc standing"),
+    _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[reflog]",
+       "(a) Un second registre de gel, le premier gardé par aucune référence mais encore par les journaux de "
+       "références (reflog) qu'a écrits la remise à zéro, est refusé à l'écriture et à la porte",
+       "(a) A second freeze record, the first kept by no ref but still by the reflogs the reset wrote, is refused by "
+       "the writer and by the gate"),
     _b(FREEZE, f"{T_GT3}::test_a_freeze_record_committed_again_on_a_sibling_history_refuses_a[control]",
-       "Témoin : le premier registre gardé par aucune référence, le second passe la porte",
-       "Control: the first record kept by no ref, the second passes the gate", control=True),
+       "Témoin : le premier registre gardé par aucune référence ni aucun journal de références, le second passe la "
+       "porte",
+       "Control: the first record kept by no ref and no reflog, the second passes the gate", control=True),
+    _b(FREEZE, f"{T_FRC}::test_the_writer_refuses_while_a_replace_ref_or_a_grafts_file_exists[replace]",
+       "Tant qu'une référence de remplacement existe, git montrerait un autre historique que celui validé : le "
+       "registre de gel n'est pas écrit",
+       "While a replace ref exists, git would show another history than the one committed: the freeze record is not "
+       "written"),
+    _b(FREEZE, f"{T_FRC}::test_the_writer_refuses_while_a_replace_ref_or_a_grafts_file_exists[grafts]",
+       "Tant qu'un fichier de greffes existe, que git lit même objets de remplacement désactivés, le registre de gel "
+       "n'est pas écrit",
+       "While a grafts file exists, which git reads even with replacement objects off, the freeze record is not "
+       "written"),
+    _b(FREEZE, f"{T_GT3}::test_named_runs_off_the_start_s_history_are_checked_against_the_record_s_commit[unruled]",
+       "(a) Les exécutions nommées faites sur un commit que le départ n'a pas, le registre hors de son historique : la "
+       "nouvelle dérivation du registre les vérifie contre le commit du registre, et la porte refuse (a) seule, jamais "
+       "(b)",
+       "(a) The named runs made on a commit the start lacks, the record off its history: the record's re-derivation "
+       "checks them against the record's commit, and the gate refuses (a) alone, never (b)"),
+    _b(FREEZE, f"{T_GT3}::test_named_runs_off_the_start_s_history_are_checked_against_the_record_s_commit[ruled]",
+       "(a) Le même cas, avec une décision « propre » sur le commit du départ et sa preuve : la porte passe, (a) sa "
+       "seule cause, debout propre",
+       "(a) The same case, with a \"clean\" ruling on the start's commit and its evidence: the gate passes, (a) its one "
+       "cause, clean standing"),
     _b(FREEZE, f"{T_FRC}::test_a_plain_merge_carrying_the_record_adds_nothing[changed]",
        "Une fusion dont le résultat change les octets du registre de gel le touche : la lecture refuse, nommant la "
        "fusion",

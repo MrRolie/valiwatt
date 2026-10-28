@@ -654,6 +654,15 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   whatever its status, deleted runs included, must be finished, passed and under the current rules, so a later failed
   run is never passed over. And the rule files are listed with git's NUL-separated output, so a file whose name is not
   plain ASCII is a rule file like any other (none exists at `v3-fork`, so no rules hash recorded before changes).
+- 2026-10-27, after three reviews of the 2025 gate by a model of another family: what the gate can prove. It reads
+  every commit the repository still records (every ref and every reflog), with git's replacement objects turned off,
+  and refuses when a replacement or a graft exists; it reads every run v3's store holds, deleted ones included, and
+  checks each against the record it logged when it opened. So a mistake, or a history moved with ordinary git
+  commands, is seen and refused or ruled on. What it cannot prove is a deliberate falsification of what it reads: a
+  repository whose unreachable commits were pruned, or a run store edited by hand to agree with itself. Section
+  11.3 (5) already says (h) and (i) record the order after the fact and do not prove it; the same holds here, and the
+  committed, public history (the freeze record's commit, ledger-v3 and v2's ledger) is what fixes it beyond the
+  machine.
 
 ### After the first v3 run
 

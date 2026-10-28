@@ -88,6 +88,12 @@ def commit(repo: Path, files: dict[str, str] | None = None, message: str = "scra
     return git(repo, "rev-parse", "HEAD")
 
 
+def forget_reflogs(repo: Path) -> None:
+    """Every reflog of the scratch repository emptied (`git reflog expire --expire=all --all`): a commit a reset or an
+    amend left behind is then kept by nothing the repository records, as after the reflogs expired."""
+    git(repo, "reflog", "expire", "--expire=all", "--all")
+
+
 def agents(*v3_entries: str, v2_entries: tuple[str, ...] = ()) -> str:
     """The scratch AGENTS.md: v2's departures section, then v3's, each holding its entries (none: "None yet.")."""
     return (f"# scratch\n\n{V2_HEADING}\n\nThe v2 departures.\n\n" + ("".join(v2_entries) or NONE_YET)

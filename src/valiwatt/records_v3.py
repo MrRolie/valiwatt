@@ -8,9 +8,9 @@
   tag in the history of tests/test_tags.py up to a head, as the history test reads v2's tag's pins
   (tests/test_departure_record.py `pins_at`, `pinned_freezes`), every parent of a merge followed. "The commit
   `v3-rules-frozen` was first pinned to" (`first_pin`) is anchored across every ref, not only the head's history: the
-  pin set by the earliest commit, among those of HEAD and `--all` that set it, that no other such commit precedes;
-  refused when two such histories set different pins, or when that pin is not an ancestor of HEAD. Before any pin,
-  nothing has a first pin.
+  pin set by the earliest commit, among those of HEAD, `--all` and `--reflog` that set it, that no other such commit
+  precedes; refused when two such histories set different pins, or when that pin is not an ancestor of HEAD. Before
+  any pin, nothing has a first pin.
 - **The v3 departures section** (`v3_section`, `rulings_v3`): v2's forms on v3's tag, and the two more of section
   11.3 (4): "<date>, the owner's ruling on 2025 (h): post hoc" or "(i)", which can only say post hoc, and "<date>, the
   owner's ruling on v2 first", which names a `v2`-branch commit by its full hash, is never resolved in v3's history
@@ -18,7 +18,16 @@
 - **v3's replay starts and the moved-tag scan** (`replay_starts_v3`, `earlier_freeze_commits_v3`, `ledger_v3_dict`):
   v2's readers on v3's run kind (`replay_v3`), tag and ledger (`docs/replay-ledger-v3.json`). A v3 run without a
   freeze tag is refused, never folded into v1's freeze as v2's readers fold it; a pre-freeze run is never a start
-  under the tag nor a freeze commit of it.
+  under the tag nor a freeze commit of it. A run's tags can be changed after it ran, so before any run is kept or left
+  out of the starts by its tags, a 2025 run under another tag than v3's is refused, and every run holding the gate
+  record it logged at its opening is reconciled with it (`_gate_of`).
+- **The history as committed** (`NO_REPLACE`, `replacements_off`, `history_rewrites`). Replacement objects (`git
+  replace`, refs/replace/*) make git show another object in place of a commit, a tree or a blob, so a walk, an
+  ancestry or a tree read through them is not the committed one. Every git read here, in freeze_record.py and in
+  monitor/run_v3.py runs with them off (GIT_NO_REPLACE_OBJECTS), and the gates' entry points run whole under
+  `replacements_off`, so the v2 helpers they call (monitor/run.py, monitor/rules.py) read with them off too. Git still
+  reads a grafts file then, so the 2025 gate and the freeze record's writer refuse outright while a grafts file or any
+  replace ref exists (`history_rewrites`).
 
 Every git read goes through `_git`, which reads paths.REPO_ROOT at call time.
 """
@@ -27,11 +36,14 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
+from contextlib import contextmanager
+from pathlib import Path
 
 from valiwatt import paths
-from valiwatt.config import FREEZES, V3_FREEZE_TAG, V3_LEDGER, V3_PRE_FREEZE_TAG
+from valiwatt.config import FREEZES, HELD_OUT_YEAR, V3_FREEZE_TAG, V3_LEDGER, V3_PRE_FREEZE_TAG
 from valiwatt.monitor import run as mrun
 from valiwatt.monitor.run import HEX_RUN, START_TIME, FreezeError
 
@@ -49,8 +61,57 @@ class V3FreezeError(FreezeError):
     """What a v3 gate refuses."""
 
 
+# Replacement objects off for every git read of v3's gates, anchors and walks (git's GIT_NO_REPLACE_OBJECTS).
+NO_REPLACE = {"GIT_NO_REPLACE_OBJECTS": "1"}
+
+
+def git_env() -> dict:
+    """The environment of every git read of v3's records: this process's, replacement objects off."""
+    return {**os.environ, **NO_REPLACE}
+
+
 def _git(*args) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=paths.REPO_ROOT, capture_output=True, text=True, check=False)
+    return subprocess.run(["git", *args], cwd=paths.REPO_ROOT, capture_output=True, text=True, check=False,
+                          env=git_env())
+
+
+@contextmanager
+def replacements_off():
+    """Replacement objects off (NO_REPLACE) in this process's environment for the block, each earlier value restored
+    after it: every git the block runs, the v2 helpers' (monitor/run.py, monitor/rules.py) included, reads objects as
+    committed. Also a decorator (each call enters it afresh)."""
+    before = {k: os.environ.get(k) for k in NO_REPLACE}
+    os.environ.update(NO_REPLACE)
+    try:
+        yield
+    finally:
+        for k, v in before.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def history_rewrites() -> list[str]:
+    """What makes git show another history than the one committed, each named: every replace ref (refs/replace/*);
+    GIT_REPLACE_REF_BASE set, which moves where git looks for them; a grafts file (`git rev-parse --git-path
+    info/grafts`: the repository's info/grafts, the common directory's for a worktree, or GIT_GRAFT_FILE's). Empty
+    when there is none. Replacement objects are off for v3's reads, a grafts file is not (git reads it with them off):
+    the 2025 gate and the freeze record's writer refuse while this is not empty. A repository that cannot be read
+    here is refused (V3FreezeError): an unread list of rewrites is not an empty one."""
+    listed = _git("for-each-ref", "--format=%(refname)", "refs/replace/")
+    grafts = _git("rev-parse", "--git-path", "info/grafts")
+    if listed.returncode != 0 or grafts.returncode != 0:
+        raise V3FreezeError(f"the replace refs and the grafts file cannot be read: "
+                            f"{(listed.stderr or grafts.stderr).strip()}")
+    out = [f"the replace ref {ref}" for ref in listed.stdout.split("\n") if ref]
+    if os.environ.get("GIT_REPLACE_REF_BASE"):
+        out.append(f"GIT_REPLACE_REF_BASE={os.environ['GIT_REPLACE_REF_BASE']!r}")
+    path = Path(grafts.stdout.rstrip("\n"))
+    path = path if path.is_absolute() else Path(paths.REPO_ROOT) / path
+    if path.exists():
+        out.append(f"the grafts file {path}")
+    return out
 
 
 def _commit_of(rev: str) -> str | None:
@@ -143,16 +204,23 @@ def pinned_commits(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[str]:
     return out
 
 
+# Where the anchors (the first pin here, the freeze record's adding commit in freeze_record.py) are read beside the
+# head: every ref under refs/ and HEAD (`--all`), and every reflog (`--reflog`), every worktree's included.
+ANCHOR_REVS = ("--all", "--reflog")
+
+
 def pin_settings(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[dict]:
-    """Every commit of `head`'s history and of every ref the repository holds (`--all`: branches, remote-tracking
-    refs, tags, the stash, any other namespace) that sets `PINS[tag]` in tests/test_tags.py: its pin is set and no
+    """Every commit of `head`'s history, of every ref the repository holds (`--all`: branches, remote-tracking refs,
+    tags, the stash, any other namespace) and of every reflog (`--reflog`: a commit a reset, an amend or a moved ref
+    left behind, still recorded by the repository) that sets `PINS[tag]` in tests/test_tags.py: its pin is set and no
     parent's pin is that one (a merge carrying a side's pin sets nothing). Oldest first (topological order), each
     {"commit", "pin"}. Read whole (`--full-history`). A shallow clone, or a history that cannot be read, is refused."""
     if _git("rev-parse", "--is-shallow-repository").stdout.strip() == "true":
         raise V3FreezeError("a shallow clone: the pins of the freeze tag are read from the full history")
-    log = _git("log", "--full-history", "--topo-order", "--reverse", "--format=%H %P", head, "--all", "--", PINS_FILE)
+    log = _git("log", "--full-history", "--topo-order", "--reverse", "--format=%H %P", head, *ANCHOR_REVS, "--",
+               PINS_FILE)
     if log.returncode != 0:
-        raise V3FreezeError(f"the history of {PINS_FILE} across the repository's refs cannot be read: "
+        raise V3FreezeError(f"the history of {PINS_FILE} across the repository's refs and reflogs cannot be read: "
                             f"{log.stderr.strip()}")
     pins: dict[str, str | None] = {}
 
@@ -174,11 +242,11 @@ def pin_settings(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> list[dict]:
 
 def first_pin(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> str:
     """The commit `tag` was first pinned to (section 11.3 (3)): the rules hash every run of the freeze record must
-    carry is the rules hash at it, and the walk of (a) starts from it. Anchored across every ref, never the head's
-    history alone (`pin_settings`): the pin set by the earliest of the root settings, those no other setting precedes
-    in history. Refused (V3FreezeError): before any pin; when root settings disagree (a sibling history, kept by any
-    ref, that pinned the tag elsewhere first: which pin is the original cannot be read, and the head's history alone
-    would choose its own); when the original pin is not `head` or an ancestor of it."""
+    carry is the rules hash at it, and the walk of (a) starts from it. Anchored across every ref and reflog, never the
+    head's history alone (`pin_settings`): the pin set by the earliest of the root settings, those no other setting
+    precedes in history. Refused (V3FreezeError): before any pin; when root settings disagree (a sibling history, kept
+    by any ref or left in a reflog, that pinned the tag elsewhere first: which pin is the original cannot be read, and
+    the head's history alone would choose its own); when the original pin is not `head` or an ancestor of it."""
     settings = pin_settings(tag, head)
     if not settings:
         raise V3FreezeError(f"`{tag}` is not pinned yet: pin the tag in {PINS_FILE} first")
@@ -187,8 +255,8 @@ def first_pin(tag: str = V3_FREEZE_TAG, head: str = "HEAD") -> str:
     if len({s["pin"] for s in roots}) > 1:
         raise V3FreezeError(f"`{tag}` was first pinned on more than one history, to different commits: "
                             + "; ".join(f"{s['commit'][:12]} pins {s['pin'][:12]}" for s in roots)
-                            + ": the original pin is the one every history across the repository's refs agrees on, and "
-                              "these do not agree")
+                            + ": the original pin is the one every history across the repository's refs and reflogs "
+                              "agrees on, and these do not agree")
     original = roots[0]["pin"]
     if not _is_ancestor(original, head):
         raise V3FreezeError(f"`{tag}` was first pinned to {original[:12]} (set by {roots[0]['commit'][:12]}), which is "
@@ -297,27 +365,60 @@ def ledger_v3_dict() -> dict:
     return {"replays": data["replays"]}
 
 
+def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
+    """The gate record `run` (a `replay_v3` run under the freeze tag `tag`, with `artifacts`) logged at its opening
+    (results/held_out_gate.json; only a 2025 start logs one), None when it holds none, after its tags are reconciled
+    with it: a tag can be changed after the run, and a start retagged out of the starts would leave a later start no
+    earlier one. Refused (V3FreezeError, (c)): a 2025 run under another freeze tag than `v3-rules-frozen` (a 2025
+    replay runs only under it, so the tag was changed); a gate record that cannot be read; a run holding one whose
+    year is not 2025, whose freeze tag is not v3's, whose git_commit is not the record's head_commit or whose
+    freeze_commit is not the record's."""
+    t, rid = run.data.tags, run.info.run_id
+    if t.get("year") == str(HELD_OUT_YEAR) and tag != V3_FREEZE_TAG:
+        raise V3FreezeError(f"(c) v3 replay run {rid} of {HELD_OUT_YEAR} carries the freeze tag {tag!r}: a "
+                            f"{HELD_OUT_YEAR} replay runs only under `{V3_FREEZE_TAG}`, so its tag was changed after "
+                            "it ran, and a run is never left out of the starts by a changed tag")
+    if mrun.GATE_RECORD not in artifacts:
+        return None
+    try:
+        gate = mrun._load_json_artifact(c, rid, mrun.GATE_RECORD)
+    except Exception as e:  # noqa: BLE001 - an unreadable gate record reconciles nothing: the run is refused
+        raise V3FreezeError(f"(c) v3 replay run {rid}'s gate record {mrun.GATE_RECORD} cannot be read: {e}") from e
+    if not isinstance(gate, dict):
+        raise V3FreezeError(f"(c) v3 replay run {rid}'s gate record {mrun.GATE_RECORD} is not a record: {gate!r}")
+    want = {"year": str(HELD_OUT_YEAR), "freeze_tag": V3_FREEZE_TAG, "git_commit": gate.get("head_commit"),
+            "freeze_commit": gate.get("freeze_commit")}
+    differ = [f"{k} {t.get(k)!r}, its gate record's {v!r}" for k, v in want.items() if not v or t.get(k) != v]
+    if differ:
+        raise V3FreezeError(f"(c) v3 replay run {rid}'s tags disagree with the gate record it logged at its opening: "
+                            + "; ".join(differ) + ": its tags were changed after it ran, and a run is never left out "
+                            "of the starts by a changed tag")
+    return gate
+
+
 def replay_starts_v3(year: int, client=None, ledger: dict | None = None) -> list[dict]:
     """The one reader of v3's replay starts (ledger-v3's `starts` and the 2025 gate call it): every `replay_v3` run of
     `year` under `v3-rules-frozen` in the store, whatever its status, deleted included, plus every ledger-v3 entry of
     that year the store lacks, by start time; each start in mrun.replay_starts' shape. A pre-freeze run is no start
-    under the tag; a run without a freeze tag is refused. ledger: the parsed ledger-v3; None, the committed file."""
+    under the tag; a run without a freeze tag is refused. Before any run is kept or left out by its tags, a 2025 run
+    under another tag than v3's is refused and every run's gate record is reconciled with its tags (`_gate_of`).
+    ledger: the parsed ledger-v3; None, the committed file."""
     from valiwatt import tracking
 
     c = client or tracking.client()
     out = []
     for r in mrun._replay_runs(c, kind=KIND):
-        t = r.data.tags
-        if _freeze_tag_of(r) != V3_FREEZE_TAG or t.get("year") != str(year):
-            continue
+        t, tag = r.data.tags, _freeze_tag_of(r)
         artifacts = mrun._artifact_paths(c, r.info.run_id)
+        gate = _gate_of(c, r, tag, artifacts)
+        if tag != V3_FREEZE_TAG or t.get("year") != str(year):
+            continue
         out.append({"run_id": r.info.run_id, "started_utc": mrun._utc(r.info.start_time),
                     "freeze_commit": t.get("freeze_commit", ""), "git_commit": t.get("git_commit", ""),
                     "standing": t.get("standing", ""),
                     "finished": r.info.status == "FINISHED" and t.get("status") == "complete",
                     "running": r.info.status == "RUNNING", "stage": t.get("stage", ""), "error": t.get("error", ""),
-                    "gate": mrun._load_json_artifact(c, r.info.run_id, mrun.GATE_RECORD)
-                    if mrun.GATE_RECORD in artifacts else None,
+                    "gate": gate,
                     "holds_results": bool(r.data.metrics) or any(a != mrun.GATE_RECORD for a in artifacts)})
     stored = {s["run_id"] for s in out}
     for e in (ledger if ledger is not None else ledger_v3_dict())["replays"]:

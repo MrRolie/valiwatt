@@ -78,8 +78,11 @@ NOT_RULES = ("src/valiwatt/report/", "src/valiwatt/breaks.py", "src/valiwatt/cli
 
 
 def _is_rule(path: str) -> bool:
-    return path.startswith(tuple(f"{r}/" for r in RULE_ROOTS)) and not path.startswith(NOT_RULES) \
-        and "__pycache__" not in path and not path.endswith(".pyc")
+    # An entry of NOT_RULES ending in "/" is a folder, every path under it exempt; any other is one file, exempt only
+    # itself. A cache is a whole __pycache__ folder or a .pyc file: a name merely holding either is a rule file.
+    return path.startswith(tuple(f"{r}/" for r in RULE_ROOTS)) \
+        and not any(path == x or x.endswith("/") and path.startswith(x) for x in NOT_RULES) \
+        and "/__pycache__/" not in path and not path.endswith(".pyc")
 
 
 def rule_files(commit: str | None = None) -> list[str]:

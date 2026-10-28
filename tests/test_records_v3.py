@@ -12,6 +12,7 @@ from records_v3_world import (
     RULE_FILE,
     commit,
     fake_run,
+    forget_reflogs,
     git,
     git_tags,
     log_replay_v3,
@@ -107,14 +108,15 @@ def test_a_merge_dropping_the_pin_never_hides_the_first_pin(tmp_path, monkeypatc
     assert records_v3.first_pin() == s.f0
 
 
-@pytest.mark.parametrize("case", ["sibling", "off_head", "control"])
+@pytest.mark.parametrize("case", ["sibling", "reflog", "off_head", "control"])
 def test_the_first_pin_is_anchored_across_every_ref(tmp_path, monkeypatch, case):
-    """The first pin is read across every ref, never the head's history alone. Sibling (the reviewer's scenario): F0
-    pinned in P, P kept on a branch; the working branch restarted from F0, a rule changed in G, the tag moved to G and
-    pinned there: two histories pin the tag first to different commits, and the first pin is refused (the head's
-    history alone would read G). Off_head: F0 tagged and a later commit F1 pinned on a branch only, the head reset
-    before F1: the original pin is no ancestor of the head, refused. The control: the sibling scenario with P kept by
-    no ref; the first pin is G, the head's own."""
+    """The first pin is read across every ref and reflog, never the head's history alone. Sibling (the reviewer's
+    scenario): F0 pinned in P, P kept on a branch; the working branch restarted from F0, a rule changed in G, the tag
+    moved to G and pinned there: two histories pin the tag first to different commits, and the first pin is refused
+    (the head's history alone would read G). Reflog (the third review's scenario): the same with P kept by no ref, left
+    only in the reflogs the reset wrote: still refused. Off_head: F0 tagged and a later commit F1 pinned on a branch
+    only, the head reset before F1: the original pin is no ancestor of the head, refused. The control: the reflog
+    scenario with the reflogs expired, so nothing the repository records keeps P; the first pin is G, the head's own."""
     s = scratch_store(tmp_path, monkeypatch, pinned=case != "off_head")
     if case == "off_head":
         f1 = commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "F1")
@@ -129,6 +131,8 @@ def test_the_first_pin_is_anchored_across_every_ref(tmp_path, monkeypatch, case)
     if case == "sibling":
         git(s.repo, "branch", "keep", s.pin)
     git(s.repo, "reset", "--quiet", "--hard", s.f0)
+    if case == "control":
+        forget_reflogs(s.repo)
     g = commit(s.repo, {RULE_FILE: "MIN = 5\n"}, "G, a rule change")
     tag(s.repo, V3_FREEZE_TAG, g)
     pinned = pin(s.repo, V3_FREEZE_TAG, g)
@@ -136,6 +140,8 @@ def test_the_first_pin_is_anchored_across_every_ref(tmp_path, monkeypatch, case)
     if case == "control":
         assert records_v3.first_pin() == g
         return
+    if case == "reflog":
+        assert git(s.repo, "for-each-ref", "--contains", s.pin) == ""  # no ref keeps P
     with pytest.raises(V3FreezeError, match="first pinned on more than one history, to different commits") as e:
         records_v3.first_pin()
     assert f"{s.pin[:12]} pins {s.f0[:12]}" in str(e.value) and f"{pinned[:12]} pins {g[:12]}" in str(e.value)
@@ -277,7 +283,8 @@ def test_the_v3_section_is_read_under_its_own_heading():
 @pytest.mark.parametrize("case", ["pre_freeze", "v2_kind", "empty_tag"])
 def test_replay_starts_v3_see_only_v3_replays_under_v3_s_tag(tmp_path, monkeypatch, case):
     """D3 and D5: v3's starts are its `replay_v3` runs under `v3-rules-frozen` (the control: one finished 2025 run, a
-    start and a freeze commit of the moved-tag scan); a pre-freeze rehearsal is neither, a v2 replay run is never
+    start and a freeze commit of the moved-tag scan); a pre-freeze rehearsal is neither, while a pre-freeze 2025 run is
+    refused (a 2025 replay runs only under the tag: its tag was changed), never left out; a v2 replay run is never
     read, and a v3 replay without a freeze tag is refused, never folded into v1's freeze."""
     s = scratch_store(tmp_path, monkeypatch)
     f0 = s.f0
@@ -286,10 +293,14 @@ def test_replay_starts_v3_see_only_v3_replays_under_v3_s_tag(tmp_path, monkeypat
     assert (start["run_id"], start["finished"], start["freeze_commit"], start["standing"]) == (held, True, f0, "clean")
     assert records_v3.earlier_freeze_commits_v3() == {f0: [held]}
     if case == "pre_freeze":
-        log_replay_v3(s.repo, 2025, PRE)
         log_replay_v3(s.repo, 2024, PRE)
         assert [x["run_id"] for x in records_v3.replay_starts_v3(2025)] == [held]
         assert records_v3.replay_starts_v3(2024) == [] and records_v3.earlier_freeze_commits_v3() == {f0: [held]}
+        pre = log_replay_v3(s.repo, 2025, PRE)
+        for year in (2025, 2024):
+            with pytest.raises(V3FreezeError, match=rf"\(c\) v3 replay run {pre} of 2025 carries the freeze tag "
+                                                    "'v3-pre-freeze'"):
+                records_v3.replay_starts_v3(year)
     elif case == "v2_kind":
         v2 = fake_run({"kind": "replay", "year": "2025", "freeze_tag": V3_FREEZE_TAG, "freeze_commit": "9" * 40,
                        **git_tags(s.repo)})
