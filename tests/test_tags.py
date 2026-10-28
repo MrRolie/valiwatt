@@ -38,6 +38,7 @@ PINS = {
     "rules-frozen-v2": "825b7bd134a88ad38dc62efe361e30f80321c8be",
     "v3-fork": "3a1cd4a8c76351514e8a20e5253afd89e7adb421",
     "plan-v3": "3c97f24ca96c5244bf8b95fba858233d3871998b",
+    "v3-first-run": "0637b2ec7563a05a9e49f6f80d88d6b9682e8550",
 }
 
 ORDER = ("rules-frozen", "v1", "plan-v2", "v2-first-run", "rules-frozen-v2", "v3-fork", "plan-v3", "v3-first-run",
