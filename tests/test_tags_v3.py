@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from test_departure_record import SCRATCH, git, is_ancestor, scratch_clone, scratch_commit
-from test_tags import PINS, retag, tag_commit, tag_problems, tagged
+from test_tags import ORDER, PINS, retag, tag_commit, tag_problems, tagged
 
 FORK = "3a1cd4a8c763"  # v2's last render, the commit v3 forks from (section 10.1)
 V3_TAGS = ("v3-fork", "plan-v3", "v3-first-run", "v3-rules-frozen")
@@ -118,9 +118,13 @@ def test_the_v3_tags_follow_each_other_and_are_annotated(tmp_path):
 @pytest.mark.parametrize("name", ["v3-first-run", "v3-rules-frozen"])
 def test_a_v3_tag_not_pinned_passes_only_on_head(tmp_path, name):
     """A v3 tag is pinned in the commit after it is made: on HEAD unpinned it passes (control), and not after. Read
-    without its pin, so the case holds once the tag is pinned too."""
-    pins = {k: v for k, v in PINS.items() if k != name}
+    without its pin, and without the tags after it, so the case holds once they are made and pinned too."""
+    later = ORDER[ORDER.index(name) + 1:]
+    pins = {k: v for k, v in PINS.items() if k != name and k not in later}
     clone = scratch_clone(tmp_path)
+    for tag in later:
+        if tag_commit(clone, tag):
+            git(clone, "tag", "-d", tag)
     git(clone, "checkout", "--quiet", "--detach", "HEAD")
     made = scratch_commit(clone, "README.md")
     make_tag(clone, name, made)
