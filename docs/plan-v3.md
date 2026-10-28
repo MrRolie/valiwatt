@@ -665,6 +665,9 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   by hand to agree with itself. Section 11.3 (5) already says (h) and (i) record the order after the fact and do not
   prove it; the same holds here, and the committed, public history (the freeze record's commit, ledger-v3 and v2's
   ledger) is what fixes it beyond the machine.
+- 2026-10-28: commit 0637b2ec7563 reworded the entry above, first committed in 94d6312ed27f, so that it says exactly what
+  the gate reads (the pin and the record's addition in every ref and reflog; the walks of (a) and (i) over the commits
+  section 11.3 names; a purged run among what it cannot prove).
 
 ### After the first v3 run
 

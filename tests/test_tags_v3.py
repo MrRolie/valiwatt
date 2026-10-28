@@ -117,14 +117,16 @@ def test_the_v3_tags_follow_each_other_and_are_annotated(tmp_path):
 
 @pytest.mark.parametrize("name", ["v3-first-run", "v3-rules-frozen"])
 def test_a_v3_tag_not_pinned_passes_only_on_head(tmp_path, name):
-    """A v3 tag is pinned in the commit after it is made: on HEAD unpinned it passes (control), and not after."""
+    """A v3 tag is pinned in the commit after it is made: on HEAD unpinned it passes (control), and not after. Read
+    without its pin, so the case holds once the tag is pinned too."""
+    pins = {k: v for k, v in PINS.items() if k != name}
     clone = scratch_clone(tmp_path)
     git(clone, "checkout", "--quiet", "--detach", "HEAD")
     made = scratch_commit(clone, "README.md")
     make_tag(clone, name, made)
-    assert tag_problems(clone, PINS) == []
+    assert tag_problems(clone, pins) == []
     scratch_commit(clone, "README.md")
-    assert tag_problems(clone, PINS) == [f"tag {name} is not pinned and is not on HEAD: pin it in tests/test_tags.py"]
+    assert tag_problems(clone, pins) == [f"tag {name} is not pinned and is not on HEAD: pin it in tests/test_tags.py"]
 
 
 def test_v2_s_tag_tests_read_rules_frozen_v2_as_of_the_fork_after_it_moves_on_the_v2_branch(tmp_path):
