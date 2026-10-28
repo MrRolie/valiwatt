@@ -653,9 +653,10 @@ def _paths_differ(a, b, at: str = "") -> list[str]:
 def _evidence_run_v3(c, commit: str, dq_run_id: str):
     """The latest finished evidence_v3 run made from a clean tree on `dq_run_id`, whose commit is `commit` or a
     descendant of it that is HEAD or an ancestor of HEAD; None when there is none (v2's rule, monitor/run.py
-    `_evidence_run`, on v3's kind)."""
+    `_evidence_run`, on v3's kind). Deleted runs included: the evidence requirement sets no lifecycle condition, and a
+    deleted run keeps its record and its artifacts."""
     found = []
-    for e in mrun._replay_runs(c, kind=EVIDENCE_KIND, view="ACTIVE_ONLY"):
+    for e in mrun._replay_runs(c, kind=EVIDENCE_KIND):
         t = e.data.tags
         if e.info.status == "FINISHED" and t.get("status") == "complete" and t.get("git_dirty") == "false" \
                 and t.get("dq_run_id") == dq_run_id and records_v3._is_ancestor(commit, t.get("git_commit", "")) \
@@ -1183,18 +1184,25 @@ def _bind_to_gate_v3(record: dict, run_id: str | None = None) -> None:
     gate record's `head_commit` and the tree still clean; with `run_id`, the opened run also records that commit as its
     `git_commit`, from a clean tree. A commit made between the gate and the run (a rule change and its revert leave
     the tree as frozen, on a commit whose (a) and (i) no gate read) refuses (FreezeError, (c)): before the run opens,
-    no run; after, the run stops before any input is read."""
+    no run; after, the run stops before any input is read, and first records on itself where and why it stopped (tags
+    stopped_at `bind`, bind_gate_commit the gate's head_commit, bind_run_commit the commit it recorded): the trace
+    records_v3._gate_of reads as a stopped start, adjudicated under (f), never as tags changed after the run."""
     from valiwatt import tracking
 
     head = mrun._head()
     problems = [] if head == record["head_commit"] else [f"HEAD is {head[:12]}"]
     if run_id is not None:
-        t = tracking.client().get_run(run_id).data.tags
+        c = tracking.client()
+        t = c.get_run(run_id).data.tags
         if t.get("git_commit") != record["head_commit"]:
             problems.append(f"run {run_id} records commit {str(t.get('git_commit'))[:12]}")
         if t.get("git_dirty") != "false":
             problems.append(f"run {run_id} was opened from a tree that was not clean (git_dirty "
                             f"{t.get('git_dirty')!r})")
+        if problems:
+            for k, v in {"stopped_at": "bind", "bind_gate_commit": record["head_commit"],
+                         "bind_run_commit": t.get("git_commit") or ""}.items():
+                c.set_tag(run_id, k, v)
     if problems:
         raise FreezeError(f"(c) the 2025 gate passed on {record['head_commit'][:12]}, but {'; '.join(problems)}: a "
                           "start runs only the commit its gate read")

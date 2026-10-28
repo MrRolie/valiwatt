@@ -1091,6 +1091,100 @@ def test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts(chain, ca
     refused(rf"\(c\) v3 replay run {rid}{reason}")
 
 
+@pytest.mark.parametrize("case", ["failed", "killed", "running", "control"])
+def test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start(chain, case):
+    """(c), (f) (the fourth review's scenario): test A finished, held out, its status tag complete, its stage logged and
+    its results/replay.json logged; before any ledger-v3 sync, A is reopened through MLflow and ended FAILED or KILLED,
+    or left RUNNING. Its own record of its completion and the store disagree: the next start is refused (c), naming A,
+    never read as following a stopped start (no (f)), and still refused with the owner's clean ruling naming A's start
+    and its evidence run: no later start is the test of record. The control: A untouched, it is a finished start and
+    the next start's gate passes (a rerun)."""
+    assert run_v3.run_replay_v3(2025, n_boot=20) == 0
+    (a,) = vw.replay_runs_v3(2025)
+    rid, c = a.info.run_id, tracking.client()
+    if case == "control":
+        assert [(s["run_id"], s["finished"]) for s in records_v3.replay_starts_v3(2025)] == [(rid, True)]
+        assert gate()["causes"] == []
+        return
+    c.update_run(rid, status=case.upper())
+    said = (rf"\(c\) v3 replay run {rid}'s status tag says it completed \(stage 'logged', holding "
+            rf"results/replay.json\), yet it is {case.upper()} in the store")
+    assert "(f)" not in refused(said)
+    section(chain, on(head(chain), "clean", mrun._utc(a.info.start_time)))
+    evidence(chain)
+    assert "(f)" not in refused(said)
+    with pytest.raises(FreezeError, match=said):
+        run_v3.run_replay_v3(2025, n_boot=20)
+    assert [r.info.run_id for r in vw.replay_runs_v3(2025)] == [rid]
+
+
+@pytest.mark.parametrize("case", ["unruled", "ruled", "no_bind_record", "git_commit_changed"])
+def test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f(chain, monkeypatch, case):
+    """(f), (c) (the fourth review's scenario): the gate and the pre-opening bind pass on H; a documentation-only commit
+    J is made just before the run is created, so the run records J and logs its gate record for H, and the post-opening
+    bind stops it before any input is read, first recording on it stopped_at bind, H and J. That intact trace is a
+    stopped start: the next start is refused (f), naming it (unruled), and passes with the owner's clean ruling naming
+    it and its evidence run, finishing held out (ruled). The same mismatch without the bind's record (its stopped_at
+    tag deleted), or with the bind's record disagreeing with the run's git_commit (git_commit changed afterwards), is
+    refused (c), never adjudicated."""
+    from valiwatt import tracking as tr
+
+    h = head(chain)
+    start = tr.start_run
+    made = []
+
+    def docs_commit(*args, **kwargs):
+        made.append(rw.commit(chain.repo, {"notes.txt": "a note\n"}, "a documentation-only commit"))
+        return start(*args, **kwargs)
+
+    with monkeypatch.context() as m:
+        m.setattr(tr, "start_run", docs_commit)
+        with pytest.raises(FreezeError, match=r"\(c\) the 2025 gate passed on " + h[:12] + ", but HEAD is "):
+            run_v3.run_replay_v3(2025, n_boot=20)
+    (j,) = made
+    (run,) = vw.replay_runs_v3(2025)
+    rid, t, c = run.info.run_id, run.data.tags, tracking.client()
+    assert (t["git_commit"], t["stage"], t["error"], run.info.status) == (j, "opened", "FreezeError", "FAILED")
+    assert (t["stopped_at"], t["bind_gate_commit"], t["bind_run_commit"]) == ("bind", h, j)
+    assert mrun._load_json_artifact(c, rid, mrun.GATE_RECORD)["head_commit"] == h
+    if case in ("no_bind_record", "git_commit_changed"):
+        if case == "no_bind_record":
+            c.delete_tag(rid, "stopped_at")
+        else:
+            c.set_tag(rid, "git_commit", "9" * 40)
+        refused(rf"\(c\) v3 replay run {rid}'s tags disagree with the gate record it logged at its opening: "
+                "git_commit ")
+        return
+    (s,) = records_v3.replay_starts_v3(2025)
+    assert (s["run_id"], s["finished"], s["git_commit"], s["gate"]["head_commit"]) == (rid, False, j, h)
+    if case == "unruled":
+        assert rid in refused(r"\(f\) the 2025 test of record did not finish")
+        return
+    section(chain, on(head(chain), "clean", s["started_utc"]))
+    evidence(chain)
+    rec = gate()
+    assert (rec["causes"], rec["ruling"]["start"], rec["standing"]) == (["f"], s["started_utc"], "clean")
+    assert run_v3.run_replay_v3(2025, n_boot=20) == 0
+    (b,) = [r for r in vw.replay_runs_v3(2025) if r.info.run_id != rid]
+    assert (b.data.tags["status"], b.data.tags["evaluation"], b.data.tags["standing"]) == ("complete", "held_out",
+                                                                                           "clean")
+
+
+@pytest.mark.parametrize("case", ["deleted", "control"])
+def test_a_soft_deleted_evidence_run_still_lifts_its_ruling(chain, case):
+    """v2's section 11.3.5 sets the evidence run no lifecycle condition (the fourth review's scenario): (a) fired, v2's
+    form says clean, and its finished evidence run, from a clean tree on the gate's data-quality run, is soft-deleted;
+    its record and artifacts remain, and it still lifts the ruling. The control: the same run, not deleted."""
+    c1 = rule_change(chain, chain.retrieved - pd.Timedelta(days=1))
+    section(chain, moved(chain, c1), on(c1, "clean"))
+    rid = evidence(chain)
+    if case == "deleted":
+        tracking.client().delete_run(rid)
+        assert tracking.client().get_run(rid).info.lifecycle_stage == "deleted"
+    rec = gate(departure=True)
+    assert (rec["causes"], rec["standing"], rec["rulings"][0]["evidence_run_id"]) == (["a"], "clean", rid)
+
+
 @pytest.mark.parametrize("ruled", ["unruled", "ruled"])
 def test_named_runs_off_the_start_s_history_are_checked_against_the_record_s_commit(chain, ruled):
     """(a), never (b) (the third review's scenario): every named run was made on L (the chain's commit of v2's ledger,

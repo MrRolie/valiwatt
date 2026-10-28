@@ -2570,6 +2570,56 @@ BREAKS = [
     _b(FREEZE, f"{T_GT3}::test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[control]",
        "Témoin : le départ arrêté intact, le départ suivant est refusé (f), le nommant",
        "Control: the stopped start untouched, the next start is refused (f), naming it", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start[failed]",
+       "(c) Un test de 2025 terminé (étiquette de statut complete, résultats consignés), rouvert dans MLflow et terminé FAILED "
+       "avant toute synchronisation du registre de v3, refuse le départ suivant, même sous la décision propre du "
+       "propriétaire le nommant : un achèvement ne devient jamais un départ arrêté",
+       "(c) A finished 2025 test (status tag complete, results logged), reopened in MLflow and ended FAILED before any "
+       "ledger-v3 sync, refuses the next start, even under the owner's clean ruling naming it: a completion never "
+       "becomes a stopped start"),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start[killed]",
+       "(c) Un test de 2025 terminé (étiquette de statut complete, résultats consignés), rouvert dans MLflow et terminé KILLED "
+       "avant toute synchronisation du registre de v3, refuse le départ suivant, même sous la décision propre du "
+       "propriétaire le nommant : un achèvement ne devient jamais un départ arrêté",
+       "(c) A finished 2025 test (status tag complete, results logged), reopened in MLflow and ended KILLED before any "
+       "ledger-v3 sync, refuses the next start, even under the owner's clean ruling naming it: a completion never "
+       "becomes a stopped start"),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start[running]",
+       "(c) Un test de 2025 terminé (étiquette de statut complete, résultats consignés), rouvert dans MLflow et laissé RUNNING "
+       "avant toute synchronisation du registre de v3, refuse le départ suivant, même sous la décision propre du "
+       "propriétaire le nommant : un achèvement ne devient jamais un départ arrêté",
+       "(c) A finished 2025 test (status tag complete, results logged), reopened in MLflow and left RUNNING before any "
+       "ledger-v3 sync, refuses the next start, even under the owner's clean ruling naming it: a completion never "
+       "becomes a stopped start"),
+    _b(FREEZE, f"{T_GT3}::test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start[control]",
+       "Témoin : le test de 2025 terminé intact est un départ achevé, et la porte du départ suivant passe",
+       "Control: the finished 2025 test untouched is a finished start, and the next start's gate passes", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[unruled]",
+       "(f) Un départ arrêté par la liaison d'après l'ouverture (un commit de documentation fait juste avant la création "
+       "de l'exécution), qui l'a consigné sur l'exécution, est un départ arrêté : le départ suivant est refusé (f), le "
+       "nommant",
+       "(f) A start stopped by the post-opening bind (a documentation commit made just before the run was created), "
+       "which recorded so on the run, is a stopped start: the next start is refused (f), naming it"),
+    _b(FREEZE, f"{T_GT3}::test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[ruled]",
+       "Témoin : avec la décision propre du propriétaire nommant ce départ arrêté et son exécution de preuve, le départ "
+       "suivant passe et s'achève, tenu à l'écart",
+       "Control: with the owner's clean ruling naming that stopped start and its evidence run, the next start passes "
+       "and finishes, held out", control=True),
+    _b(FREEZE, f"{T_GT3}::test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[no_bind_record]",
+       "(c) Le même écart entre le commit de l'exécution et son enregistrement de porte, sans la trace de la liaison, "
+       "refuse le départ suivant",
+       "(c) The same gap between the run's commit and its gate record, without the bind's trace, refuses the next "
+       "start"),
+    _b(FREEZE, f"{T_GT3}::test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[git_commit_changed]",
+       "(c) Une trace de la liaison qui ne s'accorde plus avec le commit de l'exécution (changé après coup) refuse le "
+       "départ suivant",
+       "(c) A bind trace that no longer agrees with the run's commit (changed afterwards) refuses the next start"),
+    _b(FREEZE, f"{T_GT3}::test_a_soft_deleted_evidence_run_still_lifts_its_ruling[deleted]",
+       "Une exécution de preuve valide supprimée (suppression douce) lève encore la décision qui repose sur elle",
+       "A valid evidence run soft-deleted still lifts the ruling resting on it"),
+    _b(FREEZE, f"{T_GT3}::test_a_soft_deleted_evidence_run_still_lifts_its_ruling[control]",
+       "Témoin : la même exécution de preuve, non supprimée, lève la décision",
+       "Control: the same evidence run, not deleted, lifts the ruling", control=True),
     _b(FREEZE, f"{T_GT3}::test_a_later_data_quality_run_through_2024_is_never_d_s_latest_run",
        "Témoin : une exécution de qualité des données jusqu'à 2024, lancée après celle jusqu'à 2025 qui a passé, n'est "
        "pas la plus récente que (d) lit : la porte passe",

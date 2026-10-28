@@ -555,6 +555,11 @@ PLAN_V3_12 = {
           for c in ("replace", "replacements_off", "grafts")),
         *(GT3 + f"test_a_stopped_2025_start_retagged_is_never_left_out_of_the_starts[{c}]"
           for c in ("freeze_tag", "year", "git_commit", "freeze_commit", "control")),
+        *(GT3 + f"test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is_never_a_stopped_start[{c}]"
+          for c in ("failed", "killed", "running", "control")),
+        *(GT3 + f"test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[{c}]"
+          for c in ("unruled", "ruled", "no_bind_record", "git_commit_changed")),
+        *(GT3 + f"test_a_soft_deleted_evidence_run_still_lifts_its_ruling[{c}]" for c in ("deleted", "control")),
     ),
     "Calibration bins": (
         IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",

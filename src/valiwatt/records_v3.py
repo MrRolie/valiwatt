@@ -19,8 +19,9 @@
   v2's readers on v3's run kind (`replay_v3`), tag and ledger (`docs/replay-ledger-v3.json`). A v3 run without a
   freeze tag is refused, never folded into v1's freeze as v2's readers fold it; a pre-freeze run is never a start
   under the tag nor a freeze commit of it. A run's tags can be changed after it ran, so before any run is kept or left
-  out of the starts by its tags, a 2025 run under another tag than v3's is refused, and every run holding the gate
-  record it logged at its opening is reconciled with it (`_gate_of`).
+  out of the starts by its tags, a 2025 run under another tag than v3's is refused, a run whose tags say it completed
+  is refused unless the store says it finished, and every run holding the gate record it logged at its opening is
+  reconciled with it, a start the post-opening bind stopped read by the trace the bind wrote (`_gate_of`).
 - **The history as committed** (`NO_REPLACE`, `replacements_off`, `history_rewrites`). Replacement objects (`git
   replace`, refs/replace/*) make git show another object in place of a commit, a tree or a blob, so a walk, an
   ancestry or a tree read through them is not the committed one. Every git read here, in freeze_record.py and in
@@ -365,15 +366,38 @@ def ledger_v3_dict() -> dict:
     return {"replays": data["replays"]}
 
 
+def _bind_explains(run, gate: dict, artifacts: list[str]) -> bool:
+    """`run`'s git_commit differs from its gate record's head_commit because the post-opening bind stopped it
+    (monitor/run_v3.py `_bind_to_gate_v3`: HEAD moved between the gate and the run's opening, so the run recorded
+    another commit than the one its gate passed on), and its trace is the one that bind leaves, intact: tag
+    stopped_at `bind`, bind_gate_commit the record's head_commit, bind_run_commit its own git_commit, status tag
+    started, stage opened, error FreezeError, never FINISHED, no metric and no artifact but the gate record. Such a
+    start stopped before reading any input, and is adjudicated under (f) like any other stopped start."""
+    t = run.data.tags
+    return (t.get("stopped_at") == "bind" and bool(gate.get("head_commit"))
+            and t.get("bind_gate_commit") == gate.get("head_commit") and bool(t.get("git_commit"))
+            and t.get("bind_run_commit") == t.get("git_commit") and t.get("status") == "started"
+            and t.get("stage") == "opened" and t.get("error") == "FreezeError" and run.info.status != "FINISHED"
+            and not run.data.metrics and list(artifacts) == [mrun.GATE_RECORD])
+
+
 def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
     """The gate record `run` (a `replay_v3` run under the freeze tag `tag`, with `artifacts`) logged at its opening
     (results/held_out_gate.json; only a 2025 start logs one), None when it holds none, after its tags are reconciled
-    with it: a tag can be changed after the run, and a start retagged out of the starts would leave a later start no
-    earlier one. Refused (V3FreezeError, (c)): a 2025 run under another freeze tag than `v3-rules-frozen` (a 2025
-    replay runs only under it, so the tag was changed); a gate record that cannot be read; a run holding one whose
-    year is not 2025, whose freeze tag is not v3's, whose git_commit is not the record's head_commit or whose
-    freeze_commit is not the record's."""
+    with it: a tag or a status can be changed after the run, and a start retagged out of the starts would leave a later
+    start no earlier one, a completion made a stopped start would let a later start be the test of record. Refused
+    (V3FreezeError, (c)): a run whose status tag says it completed (status `complete`, set only after its results are
+    logged) that is not FINISHED in the store (reopened, then ended FAILED or KILLED, or left RUNNING); a 2025 run
+    under another freeze tag than `v3-rules-frozen` (a 2025 replay runs only under it, so the tag was changed); a gate
+    record that cannot be read; a run holding one whose year is not 2025, whose freeze tag is not v3's, whose
+    git_commit is not the record's head_commit (unless the post-opening bind stopped it and its intact trace says so,
+    `_bind_explains`) or whose freeze_commit is not the record's."""
     t, rid = run.data.tags, run.info.run_id
+    if t.get("status") == "complete" and run.info.status != "FINISHED":
+        raise V3FreezeError(f"(c) v3 replay run {rid}'s status tag says it completed (stage {t.get('stage')!r}, "
+                            f"{'holding' if 'results/replay.json' in artifacts else 'without'} results/replay.json), "
+                            f"yet it is {run.info.status} in the store: its own record of its completion and the store "
+                            "disagree, and a completion never becomes a stopped start")
     if t.get("year") == str(HELD_OUT_YEAR) and tag != V3_FREEZE_TAG:
         raise V3FreezeError(f"(c) v3 replay run {rid} of {HELD_OUT_YEAR} carries the freeze tag {tag!r}: a "
                             f"{HELD_OUT_YEAR} replay runs only under `{V3_FREEZE_TAG}`, so its tag was changed after "
@@ -388,11 +412,13 @@ def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
         raise V3FreezeError(f"(c) v3 replay run {rid}'s gate record {mrun.GATE_RECORD} is not a record: {gate!r}")
     want = {"year": str(HELD_OUT_YEAR), "freeze_tag": V3_FREEZE_TAG, "git_commit": gate.get("head_commit"),
             "freeze_commit": gate.get("freeze_commit")}
-    differ = [f"{k} {t.get(k)!r}, its gate record's {v!r}" for k, v in want.items() if not v or t.get(k) != v]
+    differ = {k: f"{k} {t.get(k)!r}, its gate record's {v!r}" for k, v in want.items() if not v or t.get(k) != v}
+    if list(differ) == ["git_commit"] and _bind_explains(run, gate, artifacts):
+        return gate
     if differ:
         raise V3FreezeError(f"(c) v3 replay run {rid}'s tags disagree with the gate record it logged at its opening: "
-                            + "; ".join(differ) + ": its tags were changed after it ran, and a run is never left out "
-                            "of the starts by a changed tag")
+                            + "; ".join(differ.values()) + ": its tags were changed after it ran, and a run is never "
+                            "left out of the starts by a changed tag")
     return gate
 
 
@@ -400,8 +426,9 @@ def replay_starts_v3(year: int, client=None, ledger: dict | None = None) -> list
     """The one reader of v3's replay starts (ledger-v3's `starts` and the 2025 gate call it): every `replay_v3` run of
     `year` under `v3-rules-frozen` in the store, whatever its status, deleted included, plus every ledger-v3 entry of
     that year the store lacks, by start time; each start in mrun.replay_starts' shape. A pre-freeze run is no start
-    under the tag; a run without a freeze tag is refused. Before any run is kept or left out by its tags, a 2025 run
-    under another tag than v3's is refused and every run's gate record is reconciled with its tags (`_gate_of`).
+    under the tag; a run without a freeze tag is refused. Before any run is kept or left out by its tags, a run whose
+    status tag says it completed is refused unless it is FINISHED in the store, a 2025 run under another tag than v3's
+    is refused and every run's gate record is reconciled with its tags (`_gate_of`).
     ledger: the parsed ledger-v3; None, the committed file."""
     from valiwatt import tracking
 
