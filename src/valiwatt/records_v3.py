@@ -21,7 +21,8 @@
   under the tag nor a freeze commit of it. A run's tags can be changed after it ran, so before any run is kept or left
   out of the starts by its tags, a 2025 run under another tag than v3's is refused, a run whose tags say it completed
   is refused unless the store says it finished, a 2025 run without the gate record it logged at its opening is
-  refused unless it demonstrably stopped while it opened (`opening_stopped`), and every run holding that record is
+  refused unless it demonstrably stopped while it opened, before the marker it sets once that record is logged
+  (`opening_stopped`, `GATE_LOGGED`), and every run holding that record is
   reconciled with it, a start the post-opening bind stopped read by the trace the bind wrote (`_gate_of`).
 - **The history as committed** (`NO_REPLACE`, `replacements_off`, `history_rewrites`). Replacement objects (`git
   replace`, refs/replace/*) make git show another object in place of a commit, a tree or a blob, so a walk, an
@@ -51,6 +52,10 @@ from valiwatt.monitor.run import HEX_RUN, START_TIME, FreezeError
 
 KIND = "replay_v3"  # v3's replay runs; v2's readers filter on "replay" and never see them
 PINS_FILE = "tests/test_tags.py"
+# The tag a 2025 replay_v3 run sets ("true") right after it logs its gate record, before it reads any input
+# (monitor/run_v3.py `run_replay_v3`): a run carrying it got past its opening, so it never holds the shape of a start
+# stopped while it opened (`opening_stopped`), whatever happens to its record afterwards.
+GATE_LOGGED = "gate_logged"
 # The ruling heads of v3's section (section 11.3 (4)), each read whole (mrun.section_entries: the bold head, without
 # its final full stop). v2's form lifts (a) and (f); the (h) and (i) forms lift only their condition; "v2 first" (g).
 V2_FORM = re.compile(r"\d{4}-\d{2}-\d{2}, the owner's ruling on 2025: (clean|post hoc)")
@@ -372,10 +377,11 @@ def _bind_explains(run, gate: dict, artifacts: list[str]) -> bool:
     (monitor/run_v3.py `_bind_to_gate_v3`: HEAD moved between the gate and the run's opening, so the run recorded
     another commit than the one its gate passed on), and its trace is the one that bind leaves, intact: tag
     stopped_at `bind`, bind_gate_commit the record's head_commit, bind_run_commit its own git_commit, status tag
-    started, stage opened, error FreezeError, never FINISHED, no metric and no artifact but the gate record. Such a
-    start stopped before reading any input, and is adjudicated under (f) like any other stopped start."""
+    started, stage opened, the marker `GATE_LOGGED` (the bind runs after the record is logged), error FreezeError,
+    never FINISHED, no metric and no artifact but the gate record. Such a start stopped before reading any input, and
+    is adjudicated under (f) like any other stopped start."""
     t = run.data.tags
-    return (t.get("stopped_at") == "bind" and bool(gate.get("head_commit"))
+    return (t.get("stopped_at") == "bind" and t.get(GATE_LOGGED) == "true" and bool(gate.get("head_commit"))
             and t.get("bind_gate_commit") == gate.get("head_commit") and bool(t.get("git_commit"))
             and t.get("bind_run_commit") == t.get("git_commit") and t.get("status") == "started"
             and t.get("stage") == "opened" and t.get("error") == "FreezeError" and run.info.status != "FINISHED"
@@ -385,11 +391,14 @@ def _bind_explains(run, gate: dict, artifacts: list[str]) -> bool:
 def opening_stopped(run, artifacts: list[str]) -> bool:
     """`run` (a 2025 `replay_v3` run, with `artifacts`) demonstrably stopped while it opened, before it logged its gate
     record and before it read any input (monitor/run_v3.py `run_replay_v3`: the run is created with tags status started
-    and stage opened, and logs results/held_out_gate.json before anything else): status tag started, stage opened, no
-    `stopped_at` (the post-opening bind stops a run after its gate record is logged), never FINISHED, no metric and no
-    artifact at all. The one shape of a 2025 run that holds no gate record."""
+    and stage opened, logs results/held_out_gate.json before anything else, then sets `GATE_LOGGED` before it reads
+    any input): status tag started, stage opened, no `GATE_LOGGED` (a run carrying it logged its record and may have
+    read inputs since: a start stopped while it read them still has stage opened), no `stopped_at` (the post-opening
+    bind stops a run after its gate record is logged), never FINISHED, no metric and no artifact at all. The one shape
+    of a 2025 run that holds no gate record."""
     t = run.data.tags
-    return (t.get("status") == "started" and t.get("stage") == "opened" and not t.get("stopped_at")
+    return (t.get("status") == "started" and t.get("stage") == "opened" and not t.get(GATE_LOGGED)
+            and not t.get("stopped_at")
             and run.info.status != "FINISHED" and not run.data.metrics and not list(artifacts))
 
 
@@ -399,14 +408,15 @@ def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
     can be changed after the run, and a start retagged out of the starts would leave a later start no earlier one, a
     completion made a stopped start would let a later start be the test of record. None for a run of another year,
     which logs none, and for a 2025 run that demonstrably stopped while it opened, before it logged its record or read
-    any input (`opening_stopped`). Refused (V3FreezeError, (c)): a run whose status tag says it completed (status
-    `complete`, set through the client only once the run is FINISHED) that is not FINISHED in the store (reopened,
-    then ended FAILED or KILLED, or left RUNNING); a 2025 run under another freeze tag than `v3-rules-frozen` (a 2025
-    replay runs only under it, so the tag was changed); any other 2025 run without its gate record (completed, or past
-    its opening: the record it logged first is gone, and neither its tags nor its reading of the 2025 time can be
-    checked); a gate record that cannot be read; a run holding one whose year is not 2025, whose freeze tag is not
-    v3's, whose git_commit is not the record's head_commit (unless the post-opening bind stopped it and its intact
-    trace says so, `_bind_explains`) or whose freeze_commit is not the record's."""
+    any input (`opening_stopped`: without the marker `GATE_LOGGED`). Refused (V3FreezeError, (c)): a run whose status
+    tag says it completed (status `complete`, set through the client only once the run is FINISHED) that is not
+    FINISHED in the store (reopened, then ended FAILED or KILLED, or left RUNNING); a 2025 run under another freeze tag
+    than `v3-rules-frozen` (a 2025 replay runs only under it, so the tag was changed); any other 2025 run without its
+    gate record (completed, or past its opening, its marker `GATE_LOGGED` set: the record it logged first is gone, and
+    neither its tags nor its reading of the 2025 time can be checked); a gate record that cannot be read; a run
+    holding one whose year is not 2025, whose freeze tag is not v3's, whose git_commit is not the record's head_commit
+    (unless the post-opening bind stopped it and its intact trace says so, `_bind_explains`) or whose freeze_commit is
+    not the record's."""
     t, rid = run.data.tags, run.info.run_id
     if t.get("status") == "complete" and run.info.status != "FINISHED":
         raise V3FreezeError(f"(c) v3 replay run {rid}'s status tag says it completed (stage {t.get('stage')!r}, "
@@ -422,7 +432,8 @@ def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
             return None
         raise V3FreezeError(f"(c) v3 replay run {rid} of {HELD_OUT_YEAR} holds no gate record {mrun.GATE_RECORD}, yet "
                             f"it is {run.info.status} in the store, status tag {t.get('status')!r}, stage "
-                            f"{t.get('stage')!r}, with {len(artifacts)} artifact(s) and {len(run.data.metrics)} "
+                            f"{t.get('stage')!r}, tag {GATE_LOGGED} {t.get(GATE_LOGGED)!r}, with {len(artifacts)} "
+                            f"artifact(s) and {len(run.data.metrics)} "
                             "metric(s): only a start stopped while it opened, before it logged that record or read "
                             "any input, holds none; the record it logged first is gone, and a run is never kept or "
                             "left out of the starts, nor its reading of the 2025 time skipped, without it")

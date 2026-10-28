@@ -2392,6 +2392,16 @@ BREAKS = [
            ", before it reads the freeze record"),
           ("gate-2025", "La porte de 2025 de v3, appelée seule,", "v3's 2025 gate, called on its own,",
            ", avant toute autre de ses étapes", ", before any other of its steps"))),
+    *(_b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[{c}]",
+         f"{fr}, qui ne fait que lire le magasin de v3, refuse un magasin qui contient le premier rejeu 2024 de v2 "
+         "avant de l'ouvrir, et le laisse identique octet pour octet",
+         f"{en}, which only reads v3's store, refuses a store holding v2's first 2024 replay before it opens it, and "
+         "leaves it byte-identical")
+      for c, fr, en in (("freeze-record-v3", "L'écriture du registre de gel de v3",
+                         "The writing of v3's freeze record"),
+                        ("ledger-v3", "La synchronisation du registre des rejeux de v3",
+                         "The sync of v3's replay ledger"),
+                        ("report", "Le rapport de v3 (`valiwatt report`)", "v3's report (`valiwatt report`)"))),
     _b(FREEZE, f"{T_V2S}::test_a_crashed_read_refuses_the_fresh_clone_label[crashed]",
        "Une lecture du magasin de v2 interrompue après l'avoir ouvert refuse l'étiquette de clone neuf : dq-v3 "
        "--fresh-clone est refusé avant de rien lire, et une exécution de qualité ainsi étiquetée n'est pas lue",
@@ -2676,12 +2686,26 @@ BREAKS = [
        "(c) Une trace de la liaison qui ne s'accorde plus avec le commit de l'exécution (changé après coup) refuse le "
        "départ suivant",
        "(c) A bind trace that no longer agrees with the run's commit (changed afterwards) refuses the next start"),
+    _b(FREEZE, f"{T_GT3}::test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[no_marker]",
+       "(c) Le même départ arrêté par la liaison, sans le marqueur gate_logged posé une fois son enregistrement de "
+       "porte consigné (supprimé après coup), refuse le départ suivant",
+       "(c) The same start stopped by the bind, without the marker gate_logged set once its gate record was logged "
+       "(deleted afterwards), refuses the next start"),
     *(_b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening[{c}]",
          f"(c) {fr}, dont l'enregistrement de porte a disparu, refuse le départ suivant, jamais jugé sous (f)",
          f"(c) {en} whose gate record is gone refuses the next start, never adjudicated under (f)")
       for c, fr, en in (("completed", "Un test de 2025 achevé, son entrée du registre v3 consignée",
                          "A finished 2025 test, its ledger-v3 entry committed,"),
-                        ("past_opening", "Un départ arrêté après son ouverture", "A start stopped past its opening"))),
+                        ("past_opening", "Un départ arrêté après son ouverture", "A start stopped past its opening"),
+                        ("reading_inputs", "Un départ arrêté pendant la lecture de ses entrées (étape encore à "
+                         "l'ouverture, marqueur gate_logged posé)", "A start stopped while it read its inputs (stage "
+                         "still opened, marker gate_logged set)"))),
+    _b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening"
+               "[reading_inputs_kept]",
+       "Témoin : le même départ arrêté pendant la lecture de ses entrées, son enregistrement de porte conservé, est un "
+       "départ arrêté : le départ suivant est refusé (f), le nommant, jamais (c)",
+       "Control: the same start stopped while it read its inputs, its gate record kept, is a stopped start: the next "
+       "start is refused (f), naming it, never (c)", control=True),
     _b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening[opening]",
        "(f) Un départ arrêté pendant qu'il consignait son enregistrement de porte, avant toute donnée lue, est un "
        "départ arrêté : le départ suivant est refusé (f), le nommant",

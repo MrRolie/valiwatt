@@ -398,7 +398,7 @@ def test_v2s_database_is_opened_immutable_and_refused_beside_a_write_ahead_log(w
 
 
 OWN_STORE_COMMANDS = ["dq-v3", "validate-v3", "freeze-v3", "read-v2", "replay-v3-2024", "replay-v3-2025",
-                      "evidence-v3", "gate-2025"]
+                      "evidence-v3", "gate-2025", "freeze-record-v3", "ledger-v3", "report"]
 
 
 @pytest.mark.parametrize("command", OWN_STORE_COMMANDS)
@@ -407,8 +407,11 @@ def test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs(v2, tmp_path
     a store holding v2's first 2024 replay run is v2's, and every v3 command that logs refuses it before it reads or
     logs anything: the replay before its 2025 start lock is created in the store and before any step of its gate
     (the history, the freeze in force, the moved tag, the store) runs, the gate itself so when called on its own
-    (gate-2025), the evidence before the freeze record or the store is read. v3's store here is a copy of v2's synthetic store (for read-v2, PATH is v2's store in place),
-    unchanged after the refusal, as v2's is, and no lock file is created in it."""
+    (gate-2025), the evidence before the freeze record or the store is read. The commands that only read v3's store
+    refuse it too, before they open it: the freeze record's writer (freeze-record-v3), ledger-v3 and `valiwatt report`
+    (v3's), none of them reaching the store's client, the history, the ledgers or the report's renderer. v3's store
+    here is a copy of v2's synthetic store (for read-v2, PATH is v2's store in place), unchanged after the refusal, as
+    v2's is, and no lock file is created in it."""
     from valiwatt import freeze_record as fr
     from valiwatt import paths, records_v3
     from valiwatt.forecast.freeze_v3 import run_freeze_v3
@@ -417,6 +420,7 @@ def test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs(v2, tmp_path
     from valiwatt.monitor import run_v3 as replay_v3
     from valiwatt.quality import run as qrun
     from valiwatt.quality import run_v3
+    from valiwatt.report import ledger_v3, validation_v3
 
     own = tmp_path / "own" / "mlruns"
     shutil.copytree(v2["store"], own)
@@ -437,12 +441,18 @@ def test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs(v2, tmp_path
     monkeypatch.setattr(records_v3, "current_freeze", reader("the freeze in force"))
     monkeypatch.setattr(mrun, "require_clean_tree", reader("the tree"))
     monkeypatch.setattr(fr, "read_freeze_record", reader("the freeze record"))
+    monkeypatch.setattr(fr, "write_freeze_record", reader("the freeze record's writer"))
+    monkeypatch.setattr(tracking, "client", reader("v3's store"))
+    monkeypatch.setattr(ledger_v3, "sync", reader("ledger-v3"))
+    monkeypatch.setattr(validation_v3, "render_v3", reader("v3's report"))
     before = snapshot(own)
     run = {"dq-v3": lambda: run_v3.run_dq_v3(fresh_clone=True), "validate-v3": run_validate_v3,
            "freeze-v3": lambda: run_freeze_v3(2024), "read-v2": lambda: v2store.run_read_v2(v2["store"]),
            "replay-v3-2024": lambda: replay_v3.run_replay_v3(2024),
            "replay-v3-2025": lambda: replay_v3.run_replay_v3(2025), "evidence-v3": replay_v3.run_evidence_v3,
-           "gate-2025": lambda: replay_v3.held_out_gate_v3(2025)}[command]
+           "gate-2025": lambda: replay_v3.held_out_gate_v3(2025),
+           "freeze-record-v3": lambda: cli.main(["freeze-record-v3", "--rehearsal", "0" * 32]),
+           "ledger-v3": lambda: cli.main(["ledger-v3"]), "report": lambda: cli.main(["report"])}[command]
     with pytest.raises(v2store.V2StoreRefused, match="holds v2's first 2024 replay run"):
         run()
     assert reads == [] and snapshot(own) == before and snapshot(v2["store"]) == v2["built"]

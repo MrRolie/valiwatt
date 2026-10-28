@@ -175,8 +175,8 @@ def stop_a_start(departure: bool = False) -> dict:
 
 def stopped_start(chain) -> dict:
     """A 2025 start under the tag that stopped after it opened (MLflow FAILED, status started), on the head, holding
-    the gate record it logged at its opening (its 2025 time the chain's retrieval). Returns its start as
-    replay_starts_v3 gives it."""
+    the gate record it logged at its opening (its 2025 time the chain's retrieval) and the marker set once it was
+    logged (records_v3.GATE_LOGGED). Returns its start as replay_starts_v3 gives it."""
     import json
 
     freeze = records_v3.current_freeze()
@@ -185,7 +185,7 @@ def stopped_start(chain) -> dict:
               "ruling": None, "standing": "clean", "t2025": {"utc": vw.ledger_time(chain.retrieved)}}
     rid = rw.fake_run({"kind": run_v3.KIND, "year": "2025", "freeze_tag": V3_FREEZE_TAG,
                        "freeze_commit": freeze["freeze_commit"], "status": "started", "stage": "inputs_read",
-                       "error": "KeyboardInterrupt", **code}, status="FAILED",
+                       records_v3.GATE_LOGGED: "true", "error": "KeyboardInterrupt", **code}, status="FAILED",
                       texts={mrun.GATE_RECORD: json.dumps(record)})
     (start,) = [s for s in records_v3.replay_starts_v3(2025) if s["run_id"] == rid]
     return start
@@ -1125,15 +1125,16 @@ def test_a_completed_2025_test_unfinished_in_the_store_before_its_ledger_sync_is
     assert [r.info.run_id for r in vw.replay_runs_v3(2025)] == [rid]
 
 
-@pytest.mark.parametrize("case", ["unruled", "ruled", "no_bind_record", "git_commit_changed"])
+@pytest.mark.parametrize("case", ["unruled", "ruled", "no_bind_record", "git_commit_changed", "no_marker"])
 def test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f(chain, monkeypatch, case):
     """(f), (c) (the fourth review's scenario): the gate and the pre-opening bind pass on H; a documentation-only commit
     J is made just before the run is created, so the run records J and logs its gate record for H, and the post-opening
     bind stops it before any input is read, first recording on it stopped_at bind, H and J. That intact trace is a
     stopped start: the next start is refused (f), naming it (unruled), and passes with the owner's clean ruling naming
     it and its evidence run, finishing held out (ruled). The same mismatch without the bind's record (its stopped_at
-    tag deleted), or with the bind's record disagreeing with the run's git_commit (git_commit changed afterwards), is
-    refused (c), never adjudicated."""
+    tag deleted), with the bind's record disagreeing with the run's git_commit (git_commit changed afterwards), or
+    without the marker the run set once its gate record was logged (records_v3.GATE_LOGGED deleted: the bind runs
+    after it), is refused (c), never adjudicated."""
     from valiwatt import tracking as tr
 
     h = head(chain)
@@ -1152,11 +1153,14 @@ def test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_un
     (run,) = vw.replay_runs_v3(2025)
     rid, t, c = run.info.run_id, run.data.tags, tracking.client()
     assert (t["git_commit"], t["stage"], t["error"], run.info.status) == (j, "opened", "FreezeError", "FAILED")
-    assert (t["stopped_at"], t["bind_gate_commit"], t["bind_run_commit"]) == ("bind", h, j)
+    assert (t["stopped_at"], t["bind_gate_commit"], t["bind_run_commit"], t[records_v3.GATE_LOGGED]) == ("bind", h, j,
+                                                                                                     "true")
     assert mrun._load_json_artifact(c, rid, mrun.GATE_RECORD)["head_commit"] == h
-    if case in ("no_bind_record", "git_commit_changed"):
+    if case in ("no_bind_record", "git_commit_changed", "no_marker"):
         if case == "no_bind_record":
             c.delete_tag(rid, "stopped_at")
+        elif case == "no_marker":
+            c.delete_tag(rid, records_v3.GATE_LOGGED)
         else:
             c.set_tag(rid, "git_commit", "9" * 40)
         refused(rf"\(c\) v3 replay run {rid}'s tags disagree with the gate record it logged at its opening: "
@@ -1177,29 +1181,52 @@ def test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_un
                                                                                            "clean")
 
 
-@pytest.mark.parametrize("case", ["completed", "past_opening", "opening", "opening_ruled"])
+@pytest.mark.parametrize("case", ["completed", "past_opening", "reading_inputs", "reading_inputs_kept", "opening",
+                                  "opening_ruled"])
 def test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening(chain, monkeypatch, case):
-    """(c), (f) (step 3's review, part C): a 2025 start logs its gate record first of all at its opening; its tags are
-    reconciled with it and it holds the start's reading of the 2025 time. Only a start that stopped while it opened,
-    before it logged that record or read any input (status started, stage opened, no artifact, no metric), holds
+    """(c), (f) (step 3's review, part C, and its follow-up): a 2025 start logs its gate record first of all at its
+    opening, then sets the marker records_v3.GATE_LOGGED before it reads any input; its tags are reconciled with the
+    record and it holds the start's reading of the 2025 time. Only a start that stopped while it opened, before it
+    logged that record or read any input (status started, stage opened, no marker, no artifact, no metric), holds
     none. A finished test whose record is gone (its ledger-v3 entry committed, so the ledger and the store still agree:
-    the reviewer's scenario), or a start stopped past its opening whose record is gone, is refused (c), naming it,
-    never adjudicated (no (f)). The controls: a real start stopped while it logged its record is a stopped start; the
-    next start is refused (f), naming it (opening), and passes with the owner's clean ruling naming it and its
-    evidence run, finishing held out (opening_ruled)."""
+    the reviewer's scenario), a start stopped past its opening whose record is gone, or a real start stopped while it
+    read its inputs (stage still opened, the record its one artifact, the marker set) whose record is gone, is refused
+    (c), naming it, never adjudicated (no (f)). The controls: that start with its record kept is a stopped start, the
+    next start refused (f), naming it, never (c) (reading_inputs_kept); a real start stopped while it logged its
+    record, before the marker, is a stopped start; the next start is refused (f), naming it (opening), and passes with
+    the owner's clean ruling naming it and its evidence run, finishing held out (opening_ruled)."""
     import mlflow
     from replay_world import StoppedHere
 
     from valiwatt.report import ledger_v3
 
-    if case in ("completed", "past_opening"):
+    if case in ("reading_inputs", "reading_inputs_kept"):
+        def stop(*args, **kwargs):
+            raise StoppedHere("the inputs")
+
+        with monkeypatch.context() as m:
+            m.setattr(run_v3, "_read_inputs_v3", stop)
+            with pytest.raises(StoppedHere):
+                run_v3.run_replay_v3(2025, n_boot=20)
+        (run,) = vw.replay_runs_v3(2025)
+        rid, t, c = run.info.run_id, run.data.tags, tracking.client()
+        assert (t["status"], t["stage"], t[records_v3.GATE_LOGGED], t["error"], run.info.status) == (
+            "started", "opened", "true", "StoppedHere", "FAILED")
+        assert mrun._artifact_paths(c, rid) == [mrun.GATE_RECORD] and not run.data.metrics
+        if case == "reading_inputs_kept":
+            (s,) = records_v3.replay_starts_v3(2025)
+            assert (s["run_id"], s["opening_stopped"], s["finished"]) == (rid, False, False) and s["gate"]
+            msg = refused(r"\(f\) the 2025 test of record did not finish")
+            assert rid in msg and "(c)" not in msg
+            return
+    if case in ("completed", "past_opening", "reading_inputs"):
         if case == "completed":
             assert run_v3.run_replay_v3(2025, n_boot=20) == 0
             (run,) = vw.replay_runs_v3(2025)
             rid = run.info.run_id
             ledger_v3.sync()
             rw.commit(chain.repo, {}, "ledger-v3 with the test of record")
-        else:
+        elif case == "past_opening":
             rid = stopped_start(chain)["run_id"]
         artifact_file(rid, mrun.GATE_RECORD).unlink()
         said = rf"\(c\) v3 replay run {rid} of 2025 holds no gate record {mrun.GATE_RECORD}"
@@ -1221,7 +1248,7 @@ def test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_o
     (run,) = vw.replay_runs_v3(2025)
     rid, t, c = run.info.run_id, run.data.tags, tracking.client()
     assert (t["status"], t["stage"], t["error"], run.info.status) == ("started", "opened", "StoppedHere", "FAILED")
-    assert mrun._artifact_paths(c, rid) == [] and not run.data.metrics
+    assert records_v3.GATE_LOGGED not in t and mrun._artifact_paths(c, rid) == [] and not run.data.metrics
     (s,) = records_v3.replay_starts_v3(2025)
     assert (s["run_id"], s["gate"], s["opening_stopped"], s["finished"]) == (rid, None, True, False)
     if case == "opening":
@@ -1510,7 +1537,7 @@ def test_a_v3_replay_reads_2025_only_for_its_started_run(chain, case):
     import json
 
     tags = {"kind": run_v3.KIND, "year": "2025", "status": "started", "freeze_commit": chain.f0,
-            **rw.git_tags(chain.repo)}
+            records_v3.GATE_LOGGED: "true", **rw.git_tags(chain.repo)}
     texts = {mrun.GATE_RECORD: json.dumps({"head_commit": tags["git_commit"]})}
     status = "RUNNING"
     match = "a v3 replay reads 2025 only for its started 2025 run"

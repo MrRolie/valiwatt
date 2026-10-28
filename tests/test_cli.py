@@ -340,17 +340,19 @@ def test_report_refuses_a_2025_data_quality_run_named_by_id_before_any_2025_star
 def test_report_syncs_v3_s_ledger_then_renders_v3_s_report_and_never_v2_s(monkeypatch):
     """`valiwatt report` on the v3 branch (docs/plan-v3.md, sections 10.1, 10.3 and 13): v3's ledger synced, then v3's
     report rendered, in that order; neither v2's ledger nor v2's renderers are reached, and the v2 flags are gone. A
-    refused ledger-v3 sync stops it before any render."""
+    refused ledger-v3 sync stops it before any render. v3's store is checked not to be v2's before either reads it."""
+    from valiwatt import v2store
     from valiwatt.report import ledger, ledger_v3, render, validation, validation_v3
 
     seen = []
+    monkeypatch.setattr(v2store, "require_own_store", lambda: seen.append("v3's store not v2's"))
     monkeypatch.setattr(ledger, "sync", lambda *a, **k: seen.append("v2's ledger") or [])
     monkeypatch.setattr(render, "render", lambda *a, **k: seen.append("v2's data-quality report") or [])
     monkeypatch.setattr(validation, "render_validation", lambda *a, **k: seen.append("v2's report") or [])
     monkeypatch.setattr(ledger_v3, "run_sync", lambda: seen.append("ledger-v3") or 0)
     monkeypatch.setattr(validation_v3, "render_v3", lambda *a, **k: seen.append("v3's report") or [])
-    assert cli.main(["report"]) == 0 and seen == ["ledger-v3", "v3's report"]
+    assert cli.main(["report"]) == 0 and seen == ["v3's store not v2's", "ledger-v3", "v3's report"]
     assert rejected(["report", "--dq-only"]) and rejected(["report", "--run-id", "x"])
     seen.clear()
     monkeypatch.setattr(ledger_v3, "run_sync", lambda: seen.append("ledger-v3") or 1)
-    assert cli.main(["report"]) == 1 and seen == ["ledger-v3"]
+    assert cli.main(["report"]) == 1 and seen == ["v3's store not v2's", "ledger-v3"]

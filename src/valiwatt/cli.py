@@ -174,9 +174,12 @@ def cmd_report(args) -> int:
     """`valiwatt report` on the v3 branch (docs/plan-v3.md, sections 10.3 and 13): v3's replay ledger synced first (the
     report reads the replays it holds), then v3's validation report rendered into docs/report/v3/ with its stamp
     (report/validation_v3.py). v2's report, stamp, README box and ledger stand as rendered at `v3-fork` (section 10.1):
-    nothing here writes them; v2's renderers (report/render.py, report/validation.py) stay as library code."""
+    nothing here writes them; v2's renderers (report/render.py, report/validation.py) stay as library code. v3's store
+    is checked not to be v2's (v2store.require_own_store) before either reads it."""
     from valiwatt.report.validation_v3 import render_v3
+    from valiwatt.v2store import require_own_store
 
+    require_own_store()
     code = cmd_ledger_v3(args)  # the ledger first: the report reads the replays it holds
     if code:
         return code

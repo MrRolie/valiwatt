@@ -480,10 +480,13 @@ def write_freeze_record(rehearsal_run_id: str) -> Path:
 
 
 def run_write_freeze_record(rehearsal_run_id: str) -> int:
-    """`valiwatt freeze-record-v3 --rehearsal RUN_ID`: v3's first-run guard, then write_freeze_record."""
+    """`valiwatt freeze-record-v3 --rehearsal RUN_ID`: v3's first-run guard, v3's store not v2's
+    (v2store.require_own_store) before anything reads it, then write_freeze_record."""
     from valiwatt.firstrun import require_first_run
+    from valiwatt.v2store import require_own_store
 
     require_first_run()
+    require_own_store()
     path = write_freeze_record(rehearsal_run_id)
     print(f"freeze record written: {paths.rel(path)}; commit it alone, before any 2025 record reaches the machine")
     return 0

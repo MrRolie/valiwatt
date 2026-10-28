@@ -1222,16 +1222,17 @@ def _complete(run_id: str) -> None:
 def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     """`valiwatt replay-v3 --year Y`, in v2's order (monitor/run.py `run_replay`): the gate (`held_out_gate_v3`); the
     tracked run, kind replay_v3, opened with every tag it will carry (status started, stage opened), and for 2025 the
-    gate's record logged at once as results/held_out_gate.json, the gate, the label and this opening all under
-    start_lock_v3(), HEAD still the commit the gate passed on before the run opens and the run's own commit after
-    (`_bind_to_gate_v3`); then, inside the run, the inputs read (stage inputs_read), the noon replay (stage replayed),
-    every check that can stop it (the never-acts check, the rehearsal's identity, the results, the Evidently
-    cross-check in a temporary folder; stage checked), and only then the metrics, frames/hourly.parquet, the Evidently
-    files and, last, results/replay.json (stage logged); then the run is ended FINISHED, and only after that is its
-    status tag set to complete (`_complete`). An exception after the run opens leaves it in the store, status started,
-    its stage the last it reached and tag error the exception's class name, never its message; an interruption between
-    the run's end and its completion tag leaves a FINISHED run whose status says started, an unfinished start
-    adjudicated under (f), never a completion the store disagrees with. No diagnostics."""
+    gate's record logged at once as results/held_out_gate.json and then the tag records_v3.GATE_LOGGED set (true), the
+    gate, the label and this opening all under start_lock_v3(), HEAD still the commit the gate passed on before the run
+    opens and the run's own commit after (`_bind_to_gate_v3`); then, inside the run, the inputs read (stage
+    inputs_read), the noon replay (stage replayed), every check that can stop it (the never-acts check, the rehearsal's
+    identity, the results, the Evidently cross-check in a temporary folder; stage checked), and only then the metrics,
+    frames/hourly.parquet, the Evidently files and, last, results/replay.json (stage logged); then the run is ended
+    FINISHED, and only after that is its status tag set to complete (`_complete`). An exception after the run opens
+    leaves it in the store, status started, its stage the last it reached and tag error the exception's class name,
+    never its message; an interruption between the run's end and its completion tag leaves a FINISHED run whose status
+    says started, an unfinished start adjudicated under (f), never a completion the store disagrees with. No
+    diagnostics."""
     import mlflow
 
     from valiwatt.firstrun import require_first_run
@@ -1255,6 +1256,8 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
                 try:  # the run exists: a stop while its gate record is logged keeps its error class too
                     mlflow.log_text(json.dumps(jsonable(plan["record"]), indent=2, ensure_ascii=False),
                                     mrun.GATE_RECORD)
+                    # Past its opening from here: without its record, it is no start stopped while it opened.
+                    mrun._set(records_v3.GATE_LOGGED, "true")
                 except BaseException as e:
                     mrun._set("error", type(e).__name__)
                     raise

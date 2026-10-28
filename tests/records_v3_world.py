@@ -199,8 +199,10 @@ def log_replay_v3(repo: Path, year: int = 2024, freeze_tag: str = V3_FREEZE_TAG,
                   results: dict | None = None, **tags) -> str:
     """A `replay_v3` run as the replay logs one, by hand: its tags, its metrics and results/replay.json; a 2025 run
     under v3's tag also its gate record (results/held_out_gate.json, as run_replay_v3 logs it at its opening), naming
-    its commit and freeze commit, no cause and its standing."""
+    its commit and freeze commit, no cause and its standing, and the marker it sets once that record is logged
+    (records_v3.GATE_LOGGED)."""
     from valiwatt.monitor.run import GATE_RECORD
+    from valiwatt.records_v3 import GATE_LOGGED
 
     t = replay_v3_tags(repo, year, freeze_tag, **tags)
     res = results or replay_results(t)
@@ -208,6 +210,7 @@ def log_replay_v3(repo: Path, year: int = 2024, freeze_tag: str = V3_FREEZE_TAG,
     if year == 2025 and freeze_tag == V3_FREEZE_TAG:
         texts[GATE_RECORD] = json.dumps({"head_commit": t["git_commit"], "freeze_commit": t["freeze_commit"],
                                          "causes": [], "ruling": None, "standing": t.get("standing", "")})
+        t = {GATE_LOGGED: "true", **t}
     return fake_run(t, status=status, metrics={"mape": res["summary"]["mape"]["mean"]}, texts=texts)
 
 

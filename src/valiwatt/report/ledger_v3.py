@@ -133,7 +133,11 @@ def sync(p: Path | None = None, c=None, root: Path | None = None) -> list[dict]:
 
 
 def run_sync() -> int:
-    """`valiwatt ledger-v3`: sync docs/replay-ledger-v3.json from v3's store."""
+    """`valiwatt ledger-v3`: sync docs/replay-ledger-v3.json from v3's store, once that store is checked not to be v2's
+    (v2store.require_own_store) before anything reads it."""
+    from valiwatt.v2store import require_own_store
+
+    require_own_store()
     entries = sync()
     print(f"v3 replay ledger: {len(entries)} entries in {V3_LEDGER}")
     return 0
