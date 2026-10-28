@@ -678,3 +678,18 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   validation, and no value differs from it (largest difference 0.0 MW, against the 1e-6 MW allowed). The freeze for
   the 2024 rehearsal and the rehearsal ran; the rehearsal's identity check against validation's January 2024 fold
   passed and it logged. No rule or dependency changed.
+- 2026-10-28, step 3 (section 10.4), from the review of the rule-file diff since `v3-fork` by a model of another
+  family, commit 43c76c9486da changes rule files to fix five defects. The horizon contrast's cold tail and event windows
+  were built from the horizon's own hours; they are now section 8.2's subsets of the common hours intersected with the
+  horizon's, as section 8.1 says. v2's coverage counted an undefined interval bound as uncovered at `v3-fork` and v3's
+  change had made it missing; v2's path is restored and the check applies to the binned intervals only. `read-v2`
+  opened v2's store before it recorded its own run, so a crash between the two left no trace of the read; it now
+  records the attempt first and refuses any earlier attempt, whatever its status. A window past 2024 now refuses any
+  of its files reached through a link, not only the 2019–2024 files. The NBM wind is parsed on v3's path only; v2's
+  loader reads its files as at `v3-fork`. None of this changes a step-2 result recorded above: the reproduction check
+  reads v2's form at midnight, whose inputs these changes leave as they were, and step 5 runs every model again on
+  the frozen code.
+- 2026-10-28, same review: section 3.1 checks "the raw files v2's first 2024 replay read … with their manifests" against
+  the hashes that replay's data-quality run recorded. That run recorded the Hydro-Québec export's hash, not its
+  manifest's, so the export is checked by its hash and its manifest only as a byte copy (no link); the manifest's
+  retrieval time, which condition (h) reads for the export reaching 2025, is checked by (h) itself.
