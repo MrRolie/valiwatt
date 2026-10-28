@@ -671,4 +671,10 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
 
 ### After the first v3 run
 
-None yet.
+- 2026-10-28, step 2 of section 17, every run from commit cb5c52ce1fca (which descends from `v3-first-run`), on the byte
+  copies of section 3.1, checked file by file against v2's first 2024 replay and found identical. v2's store was read
+  once, read-only, and was byte-identical after the read. Data quality passed every gate. The reproduction check
+  passed: v2's form at midnight, in v3's harness, forecast the same 35,045 hours of 2020–2023 as v2's recorded
+  validation, and no value differs from it (largest difference 0.0 MW, against the 1e-6 MW allowed). The freeze for
+  the 2024 rehearsal and the rehearsal ran; the rehearsal's identity check against validation's January 2024 fold
+  passed and it logged. No rule or dependency changed.
