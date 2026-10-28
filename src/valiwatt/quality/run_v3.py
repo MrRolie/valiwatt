@@ -42,7 +42,7 @@ from valiwatt.forecast.features import forecast_temperature, observed_day_mean
 from valiwatt.forecast.issue import MIDNIGHT, NOON
 from valiwatt.paths import INTERIM, rel
 from valiwatt.quality import run as qrun
-from valiwatt.quality.byte_copies import check_byte_copies
+from valiwatt.quality.byte_copies import ByteCopyRefused, check_byte_copies
 from valiwatt.quality.checks import CheckResult, jsonable
 from valiwatt.quality.demand import build_demand, demand_checks
 from valiwatt.quality.weather import (
@@ -105,11 +105,12 @@ def require_design_run(dq) -> dict:
     """The data-quality run v3's validation and freezes may read (docs/plan-v3.md, sections 3.1 and 11.2), checked
     before any file is read: the window ending with 2024 (its `through` parameter), and its byte copies checked
     (`byte_copies` passed) unless the run is labelled a fresh clone (FRESH_CLONE true). A run labelled a fresh clone is
-    refused once v3's store holds a read of v2's store (v2store.recorded), as dq-v3 refuses `--fresh-clone` when a read
-    exists: on a machine that has the read, the label cannot stand in for the byte-copy check. Refused (LineageError)
-    otherwise, an absent parameter or tag included. Returns {"byte_copies": its status, "fresh_clone": bool}."""
+    refused once v3's store holds a read of v2's store, complete (v2store.recorded) or only attempted, crashed or
+    refused after it started (v2store.attempted), as dq-v3 refuses `--fresh-clone` then: on a machine where v2's store
+    was opened, the label cannot stand in for the byte-copy check. Refused (LineageError) otherwise, an absent
+    parameter or tag included. Returns {"byte_copies": its status, "fresh_clone": bool}."""
     from valiwatt.forecast.validate import LineageError  # validate imports quality.run
-    from valiwatt.v2store import recorded
+    from valiwatt.v2store import attempted, recorded
 
     run_id, through = dq.info.run_id, dq.data.params.get("through")
     if through != str(THROUGH_DEFAULT):
@@ -124,19 +125,26 @@ def require_design_run(dq) -> dict:
         raise LineageError(f"data-quality run {run_id} is labelled a fresh clone, but v3's store holds the read of v2's "
                            f"store {read['run_id']}: the byte copies can be checked here, so run `valiwatt dq-v3` "
                            "again without --fresh-clone")
+    if fresh and (tried := attempted()):
+        raise LineageError(f"data-quality run {run_id} is labelled a fresh clone, but v3's store holds the read of v2's "
+                           f"store {tried[0]['run_id']}, attempted ({tried[0]['status']}, tag status "
+                           f"{tried[0]['tag_status']!r}): v2's store was opened on this machine, which is no fresh "
+                           "clone")
     return {"byte_copies": status, "fresh_clone": fresh}
 
 
 def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
     """`valiwatt dq-v3`. fresh_clone: the run is told it is on a fresh clone, holding neither v2's files nor its store
-    (`--fresh-clone`): the byte-copy check is then not run, and the run says so (tag FRESH_CLONE)."""
+    (`--fresh-clone`): the byte-copy check is then not run, and the run says so (tag FRESH_CLONE). Refused before any
+    file is read when v3's store holds any read of v2's store, even one that never completed (v2store.attempted): v2's
+    store was opened on this machine."""
     import mlflow
 
     from valiwatt.firstrun import require_first_run
     from valiwatt.monitor.rules import rules_sha256
     from valiwatt.records_v3 import current_freeze
     from valiwatt.tracking import start_run
-    from valiwatt.v2store import recorded, require_own_store
+    from valiwatt.v2store import attempted, recorded, require_own_store
 
     through = int(through)
     if through not in THROUGH_YEARS:
@@ -144,6 +152,10 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
     require_first_run()
     require_own_store()
     freeze = current_freeze()  # v3-pre-freeze before the tag; under the tag, refused on other rules (section 10.3)
+    if fresh_clone and (tried := attempted()):
+        raise ByteCopyRefused(f"--fresh-clone, but v3's store holds the read of v2's store {tried[0]['run_id']}, "
+                              f"attempted ({tried[0]['status']}, tag status {tried[0]['tag_status']!r}): v2's store "
+                              "was opened on this machine, which is not a fresh clone")
     copies = check_byte_copies(recorded(), fresh_clone=bool(fresh_clone), through=through)
     hq_manifest, eccc_manifests = qrun._verify_manifests(through)
     nbm_manifest = qrun._verify_nbm(through)

@@ -934,6 +934,30 @@ def test_sections_3_and_4_show_what_plan_8_3_reports_beside_the_verdicts():
                 assert untestable in part
 
 
+def test_the_horizon_s_all_row_names_the_horizon_s_own_hours():
+    """The horizon's "all" contrast is computed on its own hours (the target, v2's form at noon and at midnight;
+    forecast/evaluate.py contrasts_v3), not on the common hours of the noon contrasts: every horizon table (the
+    validation's, the rehearsal's, 2025's test of record) labels that row so, in both languages, with the hours the
+    run counted, and never "all common hours"; the noon contrasts' "all" row keeps the common hours' label."""
+    from valiwatt.report.render import filters
+
+    out = rendered("held_out")
+    ctx = out["ctx"]
+    horizons = {2: ctx["v"]["contrasts"]["horizon"],
+                3: ctx["rehearsal"]["results"]["judgement"]["contrasts"]["horizon"],
+                4: ctx["held"]["numbers"]["results"]["judgement"]["contrasts"]["horizon"]}
+    common = {"fr": "toutes les heures communes", "en": "all common hours"}
+    for lang in LANGS:
+        f, own = filters(lang), R3.SAY[lang]["horizon_all"]
+        assert common[lang] not in own
+        for n, h in horizons.items():
+            lines = R3.numbered_section(out[lang], n).splitlines()
+            at = next(i for i, x in enumerate(lines) if x.startswith(("| Horizon: ", "| Horizon : ")))
+            assert lines[at + 2].startswith(f"| {own} | {f['num'](h['subsets']['all']['hours'])} |"), (lang, n)
+            assert not any(x.startswith(f"| {common[lang]} |") for x in lines[at:at + 8]), (lang, n)
+        assert f"| {common[lang]} |" in R3.numbered_section(out[lang], 2)
+
+
 @pytest.mark.parametrize("fault", ["data_quality_not_a_fresh_clone", "none"])
 def test_a_fresh_clone_lineage_needs_a_data_quality_run_labelled_so(fault, tmp_path, monkeypatch):
     """Section 3.1: a store without the runs of record reports a rerun on a later vintage, whose data-quality run is

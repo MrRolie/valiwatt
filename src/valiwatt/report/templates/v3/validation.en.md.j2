@@ -19,7 +19,7 @@
 | Horizon: v2's form at noon minus v2's form at midnight, reported, never judged ({{ lbl }}) | Hours | MAPE difference | {{ K.ci_level|pct(0) }} CI |
 |---|---|---|---|
 {% for s in ['all', 'cold', 'event_windows'] %}
-| {{ SUBSET[s] }} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | no hours |{% endif %}
+| {% if s == 'all' %}{{ say.horizon_all }}{% else %}{{ SUBSET[s] }}{% endif %} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | no hours |{% endif %}
 
 {% endfor %}
 {% endmacro %}

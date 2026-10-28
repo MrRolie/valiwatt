@@ -2379,6 +2379,29 @@ BREAKS = [
        "La lecture du magasin de v2 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire "
        "ni enregistrer",
        "The read of v2's store refuses a store holding v2's first 2024 replay, before it reads or logs anything"),
+    *(_b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[{c}]",
+         f"{fr} refuse un magasin qui contient le premier rejeu 2024 de v2 avant de rien lire ou enregistrer"
+         f"{fr_lock}",
+         f"{en} refuses a store holding v2's first 2024 replay before it reads or logs anything{en_lock}")
+      for c, fr, en, fr_lock, en_lock in (
+          ("replay-v3-2024", "La répétition 2024 de v3", "v3's 2024 rehearsal", "", ""),
+          ("replay-v3-2025", "Le départ de 2025 de v3", "v3's 2025 start",
+           ", avant de créer son verrou de départ et avant toute étape de sa porte",
+           ", before it creates its start lock and before any step of its gate"),
+          ("evidence-v3", "La preuve de v3", "v3's evidence", ", avant de lire le registre de gel",
+           ", before it reads the freeze record"),
+          ("gate-2025", "La porte de 2025 de v3, appelée seule,", "v3's 2025 gate, called on its own,",
+           ", avant toute autre de ses étapes", ", before any other of its steps"))),
+    _b(FREEZE, f"{T_V2S}::test_a_crashed_read_refuses_the_fresh_clone_label[crashed]",
+       "Une lecture du magasin de v2 interrompue après l'avoir ouvert refuse l'étiquette de clone neuf : dq-v3 "
+       "--fresh-clone est refusé avant de rien lire, et une exécution de qualité ainsi étiquetée n'est pas lue",
+       "A read of v2's store that crashed after opening it refuses the fresh-clone label: dq-v3 --fresh-clone is "
+       "refused before anything is read, and a data-quality run so labelled is not read"),
+    _b(FREEZE, f"{T_V2S}::test_a_crashed_read_refuses_the_fresh_clone_label[control]",
+       "Témoin : sans lecture tentée, dq-v3 --fresh-clone atteint la vérification des copies et l'exécution étiquetée "
+       "clone neuf est lue",
+       "Control: with no read attempted, dq-v3 --fresh-clone reaches the byte-copy step and the run labelled a fresh "
+       "clone is read", control=True),
     # The 2025 gate
     _b(FREEZE, f"{T_GT3}::test_a_clean_2025_start_with_everything_in_order_passes",
        "Témoin : un départ de 2025 de v3 où tout est en ordre passe, sans cause, debout propre, et son exécution "
@@ -2653,6 +2676,45 @@ BREAKS = [
        "(c) Une trace de la liaison qui ne s'accorde plus avec le commit de l'exécution (changé après coup) refuse le "
        "départ suivant",
        "(c) A bind trace that no longer agrees with the run's commit (changed afterwards) refuses the next start"),
+    *(_b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening[{c}]",
+         f"(c) {fr}, dont l'enregistrement de porte a disparu, refuse le départ suivant, jamais jugé sous (f)",
+         f"(c) {en} whose gate record is gone refuses the next start, never adjudicated under (f)")
+      for c, fr, en in (("completed", "Un test de 2025 achevé, son entrée du registre v3 consignée",
+                         "A finished 2025 test, its ledger-v3 entry committed,"),
+                        ("past_opening", "Un départ arrêté après son ouverture", "A start stopped past its opening"))),
+    _b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening[opening]",
+       "(f) Un départ arrêté pendant qu'il consignait son enregistrement de porte, avant toute donnée lue, est un "
+       "départ arrêté : le départ suivant est refusé (f), le nommant",
+       "(f) A start stopped while it logged its gate record, before any input was read, is a stopped start: the next "
+       "start is refused (f), naming it"),
+    _b(FREEZE, f"{T_GT3}::test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening"
+               "[opening_ruled]",
+       "Témoin : avec la décision propre du propriétaire nommant ce départ arrêté à l'ouverture et son exécution de "
+       "preuve, le départ suivant passe et s'achève, tenu à l'écart",
+       "Control: with the owner's clean ruling naming that start stopped at its opening and its evidence run, the next "
+       "start passes and finishes, held out", control=True),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_skips_a_start_without_its_gate_record[no_record]",
+       "(c) Un départ antérieur sans enregistrement de porte, hors l'arrêt à l'ouverture, n'est jamais sauté par les "
+       "lectures de l'heure 2025 : refusé",
+       "(c) An earlier start without its gate record, other than one stopped at its opening, is never skipped by the "
+       "readings of the 2025 time: refused"),
+    _b(FREEZE, f"{T_GT3}::test_the_2025_time_never_skips_a_start_without_its_gate_record[opening_stopped]",
+       "Témoin : un départ arrêté à l'ouverture n'a consigné aucune lecture de l'heure 2025 et n'en ajoute aucune",
+       "Control: a start stopped at its opening recorded no reading of the 2025 time and adds none", control=True),
+    *(_b(FREEZE, f"{T_GT3}::test_a_start_interrupted_between_its_end_and_its_completion_tag_is_a_stopped_start[{c}]",
+         f"(f) Un départ de 2025 interrompu {fr} reste un départ inachevé : le départ suivant est refusé (f), le "
+         "nommant, jamais (c)",
+         f"(f) A 2025 start interrupted {en} stays an unfinished start: the next start is refused (f), naming it, "
+         "never (c)")
+      for c, fr, en in (("killed_while_ending", "pendant que MLflow le termine (puis terminé FAILED par le "
+                         "propriétaire)", "while MLflow ends it (then ended FAILED by the owner)"),
+                        ("stopped_before_the_tag", "après sa fin FINISHED, avant son étiquette d'achèvement",
+                         "after it ended FINISHED, before its completion tag"))),
+    _b(FREEZE, f"{T_GT3}::test_a_start_interrupted_between_its_end_and_its_completion_tag_is_a_stopped_start[ruled]",
+       "Témoin : avec la décision propre du propriétaire nommant ce départ interrompu et son exécution de preuve, le "
+       "départ suivant passe et s'achève, tenu à l'écart",
+       "Control: with the owner's clean ruling naming that interrupted start and its evidence run, the next start "
+       "passes and finishes, held out", control=True),
     _b(FREEZE, f"{T_GT3}::test_a_soft_deleted_evidence_run_still_lifts_its_ruling[deleted]",
        "Une exécution de preuve valide supprimée (suppression douce) lève encore la décision qui repose sur elle",
        "A valid evidence run soft-deleted still lifts the ruling resting on it"),

@@ -190,12 +190,15 @@ def held_out_gate_v3(year: int, departure: bool = False) -> tuple[dict, list[str
     anchor and ancestry the gate reads), a clean tree, `v3-rules-frozen` existing with the rule files and dependencies
     its own and no unlisted v3 freeze tag (current_freeze), the moved tag, then the rest of the gate
     (`held_out_2025_v3`). Replacement objects are off throughout (records_v3.replacements_off). run_replay_v3 holds
-    start_lock_v3() across the whole 2025 gate."""
+    start_lock_v3() across the whole 2025 gate. v3's store is its own (v2store.require_own_store) before any step
+    reads it (the moved-tag check and the 2025 gate both do)."""
     from valiwatt.firstrun import require_first_run
+    from valiwatt.v2store import require_own_store
 
     if year not in REPLAY_YEARS:
         raise ValueError(f"v3 replays {list(REPLAY_YEARS)}, not {year}")
     require_first_run()
+    require_own_store()
     if year == HELD_OUT_YEAR:
         rewrites = records_v3.history_rewrites()
         if rewrites:
@@ -296,17 +299,25 @@ def every_run(c, experiment_id: str, filter_string: str, view) -> list:
 def earlier_2025_times(c, starts: list[dict]) -> list[dict]:
     """Every earlier reading of the 2025 time v3's store holds (section 11.3 (4): a start after a stopped one stays post
     hoc, and nothing seen in 2025 buys a held-out label): the 2025 time each earlier 2025 start's gate recorded
-    (results/held_out_gate.json, read by records_v3.replay_starts_v3); and, for every v3 data-quality run through 2025,
+    (results/held_out_gate.json, read by records_v3.replay_starts_v3), every start holding one but a start that
+    demonstrably stopped while it opened, before it logged its record (its "opening_stopped", which recorded no
+    reading); and, for every v3 data-quality run through 2025,
     whatever its status, deleted included, the retrieval time of the export it read: each an earlier reading of the
     export's retrieval time. A run's own start time is no reading of it (the plan defines the 2025 time by the
     retrieval time and v2's first 2025 start only). The data-quality runs are read to the last page of the search
     (`every_run`). Each {"utc", "source" ("earlier_start" or "dq_retrieved"),
-    "run_id"}. A reading that cannot be parsed as a time is refused (FreezeError, (h)): an unreadable earlier time is
-    not a later one."""
+    "run_id"}. Refused (FreezeError): any other start without its gate record ((c): its reading is never skipped for
+    an absent record); a reading that cannot be parsed as a time ((h): an unreadable earlier time is not a later
+    one)."""
     from mlflow.entities import ViewType
 
     from valiwatt.quality import run_v3 as dq_v3
 
+    unread = [s["run_id"] for s in starts if s.get("gate") is None and not s.get("opening_stopped")]
+    if unread:
+        raise FreezeError(f"(c) the 2025 starts {unread} hold no gate record of their opening, nor the shape of a "
+                          "start stopped before it logged one: their reading of the 2025 time cannot be read, and is "
+                          "never skipped")
     out = [{"utc": (s["gate"].get("t2025") or {}).get("utc"), "source": "earlier_start", "run_id": s["run_id"]}
            for s in starts if s.get("gate") is not None]
     exp = c.get_experiment_by_name(dq_v3.EXPERIMENT)
@@ -480,13 +491,13 @@ def _check_diagnostics_v3(c) -> None:
 def _reconcile_ledger_v3(c, entries: list[dict]) -> None:
     """(c) the run store and the committed ledger-v3 agree (v2's section 11.3.4 (c): a disagreement between them
     refuses): every `replay_v3` run of the store, of any year and status, deleted included, that a committed entry
-    records is FINISHED with status tag complete, and its entry derived again from the store (report/ledger_v3.py
+    records is FINISHED with status tag complete, and its entry derived again from the store (ledger_rules_v3.py
     `entry`, from its tags and results/replay.json) is the committed one field for field (`disagreement`). A run the
     ledger records as finished, held out, post hoc or seen by the developers, is never read as a stopped start because
     its store status changed since; nor is any other field of the store taken over the committed record. Refused
     (FreezeError, (c)), naming each run and what differs."""
+    from valiwatt import ledger_rules_v3
     from valiwatt.report import ledger as v2_ledger
-    from valiwatt.report import ledger_v3
 
     recorded = {e["run_id"]: e for e in entries}
     problems = []
@@ -500,11 +511,11 @@ def _reconcile_ledger_v3(c, entries: list[dict]) -> None:
                             "a recorded completion never becomes an unfinished start")
             continue
         try:
-            stored = ledger_v3.entry(run, v2_ledger.results_of(c, run))
+            stored = ledger_rules_v3.entry(run, v2_ledger.results_of(c, run))
         except Exception as ex:  # noqa: BLE001 - a run that cannot be read as its entry disagrees with it
             problems.append(f"run {rid} cannot be read as its ledger-v3 entry: {ex}")
             continue
-        if diff := ledger_v3.disagreement(stored, e):
+        if diff := ledger_rules_v3.disagreement(stored, e):
             problems.append(f"run {rid} in the store disagrees with its ledger-v3 entry on {diff}")
     if problems:
         raise FreezeError("(c) the run store and the committed ledger-v3 disagree: " + "; ".join(problems))
@@ -687,15 +698,15 @@ def held_out_2025_v3(freeze: dict) -> dict:
     from valiwatt import tracking
     from valiwatt.freeze_record import (FreezeRecordAnchorError, FreezeRecordError, ROLES, dumps, frozen_chain_v3,
                                         make_record, read_freeze_record)
+    from valiwatt import ledger_rules_v3
     from valiwatt.monitor.rules import rules_sha256
-    from valiwatt.report import ledger_v3
 
     c = tracking.client()
     # 0. (c) the committed ledger-v3, and every run of the store it records reconciled with its entry, before the
     # starts are built from both.
     try:
-        entries = ledger_v3.read()
-    except ledger_v3.LedgerError as e:
+        entries = ledger_rules_v3.read()
+    except ledger_rules_v3.LedgerError as e:
         raise FreezeError(f"(c) the committed ledger-v3 cannot be read: {e}") from e
     _reconcile_ledger_v3(c, entries)
     # 1-2. (c) one start at a time, and the diagnostics.
@@ -1147,12 +1158,8 @@ def _results_v3(year: int, r, inputs: dict, freeze: dict, departure_from: list, 
 
 def _open_v3(year: int, departure: bool) -> dict:
     """The gate and every tag the replay's run carries, computed before it opens (2025: under the start lock, which
-    run_replay_v3 holds from here to the opening of the run). v3's store must be its own (v2store.require_own_store)
-    before anything is logged."""
-    from valiwatt.v2store import require_own_store
-
+    run_replay_v3 holds from here to the opening of the run, its own store checked before the lock is taken)."""
     freeze, departure_from, record = held_out_gate_v3(year, departure)
-    require_own_store()
     located = _locate_v3(year, record)
     if year == HELD_OUT_YEAR:
         evaluation = ev.evaluation_label(year, records_v3.replay_starts_v3(year), record)
@@ -1202,6 +1209,15 @@ def _bind_to_gate_v3(record: dict, run_id: str | None = None) -> None:
     mrun.require_clean_tree()
 
 
+def _complete(run_id: str) -> None:
+    """A v3 replay run's completion tag (status complete), set through the client once the run is FINISHED in the
+    store: a run whose status tag says it completed is always FINISHED (records_v3._gate_of refuses any other, (c)),
+    and an interruption before this leaves an unfinished start, judged under (f)."""
+    from valiwatt import tracking
+
+    tracking.client().set_tag(run_id, "status", "complete")
+
+
 @records_v3.replacements_off()
 def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> int:
     """`valiwatt replay-v3 --year Y`, in v2's order (monitor/run.py `run_replay`): the gate (`held_out_gate_v3`); the
@@ -1211,17 +1227,21 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
     (`_bind_to_gate_v3`); then, inside the run, the inputs read (stage inputs_read), the noon replay (stage replayed),
     every check that can stop it (the never-acts check, the rehearsal's identity, the results, the Evidently
     cross-check in a temporary folder; stage checked), and only then the metrics, frames/hourly.parquet, the Evidently
-    files and, last, results/replay.json (stage logged), then status complete. An exception after the run opens leaves it in the store,
-    status started, its stage the last it reached and tag error the exception's class name, never its message. No
-    diagnostics."""
+    files and, last, results/replay.json (stage logged); then the run is ended FINISHED, and only after that is its
+    status tag set to complete (`_complete`). An exception after the run opens leaves it in the store, status started,
+    its stage the last it reached and tag error the exception's class name, never its message; an interruption between
+    the run's end and its completion tag leaves a FINISHED run whose status says started, an unfinished start
+    adjudicated under (f), never a completion the store disagrees with. No diagnostics."""
     import mlflow
 
     from valiwatt.firstrun import require_first_run
     from valiwatt.tracking import start_run
+    from valiwatt.v2store import require_own_store
 
     if year not in REPLAY_YEARS:
         raise ValueError(f"v3 replays {REHEARSAL_YEAR} (the rehearsal) and {HELD_OUT_YEAR}, not {year}")
     require_first_run()  # before the start lock opens its file in the run store (section 10.2)
+    require_own_store()  # v3's store is its own before the lock is created in it or any gate step reads it
     first_day, last_day = replay_days(year)
     with ExitStack() as opened:
         with ExitStack() as locked:
@@ -1268,10 +1288,10 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
             results["run_id"] = run.info.run_id
             mlflow.log_text(json.dumps(jsonable(results), indent=2, ensure_ascii=False), "results/replay.json")
             mrun._set("stage", "logged")
-            mrun._set("status", "complete")
         except BaseException as e:
             mrun._set("error", type(e).__name__)
             raise
+    _complete(run.info.run_id)  # the run is FINISHED in the store by now: its completion is tagged after, never before
     rec = s["recommendations"]
     v = results["verdict"]
     print(f"v3 replay {year} ({plan['evaluation']}): run {run.info.run_id}; MAPE {100 * s['mape']['mean']:.2f} %, "
@@ -1286,8 +1306,9 @@ def run_replay_v3(year: int, n_boot: int = N_BOOT, departure: bool = False) -> i
 def run_evidence_v3(departure: bool = False) -> int:
     """`valiwatt evidence-v3` (section 11.3 (3), v2's section 11.3.5): what the owner rules on; it decides nothing, and
     no gate reads what it holds (the 2025 gate checks only that a finished one, made from a clean tree, exists for the
-    ruling's commit, on its data-quality run). In order: v3's first-run guard, a clean tree, the freeze record as its
-    one adding commit holds it (freeze_record.read_freeze_record, as the gate reads it: a record whose commit is not an
+    ruling's commit, on its data-quality run). In order: v3's first-run guard, v3's own store
+    (v2store.require_own_store) before anything reads it, a clean tree, the freeze record as its one adding commit holds
+    it (freeze_record.read_freeze_record, as the gate reads it: a record whose commit is not an
     ancestor of HEAD is the gate's (a), which a ruling resting on this evidence lifts); the record's rehearsal run in
     the store with its frames/hourly.parquet; the latest v3 data-quality run through 2025, whatever its status, a
     finished, passing run whose raw files agree with it (the gate's (d) and (e)); the rehearsal's frozen artifacts
@@ -1308,12 +1329,12 @@ def run_evidence_v3(departure: bool = False) -> int:
     from valiwatt.v2store import require_own_store
 
     require_first_run()
+    require_own_store()
     mrun.require_clean_tree()
     try:
         rec = read_freeze_record()
     except FreezeRecordError as e:
         raise FreezeError(f"the evidence reruns the rehearsal the freeze record names: {e}") from e
-    require_own_store()
     data = rec["data"]
     c = client()
     rehearsal = data["runs"]["rehearsal_2024"]

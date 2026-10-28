@@ -525,6 +525,9 @@ PLAN_V3_12 = {
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[validate-v3]",
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[freeze-v3]",
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[read-v2]",
+        *(V2S + f"test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[{c}]"
+          for c in ("replay-v3-2024", "replay-v3-2025", "evidence-v3", "gate-2025")),
+        *(V2S + f"test_a_crashed_read_refuses_the_fresh_clone_label[{c}]" for c in ("crashed", "control")),
     ),
     "The 2025 gate": (
         GT3 + "test_a_clean_2025_start_with_everything_in_order_passes",
@@ -569,6 +572,12 @@ PLAN_V3_12 = {
         *(GT3 + f"test_a_start_stopped_at_the_post_opening_bind_is_a_stopped_start_ruled_on_under_f[{c}]"
           for c in ("unruled", "ruled", "no_bind_record", "git_commit_changed")),
         *(GT3 + f"test_a_soft_deleted_evidence_run_still_lifts_its_ruling[{c}]" for c in ("deleted", "control")),
+        *(GT3 + f"test_a_2025_run_without_its_gate_record_is_refused_unless_it_stopped_while_opening[{c}]"
+          for c in ("completed", "past_opening", "opening", "opening_ruled")),
+        *(GT3 + f"test_the_2025_time_never_skips_a_start_without_its_gate_record[{c}]"
+          for c in ("no_record", "opening_stopped")),
+        *(GT3 + f"test_a_start_interrupted_between_its_end_and_its_completion_tag_is_a_stopped_start[{c}]"
+          for c in ("killed_while_ending", "stopped_before_the_tag", "ruled")),
     ),
     "Calibration bins": (
         IV3 + "test_two_folds_whose_edges_differ_bin_the_same_score_by_the_edge_of_the_fit_being_calibrated",

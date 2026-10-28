@@ -160,17 +160,20 @@ def test_every_committed_v3_ledger_entry_ran_on_the_rules_at_its_tag():
 
 
 def test_the_v3_ledger_never_reads_v2_s_ledger_file(world):
-    """v3's ledger reads only its own file: no code of report/ledger_v3.py names v2's file or its path constant, and
-    an unreadable v2 ledger beside it changes nothing."""
-    tree = ast.parse(Path(ledger_v3.__file__).read_text(encoding="utf-8"))
-    docstrings = {id(n.body[0].value) for n in ast.walk(tree)
-                  if isinstance(n, (ast.Module, ast.FunctionDef)) and n.body and isinstance(n.body[0], ast.Expr)}
-    constants = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
-                 and id(n) not in docstrings]
-    assert not [c for c in constants if "replay-ledger.json" in c]
-    names = {n.attr if isinstance(n, ast.Attribute) else n.id for n in ast.walk(tree)
-             if isinstance(n, (ast.Attribute, ast.Name))}
-    assert "LEDGER" not in names and "read_ledger" not in names
+    """v3's ledger reads only its own file: no code of report/ledger_v3.py, nor of its rules (ledger_rules_v3.py),
+    names v2's file or its path constant, and an unreadable v2 ledger beside it changes nothing."""
+    from valiwatt import ledger_rules_v3
+
+    for module in (ledger_v3, ledger_rules_v3):
+        tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+        docstrings = {id(n.body[0].value) for n in ast.walk(tree)
+                      if isinstance(n, (ast.Module, ast.FunctionDef)) and n.body and isinstance(n.body[0], ast.Expr)}
+        constants = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                     and id(n) not in docstrings]
+        assert not [c for c in constants if "replay-ledger.json" in c], module.__name__
+        names = {n.attr if isinstance(n, ast.Attribute) else n.id for n in ast.walk(tree)
+                 if isinstance(n, (ast.Attribute, ast.Name))}
+        assert "LEDGER" not in names and "read_ledger" not in names, module.__name__
     (world.repo / "docs").mkdir(exist_ok=True)
     (world.repo / "docs" / "replay-ledger.json").write_text("not json", encoding="utf-8")
     rid = log_replay_v3(world.repo, 2024)
@@ -185,3 +188,58 @@ def test_v3_entries_never_reach_v2_s_ledger_sync(world, tmp_path):
     fake_run({"kind": "replay_v3", "year": "2025", "freeze_tag": V3_FREEZE_TAG, "status": "complete",
               **git_tags(world.repo)})
     assert ledger.from_store() == []
+
+
+# ------------------------------------------------------------------- what the gate decides on is inside the freeze
+
+# The modules v3's 2025 gate runs (monitor/run_v3.py `held_out_2025_v3`, its starts and records, its ledger rules).
+GATE_MODULES = ("src/valiwatt/monitor/run_v3.py", "src/valiwatt/records_v3.py", "src/valiwatt/ledger_rules_v3.py")
+# The files outside the rule-file set those modules may import: v2's ledger (its `_check_v2`, its patterns, its
+# results reader), which the gate calls for (g) and for the ledger's checks, and its package's docstring. v2's code is
+# closed at `v3-fork` (docs/plan-v3.md, section 10.1): each must stay byte-identical to its content there.
+PINNED_AT_FORK = ("src/valiwatt/report/__init__.py", "src/valiwatt/report/ledger.py")
+
+
+def _valiwatt_imports(path: Path) -> set[str]:
+    """Each file of src/ a module imports from valiwatt, at module level or inside a function."""
+    src = REPO_ROOT / "src"
+    names = set()
+    for n in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if isinstance(n, ast.ImportFrom) and n.module and n.module.split(".")[0] == "valiwatt":
+            names |= {n.module, *(f"{n.module}.{a.name}" for a in n.names)}
+        elif isinstance(n, ast.Import):
+            names |= {a.name for a in n.names if a.name.split(".")[0] == "valiwatt"}
+    out = set()
+    for name in names:
+        base = src.joinpath(*name.split("."))
+        for f in (base.with_suffix(".py"), base / "__init__.py"):
+            if f.is_file():
+                out.add(f.relative_to(REPO_ROOT).as_posix())
+    return out
+
+
+def test_what_the_2025_gate_runs_is_a_rule_file_or_v2_s_code_as_at_the_fork():
+    """Section 10.3, the freeze gate: rule files and dependencies equal to the tag's. Every module of valiwatt the 2025
+    gate's modules import is a rule file (monitor/rules.py `rule_files`), so a change to what decides acceptance (the
+    ledger's checks, its entries derived from the store, their disagreement) changes the rules hash; the ledger's
+    writer (report/ledger_v3.py) renders and decides nothing, and is not among them; the only others are v2's ledger
+    and its package, which `test_v2_s_ledger_code_the_gate_calls_is_byte_identical_to_v3_fork` holds as at the
+    fork."""
+    from valiwatt.monitor.rules import rule_files
+
+    rules = set(rule_files())
+    assert set(GATE_MODULES) <= rules and "src/valiwatt/report/ledger_v3.py" not in rules
+    outside = {m: sorted(f for f in _valiwatt_imports(REPO_ROOT / m) if f not in rules and f not in PINNED_AT_FORK)
+               for m in GATE_MODULES}
+    assert outside == {m: [] for m in GATE_MODULES}
+
+
+def test_v2_s_ledger_code_the_gate_calls_is_byte_identical_to_v3_fork():
+    """v2's ledger code (report/ledger.py and its package), which the 2025 gate calls for (g), the ledger's checks
+    and the reconciliation, lies outside the rule-file set; v2's code is closed at `v3-fork` (section 10.1), so it is
+    held byte-identical to its content there: any change to it fails here."""
+    from test_report_stamp import _at, fork_commit
+
+    commit = fork_commit()
+    changed = [p for p in PINNED_AT_FORK if (REPO_ROOT / p).read_bytes() != _at(commit, "show", f"{commit}:{p}")]
+    assert changed == [], f"v2's code differs from {commit[:12]} (v3-fork): {changed}"

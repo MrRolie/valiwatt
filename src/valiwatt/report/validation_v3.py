@@ -80,6 +80,8 @@ SAY = {
         "reproduction_not_run": "Vérification de reproduction : non exécutée",
         "recommendation": {"keep_v2_noon": "garder la forme de v2 à midi",
                            "review_family": "revoir la famille"},
+        # The horizon's "all" row: its own hours, not the common set's (forecast/evaluate.py contrasts_v3).
+        "horizon_all": "les heures propres à l'horizon (la demande, la forme de v2 à midi et celle à minuit)",
     },
     "en": {
         "labels": {"in_sample": "in sample for the choice of the terms, the interval bins and the deciding subset",
@@ -96,6 +98,7 @@ SAY = {
         "byte_copies_not_run": "The byte-copy check: not run",
         "reproduction_not_run": "The reproduction check: not run",
         "recommendation": {"keep_v2_noon": "keep v2's form at noon", "review_family": "review the family"},
+        "horizon_all": "the horizon's own hours (the target, v2's form at noon and v2's form at midnight)",
     },
 }
 # The hour, local clock time, before which the rate's notice of a peak event is sent the day before (Rate Flex D,

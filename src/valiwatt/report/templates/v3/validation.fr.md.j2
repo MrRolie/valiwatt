@@ -19,7 +19,7 @@
 | Horizon : la forme de v2 à midi moins la forme de v2 à minuit, rapporté, jamais jugé ({{ lbl }}) | Heures | Différence d'EAMP | IC {{ K.ci_level|pct(0) }} |
 |---|---|---|---|
 {% for s in ['all', 'cold', 'event_windows'] %}
-| {{ SUBSET[s] }} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | aucune heure |{% endif %}
+| {% if s == 'all' %}{{ say.horizon_all }}{% else %}{{ SUBSET[s] }}{% endif %} | {{ h.subsets[s].hours|num }} | {% if h.contrast[s] %}{{ pp(h.contrast[s].difference) }} | {{ ppci(h.contrast[s].ci95_low, h.contrast[s].ci95_high) }} |{% else %}— | aucune heure |{% endif %}
 
 {% endfor %}
 {% endmacro %}

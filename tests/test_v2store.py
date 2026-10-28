@@ -286,6 +286,61 @@ def test_a_read_that_crashed_after_opening_v2s_store_refuses_every_later_read(v2
     _second_read_refused(v2, monkeypatch)
 
 
+@pytest.mark.parametrize("case", ["crashed", "control"])
+def test_a_crashed_read_refuses_the_fresh_clone_label(v2, monkeypatch, case):
+    """Section 3.1, the fresh-clone label is for a clone holding neither v2's files nor its store: a read of v2's store
+    that crashed after opening it (no complete read, `recorded` None, `attempted` not empty) refuses `dq-v3
+    --fresh-clone` before any file is read or anything is logged, and refuses a data-quality run already labelled a
+    fresh clone (run_v3.require_design_run). The control: no read attempted, dq-v3 --fresh-clone reaches the byte-copy
+    step and the labelled run is read."""
+    from types import SimpleNamespace
+
+    from replay_world import StoppedHere
+    from valiwatt.forecast.validate import LineageError
+    from valiwatt.quality import run as qrun
+    from valiwatt.quality import run_v3
+    from valiwatt.quality.byte_copies import ByteCopyRefused
+
+    if case == "crashed":
+        def read_then_crash(*a, **k):
+            real(*a, **k)
+            raise RuntimeError("crashed after the read")
+
+        real = v2store.read_v2_store
+        with monkeypatch.context() as m:
+            m.setattr(v2store, "read_v2_store", read_then_crash)
+            with pytest.raises(RuntimeError):
+                v2store.run_read_v2(v2["store"])
+        assert v2store.recorded() is None and len(v2store.attempted()) == 1
+    reached = []
+
+    def step(name):
+        def stop(*a, **k):
+            reached.append(name)
+            raise StoppedHere(name)
+        return stop
+
+    monkeypatch.setattr(run_v3, "check_byte_copies", step("byte copies"))
+    monkeypatch.setattr(qrun, "_verify_manifests", step("raw files"))
+    fresh = SimpleNamespace(info=SimpleNamespace(run_id="dq3"), data=SimpleNamespace(
+        tags={"byte_copies": "not_run", "fresh_clone": "true"}, params={"through": "2024"}))
+    if case == "control":
+        with pytest.raises(StoppedHere):
+            run_v3.run_dq_v3(fresh_clone=True)
+        assert reached == ["byte copies"]
+        assert run_v3.require_design_run(fresh) == {"byte_copies": "not_run", "fresh_clone": True}
+        return
+    with pytest.raises(ByteCopyRefused, match=r"--fresh-clone, but v3's store holds the read of v2's store \w+, "
+                                              r"attempted \(FAILED, tag status 'started'\)"):
+        run_v3.run_dq_v3(fresh_clone=True)
+    assert reached == []
+    c = tracking.client()
+    assert c.get_experiment_by_name(run_v3.EXPERIMENT) is None or c.search_runs(
+        [c.get_experiment_by_name(run_v3.EXPERIMENT).experiment_id]) == []
+    with pytest.raises(LineageError, match="labelled a fresh clone, but v3's store holds the read of v2's store"):
+        run_v3.require_design_run(fresh)
+
+
 @pytest.mark.parametrize("left", ["deleted_complete", "killed_running"])
 def test_a_deleted_or_killed_read_still_refuses_a_second_read(v2, monkeypatch, left):
     """A complete read soft-deleted from v3's store (MLflow's delete_run) is no longer given to later steps
@@ -342,19 +397,31 @@ def test_v2s_database_is_opened_immutable_and_refused_beside_a_write_ahead_log(w
     assert snapshot(copy) == before and v2store.recorded() is None
 
 
-@pytest.mark.parametrize("command", ["dq-v3", "validate-v3", "freeze-v3", "read-v2"])
+OWN_STORE_COMMANDS = ["dq-v3", "validate-v3", "freeze-v3", "read-v2", "replay-v3-2024", "replay-v3-2025",
+                      "evidence-v3", "gate-2025"]
+
+
+@pytest.mark.parametrize("command", OWN_STORE_COMMANDS)
 def test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs(v2, tmp_path, monkeypatch, command):
-    """Section 10.3, "v3 runs only from its own checkout": a store holding v2's first 2024 replay run is v2's, and
-    every v3 command that logs refuses it before it reads or logs anything. v3's store here is a copy of v2's
-    synthetic store (for read-v2, PATH is v2's store in place), unchanged after the refusal, as v2's is."""
+    """Section 10.3, "v3 runs only from its own checkout" ("nothing later, the 2025 gate included, reads v2's store"):
+    a store holding v2's first 2024 replay run is v2's, and every v3 command that logs refuses it before it reads or
+    logs anything: the replay before its 2025 start lock is created in the store and before any step of its gate
+    (the history, the freeze in force, the moved tag, the store) runs, the gate itself so when called on its own
+    (gate-2025), the evidence before the freeze record or the store is read. v3's store here is a copy of v2's synthetic store (for read-v2, PATH is v2's store in place),
+    unchanged after the refusal, as v2's is, and no lock file is created in it."""
+    from valiwatt import freeze_record as fr
+    from valiwatt import paths, records_v3
     from valiwatt.forecast.freeze_v3 import run_freeze_v3
     from valiwatt.forecast.validate_v3 import run_validate_v3
+    from valiwatt.monitor import run as mrun
+    from valiwatt.monitor import run_v3 as replay_v3
     from valiwatt.quality import run as qrun
     from valiwatt.quality import run_v3
 
     own = tmp_path / "own" / "mlruns"
     shutil.copytree(v2["store"], own)
     monkeypatch.setattr(tracking, "MLRUNS", own)
+    monkeypatch.setattr(paths, "MLRUNS", own)  # where start_lock_v3 creates its lock file
     reads = []
 
     def reader(name):
@@ -364,13 +431,22 @@ def test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs(v2, tmp_path
     monkeypatch.setattr(run_v3, "check_byte_copies", reader("byte copies"))
     monkeypatch.setattr(qrun, "_verify_manifests", reader("raw files"))
     monkeypatch.setattr(v2store, "recorded", reader("v3's read of v2's store"))
+    monkeypatch.setattr(v2store, "attempted", reader("v3's reads of v2's store"))
     monkeypatch.setattr(v2store, "read_v2_store", reader("v2's store"))
+    monkeypatch.setattr(records_v3, "history_rewrites", reader("the history's rewrites"))
+    monkeypatch.setattr(records_v3, "current_freeze", reader("the freeze in force"))
+    monkeypatch.setattr(mrun, "require_clean_tree", reader("the tree"))
+    monkeypatch.setattr(fr, "read_freeze_record", reader("the freeze record"))
     before = snapshot(own)
     run = {"dq-v3": lambda: run_v3.run_dq_v3(fresh_clone=True), "validate-v3": run_validate_v3,
-           "freeze-v3": lambda: run_freeze_v3(2024), "read-v2": lambda: v2store.run_read_v2(v2["store"])}[command]
+           "freeze-v3": lambda: run_freeze_v3(2024), "read-v2": lambda: v2store.run_read_v2(v2["store"]),
+           "replay-v3-2024": lambda: replay_v3.run_replay_v3(2024),
+           "replay-v3-2025": lambda: replay_v3.run_replay_v3(2025), "evidence-v3": replay_v3.run_evidence_v3,
+           "gate-2025": lambda: replay_v3.held_out_gate_v3(2025)}[command]
     with pytest.raises(v2store.V2StoreRefused, match="holds v2's first 2024 replay run"):
         run()
     assert reads == [] and snapshot(own) == before and snapshot(v2["store"]) == v2["built"]
+    assert not (own / replay_v3.LOCK_NAME).exists()
 
 
 def _calls(tree: ast.AST) -> set[str]:

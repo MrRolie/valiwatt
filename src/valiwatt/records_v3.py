@@ -20,7 +20,8 @@
   freeze tag is refused, never folded into v1's freeze as v2's readers fold it; a pre-freeze run is never a start
   under the tag nor a freeze commit of it. A run's tags can be changed after it ran, so before any run is kept or left
   out of the starts by its tags, a 2025 run under another tag than v3's is refused, a run whose tags say it completed
-  is refused unless the store says it finished, and every run holding the gate record it logged at its opening is
+  is refused unless the store says it finished, a 2025 run without the gate record it logged at its opening is
+  refused unless it demonstrably stopped while it opened (`opening_stopped`), and every run holding that record is
   reconciled with it, a start the post-opening bind stopped read by the trace the bind wrote (`_gate_of`).
 - **The history as committed** (`NO_REPLACE`, `replacements_off`, `history_rewrites`). Replacement objects (`git
   replace`, refs/replace/*) make git show another object in place of a commit, a tree or a blob, so a walk, an
@@ -381,17 +382,31 @@ def _bind_explains(run, gate: dict, artifacts: list[str]) -> bool:
             and not run.data.metrics and list(artifacts) == [mrun.GATE_RECORD])
 
 
+def opening_stopped(run, artifacts: list[str]) -> bool:
+    """`run` (a 2025 `replay_v3` run, with `artifacts`) demonstrably stopped while it opened, before it logged its gate
+    record and before it read any input (monitor/run_v3.py `run_replay_v3`: the run is created with tags status started
+    and stage opened, and logs results/held_out_gate.json before anything else): status tag started, stage opened, no
+    `stopped_at` (the post-opening bind stops a run after its gate record is logged), never FINISHED, no metric and no
+    artifact at all. The one shape of a 2025 run that holds no gate record."""
+    t = run.data.tags
+    return (t.get("status") == "started" and t.get("stage") == "opened" and not t.get("stopped_at")
+            and run.info.status != "FINISHED" and not run.data.metrics and not list(artifacts))
+
+
 def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
     """The gate record `run` (a `replay_v3` run under the freeze tag `tag`, with `artifacts`) logged at its opening
-    (results/held_out_gate.json; only a 2025 start logs one), None when it holds none, after its tags are reconciled
-    with it: a tag or a status can be changed after the run, and a start retagged out of the starts would leave a later
-    start no earlier one, a completion made a stopped start would let a later start be the test of record. Refused
-    (V3FreezeError, (c)): a run whose status tag says it completed (status `complete`, set only after its results are
-    logged) that is not FINISHED in the store (reopened, then ended FAILED or KILLED, or left RUNNING); a 2025 run
-    under another freeze tag than `v3-rules-frozen` (a 2025 replay runs only under it, so the tag was changed); a gate
-    record that cannot be read; a run holding one whose year is not 2025, whose freeze tag is not v3's, whose
-    git_commit is not the record's head_commit (unless the post-opening bind stopped it and its intact trace says so,
-    `_bind_explains`) or whose freeze_commit is not the record's."""
+    (results/held_out_gate.json; only a 2025 start logs one), after its tags are reconciled with it: a tag or a status
+    can be changed after the run, and a start retagged out of the starts would leave a later start no earlier one, a
+    completion made a stopped start would let a later start be the test of record. None for a run of another year,
+    which logs none, and for a 2025 run that demonstrably stopped while it opened, before it logged its record or read
+    any input (`opening_stopped`). Refused (V3FreezeError, (c)): a run whose status tag says it completed (status
+    `complete`, set through the client only once the run is FINISHED) that is not FINISHED in the store (reopened,
+    then ended FAILED or KILLED, or left RUNNING); a 2025 run under another freeze tag than `v3-rules-frozen` (a 2025
+    replay runs only under it, so the tag was changed); any other 2025 run without its gate record (completed, or past
+    its opening: the record it logged first is gone, and neither its tags nor its reading of the 2025 time can be
+    checked); a gate record that cannot be read; a run holding one whose year is not 2025, whose freeze tag is not
+    v3's, whose git_commit is not the record's head_commit (unless the post-opening bind stopped it and its intact
+    trace says so, `_bind_explains`) or whose freeze_commit is not the record's."""
     t, rid = run.data.tags, run.info.run_id
     if t.get("status") == "complete" and run.info.status != "FINISHED":
         raise V3FreezeError(f"(c) v3 replay run {rid}'s status tag says it completed (stage {t.get('stage')!r}, "
@@ -403,7 +418,14 @@ def _gate_of(c, run, tag: str, artifacts: list[str]) -> dict | None:
                             f"{HELD_OUT_YEAR} replay runs only under `{V3_FREEZE_TAG}`, so its tag was changed after "
                             "it ran, and a run is never left out of the starts by a changed tag")
     if mrun.GATE_RECORD not in artifacts:
-        return None
+        if t.get("year") != str(HELD_OUT_YEAR) or opening_stopped(run, artifacts):
+            return None
+        raise V3FreezeError(f"(c) v3 replay run {rid} of {HELD_OUT_YEAR} holds no gate record {mrun.GATE_RECORD}, yet "
+                            f"it is {run.info.status} in the store, status tag {t.get('status')!r}, stage "
+                            f"{t.get('stage')!r}, with {len(artifacts)} artifact(s) and {len(run.data.metrics)} "
+                            "metric(s): only a start stopped while it opened, before it logged that record or read "
+                            "any input, holds none; the record it logged first is gone, and a run is never kept or "
+                            "left out of the starts, nor its reading of the 2025 time skipped, without it")
     try:
         gate = mrun._load_json_artifact(c, rid, mrun.GATE_RECORD)
     except Exception as e:  # noqa: BLE001 - an unreadable gate record reconciles nothing: the run is refused
@@ -428,7 +450,9 @@ def replay_starts_v3(year: int, client=None, ledger: dict | None = None) -> list
     that year the store lacks, by start time; each start in mrun.replay_starts' shape. A pre-freeze run is no start
     under the tag; a run without a freeze tag is refused. Before any run is kept or left out by its tags, a run whose
     status tag says it completed is refused unless it is FINISHED in the store, a 2025 run under another tag than v3's
-    is refused and every run's gate record is reconciled with its tags (`_gate_of`).
+    is refused, a 2025 run without its gate record is refused unless it demonstrably stopped while it opened, and every
+    run's gate record is reconciled with its tags (`_gate_of`). Each start also says whether it is such a run
+    ("opening_stopped": it holds no gate record, by its shape; a ledger entry the store lacks is not one).
     ledger: the parsed ledger-v3; None, the committed file."""
     from valiwatt import tracking
 
@@ -445,7 +469,7 @@ def replay_starts_v3(year: int, client=None, ledger: dict | None = None) -> list
                     "standing": t.get("standing", ""),
                     "finished": r.info.status == "FINISHED" and t.get("status") == "complete",
                     "running": r.info.status == "RUNNING", "stage": t.get("stage", ""), "error": t.get("error", ""),
-                    "gate": gate,
+                    "gate": gate, "opening_stopped": gate is None and opening_stopped(r, artifacts),
                     "holds_results": bool(r.data.metrics) or any(a != mrun.GATE_RECORD for a in artifacts)})
     stored = {s["run_id"] for s in out}
     for e in (ledger if ledger is not None else ledger_v3_dict())["replays"]:
@@ -453,7 +477,7 @@ def replay_starts_v3(year: int, client=None, ledger: dict | None = None) -> list
             out.append({"run_id": e["run_id"], "started_utc": e.get("started_utc", ""),
                         "freeze_commit": e["freeze_commit"], "git_commit": "", "standing": e.get("standing", ""),
                         "finished": True, "running": False, "stage": "", "error": "", "gate": None,
-                        "holds_results": True})
+                        "opening_stopped": False, "holds_results": True})
     return sorted(out, key=lambda s: (s["started_utc"], s["run_id"]))
 
 

@@ -493,12 +493,13 @@ def test_a_noon_day_without_its_feed_or_its_lag_days_mean_fails_its_verdict():
     assert not any(p for d, p in v.items() if d not in (D, D + pd.Timedelta(days=1)))
 
 
-@pytest.mark.parametrize("read", [None, "read2"])
+@pytest.mark.parametrize("read", [None, "read2", "attempted"])
 def test_a_fresh_clone_data_quality_run_is_refused_once_a_read_of_v2_s_store_is_logged(monkeypatch, read):
     """D11 of the slice contract, the slice-3 forward note: a data-quality run labelled a fresh clone is read by v3's
     validation, freezes and replays (run_v3.require_design_run) only while v3's store holds no read of v2's store; a
-    read logged after it refuses it, as dq-v3 refuses `--fresh-clone` when a read exists. A run whose byte copies
-    passed is read whatever the store holds (control)."""
+    read logged after it refuses it, as dq-v3 refuses `--fresh-clone` when a read exists, and so does a read only
+    attempted (crashed after it started: v2store.attempted, `recorded` None). A run whose byte copies passed is read
+    whatever the store holds (control)."""
     from types import SimpleNamespace
 
     from valiwatt.forecast.validate import LineageError
@@ -509,11 +510,15 @@ def test_a_fresh_clone_data_quality_run_is_refused_once_a_read_of_v2_s_store_is_
         return SimpleNamespace(info=SimpleNamespace(run_id="dq3"), data=SimpleNamespace(tags=tags,
                                                                                          params={"through": "2024"}))
 
-    monkeypatch.setattr(v2store, "recorded", lambda client=None: None if read is None else {"run_id": read})
+    complete = read == "read2"
+    tried = [] if read is None else [{"run_id": "read2", "status": "FINISHED" if complete else "FAILED",
+                                      "lifecycle_stage": "active", "tag_status": "complete" if complete else "started"}]
+    monkeypatch.setattr(v2store, "recorded", lambda client=None: {"run_id": read} if complete else None)
+    monkeypatch.setattr(v2store, "attempted", lambda client=None: tried)
     assert run_v3.require_design_run(dq(False)) == {"byte_copies": "passed", "fresh_clone": False}
     if read is None:
         assert run_v3.require_design_run(dq(True)) == {"byte_copies": "not_run", "fresh_clone": True}
     else:
         with pytest.raises(LineageError, match="labelled a fresh clone, but v3's store holds the read of v2's store "
-                                               "read2"):
+                                               "read2" + ("" if complete else r", attempted \(FAILED")):
             run_v3.require_design_run(dq(True))
