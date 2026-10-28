@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from valiwatt import cli, firstrun, tracking, v2store
+from valiwatt import cli, firstrun, records_v3, tracking, v2store
 from valiwatt.config import FREEZE_TAG
 from valiwatt.monitor.run import frozen_digest
 from valiwatt.report.ledger import _utc
@@ -140,8 +140,10 @@ def test_the_read_of_v2s_store_leaves_it_byte_identical_and_logs_what_it_read(v2
     assert rec["v2_validation_run_id"] == v2["val"]
     assert (rec["hq_sha256"], rec["eccc_manifests_sha256"], rec["nbm_manifest_sha256"]) == (H64["hq"], H64["eccc"],
                                                                                            H64["nbm"])
-    t = tracking.client().get_run(rec["run_id"]).data.tags  # made before v3's freeze (section 10.3, D5)
-    assert (t["freeze_tag"], t["freeze_commit"], t["v2_freeze_tag"]) == ("v3-pre-freeze", "", "rules-frozen-v2")
+    t = tracking.client().get_run(rec["run_id"]).data.tags  # under the freeze in force (section 10.3, D5)
+    freeze = records_v3.current_freeze()
+    assert (t["freeze_tag"], t["freeze_commit"], t["v2_freeze_tag"]) == (freeze["freeze_tag"], freeze["freeze_commit"],
+                                                                         "rules-frozen-v2")
     got = v2store.recorded_forecasts()
     want = v2["oos"]["pred_gam_forecast"].dropna()
     assert list(got.columns) == ["ts", "forecast"]

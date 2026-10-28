@@ -14,7 +14,7 @@ import pytest
 
 from conftest import synth_demand, synth_obs, synth_runs
 from test_pipeline_refuses import MANIFESTS, nbm_manifest
-from valiwatt import firstrun, tracking, v2store
+from valiwatt import firstrun, records_v3, tracking, v2store
 from valiwatt.config import DEMAND_FIRST, DESIGN_LAST, V3_DESIGN_LAST, data_last, fetch_months, stations
 from valiwatt.forecast.features import forecast_temperature, observed_day_mean
 from valiwatt.forecast.issue import LAG_DAY_REASON, NOON, day_edge, day_labels, day_origin
@@ -317,7 +317,8 @@ def test_the_v3_data_quality_run_at_noon_on_clean_data(tmp_path, monkeypatch, ru
     t, p = run.data.tags, run.data.params
     assert t["kind"] == "dq_v3" and t["gates"] == "passed" and t["issue"] == "noon" and t["byte_copies"] == "not_run"
     assert t["fresh_clone"] == "true"
-    assert (t["freeze_tag"], t["freeze_commit"]) == ("v3-pre-freeze", "")  # made before v3's freeze (section 10.3)
+    freeze = records_v3.current_freeze()  # the freeze in force: v3-pre-freeze before v3's tag (section 10.3)
+    assert (t["freeze_tag"], t["freeze_commit"]) == (freeze["freeze_tag"], freeze["freeze_commit"])
     assert p["design_last_utc"] == V3_DESIGN_LAST.isoformat() == "2025-01-01T05:00:00+00:00"
     assert p["nbm_years"] == "2019,2020,2021,2022,2023,2024" and calls == [YEARS]  # an explicit list
     assert {"hq_sha256", "eccc_manifests_sha256", "nbm_manifest_sha256"} <= set(p)

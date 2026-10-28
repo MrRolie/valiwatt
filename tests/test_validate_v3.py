@@ -18,6 +18,7 @@ import pytest
 
 from conftest import synth_demand, synth_obs, synth_runs
 from test_validate import GAP, UNFED, V2_FIRST, V2_FOLDS, V2_LAST, v2, without_runs_for  # noqa: F401 (v2: fixture)
+from valiwatt import records_v3
 from valiwatt.config import V3_THRESHOLD_YEARS
 from valiwatt.forecast import evaluate as ev
 from valiwatt.forecast import model
@@ -369,8 +370,8 @@ def test_the_run_of_record_is_tagged_v3_and_pre_freeze_and_logs_its_frames(entry
     assert entry["paths"] == run_v3.canonical_paths(2024)
     (run,) = runs_in_store()
     t = run.data.tags
-    assert (t["kind"], t["version"], t["freeze_tag"], t["status"]) == ("validation_v3", "v3", "v3-pre-freeze",
-                                                                      "complete")
+    in_force = records_v3.current_freeze()["freeze_tag"]  # v3-pre-freeze before v3's tag (section 10.3)
+    assert (t["kind"], t["version"], t["freeze_tag"], t["status"]) == ("validation_v3", "v3", in_force, "complete")
     assert (t["reproduction"], t["v2_read_run_id"], t["dq_run_id"]) == ("passed", "read2", "dq3")
     assert (t["byte_copies"], t["fresh_clone"]) == ("passed", "false")
     assert t["kind"] != "validation"  # v2's validation readers never take a v3 run

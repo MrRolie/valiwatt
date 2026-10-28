@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 from conftest import synth_demand, synth_obs, synth_runs
+from valiwatt import records_v3
 from valiwatt.forecast import evaluate as ev
 from valiwatt.forecast import freeze as fz
 from valiwatt.forecast import freeze_v3 as fv
@@ -374,8 +375,8 @@ def test_freeze_v3_registers_v3_under_its_own_name_with_its_comparators(freeze_i
     got, run = fz.load_frozen(YEAR, model_name=fv.MODEL_NAME_V3)
     assert got.sha256() == production.sha256() and got.interval == production.interval
     t = run.data.tags
-    assert (t["version"], t["freeze_tag"], t["validation_run_id"], t["dq_run_id"]) == ("v3", "v3-pre-freeze",
-                                                                                       "val3", "dq3")
+    in_force = records_v3.current_freeze()["freeze_tag"]  # v3-pre-freeze before v3's tag (section 10.3)
+    assert (t["version"], t["freeze_tag"], t["validation_run_id"], t["dq_run_id"]) == ("v3", in_force, "val3", "dq3")
     assert (t["byte_copies"], t["reproduction"], t["fresh_clone"]) == ("passed", "passed", "false")
     assert LINEAGE["paths"] == run_v3.canonical_paths(2024)
     assert {k.removeprefix("comparator_sha256.") for k in t if k.startswith("comparator_sha256.")} == \
