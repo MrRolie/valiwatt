@@ -342,7 +342,8 @@ def freeze_inputs(tmp_path, monkeypatch, world, oos):
         dq, None, "weather"))
     monkeypatch.setattr(fv, "load_validation_v3", lambda dq: (LINEAGE["validation"], oos))
     monkeypatch.setattr(mrun, "load_raw", lambda dq: ("raw", None))
-    monkeypatch.setattr(qrun, "load_runs", lambda dq, years=None: "runs" if years == fv.V3_DESIGN_YEARS else None)
+    monkeypatch.setattr(qrun, "load_runs", lambda dq, years=None, wind=False: "runs" if years == fv.V3_DESIGN_YEARS
+                        and wind else None)  # v3 reads the wind (plan-v3, section 3.1)
     monkeypatch.setattr(fv, "frozen_tables_v3", lambda raw, weather, year, runs: world if runs == "runs" else None)
     monkeypatch.setattr(fv, "REPLAY_YEARS", (YEAR,))
     real = fv.fit_frozen_v3

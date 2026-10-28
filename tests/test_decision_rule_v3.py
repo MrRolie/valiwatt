@@ -237,8 +237,32 @@ def test_the_horizon_is_scored_on_its_own_hours_and_the_others_ignore_it():
     on_both = g.index[168:]
     assert c["terms"]["all"] == contrasts_v3(g.loc[on_both], COLD_C, n_boot=N_BOOT)["terms"]["all"]
     assert c["horizon"]["contrast"]["all"]["state"] == "worse"  # noon (0.03) against midnight (0.025)
-    assert c["horizon"]["contrast"]["event_windows"]["hours"] == int(event_window_mask(
-        g.index[g["pred_v2_midnight"].notna()]).sum())
+    # Section 8.1: the horizon's event windows are the common set's, kept to the horizon's hours (both sets' hours).
+    assert c["horizon"]["contrast"]["event_windows"]["hours"] == int(event_window_mask(g.index[336:]).sum())
+
+
+def test_the_horizon_s_subsets_are_the_common_set_s_intersected_with_its_hours():
+    """Section 8.1, "on each subset of section 8.2 intersected with those hours": a cold event-window hour with the
+    target, v2's form at noon and at midnight but no v1-noon forecast is outside the common set, so it enters the
+    horizon's own set ("all") and neither its cold tail nor its event windows. The control: the same hour with its
+    v1-noon forecast enters all three."""
+    f = with_cold(winter_frame(), hours=130, weeks=5)
+    hour = f.index[event_window_mask(f.index)][200]
+    f.loc[hour, "temp_forecast"] = -25.0
+    f.loc[hour, "pred_v2_noon"] = f.loc[hour, "target"] * 2  # an error the horizon's estimates would see
+    base = contrasts_v3(f, COLD_C, n_boot=N_BOOT)
+    g = f.copy()
+    g.loc[hour, "pred_v1_noon"] = np.nan
+    c = contrasts_v3(g, COLD_C, n_boot=N_BOOT)
+    hz, hz0 = c["horizon"], base["horizon"]
+    assert hz["subsets"]["all"]["hours"] == hz0["subsets"]["all"]["hours"] == len(f)
+    assert hz["contrast"]["all"] == hz0["contrast"]["all"]  # the horizon's own set keeps the hour
+    for k in ("cold", "event_windows"):
+        assert hz["subsets"][k]["hours"] == hz0["subsets"][k]["hours"] - 1 == c["subsets"][k]["hours"], k
+        assert hz["contrast"][k]["hours"] == c["subsets"][k]["hours"], k
+        assert hz["contrast"][k]["difference"] < hz0["contrast"][k]["difference"], k  # its error left with it
+    on_both = g.index[g.index != hour]
+    assert hz["contrast"]["cold"] == contrasts_v3(g.loc[on_both], COLD_C, n_boot=N_BOOT)["horizon"]["contrast"]["cold"]
 
 
 def test_a_gain_in_the_event_windows_paid_for_by_worse_all_hours_is_not_shown_better():

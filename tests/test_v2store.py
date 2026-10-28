@@ -232,6 +232,81 @@ def test_v2s_store_is_read_once_and_a_second_read_is_refused_before_it_opens_any
     assert snapshot(v2["store"]) == v2["built"]
 
 
+def _second_read_refused(v2, monkeypatch) -> None:
+    """A second `read-v2` is refused as "read once" before v2's database is opened or a run is created in v3's store;
+    v2's store is unchanged."""
+    from mlflow.entities import ViewType
+
+    c = tracking.client()
+    exp = c.get_experiment_by_name(v2store.EXPERIMENT).experiment_id
+    before = len(c.search_runs([exp], run_view_type=ViewType.ALL))
+    opened, real = [], v2store._connect
+    monkeypatch.setattr(v2store, "_connect", lambda db: opened.append(db) if Path(db).resolve().is_relative_to(
+        v2["store"].resolve()) else real(db))
+    monkeypatch.setattr(v2store, "read_v2_store", lambda *a, **k: opened.append(a))
+    with pytest.raises(v2store.V2StoreRefused, match="read once"):
+        v2store.run_read_v2(v2["store"])
+    assert opened == [] and len(c.search_runs([exp], run_view_type=ViewType.ALL)) == before
+    assert snapshot(v2["store"]) == v2["built"]
+
+
+@pytest.mark.parametrize("crash", ["after_the_read", "while_logging", "control"])
+def test_a_read_that_crashed_after_opening_v2s_store_refuses_every_later_read(v2, monkeypatch, crash):
+    """Section 10.3, "v2's store is opened once", never fail-open: the read run is created in v3's store before v2's
+    store is opened, so a read that crashed after opening it (no complete read logged, `recorded` None) still refuses
+    a second read. The control: with no read attempted, the first read passes and is the one complete read."""
+    import mlflow
+
+    assert v2store.attempted() == []
+    if crash == "control":
+        assert v2store.run_read_v2(v2["store"]) == 0
+        assert v2store.recorded() is not None
+        (a,) = v2store.attempted()
+        assert (a["status"], a["lifecycle_stage"], a["tag_status"]) == ("FINISHED", "active", "complete")
+    else:
+        real = v2store.read_v2_store
+
+        def read_then_crash(*a, **k):
+            real(*a, **k)
+            raise RuntimeError("crashed after the read")
+
+        def log_text(*a, **k):
+            raise OSError("disk full")
+
+        with monkeypatch.context() as m:
+            if crash == "after_the_read":
+                m.setattr(v2store, "read_v2_store", read_then_crash)
+            else:
+                m.setattr(mlflow, "log_text", log_text)
+            with pytest.raises((RuntimeError, OSError)):
+                v2store.run_read_v2(v2["store"])
+        assert v2store.recorded() is None  # no complete read: nothing for a later step to consume
+        (a,) = v2store.attempted()
+        assert (a["status"], a["lifecycle_stage"], a["tag_status"]) == ("FAILED", "active", "started")
+    _second_read_refused(v2, monkeypatch)
+
+
+@pytest.mark.parametrize("left", ["deleted_complete", "killed_running"])
+def test_a_deleted_or_killed_read_still_refuses_a_second_read(v2, monkeypatch, left):
+    """A complete read soft-deleted from v3's store (MLflow's delete_run) is no longer given to later steps
+    (`recorded` reads active runs) and still refuses a second read: v2's store was opened. So does a read whose
+    process was killed while it read, its run left RUNNING with its tag status started."""
+    if left == "deleted_complete":
+        assert v2store.run_read_v2(v2["store"]) == 0
+        rec = v2store.recorded()
+        tracking.client().delete_run(rec["run_id"])
+        want = (rec["run_id"], "FINISHED", "deleted")
+    else:
+        c = tracking.client()
+        exp = c.get_experiment_by_name(v2store.EXPERIMENT) or c.get_experiment(c.create_experiment(v2store.EXPERIMENT))
+        run = c.create_run(exp.experiment_id, tags={"kind": v2store.KIND, "status": "started"})
+        want = (run.info.run_id, "RUNNING", "active")
+    assert v2store.recorded() is None
+    (a,) = v2store.attempted()
+    assert (a["run_id"], a["status"], a["lifecycle_stage"]) == want
+    _second_read_refused(v2, monkeypatch)
+
+
 @pytest.mark.parametrize("own", ["same", "path_inside_own", "own_inside_path"])
 def test_read_v2_refuses_a_path_that_is_v3s_own_store(v2, monkeypatch, own):
     """v3 logs into its own store: a PATH that is v3's store, lies inside it or holds it is refused before either is

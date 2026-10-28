@@ -132,6 +132,26 @@ def test_rows_without_a_day_calibrate_no_half_width():
             relative_conformal(blind, "pred")
 
 
+def test_an_undefined_bound_counts_as_a_miss_on_v2s_path():
+    """v2's coverage (no bins) is v2's to the bit (docs/plan-v3.md, section 15): one finite calibration score makes the
+    90 % quantile infinite, and a zero forecast then has bounds inf * 0 = NaN. With a finite target and forecast that
+    hour is a miss, coverage 0, as v2 computed it; never a missing coverage, which would drop the miss from the weekly
+    coverage. The control: every other hour of the fold, its bounds infinite, is covered."""
+    out = oos(months=13)
+    last = out["fold"] == out["fold"].max()
+    out.loc[out.index[~last][1:], "target"] = np.nan  # one finite calibration score left
+    zero = out.index[last][30]
+    out.loc[zero, "pred"] = 0.0
+    iv = relative_conformal(out, "pred")
+    assert (iv["calibration_n"] == 1).all() and np.isinf(iv["q"]).all()
+    assert np.isnan(iv.loc[zero, "lower"]) and iv.loc[zero, "covered"] == 0.0
+    assert (iv.drop(index=zero)["covered"] == 1.0).all()
+    d = errors(out.loc[iv.index], "pred")
+    weeks = weekly_stats(d, iv["covered"])
+    week = d.loc[zero, "week"]
+    assert weeks.loc[week, "covered"] == pytest.approx(1 - 1 / weeks.loc[week, "hours"])
+
+
 def test_inflated_errors_drop_coverage():
     out = oos()
     late = out["fold"] >= "2022-07"

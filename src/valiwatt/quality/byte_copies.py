@@ -4,8 +4,11 @@ Before any v3 run on real data, the Hydro-Québec export, the ECCC files and the
 manifests, are checked file by file against the hashes recorded by the data-quality run of v2's first 2024 replay, as
 the step-2 read of v2's store logged them in v3's own store (v2store.recorded): the run refuses on any difference.
 
-- The window checked is v2's 2024 window, whatever window the v3 run reads: the files of 2019-2024 are never fetched
-  again, and the 2025 files, copied later from v2's 2025 fetch, are not in v2's first 2024 replay.
+- The window checked against v2's hashes is v2's 2024 window, whatever window the v3 run reads: the files of
+  2019-2024 are never fetched again, and the 2025 files, copied later from v2's 2025 fetch, are not in v2's first 2024
+  replay. Those files, and every manifest past 2024 the run's window reads (`files_past_window`), must be byte copies
+  all the same (section 11.3 (1): "on byte copies of the 2025 files and their manifests"); their hashes are checked
+  against their manifests by the run (quality.run), as v2 checks them.
 - Each source is checked as v2's data-quality run recorded it: the Hydro-Québec export by its SHA-256; the ECCC files
   by the one digest of the stations' manifests restricted to the window's months (quality.run.eccc_manifests_sha256,
   each month listing its file's SHA-256), then each month file against its manifest; the NBS files by the digest of the
@@ -55,6 +58,22 @@ def require_copy(path: Path) -> None:
         raise ByteCopyRefused(f"{path} has {st.st_nlink} hard links: v3 reads byte copies, never links")
 
 
+def files_past_window(through: int) -> list[Path]:
+    """Every raw file and manifest past the 2024 window that the window through `through` reads (none through 2024):
+    the Hydro-Québec export through `through` and its manifest; each station's month files that the 2024 window lacks,
+    and the station's manifest; each NBM year's file past 2024, and the NBM manifest."""
+    through = int(through)
+    if through <= WINDOW:
+        return []
+    out = [Path(hydroquebec.csv_path(through)), Path(hydroquebec.manifest_path(through))]
+    months = sorted(set(fetch_months(through)) - set(fetch_months(WINDOW)))
+    for st in stations():
+        out += [Path(eccc.month_path(st, y, m)) for y, m in months]
+        out.append(Path(eccc.RAW_ECCC) / st.climate_id / "manifest.json")
+    out += [Path(nbm.year_path(y)) for y in range(WINDOW + 1, through + 1)] + [Path(nbm.MANIFEST_PATH)]
+    return out
+
+
 def _eccc_months() -> tuple[str, list[tuple[Path, str]]]:
     """quality.run.eccc_manifests_sha256 over the stations' manifests restricted to the window's months, as
     quality.run._verify_raw returns them, and each month file of the window with the SHA-256 its manifest lists. Each
@@ -77,9 +96,11 @@ def _eccc_months() -> tuple[str, list[tuple[Path, str]]]:
     return eccc_manifests_sha256(manifests), months_
 
 
-def check_byte_copies(anchor: dict | None, fresh_clone: bool = False) -> dict:
+def check_byte_copies(anchor: dict | None, fresh_clone: bool = False, through: int = WINDOW) -> dict:
     """The byte-copy check (section 3.1). anchor: v2store.recorded(), the hashes the read of v2's store logged; None
-    when there was none. fresh_clone: the run was told it is on a fresh clone (`dq-v3 --fresh-clone`).
+    when there was none. fresh_clone: the run was told it is on a fresh clone (`dq-v3 --fresh-clone`). through: the
+    window the run reads; past 2024, every file and manifest past 2024 it reads (`files_past_window`) must be a byte
+    copy too (section 11.3 (1)), its hashes checked against its manifests by the run.
 
     Returns {"status": "not_run"} on a fresh clone without an anchor; else, every file being a byte copy that matches
     the hash v2 recorded, {"status": "passed", the three hashes, v2_dq_run_id, v2_read_run_id, files: how many were
@@ -127,6 +148,13 @@ def check_byte_copies(anchor: dict | None, fresh_clone: bool = False) -> dict:
         if sha256_file(path) != entry["sha256"]:
             raise ByteCopyRefused(f"the NBS file {path.name} differs from the one v2's first 2024 replay read")
     checked += 1 + len(restricted["years"])
+
+    past = files_past_window(through)
+    for path in past:
+        require_copy(path)
+    # The stations' manifests and the NBM manifest were checked above, with the 2024 window: counted once.
+    seen = {nbm.MANIFEST_PATH, *(eccc.RAW_ECCC / st.climate_id / "manifest.json" for st in stations())}
+    checked += len(set(past) - seen)
 
     return {"status": "passed", **{k: anchor[k] for k in ("hq_sha256", "eccc_manifests_sha256", "nbm_manifest_sha256")},
             "v2_dq_run_id": anchor.get("v2_dq_run_id", ""), "v2_read_run_id": anchor.get("run_id", ""),

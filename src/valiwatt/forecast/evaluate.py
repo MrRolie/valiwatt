@@ -289,7 +289,12 @@ def relative_conformal(out: pd.DataFrame, pred_col: str, alpha: float = ALPHA,
     iv = pd.concat(rows)
     y = out.loc[iv.index, "target"]
     inside = ((y >= iv["lower"]) & (y <= iv["upper"])).astype(float)
-    iv["covered"] = inside.where(y.notna() & out.loc[iv.index, pred_col].notna() & iv["lower"].notna())
+    scored = y.notna() & out.loc[iv.index, pred_col].notna()
+    if bins is not None:
+        # An hour without a bin (no temperature) has no half-width: its coverage is missing, never a miss. v2's path
+        # keeps v2's mask: an undefined bound (inf * 0) counts as uncovered, as before.
+        scored &= iv["lower"].notna()
+    iv["covered"] = inside.where(scored)
     return iv
 
 
@@ -656,10 +661,10 @@ def contrasts_v3(frame: pd.DataFrame, cold_c: float, n_boot: int = N_BOOT, seed:
     - On the common set (a target and the three noon forecasts): terms = v3 - v2_noon, family = v2_noon - v1_noon and
       whole = v3 - v1_noon, on all common hours, the cold tail and the event windows; on each set terms + family =
       whole (`additive_check`; reported, never judged). A subset without hours has no contrast (None).
-    - horizon = v2_noon - v2_midnight on its own set, the hours with a target and both, and on each subset of it;
-      reported, never judged. Section 8.2's "each subset intersected with those hours" is read as the cold tail and
-      the event windows applied as predicates to the horizon's own hours (`_subsets` on them), not as the common
-      set's subsets intersected with them: an hour the horizon has and the common set lacks still enters its subset.
+    - horizon = v2_noon - v2_midnight on its own set, the hours with a target and both ("all"), and on each subset of
+      section 8.2 intersected with those hours: the common set's cold tail and event windows, each kept to the hours
+      the horizon has (section 8.1). An hour the horizon has and the common set lacks (no v1-noon forecast) enters the
+      horizon's "all" only, never its cold tail or its event windows. Reported, never judged.
     - peak: the busiest hours (v2's `_peak`) with all four forecasts and the noon feed's temperature."""
     cold_c = float(cold_c)
     if not np.isfinite(cold_c):
@@ -681,7 +686,9 @@ def contrasts_v3(frame: pd.DataFrame, cold_c: float, n_boot: int = N_BOOT, seed:
             raise ValueError(f"the contrasts are not additive on the {k} hours (terms + family - whole = {additive})")
         out["additive_check"][k] = float(additive)
     hz = common_hours(frame, [f"pred_{_V2_NOON}", f"pred_{_V2_MIDNIGHT}"])
-    hz_subsets = _subsets(frame, hz, cold_c)
+    # Section 8.1: the subsets of section 8.2 (of the common hours) intersected with the horizon's hours, in the
+    # frame's order; and the horizon's own set whole.
+    hz_subsets = {"all": hz, **{k: h[h.isin(hz)] for k, h in subsets.items() if k != "all"}}
     out["horizon"] = {"subsets": {k: _subset(frame, h, judged=k != "all") for k, h in hz_subsets.items()},
                       "contrast": {k: _contrast(frame, h, _V2_NOON, _V2_MIDNIGHT, n_boot, seed) if len(h) else None
                                    for k, h in hz_subsets.items()}}

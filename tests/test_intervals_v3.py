@@ -130,6 +130,20 @@ def test_a_fold_whose_cold_bin_falls_back_says_so_on_every_interval():
     assert iv["fallback"].all() and (iv["q_cold"] == iv["q_pooled"]).all() and (iv["cold_n"] == 14).all()
 
 
+def test_an_hour_without_a_bin_has_no_coverage_on_the_binned_path_only():
+    """v3's binned path: an hour without a temperature is in no bin, has no half-width and no coverage (missing, never
+    a miss). v2's path on the same rows keeps v2's mask: the hour has its bounds and its coverage
+    (tests/test_evaluate.py, test_an_undefined_bound_counts_as_a_miss_on_v2s_path, for v2's undefined bound)."""
+    out = oos()
+    blind = out.index[out["fold"] == "2024-01"][40]
+    out.loc[blind, "temp_forecast"] = np.nan
+    iv = relative_conformal(out, "pred", bins=("temp_forecast", {"2024-01": -5.0, "2024-02": -5.0}))
+    assert iv.loc[blind, "bin"] is None and np.isnan(iv.loc[blind, "lower"]) and np.isnan(iv.loc[blind, "covered"])
+    assert (iv.drop(index=blind)["covered"] == 1.0).all()
+    plain = relative_conformal(out, "pred")
+    assert plain.loc[blind, "covered"] == 1.0 and plain["covered"].notna().all()
+
+
 def test_binned_intervals_need_each_fold_s_edge_and_relative_scores():
     out = oos()
     with pytest.raises(ValueError, match="bin edge"):

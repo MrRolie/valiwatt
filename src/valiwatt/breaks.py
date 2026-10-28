@@ -2012,6 +2012,14 @@ BREAKS = [
     _b(DQ, f"{T_NBM}::test_a_wind_speed_that_is_not_a_whole_number_is_refused",
        "Une vitesse du vent qui n'est pas un nombre entier est refusée",
        "A wind speed that is not a whole number is refused"),
+    _b(DQ, f"{T_NBM}::test_one_temperature_with_two_winds_is_a_duplicate_on_v2s_path_and_refuses_v3s[two]",
+       "Deux vents pour une même prévision et une même température : la lecture de v3 refuse, celle de v2 y voit un "
+       "doublon identique, comme avant v3",
+       "Two winds for one point with one temperature: v3's reader refuses, v2's reads an identical duplicate, as "
+       "before v3"),
+    _b(DQ, f"{T_NBM}::test_one_temperature_with_two_winds_is_a_duplicate_on_v2s_path_and_refuses_v3s[same]",
+       "Témoin : le même vent dans les deux fichiers est un doublon identique pour les deux lectures",
+       "Control: the same wind in both files is an identical duplicate for both readers", control=True),
     _b(DQ, f"{T_WEA}::test_the_wind_bounds_gate_is_pinned_at_both_edges",
        "Un vent au-dessus de 100 nœuds ou sous zéro fait échouer la porte des bornes du vent ; 0 et 100 nœuds la "
        "passent",
@@ -2261,6 +2269,24 @@ BREAKS = [
     _b(DQ, f"{T_QV3}::test_a_link_in_place_of_a_byte_copy_is_refused[hard_link]",
        "Un lien physique à la place d'une copie octet pour octet est refusé",
        "A hard link in place of a byte copy is refused"),
+    *(_b(DQ, f"{T_QV3}::test_a_2025_file_reached_through_a_link_refuses_the_window_through_2025[{c}]",
+         f"Un fichier de 2025 ({fr}) atteint par un lien refuse la fenêtre jusqu'en 2025",
+         f"A 2025 file ({en}) reached through a link refuses the window through 2025")
+      for c, fr, en in (("hq_export", "l'export d'Hydro-Québec, lien symbolique",
+                         "the Hydro-Québec export, symbolic link"),
+                        ("hq_manifest", "le manifeste d'Hydro-Québec, lien symbolique",
+                         "the Hydro-Québec manifest, symbolic link"),
+                        ("eccc_month", "un mois d'ECCC, lien symbolique", "an ECCC month, symbolic link"),
+                        ("nbm_file", "le fichier NBM, lien symbolique", "the NBM file, symbolic link"),
+                        ("nbm_hard_link", "le fichier NBM, lien physique", "the NBM file, hard link"))),
+    _b(DQ, f"{T_QV3}::test_a_2025_file_reached_through_a_link_refuses_the_window_through_2025[control]",
+       "Témoin : des copies octet pour octet des fichiers de 2025 passent la fenêtre jusqu'en 2025",
+       "Control: byte copies of the 2025 files pass the window through 2025", control=True),
+    _b(DQ, f"{T_QV3}::test_dq_v3_through_2025_refuses_a_symlinked_2025_export_before_it_reads_any_file",
+       "L'exécution de qualité de v3 jusqu'en 2025 refuse un export de 2025 atteint par un lien symbolique, avant de "
+       "lire aucun fichier",
+       "v3's data-quality run through 2025 refuses a 2025 export reached through a symbolic link, before it reads any "
+       "file"),
     _b(DQ, f"{T_QV3}::test_the_v3_run_refuses_a_file_that_is_not_v2s_before_it_reads_any_file",
        "L'exécution de qualité de v3 refuse un fichier qui n'est pas celui de v2 avant de lire aucun fichier",
        "v3's data-quality run refuses a file that is not v2's before it reads any file"),
@@ -2325,6 +2351,19 @@ BREAKS = [
        "La base de v2 est ouverte immuable : rien n'est créé à côté d'elle, et un journal d'écriture anticipée à "
        "côté d'elle est refusé",
        "v2's database is opened immutable: nothing is created beside it, and a write-ahead log beside it is refused"),
+    *(_b(FREEZE, f"{T_V2S}::test_a_read_that_crashed_after_opening_v2s_store_refuses_every_later_read[{c}]",
+         f"Une lecture du magasin de v2 interrompue après l'avoir ouvert ({fr}) refuse toute lecture suivante",
+         f"A read of v2's store that crashed after opening it ({en}) refuses every later read")
+      for c, fr, en in (("after_the_read", "après la lecture", "after the read"),
+                        ("while_logging", "pendant l'enregistrement", "while logging"))),
+    _b(FREEZE, f"{T_V2S}::test_a_read_that_crashed_after_opening_v2s_store_refuses_every_later_read[control]",
+       "Témoin : sans lecture tentée, la première lecture passe et est la seule lecture complète",
+       "Control: with no read attempted, the first read passes and is the one complete read", control=True),
+    *(_b(FREEZE, f"{T_V2S}::test_a_deleted_or_killed_read_still_refuses_a_second_read[{c}]",
+         f"Une lecture du magasin de v2 {fr} refuse encore une seconde lecture",
+         f"A read of v2's store {en} still refuses a second read")
+      for c, fr, en in (("deleted_complete", "complète puis supprimée", "complete, then deleted"),
+                        ("killed_running", "dont le processus a été tué", "whose process was killed"))),
     _b(FREEZE, f"{T_V2S}::test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[dq-v3]",
        "L'exécution de qualité de v3 refuse un magasin qui contient le premier rejeu 2024 de v2, avant de rien lire "
        "ni enregistrer",

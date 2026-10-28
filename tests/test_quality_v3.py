@@ -155,11 +155,92 @@ def test_a_link_in_place_of_a_byte_copy_is_refused(raw_tree, how):
         bc.check_byte_copies(a)
 
 
+def through_2025(raw_tree) -> list:
+    """The 2025 files v2's 2025 fetch adds, copied into the scratch data/raw beside the 2024 window's: the export
+    through 2025 and its manifest, the station's months past the 2024 window (listed in its manifest), the NBM file of
+    2025 (listed in the NBM manifest). Returns them, as bc.files_past_window(2025) lists them."""
+    st = raw_tree["station"]
+    csv = hydroquebec.csv_path(2025)
+    csv.write_text("date,moyenne_mw\n2025-01-01T06:00:00+00:00,22000\n")
+    hydroquebec.manifest_path(2025).write_text(json.dumps({"sha256": sha256_file(csv)}))
+    m = json.loads(raw_tree["eccc_manifest"].read_text())
+    for y, mo in sorted(set(fetch_months(2025)) - set(fetch_months(2024))):
+        path = eccc.month_path(st, y, mo)
+        path.write_text(f"{y}-{mo:02d}\n")
+        m["months"][f"{y:04d}-{mo:02d}"] = {"sha256": sha256_file(path), "retrieved_utc": "2026-12-01T00:00:00Z"}
+    raw_tree["eccc_manifest"].write_text(json.dumps(m))
+    path = nbm.year_path(2025)
+    path.write_text("runtime,ftime,model,tmp,wsp,station\n2025\n")
+    n = json.loads(nbm.MANIFEST_PATH.read_text())
+    n["years"]["2025"] = {"sha256": sha256_file(path), "rows": 1}
+    nbm.MANIFEST_PATH.write_text(json.dumps(n))
+    return bc.files_past_window(2025)
+
+
+@pytest.mark.parametrize("which", ["control", "hq_export", "hq_manifest", "eccc_month", "nbm_file", "nbm_hard_link"])
+def test_a_2025_file_reached_through_a_link_refuses_the_window_through_2025(raw_tree, which):
+    """Section 11.3 (1): v3's 2025 test runs "on byte copies of the 2025 files and their manifests". A file of the
+    window through 2025 that the 2024 window does not read, linked to v2's checkout, refuses the check of the window
+    through 2025, before any of its hashes is compared; the 2024 window, which never reads it, passes. The 2019-2024
+    files are still checked against v2's hashes."""
+    a, st, tmp = raw_tree["anchor"], raw_tree["station"], raw_tree["tmp"]
+    past = through_2025(raw_tree)
+    assert {hydroquebec.csv_path(2025), hydroquebec.manifest_path(2025), nbm.year_path(2025)} <= set(past)
+    got = bc.check_byte_copies(a, through=2025)
+    manifests = {nbm.MANIFEST_PATH, raw_tree["eccc_manifest"]}  # checked with the 2024 window, counted once
+    assert manifests <= set(past)
+    assert got["status"] == "passed" and got["files"] == bc.check_byte_copies(a)["files"] + len(past) - len(manifests)
+    if which == "control":
+        return
+    v2_side = tmp / "v2_checkout"
+    v2_side.mkdir()
+    target = {"hq_export": hydroquebec.csv_path(2025), "hq_manifest": hydroquebec.manifest_path(2025),
+              "eccc_month": eccc.month_path(st, 2025, 6), "nbm_file": nbm.year_path(2025),
+              "nbm_hard_link": nbm.year_path(2025)}[which]
+    assert target in past
+    if which == "nbm_hard_link":
+        os.link(target, v2_side / target.name)
+        match = "hard links"
+    else:
+        os.replace(target, v2_side / target.name)
+        target.symlink_to(v2_side / target.name)
+        match = "symbolic link"
+    assert bc.check_byte_copies(a)["status"] == "passed"  # the 2024 window never reads it
+    with pytest.raises(bc.ByteCopyRefused, match=match):
+        bc.check_byte_copies(a, through=2025)
+    _append(nbm.year_path(2020))  # a 2019-2024 file still refuses by v2's hash, whatever the window
+    with pytest.raises(bc.ByteCopyRefused, match="NBS file CYUL-NBS-2020.csv"):
+        bc.check_byte_copies(a, through=2025)
+
+
+def test_dq_v3_through_2025_refuses_a_symlinked_2025_export_before_it_reads_any_file(raw_tree, monkeypatch):
+    """`valiwatt dq-v3 --through 2025` checks the byte copies of the window it reads: a 2025 Hydro-Québec export
+    symlinked into v2's checkout refuses the run before any raw file is verified or parsed, and nothing is logged."""
+    seen = []
+    monkeypatch.setattr(tracking, "MLRUNS", raw_tree["tmp"] / "mlruns")
+    monkeypatch.setattr(firstrun, "require_first_run", lambda: "0" * 40)
+    monkeypatch.setattr(v2store, "recorded", lambda client=None: raw_tree["anchor"])
+    monkeypatch.setattr(qrun, "_verify_manifests", lambda through=2024: seen.append(through))
+    through_2025(raw_tree)
+    csv = hydroquebec.csv_path(2025)
+    v2_side = raw_tree["tmp"] / "v2_checkout"
+    v2_side.mkdir()
+    os.replace(csv, v2_side / csv.name)
+    csv.symlink_to(v2_side / csv.name)
+    with pytest.raises(bc.ByteCopyRefused, match=f"{csv.name} is reached through a symbolic link"):
+        run_v3.run_dq_v3(through=2025)
+    assert seen == []
+    with pytest.raises(LookupError):
+        tracking.latest_run(run_v3.EXPERIMENT)
+
+
 # --------------------------------------------------------------------------------------- the data-quality run at noon
 
 def nbm_years_store(runs: pd.DataFrame, calls: list):
-    """`sources.nbm.load_runs` on a synthetic archive, recording the years it is asked for."""
-    def load(years):
+    """`sources.nbm.load_runs` on a synthetic archive, recording the years it is asked for; v3's data-quality run asks
+    for the wind (plan-v3, section 3.1), and a load without it is refused."""
+    def load(years, wind=False):
+        assert wind, "v3's data-quality run loaded the NBM runs without the wind"
         years = list(years)
         calls.append(years)
         lo, hi = pd.Timestamp(f"{min(years)}-01-01T00:00Z"), pd.Timestamp(f"{max(years) + 1}-01-01T01:00Z")

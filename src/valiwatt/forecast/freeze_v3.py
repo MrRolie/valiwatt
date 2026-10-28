@@ -209,7 +209,7 @@ def run_freeze_v3(replay_year: int) -> int:
         raise vd.LineageError(f"validation run {val.info.run_id}: its reproduction check is {reproduction!r}, not "
                               f"passed, and data-quality run {dq.info.run_id} is not labelled a fresh clone")
     raw_demand, _ = load_raw(dq)
-    runs = qrun.load_runs(dq, years=V3_DESIGN_YEARS)
+    runs = qrun.load_runs(dq, years=V3_DESIGN_YEARS, wind=True)
     tables = frozen_tables_v3(raw_demand, weather, replay_year, runs)
     production, coef = fit_frozen_v3(tables["noon"], oos, replay_year, key=V3_PRODUCTION)
     require_echo_premise(production)

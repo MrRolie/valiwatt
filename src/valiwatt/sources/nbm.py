@@ -10,8 +10,10 @@ whole response are left out), so the columns are found by name. A refusal from t
 HTTP 200 with a line of plain text; it has no header and is refused like any response without the required columns.
 
 Points are three-hourly; `tmp` is the 2 m temperature in whole degrees Fahrenheit, blank when the run has none; `wsp`
-the wind speed in whole knots, blank when the run has none (docs/plan-v3.md, section 3.1: a header without it, or a
-value neither a whole number nor blank, is refused; v3 converts it to km/h as knots x 1.852, forecast/issue.py). The
+the wind speed in whole knots, blank when the run has none. The wind is read only when asked (`wind=True`, v3's
+readers, docs/plan-v3.md section 3.1: a header without it, or a value neither a whole number nor blank, is refused; v3
+converts it to km/h as knots x 1.852, forecast/issue.py); without it, as on v2's path and in `fetch`, the reading is
+v2's to the column: its required columns, its rows, its counts and its duplicate identity. The
 forecast is read only while the primary station of `config/stations.toml` is the ECCC station at the same airport
 (climate ID 7025251): the pairing. IEM declares the data public domain; NOAA's attribution and no-endorsement terms
 apply (AGENTS.md). Nothing here is committed: the files go to the gitignored `data/raw/nbm/`.
@@ -45,7 +47,8 @@ MAX_RUNS_BACK = 12
 # above it is a finding against the section's two-day argument and a trigger for a section 18 entry. v2's origin;
 # reuse_lead_h gives it for any issue time (87 at noon, docs/plan-v3.md section 9.2).
 REUSE_LEAD_H = 75
-REQUIRED = ("runtime", "ftime", "model", "tmp", "wsp", "station")
+REQUIRED = ("runtime", "ftime", "model", "tmp", "station")  # v2's
+REQUIRED_WIND = (*REQUIRED, "wsp")  # v3's (wind=True)
 WHOLE = r"-?\d+"  # a wind speed in whole knots, as the archive writes it
 MANIFEST_PATH = RAW_NBM / "manifest.json"
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -80,15 +83,17 @@ def year_bounds(year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(p["sts"]), pd.Timestamp(p["ets"])
 
 
-def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
+def _parse_year(text: str, year: int, wind: bool = False) -> tuple[pd.DataFrame, dict]:
     """The one reading of a year's response: `verify_year`'s checks, then the rows they passed (runtime and ftime as
-    naive UTC, tmp_f in °F and wsp_kt in knots, each NaN when blank, in the file's order) and the counts the manifest
-    records. The load reads these same rows, so it never holds a row the checks did not see."""
+    naive UTC, tmp_f in °F, NaN when blank, in the file's order) and the counts the manifest records. The load reads
+    these same rows, so it never holds a row the checks did not see. With `wind` (v3), the wind speed is required and
+    checked too, the rows add wsp_kt in knots (NaN when blank) and the counts blank_wsp."""
     rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff"))))
     if not rows or not any(rows):
         raise FetchRefused("empty response")
     header = rows[0]
-    missing = [c for c in REQUIRED if c not in header]
+    required = REQUIRED_WIND if wind else REQUIRED
+    missing = [c for c in required if c not in header]
     if missing:
         raise FetchRefused(f"missing columns {missing}; the response starts {text[:80]!r}")
     body = rows[1:]
@@ -97,7 +102,7 @@ def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
     bad = [i for i, r in enumerate(body, start=2) if len(r) != len(header)]
     if bad:
         raise FetchRefused(f"{len(bad)} rows do not have {len(header)} fields (first at line {bad[0]})")
-    col = {c: header.index(c) for c in REQUIRED}
+    col = {c: header.index(c) for c in required}
     stations_ = {r[col["station"]] for r in body}
     if stations_ != {STATION}:
         raise FetchRefused(f"stations {sorted(stations_)} != expected {STATION}")
@@ -111,13 +116,14 @@ def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
         first = int(not_numbers.to_numpy().argmax())
         raise FetchRefused(f"{int(not_numbers.sum())} temperatures are neither a number nor blank "
                            f"(first {tmp.iloc[first]!r} at line {first + 2})")
-    wsp = pd.Series([r[col["wsp"]].strip() for r in body], dtype=str)
-    not_whole = (wsp != "") & ~wsp.str.fullmatch(WHOLE)
-    if not_whole.any():
-        first = int(not_whole.to_numpy().argmax())
-        raise FetchRefused(f"{int(not_whole.sum())} wind speeds are neither a whole number nor blank "
-                           f"(first {wsp.iloc[first]!r} at line {first + 2})")
-    knots = pd.to_numeric(wsp.where(wsp != ""), errors="raise").astype(float)
+    if wind:
+        wsp = pd.Series([r[col["wsp"]].strip() for r in body], dtype=str)
+        not_whole = (wsp != "") & ~wsp.str.fullmatch(WHOLE)
+        if not_whole.any():
+            first = int(not_whole.to_numpy().argmax())
+            raise FetchRefused(f"{int(not_whole.sum())} wind speeds are neither a whole number nor blank "
+                               f"(first {wsp.iloc[first]!r} at line {first + 2})")
+        knots = pd.to_numeric(wsp.where(wsp != ""), errors="raise").astype(float)
     times = {}
     for c in ("runtime", "ftime"):
         raw = pd.Series([r[col[c]] for r in body], dtype=str)
@@ -138,21 +144,23 @@ def _parse_year(text: str, year: int) -> tuple[pd.DataFrame, dict]:
         raise FetchRefused(f"{int(outside.sum())} rows have a run time outside {sts}..{ets}, the request for {year} "
                            f"(first {runtime[outside].iloc[0]})")
     counts = {"rows": len(body), "runs": int(runtime.nunique()), "first_runtime": runtime.min().strftime(TIME_FORMAT),
-              "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum()),
-              "blank_wsp": int((wsp == "").sum())}
-    return pd.DataFrame({"runtime": runtime, "ftime": times["ftime"], "tmp_f": values.astype(float),
-                         "wsp_kt": knots}), counts
+              "last_runtime": runtime.max().strftime(TIME_FORMAT), "blank_tmp": int((tmp == "").sum())}
+    rows = pd.DataFrame({"runtime": runtime, "ftime": times["ftime"], "tmp_f": values.astype(float)})
+    if wind:
+        counts["blank_wsp"] = int((wsp == "").sum())
+        rows["wsp_kt"] = knots
+    return rows, counts
 
 
-def verify_year(text: str, year: int) -> dict:
+def verify_year(text: str, year: int, wind: bool = False) -> dict:
     """Refuse a response that is not NBS guidance for CYUL with run times inside the year's request.
 
-    Refused: a missing required column (any of REQUIRED, found by name), no row, a row of another length than the
-    header, a station other than CYUL or a model other than NBS, a temperature that is neither a number nor blank, a
-    wind speed that is neither a whole number (WHOLE) nor blank, a run or valid time that is missing (blank, "NaT",
-    "nan") or does not parse, naming its lines, and a run time outside the request's bounds as the archive applies them.
-    Returns the counts the manifest records."""
-    return _parse_year(text, year)[1]
+    Refused: a missing required column (any of REQUIRED, found by name; of REQUIRED_WIND with `wind`), no row, a row of
+    another length than the header, a station other than CYUL or a model other than NBS, a temperature that is neither
+    a number nor blank, with `wind` a wind speed that is neither a whole number (WHOLE) nor blank, a run or valid time
+    that is missing (blank, "NaT", "nan") or does not parse, naming its lines, and a run time outside the request's
+    bounds as the archive applies them. Returns the counts the manifest records (with `wind`, blank_wsp too)."""
+    return _parse_year(text, year, wind=wind)[1]
 
 
 def manifest() -> dict:
@@ -234,23 +242,27 @@ def require_pairing() -> None:
                            f"station of config/stations.toml is {primary.climate_id}")
 
 
-def load_runs(years) -> pd.DataFrame:
+def load_runs(years, wind: bool = False) -> pd.DataFrame:
     """The runs of an explicit list of years (never a pattern: a file of a year not listed is never opened).
 
-    Columns runtime, ftime (UTC), tmp_f (°F) and wsp_kt (knots), each NaN when blank, sorted by run and valid time.
-    Identical duplicate points (same run, valid time, temperature and wind: the files overlap at their boundary) are
-    dropped and counted in `.attrs["identical_duplicates"]`; two values for one run and valid time, in either field,
-    refuse the load. Refused unless the
-    primary station is the one the forecast is paired with."""
+    Columns runtime, ftime (UTC), tmp_f (°F, NaN when blank), sorted by run and valid time. Identical duplicate points
+    (same run, valid time and value: the files overlap at their boundary) are dropped and counted in
+    `.attrs["identical_duplicates"]`; two values for one run and valid time refuse the load. With `wind` (v3's readers,
+    docs/plan-v3.md section 3.1), each file must hold the wind speed, a column wsp_kt (knots, NaN when blank) is added,
+    and a point is a duplicate only when its wind is the same too: two winds for one run and valid time refuse the
+    load, whatever the temperatures. Without it, v2's reading exactly. Refused unless the primary station is the one
+    the forecast is paired with."""
     require_pairing()
     years = [int(y) for y in years]
-    frames = [_parse_year(year_path(year).read_bytes().decode("utf-8-sig"), year)[0] for year in years]
+    frames = [_parse_year(year_path(year).read_bytes().decode("utf-8-sig"), year, wind=wind)[0] for year in years]
     if not frames:
         raise FetchRefused("no year listed: the forecast's years are given explicitly")
     d = pd.concat(frames, ignore_index=True)
     out = pd.DataFrame({"runtime": d["runtime"].dt.tz_localize("UTC"), "ftime": d["ftime"].dt.tz_localize("UTC"),
-                        "tmp_f": d["tmp_f"].astype(float), "wsp_kt": d["wsp_kt"].astype(float)})
-    identical = out.duplicated(["runtime", "ftime", "tmp_f", "wsp_kt"])
+                        "tmp_f": d["tmp_f"].astype(float)})
+    if wind:
+        out["wsp_kt"] = d["wsp_kt"].astype(float)
+    identical = out.duplicated(["runtime", "ftime", "tmp_f", *(["wsp_kt"] if wind else [])])
     out = out[~identical]
     conflict = out.duplicated(["runtime", "ftime"], keep=False)
     if conflict.any():

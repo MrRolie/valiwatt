@@ -221,9 +221,11 @@ def chain_load_raw(dq):
     return vintage(int(dq.data.params.get("through", 2024)))
 
 
-def chain_load_runs(dq, years=None):
+def chain_load_runs(dq, years=None, wind=False):
     """The runs as quality.run.load_runs gives them for `dq`'s window: those available by its last hour, of the years
-    listed (by run time)."""
+    listed (by run time). v3's readers ask for the wind (plan-v3, section 3.1): a v3 path that does not is refused."""
+    if not wind:
+        raise AssertionError("a v3 reader loaded the NBM runs without the wind")
     runs = world().runs
     keep = runs["available_utc"] <= data_last(int(dq.data.params.get("through", 2024)))
     if years is not None:

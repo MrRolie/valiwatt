@@ -514,17 +514,10 @@ def files_past_2024() -> list[Path]:
     """Every raw file and manifest past 2024 a 2025 replay reads (section 11.3 (1): byte copies of the 2025 files and
     their manifests): the Hydro-Québec export through 2025 and its manifest; each station's month files of the window
     through 2025 that the window through 2024 lacks, and the station's manifest; the NBM file of 2025 and its
-    manifest."""
-    from valiwatt.config import fetch_months, stations
-    from valiwatt.sources import eccc, hydroquebec, nbm
+    manifest. One list with the data-quality run's byte-copy check (quality/byte_copies.py `files_past_window`)."""
+    from valiwatt.quality.byte_copies import files_past_window
 
-    out = [Path(hydroquebec.csv_path(HELD_OUT_YEAR)), Path(hydroquebec.manifest_path(HELD_OUT_YEAR))]
-    months = sorted(set(fetch_months(HELD_OUT_YEAR)) - set(fetch_months(REHEARSAL_YEAR)))
-    for st in stations():
-        out += [Path(eccc.month_path(st, y, m)) for y, m in months]
-        out.append(Path(eccc.RAW_ECCC) / st.climate_id / "manifest.json")
-    out += [Path(nbm.year_path(HELD_OUT_YEAR)), Path(nbm.MANIFEST_PATH)]
-    return out
+    return files_past_window(HELD_OUT_YEAR)
 
 
 def latest_dq_v3(c):
@@ -1062,7 +1055,7 @@ def _read_inputs_v3(year: int, freeze: dict, located: dict, record: dict) -> dic
                               f"checked: {mrun._differences(chain['frozen_sha256'], record['frozen_sha256'])}")
         raw_demand, raw_temp = mrun.load_raw(dq)
         return {"dq": dq, "chain": chain, "raw_demand": raw_demand, "raw_temp": raw_temp,
-                "runs": qrun.load_runs(dq, years=(*V3_DESIGN_YEARS, HELD_OUT_YEAR)),
+                "runs": qrun.load_runs(dq, years=(*V3_DESIGN_YEARS, HELD_OUT_YEAR), wind=True),
                 "data_end": data_last(HELD_OUT_YEAR), "oos": None, "val": chain["validation_run"]}
     dq = dq_v3.latest_passed()
     mrun._same_run("data-quality run", dq.info.run_id, located["dq_run_id"])
@@ -1087,8 +1080,8 @@ def _read_inputs_v3(year: int, freeze: dict, located: dict, record: dict) -> dic
               for name in ("forecast_record_noon", "bins", f"intervals_{V3_PRODUCTION}")}
     raw_demand, raw_temp = mrun.load_raw(dq)
     return {"dq": dq, "chain": chain, "raw_demand": raw_demand, "raw_temp": raw_temp,
-            "runs": qrun.load_runs(dq, years=V3_DESIGN_YEARS), "data_end": V3_DESIGN_LAST, "oos": oos, "val": val,
-            "frames": frames}
+            "runs": qrun.load_runs(dq, years=V3_DESIGN_YEARS, wind=True), "data_end": V3_DESIGN_LAST, "oos": oos,
+            "val": val, "frames": frames}
 
 
 def _replay_v3(inputs: dict, first_day: str, last_day: str, departure: bool, run_id: str | None):
@@ -1343,7 +1336,7 @@ def run_evidence_v3(departure: bool = False) -> int:
             "freeze_record_commit": rec["commit"], "status": "started"}) as run:
         try:
             raw_demand, raw_temp = mrun.load_raw(dq)
-            runs = qrun.load_runs(dq, years=(*V3_DESIGN_YEARS, HELD_OUT_YEAR))
+            runs = qrun.load_runs(dq, years=(*V3_DESIGN_YEARS, HELD_OUT_YEAR), wind=True)
             end = data_last(REHEARSAL_YEAR)
             late_d, late_t = (raw_demand["ts_utc"] > end).to_numpy(), (raw_temp["ts_utc"] > end).to_numpy()
             raw_demand, raw_temp = raw_demand[~late_d].reset_index(drop=True), raw_temp[~late_t].reset_index(drop=True)

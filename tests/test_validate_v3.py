@@ -340,7 +340,8 @@ def entry(tmp_path, monkeypatch, world):
     monkeypatch.setattr(vd, "load_inputs", lambda dq, paths, command: seen.__setitem__("paths", paths) or (dq, None,
                                                                                                          "weather"))
     monkeypatch.setattr(mrun, "load_raw", lambda dq: ("raw", "raw_t"))
-    monkeypatch.setattr(qrun, "load_runs", lambda dq, years=None: "runs" if years == v3.V3_DESIGN_YEARS else None)
+    monkeypatch.setattr(qrun, "load_runs", lambda dq, years=None, wind=False: "runs" if years == v3.V3_DESIGN_YEARS
+                        and wind else None)  # v3 reads the wind (plan-v3, section 3.1)
     monkeypatch.setattr(v3, "validation_inputs_v3", lambda *a: seen.__setitem__("inputs", a) or {})
     monkeypatch.setattr(v3, "run_validation_v3", lambda **k: world.v)
     recorded = pd.DataFrame({"ts": world.out.index, "forecast": world.out["pred_v2_midnight"].to_numpy()})

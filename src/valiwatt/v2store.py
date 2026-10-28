@@ -9,7 +9,11 @@ write-ahead index is created beside it), never through MLflow's client, which ma
 experiment, and refused while a write-ahead log sits beside it (pages an immutable reader would not see); artifacts are
 files opened for reading under PATH. Nothing is created or written there.
 
-It is read once (section 10.3): `read-v2` refuses when v3's store already holds a read, before it opens anything.
+It is read once (section 10.3), and the guard never fails open: before it opens v2's store, `read-v2` creates its
+own run in v3's store (tag kind `v2_read`, tag status `started`), which a crash or a refusal after that leaves behind
+(ended FAILED by MLflow, or left RUNNING by a killed process); and it refuses, before it creates that run or opens
+anything, when v3's store holds any run of that kind, in any status, active or deleted (`attempted`). Only a complete
+read is given back to later steps (`recorded`).
 v3's own store is never v2's: `read-v2` refuses a PATH that is v3's store, inside it or holding it, and every v3
 command that logs refuses a store holding v2's first 2024 replay run (`require_own_store`).
 
@@ -73,15 +77,20 @@ class V2Read:
     entry: dict
 
 
-def _connect(db: Path) -> sqlite3.Connection:
-    """A database read-only and immutable: sqlite refuses every write on this connection, never creates the file, and
-    creates nothing beside it. Refused while a write-ahead log sits beside it: its pages are the database's too."""
+def _require_db(db: Path) -> None:
+    """A database file there, without a write-ahead log beside it; seen by its path only, never opened."""
     if not db.is_file():
         raise V2StoreRefused(f"no {DB_NAME} in v2's store ({db.parent})")
     wal = db.with_name(f"{db.name}-wal")
     if wal.exists():
         raise V2StoreRefused(f"{wal.name} sits beside {db}: a write-ahead log not checkpointed into the database; read "
                              "it once every process that wrote it has closed it")
+
+
+def _connect(db: Path) -> sqlite3.Connection:
+    """A database read-only and immutable: sqlite refuses every write on this connection, never creates the file, and
+    creates nothing beside it. Refused while a write-ahead log sits beside it: its pages are the database's too."""
+    _require_db(db)
     return sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro&immutable=1", uri=True)
 
 
@@ -236,12 +245,16 @@ def require_own_store() -> None:
 
 def run_read_v2(store) -> int:
     """`valiwatt read-v2 PATH`: the first-run guard (section 10.2); PATH neither v3's own store, nor inside it, nor
-    holding it; v3's store not v2's (`require_own_store`); no read already in v3's store (v2's store is read once);
-    then `read_v2_store`, then one run of EXPERIMENT in v3's own store logging what was read: tags kind,
-    v2_replay_run_id, v2_dq_run_id, v2_validation_run_id, v2_freeze_tag, and the freeze the read is made under
-    (freeze_tag, freeze_commit: records_v3.current_freeze, v3-pre-freeze before v3's tag, section 10.3); params the
-    three raw-file hashes and the forecasts' hour count; OOS_ARTIFACT and RECORD_ARTIFACT. Each refusal
-    (V2StoreRefused, or V3FreezeError for the freeze) comes before v2's store is opened."""
+    holding it; v3's store not v2's (`require_own_store`); no read attempted in v3's store, in any status, deleted
+    included (`attempted`: v2's store is read once, and a read that crashed or was refused after it opened the store
+    counts); v2's database there (`_require_db`, by its path). Then one run of EXPERIMENT in v3's own store, created
+    before v2's store is opened (tags kind, status started, v2_freeze_tag, and the freeze the read is made under:
+    freeze_tag, freeze_commit, records_v3.current_freeze, v3-pre-freeze before v3's tag, section 10.3), so that any
+    later read is refused whatever happens next; inside it `read_v2_store`, then what was read: tags
+    v2_replay_run_id, v2_dq_run_id, v2_validation_run_id; params the three raw-file hashes and the forecasts' hour
+    count; OOS_ARTIFACT and RECORD_ARTIFACT; tag status complete last. Each refusal before that run (V2StoreRefused,
+    or V3FreezeError for the freeze) leaves nothing; a refusal or a crash inside it leaves the run, FAILED (or RUNNING
+    if the process was killed), which refuses every later read."""
     import tempfile
 
     import mlflow
@@ -258,15 +271,19 @@ def run_read_v2(store) -> int:
         raise V2StoreRefused(f"{store} is v3's own store ({own}), inside it or holding it: v3 logs into its own store, "
                              "never into v2's")
     require_own_store()
-    if (done := recorded()) is not None:
-        raise V2StoreRefused(f"v2's store was read once, run {done['run_id']} of v3's store: it is never opened again "
-                             "(docs/plan-v3.md, section 10.3)")
+    if done := attempted():
+        first = done[0]
+        raise V2StoreRefused(f"v2's store was read once, run {first['run_id']} of v3's store ({first['status']}, "
+                             f"{first['lifecycle_stage']}, tag status {first['tag_status']!r}; {len(done)} read(s) "
+                             "attempted): it is never opened again (docs/plan-v3.md, section 10.3)")
     freeze = current_freeze()
-    r = read_v2_store(store)
-    tags = {"kind": KIND, "v2_replay_run_id": r.replay_run_id, "v2_dq_run_id": r.dq_run_id,
-            "v2_validation_run_id": r.validation_run_id, "v2_freeze_tag": FREEZE_TAG,
-            "freeze_tag": freeze["freeze_tag"], "freeze_commit": freeze["freeze_commit"]}
+    _require_db(Path(store) / DB_NAME)
+    tags = {"kind": KIND, "status": "started", "v2_freeze_tag": FREEZE_TAG, "freeze_tag": freeze["freeze_tag"],
+            "freeze_commit": freeze["freeze_commit"]}
     with start_run(EXPERIMENT, "read-v2", tags=tags) as run:
+        r = read_v2_store(store)
+        mlflow.set_tags({"v2_replay_run_id": r.replay_run_id, "v2_dq_run_id": r.dq_run_id,
+                         "v2_validation_run_id": r.validation_run_id})
         mlflow.log_params({**r.hashes, "forecast_hours": len(r.forecasts),
                            "first_ts": r.forecasts["ts"].min().isoformat() if len(r.forecasts) else "",
                            "last_ts": r.forecasts["ts"].max().isoformat() if len(r.forecasts) else ""})
@@ -283,10 +300,30 @@ def run_read_v2(store) -> int:
     return 0
 
 
+def attempted(client=None) -> list[dict]:
+    """Every read of v2's store v3's own store holds, attempted or complete: each run of tag kind KIND in any
+    experiment, in any status (running, failed, killed, finished) and any lifecycle stage (deleted included), the
+    earliest first, as {run_id, status, lifecycle_stage, tag_status}. Empty only when no read was ever started there;
+    the read-once guard of `run_read_v2`, never fail-open. Never opens v2's store."""
+    from mlflow.entities import ViewType
+
+    from valiwatt import tracking
+
+    c = client or tracking.client()
+    exps = [e.experiment_id for e in c.search_experiments(view_type=ViewType.ALL)]
+    if not exps:
+        return []
+    runs = c.search_runs(exps, filter_string=f"tags.kind = '{KIND}'", run_view_type=ViewType.ALL,
+                         order_by=["attributes.start_time ASC"], max_results=1000)
+    return [{"run_id": r.info.run_id, "status": r.info.status, "lifecycle_stage": r.info.lifecycle_stage,
+             "tag_status": r.data.tags.get("status")} for r in runs]
+
+
 def recorded(client=None) -> dict | None:
     """The latest complete read of v2's store in v3's own store: {run_id, v2_replay_run_id, v2_dq_run_id,
     v2_validation_run_id, hq_sha256, eccc_manifests_sha256, nbm_manifest_sha256}; None when there is none (a fresh
-    clone, section 3.1). Never opens v2's store."""
+    clone, section 3.1). For the steps that consume the read; whether a read may be made is `attempted`'s, never
+    this. Never opens v2's store."""
     from valiwatt import tracking
 
     c = client or tracking.client()

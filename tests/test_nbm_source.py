@@ -1,6 +1,6 @@
 """The NBM fetcher and loader refuse what they cannot verify: another station or model, a temperature that is neither a
-number nor blank, a header without the wind speed or a wind speed that is neither a whole number nor blank (plan-v3,
-section 3.1), an empty response, a run outside the year's request, a point without its run time or its valid time,
+number nor blank, on v3's reader (wind=True) a header without the wind speed or a wind speed that is neither a whole
+number nor blank (plan-v3, section 3.1; v2's reader never reads the wind), an empty response, a run outside the year's request, a point without its run time or its valid time,
 two values for one point, a primary station the forecast is not paired with, a file that no longer matches its
 manifest, and a file of a year not listed."""
 
@@ -52,7 +52,8 @@ def short_runs(year: int, days: int = 3) -> pd.DataFrame:
 def test_a_clean_year_verifies_and_the_next_years_first_run_is_inside_its_request():
     counts = nbm.verify_year(iem_text(short_runs(2022)), 2022)
     assert counts["last_runtime"] == "2023-01-01 01:00:00"  # the archive includes `ets`
-    assert counts["runs"] == 4 * 4 + 1 and counts["blank_tmp"] == 0 and counts["blank_wsp"] == 0
+    assert counts["runs"] == 4 * 4 + 1 and counts["blank_tmp"] == 0 and "blank_wsp" not in counts  # v2's counts
+    assert nbm.verify_year(iem_text(short_runs(2022)), 2022, wind=True) == {**counts, "blank_wsp": 0}
 
 
 def test_a_response_for_another_station_or_model_is_refused():
@@ -165,9 +166,12 @@ def test_identical_duplicates_are_dropped_and_counted(store):
     assert runs.attrs["identical_duplicates"] == len(overlap)
     assert not runs.duplicated(["runtime", "ftime"]).any()
     assert len(runs) == len(a) + len(b) - len(overlap)
-    assert list(runs.columns) == ["runtime", "ftime", "tmp_f", "wsp_kt"]  # v3 reads the wind too (plan-v3, 3.1)
-    assert str(runs["runtime"].dt.tz) == "UTC" and runs["tmp_f"].dtype == float and runs["wsp_kt"].dtype == float
+    assert list(runs.columns) == ["runtime", "ftime", "tmp_f"]  # v2's columns: the wind is read only when asked
+    assert str(runs["runtime"].dt.tz) == "UTC" and runs["tmp_f"].dtype == float
     assert runs.equals(runs.sort_values(["runtime", "ftime"]))
+    windy = nbm.load_runs([2022, 2023], wind=True)  # v3's reader (plan-v3, 3.1): the same rows, the wind beside them
+    assert list(windy.columns) == ["runtime", "ftime", "tmp_f", "wsp_kt"] and windy["wsp_kt"].dtype == float
+    assert windy.attrs["identical_duplicates"] == len(overlap) and windy.drop(columns="wsp_kt").equals(runs)
 
 
 def test_a_primary_station_other_than_7025251_refuses_the_pairing(store, monkeypatch):
@@ -260,46 +264,68 @@ def test_an_undated_point_is_refused_at_verification_and_load(store):
 
 # ------------------------------------------------------------------------------------- the wind speed (plan-v3, 3.1)
 
-def test_a_header_without_the_wind_speed_is_refused():
+def test_a_header_without_the_wind_speed_is_refused(store):
+    """v3's reader (wind=True) refuses a file without `wsp`, at verification and at load; v2's reader, which never
+    reads the wind, reads it as v2 did (docs/plan-v3.md, sections 3.1 and 4.2)."""
     text = iem_text(short_runs(2022))
-    nbm.verify_year(text, 2022)  # control
-    with pytest.raises(FetchRefused, match=r"missing columns \['wsp'\]"):
-        nbm.verify_year(text.replace(",wsp,", ",gst,", 1), 2022)
+    nbm.verify_year(text, 2022, wind=True)  # control
     dropped = "\n".join(",".join(f for i, f in enumerate(line.split(",")) if i != COLUMNS.index("wsp")) if line else ""
                         for line in text.split("\n"))
+    for no_wind in (text.replace(",wsp,", ",gst,", 1), dropped):
+        with pytest.raises(FetchRefused, match=r"missing columns \['wsp'\]"):
+            nbm.verify_year(no_wind, 2022, wind=True)
+        assert nbm.verify_year(no_wind, 2022) == nbm.verify_year(text, 2022)  # v2's path: unchanged
+    write_years(store, {2022: dropped})  # the fetch verifies as v2's did
+    assert len(nbm.load_runs([2022])) == len(short_runs(2022))
     with pytest.raises(FetchRefused, match=r"missing columns \['wsp'\]"):
-        nbm.verify_year(dropped, 2022)
+        nbm.load_runs([2022], wind=True)
 
 
 def test_a_wind_speed_that_is_not_a_whole_number_is_refused():
+    """v3's reader refuses it; v2's reader never reads the wind, so its reading is v2's whatever the column holds."""
     text = iem_text(short_runs(2022))
     for bad in ("7.5", "7.0", "x", "M", "1e1", "NaN", "inf", "+7", "7 kt"):
         with pytest.raises(FetchRefused, match=r"1 wind speeds are neither a whole number nor blank .*line 4\)"):
-            nbm.verify_year(with_field(text, 4, "wsp", bad), 2022)
+            nbm.verify_year(with_field(text, 4, "wsp", bad), 2022, wind=True)
+        assert nbm.verify_year(with_field(text, 4, "wsp", bad), 2022) == nbm.verify_year(text, 2022)
     for good in ("0", "29", "101", "-3", " 7 "):  # whole numbers: the bounds are the gate's (quality.weather)
-        nbm.verify_year(with_field(text, 4, "wsp", good), 2022)
-    counts = nbm.verify_year(with_field(with_field(text, 4, "wsp", ""), 6, "wsp", ""), 2022)
+        nbm.verify_year(with_field(text, 4, "wsp", good), 2022, wind=True)
+    counts = nbm.verify_year(with_field(with_field(text, 4, "wsp", ""), 6, "wsp", ""), 2022, wind=True)
     assert counts["blank_wsp"] == 2 and counts["blank_tmp"] == 0  # a blank is no value, not an error
 
 
 def test_the_loader_returns_the_wind_in_knots_blank_as_nan(store):
+    """v3's reader (wind=True); the manifest the fetch writes keeps v2's counts (no blank_wsp)."""
     runs = short_runs(2022).assign(wsp_kt=lambda r: (np.arange(len(r)) % 30).astype(float))
     runs.loc[7, "wsp_kt"] = np.nan
     write_years(store, {2022: iem_text(runs)})
-    loaded = nbm.load_runs([2022])
+    loaded = nbm.load_runs([2022], wind=True)
     np.testing.assert_array_equal(loaded["wsp_kt"].to_numpy(), runs["wsp_kt"].to_numpy())
-    assert loaded["wsp_kt"].isna().sum() == 1 and nbm.manifest()["years"]["2022"]["blank_wsp"] == 1
+    assert loaded["wsp_kt"].isna().sum() == 1 and "blank_wsp" not in nbm.manifest()["years"]["2022"]
 
 
-def test_one_temperature_with_two_winds_at_one_point_refuses_the_load(store):
+@pytest.mark.parametrize("winds", ["two", "same"])
+def test_one_temperature_with_two_winds_is_a_duplicate_on_v2s_path_and_refuses_v3s(store, winds):
+    """Two overlapping files with the same run, valid time and temperature at a point but two winds: v2's reader (the
+    midnight consumers, docs/plan-v3.md section 4.2: "all of v2's clocks and inputs") drops it as an identical
+    duplicate and counts it, as at v3-fork; v3's reader refuses the load (two values for one point). The control:
+    the same wind in both files, an identical duplicate on both paths."""
     a, b = short_runs(2022), year_runs(2023).head(60)
     overlap = a[a["runtime"] == pd.Timestamp("2023-01-01T01:00Z")]
     t = overlap.iloc[3]
     b = b.assign(wsp_kt=float(WSP_KT))
-    b.loc[(b["runtime"] == t["runtime"]) & (b["ftime"] == t["ftime"]), "wsp_kt"] = WSP_KT + 1  # same temperature
+    if winds == "two":
+        b.loc[(b["runtime"] == t["runtime"]) & (b["ftime"] == t["ftime"]), "wsp_kt"] = WSP_KT + 1  # same temperature
     write_years(store, {2022: iem_text(a), 2023: iem_text(b)})
-    with pytest.raises(FetchRefused, match="two values"):
-        nbm.load_runs([2022, 2023])
+    v2 = nbm.load_runs([2022, 2023])
+    assert list(v2.columns) == ["runtime", "ftime", "tmp_f"] and v2.attrs["identical_duplicates"] == len(overlap)
+    assert len(v2) == len(a) + len(b) - len(overlap)
+    if winds == "two":
+        with pytest.raises(FetchRefused, match="2 points hold two values for one run and valid time"):
+            nbm.load_runs([2022, 2023], wind=True)
+    else:
+        v3 = nbm.load_runs([2022, 2023], wind=True)
+        assert v3.attrs["identical_duplicates"] == len(overlap) and v3.drop(columns="wsp_kt").equals(v2)
 
 
 def test_the_reuse_bound_follows_the_origin():

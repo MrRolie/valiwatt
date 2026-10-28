@@ -156,15 +156,16 @@ def window_days(through: int = THROUGH_DEFAULT) -> pd.DatetimeIndex:
     return pd.date_range(first, last, freq="D")
 
 
-def window_runs(years, through: int = THROUGH_DEFAULT) -> pd.DataFrame:
+def window_runs(years, through: int = THROUGH_DEFAULT, wind: bool = False) -> pd.DataFrame:
     """The NBM runs of `years` as the data-quality run of the window through `through` checks them, and as `load_runs`
     returns them: one reader, so data quality checks exactly the rows every later step reads. `sources.nbm.load_runs`
     (a point without its run time or its valid time refuses the load), plus available_utc = runtime +
     AVAILABILITY_LAG, leaving out the runs available after the window's last hour, `data_last(through)`. On files
     that pass `nbm.verify_year` the cut drops none: a year's file ends with the next year's 01:00 UTC run, available at
     03:00, two hours before the window's last hour. A point without an availability is never cut here: it goes on to
-    the run rule, which refuses it (`features.forecast_temperature`), as the load already does."""
-    runs = nbm.load_runs(years)
+    the run rule, which refuses it (`features.forecast_temperature`), as the load already does. wind: v3's readers
+    (docs/plan-v3.md, section 3.1), passed to `sources.nbm.load_runs` only when asked; v2's reading otherwise."""
+    runs = nbm.load_runs(years, wind=True) if wind else nbm.load_runs(years)
     runs["available_utc"] = runs["runtime"] + nbm.AVAILABILITY_LAG
     late = (runs["available_utc"] > data_last(int(through))).to_numpy()  # a missing availability compares False
     kept = runs[~late].reset_index(drop=True)
@@ -172,7 +173,7 @@ def window_runs(years, through: int = THROUGH_DEFAULT) -> pd.DataFrame:
     return kept
 
 
-def load_runs(dq, years=None) -> pd.DataFrame:
+def load_runs(dq, years=None, wind: bool = False) -> pd.DataFrame:
     """The NBM runs of `years` (None: every year the data-quality run `dq` checked), refused unless they are the files
     `dq` checked: the NBM manifest of its window must hash to its `nbm_manifest_sha256`, and each listed year's file
     must match the manifest. Only the listed years' files are opened (design code lists 2019-2023, so the 2024 file is
@@ -180,7 +181,7 @@ def load_runs(dq, years=None) -> pd.DataFrame:
     `sources.nbm.load_runs`, plus available_utc = runtime + AVAILABILITY_LAG.
 
     The runs of a boundary are kept (a year's file ends with the next year's 01:00 UTC run): availability, not the run
-    time's year, decides who may read them."""
+    time's year, decides who may read them. wind: v3's readers ask for the wind (`window_runs`); v2's never do."""
     from valiwatt.forecast.validate import LineageError  # validate imports this module
 
     expected = dq.data.params.get("nbm_manifest_sha256")
@@ -195,7 +196,7 @@ def load_runs(dq, years=None) -> pd.DataFrame:
     if nbm.manifest_sha256(nbm.for_years(nbm.manifest(), checked)) != expected:
         raise LineageError(f"the NBM files differ from the ones data-quality run {dq.info.run_id} checked")
     nbm.verify_files(years)
-    return window_runs(years, through)
+    return window_runs(years, through, wind=True) if wind else window_runs(years, through)
 
 
 def _values(raw: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp) -> dict:

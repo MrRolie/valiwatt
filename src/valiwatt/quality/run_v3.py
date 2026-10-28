@@ -144,7 +144,7 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
     require_first_run()
     require_own_store()
     freeze = current_freeze()  # v3-pre-freeze before the tag; under the tag, refused on other rules (section 10.3)
-    copies = check_byte_copies(recorded(), fresh_clone=bool(fresh_clone))
+    copies = check_byte_copies(recorded(), fresh_clone=bool(fresh_clone), through=through)
     hq_manifest, eccc_manifests = qrun._verify_manifests(through)
     nbm_manifest = qrun._verify_nbm(through)
     window_last = data_last(through)
@@ -161,7 +161,7 @@ def run_dq_v3(through: int = THROUGH_DEFAULT, fresh_clone: bool = False) -> int:
         checks += weather_checks(st, frames[st.key], V3_DESIGN_LAST)
 
     years = list(range(nbm.FIRST_YEAR, through + 1))  # an explicit list, never a pattern
-    runs = qrun.window_runs(years, through)
+    runs = qrun.window_runs(years, through, wind=True)
     days = qrun.window_days(through)
     forecast, feeds = forecast_checks_v3(runs, days, frames[primary.key]["temp_c"])
     checks += forecast

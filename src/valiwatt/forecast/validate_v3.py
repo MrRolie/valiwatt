@@ -485,7 +485,7 @@ def run_validate_v3(n_boot: int = N_BOOT) -> int:
                                   f"{None if read is None else read['run_id']!r}: no reproduction check without it")
     dq, _, weather = vd.load_inputs(dq, run_v3.canonical_paths(THROUGH_DEFAULT), command="valiwatt dq-v3")
     raw_demand, raw_temp = load_raw(dq)
-    runs = qrun.load_runs(dq, years=V3_DESIGN_YEARS)
+    runs = qrun.load_runs(dq, years=V3_DESIGN_YEARS, wind=True)
     v = run_validation_v3(n_boot=n_boot, **validation_inputs_v3(raw_demand, raw_temp, weather, runs))
     if lineage["fresh_clone"]:
         reproduction = {"status": "not_run", "fresh_clone": True,

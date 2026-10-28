@@ -407,6 +407,8 @@ PLAN_V3_12 = {
         FN3 + "test_a_noon_table_refuses_a_forecast_issued_without_wind",
         WEA + "test_the_wind_gate_refuses_runs_without_wind",
         NBM + "test_a_wind_speed_that_is_not_a_whole_number_is_refused",
+        NBM + "test_one_temperature_with_two_winds_is_a_duplicate_on_v2s_path_and_refuses_v3s[two]",
+        NBM + "test_one_temperature_with_two_winds_is_a_duplicate_on_v2s_path_and_refuses_v3s[same]",
         WEA + "test_the_wind_bounds_gate_is_pinned_at_both_edges",
         FN3 + "test_a_wind_point_outside_the_bounds_does_not_cover",
         QV3 + "test_a_wind_point_above_100_knots_fails_the_v3_run_and_its_day_takes_the_next_run",
@@ -491,6 +493,9 @@ PLAN_V3_12 = {
         QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[file_symlink]",
         QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[directory_symlink]",
         QV3 + "test_a_link_in_place_of_a_byte_copy_is_refused[hard_link]",
+        *(QV3 + f"test_a_2025_file_reached_through_a_link_refuses_the_window_through_2025[{c}]"
+          for c in ("hq_export", "hq_manifest", "eccc_month", "nbm_file", "nbm_hard_link", "control")),
+        QV3 + "test_dq_v3_through_2025_refuses_a_symlinked_2025_export_before_it_reads_any_file",
         QV3 + "test_the_v3_run_refuses_a_file_that_is_not_v2s_before_it_reads_any_file",
         QV3 + "test_byte_copies_of_v2s_files_pass_and_a_fresh_clone_is_not_run",
         QV3 + "test_without_a_read_of_v2s_store_dq_v3_refuses_unless_told_it_is_a_fresh_clone",
@@ -512,6 +517,10 @@ PLAN_V3_12 = {
         V2S + "test_read_v2_refuses_a_path_that_is_v3s_own_store[path_inside_own]",
         V2S + "test_read_v2_refuses_a_path_that_is_v3s_own_store[own_inside_path]",
         V2S + "test_v2s_database_is_opened_immutable_and_refused_beside_a_write_ahead_log",
+        *(V2S + f"test_a_read_that_crashed_after_opening_v2s_store_refuses_every_later_read[{c}]"
+          for c in ("after_the_read", "while_logging", "control")),
+        *(V2S + f"test_a_deleted_or_killed_read_still_refuses_a_second_read[{c}]"
+          for c in ("deleted_complete", "killed_running")),
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[dq-v3]",
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[validate-v3]",
         V2S + "test_a_v3_command_whose_own_store_is_v2s_refuses_before_it_logs[freeze-v3]",
