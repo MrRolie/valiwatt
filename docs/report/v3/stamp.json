@@ -1,0 +1,22 @@
+{
+  "code_sha256": "2d4e6e33ee98b10f51767bafbe04ba5d4f11cbafe1273ffa7a4f0ece7703c879",
+  "rules_sha256": "526e7ee3484c3d64be9f16824fe9880075214a9c32dc385f3427548e6041d175",
+  "lineage": "of_record",
+  "freeze_record": {
+    "commit": "cc93edeba8fae4037a73e5f583de344375946fe8",
+    "sha256": "4456590e4ca853c2b0ceae81ca3e062d611abc962e1cf962620ac20a9e92a739"
+  },
+  "runs": {
+    "data_quality": "1871de5a164e44fea60013b53fa6bf4b",
+    "validation": "df111835244c4c40a323db65a96c25a2",
+    "frozen_2024": "7f2ee1c96fb64a9ba492a57d60211f0e",
+    "rehearsal_2024": "fe5d0e5bf99f411fa3c814f6ff51628c",
+    "frozen_2025": "95beb8658ae84eee90a990890dfff3fb"
+  },
+  "files": {
+    "validation.en.md": "378fbbce29cba2d0311946da0d4b7281a495826043263b6cf40c2a92fbbf80b9",
+    "validation.fr.md": "c06eec068ebd257268cbcaeba336e485c1dd11bf6f37e106c20709e56cadd3cd"
+  },
+  "ledger_sha256": "b2d635144ebb75a500282e4127834f8ef42256de2dfd86dbc70172328bdb5001",
+  "standing_2025": null
+}

@@ -1,0 +1,33 @@
+{
+  "replays": [
+    {
+      "run_id": "fe5d0e5bf99f411fa3c814f6ff51628c",
+      "year": 2024,
+      "freeze_tag": "v3-rules-frozen",
+      "freeze_commit": "6ffedf1741edcb39dd0e65c39f6be272e7310bf3",
+      "rules_sha256": "526e7ee3484c3d64be9f16824fe9880075214a9c32dc385f3427548e6041d175",
+      "code_sha256": "fc810da7643ae44e274276cc7407166d4d061410142f6240e086c0e081dfb150",
+      "started_utc": "2026-10-28T17:37:41.982Z",
+      "ended_utc": "2026-10-28T17:39:01.181Z",
+      "status": "complete",
+      "mape": 0.029468635870710993,
+      "coverage": 0.9212804739120528,
+      "recommendations": [
+        {
+          "week_start": "2024-10-21",
+          "recommendation": "retrain"
+        }
+      ],
+      "departure": false,
+      "departure_from": [],
+      "evaluation": "seen_by_developers",
+      "model_sha256": "da1ede38cf875d566ecac1bbcee7eaa32dfe53a83c073a4971016eb35688fbf1",
+      "verdict": {
+        "terms": "better",
+        "family": "better"
+      },
+      "frozen_sha256": "ede4c2b93778380a9b7f17cd0369a19d65441a29a91fd78941d1479bd52147db",
+      "standing": ""
+    }
+  ]
+}
