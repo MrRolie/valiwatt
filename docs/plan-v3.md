@@ -703,3 +703,11 @@ licences; v1's and v2's records; the rule that a monitor recommends and never ac
   files; they moved to a rule module, and v2's ledger code the gate calls is held byte-identical to `v3-fork` by a
   test, so the rules hash recorded at `v3-fork` is unchanged. The fresh-clone label is refused once a read of v2's
   store was attempted on the machine. No step-2 result changes.
+- 2026-10-28, step 5 of section 17, on the code tagged `v3-rules-frozen`: data quality, validation, the freeze for
+  the 2024 rehearsal and the rehearsal, and the freeze for 2025 ran from commit fa4683323cb5, the byte copies checked again
+  and the reproduction check passed again; the freeze record was written from those runs and committed alone in
+  cc93edeba8fa; the breaks (every one fired) and the report followed in 19368dfb89a2. Section 17 asks that the breaks and the report
+  be "committed together with `docs/freeze-v3.json`": they are not in the same commit, because the report names the
+  freeze record's commit and the record's commit must touch nothing else (section 10.3); they follow it directly. No
+  rule or dependency changed after the tag; the commits after it touch tests, the records and this section only. No
+  2025 record has reached the machine.
