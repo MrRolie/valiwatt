@@ -1,6 +1,6 @@
 # Data quality and representativeness
 
-_Generated from MLflow run `208b3a3a79844cc4b92a9e256c816b2b` (2026-10-20 23:28 UTC), code `cc36e86c3b40`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
+_Generated from MLflow run `28195ecd8e2a4ec8b84df795c834ef16` (2026-11-02 20:39 UTC), code `bd5cea287e44`. Every measured value in this report comes from that run; none is typed by hand. This English version is derived from the French one, which is the reference._
 
 > Demand data: Hydro-Québec, "Historique de la demande d'électricité au Québec" (https://donnees.hydroquebec.com/explore/dataset/historique-demande-electricite-quebec/), licensed CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Hydro-Québec offers this data for information only, without warranty of quality; it is not official data. This project checked it, masked or corrected a few hours (each case documented) and aggregated it; it does not redistribute the dataset, and the reports quote only a few hourly values from it, as evidence.
 >
