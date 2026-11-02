@@ -4,12 +4,13 @@
 
 > **At a glance.** Rendered by `valiwatt report`: every measured value comes from the tracked runs, every design constant from the runs or the code, and each result carries its evaluation label as the validation report prints it.
 >
-> **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending.
+> **Status: lower hourly error than v1 as shipped and than v1's form on the same forecast, on held-out data (2025).**
 >
 > | | |
 > |---|---|
 > | **Validation, 2020–2023** (_in sample for the choice of family and input_) | MAPE 2.83% for v2, 3.48% for v1's form on the same forecast, 4.42% for v1 as shipped, over 34,997 common hours. v2's 90% intervals held demand 90.3% of the time from 2021-01 to 2023-12, and the 95% CI of that coverage contains the nominal. |
 > | **2024 replay** (_seen by the developers_) | MAPE 2.58%, coverage 92.2%, no recommendation. Verdicts against v1 as shipped / against v1's form: "better" / "better". |
+> | **2025** (_held-out data_) | Test of record `ff8025637d4b4e2db77302a58f783fca`, standing "clean". Verdicts against v1 as shipped / against v1's form: "better" / "better". |
 > | **What the monitor can miss** | On 2024 (_seen by the developers_), a sustained bias of ±2% injected into the forecast yielded "retrain" within 8 weeks at 4 of 8 cases. |
 > | **Checks** | 418 of 418 breaks passed, 64 of 64 controls stayed quiet (synthetic data). Rules frozen at tag `rules-frozen-v2`, now at commit `7582a4cbb28c` after a departure recorded in `AGENTS.md`. |
 > | **Read next** | The story, read first: [French](docs/report/story.fr.md), the reference; [English](docs/report/story.en.md). The full validation report: [French](docs/report/validation.fr.md); [English](docs/report/validation.en.md). |

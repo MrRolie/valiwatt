@@ -10,9 +10,11 @@
     "pseudo_replay": "3466774bb42f4f44a32886d90c6f56f1",
     "diag_pseudo_replay": "482fd1d00e824c019c6d50d3056bb4ce",
     "replay": "b31fa66ab4c74c2295f0eb9235919062",
-    "diag_replay": "824c8fd343d047118f2a628c15f98152",
+    "diag_replay": "888a41cb44554862a975427bc7ad852e",
     "breaks": "e78b0700b74c47bc9e7398a7e5963674",
-    "soundness": "07c7e63ce73c4486862352a90daf2cb8"
+    "soundness": "07c7e63ce73c4486862352a90daf2cb8",
+    "replay_2024_record": "18daf1fc40a24300aeaba5e4f14d4107",
+    "replay_2025": "ff8025637d4b4e2db77302a58f783fca"
   },
   "files": {
     "dq.en.md": "7317419d58f2778556de00e6cc7ef98ec1d56ea76d4286d906a8529a0d110075",
@@ -43,12 +45,16 @@
     "figures/validation/validation-peak-hours.fr.png": "63865202b653d78e48e10e2a1b9e5363a676f519fac325468e7ab844cad5f508",
     "figures/validation/validation-soundness-slopes.en.png": "1b44b907c9462d64e0144eb467adb5e620733f9dfcb26ac9fbc706c14930735f",
     "figures/validation/validation-soundness-slopes.fr.png": "ca0f7106a6f462294e4ea9b9e34e42bd69112099cf00c5e1d101b6a53e1419d7",
-    "story.en.md": "93487d7a439c36f53cf0d52c52c3d91a6215cea183a28d54ebb759cfe84d710c",
-    "story.fr.md": "0a10efba647b3467e9638cc494c4ff10f8188fa25696a5866c83a37c63657904",
-    "validation.en.md": "7dfbba0d41f4269fc2d2339d9cf84cf8ea236b3ffd4e5f4305db6d44802e4487",
-    "validation.fr.md": "5540724b7065c7869d90e43f90a2b41b3d8d3f5f0a2afcfb9fc1074cb3ba0d4a",
-    "README.md#at-a-glance": "4766521e883cf6be4c68fdd45deaa0d04331dfefa2fbff26a77f9301a0fed649"
+    "story.en.md": "11c0fcfee7b0202b512443b103ea3b07ad2b1a55dc2cb8f0a5597b3a7302df72",
+    "story.fr.md": "569970da47cddde2e90f753012f8fc320af000cb39d0c70a67ec51fdf6e5d04e",
+    "validation.en.md": "6cb895212b394a750920dba9017030085d48da0adb8e2cbe2e829e17cf79857e",
+    "validation.fr.md": "7a68dcd91d2d7dc97f4aec8351352834e8f8e2f62181576ac0987b24230104a2",
+    "README.md#at-a-glance": "27bcef112d1cfb8917efb63d8931ae61e571c657308210f607ac6e7c79a131ab"
   },
-  "ledger_sha256": "ab884a87ccbf5413db223eec933089dd94ab55431a6144cbd8391c99ca3de34f",
-  "standing_2025": null
+  "ledger_sha256": "547ebfa76cac1e5ceee89e713172adddd884574b72b3af2463cbaeb97a0b5c40",
+  "standing_2025": {
+    "record_run_id": "ff8025637d4b4e2db77302a58f783fca",
+    "finished": true,
+    "standing": "clean"
+  }
 }

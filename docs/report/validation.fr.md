@@ -16,28 +16,28 @@ _Rapport généré à partir d'une chaîne d'exécutions MLflow suivie depuis le
 
 ## En bref
 
-- **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente.
+- **Statut : erreur horaire plus faible que v1 tel que livré et que la forme de v1 sur la même prévision, sur des données réservées (2025).**
 - Sur les 34 997 heures communes de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), l'erreur absolue moyenne est de 2,83 % pour v2, 3,48 % pour la forme de v1 sur la même prévision et 4,42 % pour v1 tel que livré. Ces années ont servi à choisir la famille et l'entrée : l'avantage de v2 y est biaisé vers le haut par ce choix, et il ne prouve pas que v2 est meilleur (section 3).
 - Ses intervalles à 90 % ont contenu la demande 90,3 % du temps de 2021-01 à 2023-12, et l'IC 95 % de cette couverture contient le nominal. Ils la contiennent moins souvent que le nominal dans ces groupes : l'hiver ; le bloc horaire jour (10–15 h) ; les déciles de charge prévue 7, 8, 9 et 10 (section 5). Ce sont les intervalles de v2 ; la couverture n'est jamais un critère de la règle de décision.
 - Aux 5 heures les plus chargées de 2019–2023, toutes en 2023-02, la demande est sortie de l'intervalle 3 fois sur 5, toujours par le haut. Rapporté, jamais jugé.
 - 2024 (_vu par les développeurs_) : EAMP de 2,58 %, couverture de 92,2 %, aucune recommandation ; verdicts : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ». Un succès sur une année déjà vue est une preuve faible : il ne soutient aucune affirmation ; v2 va à 2025 tel que gelé (section 8).
-- 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sauf si ce départ s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 9 ; section 11.3.5 du plan).
+- 2025 : le test de référence `ff8025637d4b4e2db77302a58f783fca` a fini, sa position consignée par sa barrière : « propre » (section 9).
 - Le rapport mesure aussi ce que le moniteur pouvait manquer : sur 2023, une hausse soutenue de 10 % de la demande a donné « réentraîner » en 10 semaines à 4 des 4 départs, et sur 2024 (vu par les développeurs), à 4 des 4 ; sur 2024, un biais soutenu de ±2 % injecté dans la prévision l'a donné en 8 semaines à 4 des 8 cas (sections 7, 8 et 10).
 
 ## Fiche du modèle
 
 | | |
 |---|---|
-| **Statut** | **Statut : candidat.** Choisi sur 2020–2023 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente. Couverture des intervalles et heures les plus chargées : à côté du statut, jamais dedans (couverture : sections 4 (les heures de pointe), 5, 7 et 8 ; heures les plus chargées : sections 3, 4, 7 et 8). |
+| **Statut** | **Statut : erreur horaire plus faible que v1 tel que livré et que la forme de v1 sur la même prévision, sur des données réservées (2025).** Couverture des intervalles et heures les plus chargées : à côté du statut, jamais dedans (couverture : sections 4 (les heures de pointe), 5, 7, 8 et 9 ; heures les plus chargées : sections 3, 4, 7, 8 et 9). |
 | **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à la fin du jour J−1 (heure normale de l'Est), avec un intervalle de prévision à 90 %. |
 | **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
 | **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
 | **Données** | Demande horaire de Hydro-Québec ; prévision de température NBM de la NOAA pour la station CYUL, l'aéroport de Montréal, archivée par l'Iowa Environmental Mesonet (section 2) ; température horaire observée de Montréal (ECCC) pour la qualité des données, v1 tel que livré et la borne optimiste, et de 5 autres stations (Québec, Gatineau, Sherbrooke, Saguenay et Trois-Rivières) pour une analyse de sensibilité seulement. Conception sur 2019–2023. |
-| **Modèle** | Un modèle additif de la famille des GAM, ajusté par moindres carrés pénalisés : une courbe de température par heure locale (splines, 10 nœuds aux quantiles des lignes d'entraînement, degré 3, prolongée en ligne droite hors de la plage d'entraînement), les 72 constantes de v1 par heure et type de jour, la demande de la veille et de la semaine précédente ; normalisation puis crête, alpha 1,0. Figé sur les données jusqu'au 2023-12-24 ; empreinte `7aadbc5866c6`, celle du modèle figé de cette chaîne, d'où viennent cette date, l'intervalle ci-dessous et les courbes de la section 3. Comparé à v1 tel que livré et à la forme de v1 sur la même prévision, qui ne recommandent jamais rien. |
+| **Modèle** | Un modèle additif de la famille des GAM, ajusté par moindres carrés pénalisés : une courbe de température par heure locale (splines, 10 nœuds aux quantiles des lignes d'entraînement, degré 3, prolongée en ligne droite hors de la plage d'entraînement), les 72 constantes de v1 par heure et type de jour, la demande de la veille et de la semaine précédente ; normalisation puis crête, alpha 1,0. Figé sur les données jusqu'au 2023-12-24 ; empreinte `7aadbc5866c6`, celle du modèle figé de cette chaîne, d'où viennent cette date, l'intervalle ci-dessous et les courbes de la section 3 ; 2025 est jugée par le modèle figé du rejeu de 2024 de référence, d'empreinte `7aadbc5866c6`, le même. Comparé à v1 tel que livré et à la forme de v1 sur la même prévision, qui ne recommandent jamais rien. |
 | **Intervalle** | Prévision × (1 ± 6,22 %). La demi-largeur est un quantile des 8 729 erreurs relatives hors échantillon de 2023-01 à 2023-12 déjà notées quand le modèle figé est ajusté : la forme d'un intervalle conforme « split », sans sa garantie en échantillon fini. La couverture mesurée en est la preuve (sections 5 et 8). |
 | **Erreur en validation** | EAMP de 2,83 % [2,69 % ; 2,95 %] sur ses heures de 2020–2023 (_dans l'échantillon du choix de la famille et de l'entrée_), contre 7,81 % pour la référence naïve (section 3). |
 | **Rejeu de 2024** | _vu par les développeurs_ : EAMP de 2,58 %, couverture de 92,2 % ; aucune recommandation. Ce que les règles peuvent manquer cette année-là : un biais soutenu de ±2 % injecté dans la prévision a donné « réentraîner » en 8 semaines à 4 des 8 cas, et des intervalles réduits à × 0,5 de leur demi-largeur ont donné « recalibrer » à 3 des 4 départs, et des réductions moindres à 1 des 4 au plus. Verdicts : « meilleur » contre v1 tel que livré, « meilleur » contre la forme de v1 (section 8). |
-| **2025** | En attente (section 9). |
+| **2025** | Test de référence `ff8025637d4b4e2db77302a58f783fca`, position « propre » (_données réservées_), verdicts « meilleur » et « meilleur » (section 9). |
 | **Mise en garde météo** | La prévision de température est disponible, par hypothèse, 2 heures après son heure d'émission ; tout résultat qui en dépend repose sur cette hypothèse (section 2). La température observée de l'heure visée n'est qu'une borne optimiste ; elle n'émet aucune recommandation. |
 | **Limites** | Section 10. |
 | **Auteur** | Construit avec Claude Code sous la direction du propriétaire du dépôt. |
@@ -683,7 +683,7 @@ Les règles de surveillance que ce rejeu applique gardent la logique de celles d
 **A posteriori.** Ce rejeu de 2024 a tourné après une dérogation aux règles gelées de v2, consignée dans `AGENTS.md` (section « Departures from the v2 frozen rules »). La dérogation du 2026-11-02 (« 2026-11-02, the 2025 export as Hydro-Québec published it: a departure ») a déplacé l'étiquette au commit `7582a4cbb28c` et nomme `825b7bd134a8`, `7582a4cbb28c`. Il s'écarte de : le rejeu `18daf1fc40a24300aeaba5e4f14d4107` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `4284bb3d13dd43d0a600882142f448bd` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `5ae065d3334a4a698f69f646f12c5706` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `69298e9f4bb04edb8363139bed160f4e` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `a71e4b1689444121958634d068a64db3` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `b1dca448e0fc436ca2e270c8e3c28a3f` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `daea4f58e6e64bc5a4ea6a5958acd215` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `fac1d0f3813b4499b10e4622c8fc4997` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %).
 
 
-**Le premier rejeu de 2024 de v2** est `18daf1fc40a24300aeaba5e4f14d4107`. Il a commencé le 2026-10-17T23:11:15.047Z (code `521febded2db`, règles `998b1e492ebc`, gel `825b7bd134a8`), et le rapport le nomme d'après son entrée du registre des rejeux. Ses artefacts figés, d'empreinte `eb412529206f`, sont ceux sur lesquels 2025 sera jugée. Les chiffres de cette section viennent du rejeu de cette chaîne, `b31fa66ab4c74c2295f0eb9235919062`, commencé le 2026-11-02T21:17:19.559Z (code `28cf2a863bc7`). C'est un **rejeu refait** du premier, qui ne le remplace pas : 2025 sera jugée sur les artefacts figés du premier. Ses résultats imprimés sont identiques à ceux du premier : EAMP, couverture, recommandations, verdicts, empreinte du modèle figé et empreinte des artefacts figés qui l'ont jugé. Le registre des rejeux contient aussi d'autres rejeux refaits de v2 sur 2024, montrés dans le tableau ci-dessous. `fac1d0f3813b4499b10e4622c8fc4997` a commencé le 2026-10-18T07:53:18.050Z (code `53b698330073`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `4284bb3d13dd43d0a600882142f448bd` a commencé le 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `b1dca448e0fc436ca2e270c8e3c28a3f` a commencé le 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `5ae065d3334a4a698f69f646f12c5706` a commencé le 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `69298e9f4bb04edb8363139bed160f4e` a commencé le 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `daea4f58e6e64bc5a4ea6a5958acd215` a commencé le 2026-10-19T18:55:30.349Z (code `7a331e59081c`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `a71e4b1689444121958634d068a64db3` a commencé le 2026-10-21T00:10:11.670Z (code `60d58f9c3732`). Ses résultats imprimés sont identiques à ceux du premier, de même que l'empreinte de son modèle figé et celle de ses artefacts figés.
+**Le rejeu de 2024 de référence** est le premier rejeu de 2024 de v2, `18daf1fc40a24300aeaba5e4f14d4107` (code `521febded2db`, règles `998b1e492ebc`, gel `825b7bd134a8`) : ses artefacts figés jugent 2025, et les chiffres de cette section viennent de son exécution. Le rejeu de cette chaîne, `b31fa66ab4c74c2295f0eb9235919062` (code `28cf2a863bc7`), est un **rejeu refait** : montré à côté du rejeu de référence, il ne le remplace pas, et 2025 est jugée sur les artefacts figés de celui-ci, et il donne les mêmes résultats imprimés. Le registre des rejeux contient aussi d'autres rejeux refaits de v2 sur 2024, montrés dans le tableau ci-dessous. `fac1d0f3813b4499b10e4622c8fc4997` a commencé le 2026-10-18T07:53:18.050Z (code `53b698330073`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `4284bb3d13dd43d0a600882142f448bd` a commencé le 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `b1dca448e0fc436ca2e270c8e3c28a3f` a commencé le 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `5ae065d3334a4a698f69f646f12c5706` a commencé le 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `69298e9f4bb04edb8363139bed160f4e` a commencé le 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `daea4f58e6e64bc5a4ea6a5958acd215` a commencé le 2026-10-19T18:55:30.349Z (code `7a331e59081c`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés. `a71e4b1689444121958634d068a64db3` a commencé le 2026-10-21T00:10:11.670Z (code `60d58f9c3732`). Ses résultats imprimés sont identiques à ceux du rejeu de référence, de même que l'empreinte de son modèle figé et celle de ses artefacts figés.
 
 **2024 côte à côte.** Les rejeux de v1 viennent de leurs entrées du registre des rejeux : consignés, non rejoués ici.
 
@@ -691,7 +691,8 @@ Les règles de surveillance que ce rejeu applique gardent la logique de celles d
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (gelé d’abord), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (après sa dérogation), consigné dans le registre | — | 4,23 % | 89,4 % | aucune |
-| v2, premier, `18daf1fc40a24300aeaba5e4f14d4107`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+| v2, de référence, `18daf1fc40a24300aeaba5e4f14d4107` | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
+| v2, refait, `b31fa66ab4c74c2295f0eb9235919062`, celui de cette chaîne | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 | v2, refait, `fac1d0f3813b4499b10e4622c8fc4997`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 | v2, refait, `4284bb3d13dd43d0a600882142f448bd`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 | v2, refait, `b1dca448e0fc436ca2e270c8e3c28a3f`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
@@ -699,7 +700,6 @@ Les règles de surveillance que ce rejeu applique gardent la logique de celles d
 | v2, refait, `69298e9f4bb04edb8363139bed160f4e`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 | v2, refait, `daea4f58e6e64bc5a4ea6a5958acd215`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 | v2, refait, `a71e4b1689444121958634d068a64db3`, consigné dans le registre | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
-| v2, refait, `b31fa66ab4c74c2295f0eb9235919062`, celui de cette chaîne | _vu par les développeurs_ | 2,58 % | 92,2 % | aucune |
 
 **Le modèle de v1 dans le harnais de v2**, rapproché du dernier rejeu de v1 du registre, `9f87c124e34344a8a65e4a7679c3c458` : EAMP de 4,23 % contre 4,23 % (écart relatif 0,0e+00), couverture de 89,39 % contre 89,43 % (−0,04 pt), l'écart que fait la correction de la veille de l'année rejouée (section 6.3 du plan).
 
@@ -898,7 +898,90 @@ Pour chaque semaine en alarme de dérive, le rapport Evidently est conservé dan
 
 ## 9. 2025, le test de référence
 
-**En attente.** Aucun rejeu de 2025 n'a commencé. Le test de référence sera le premier rejeu de 2025 commencé sous `rules-frozen-v2`, sur exactement les artefacts figés pour le premier rejeu de 2024 de v2, `18daf1fc40a24300aeaba5e4f14d4107`, derrière une barrière qui le dit propre ou le refuse ; seule une décision datée du propriétaire lève un refus (section 11.3 du plan). Ce sera ce premier départ, sauf s'il s'arrête avant de finir et qu'une décision datée du propriétaire nomme le départ qui prend sa place (section 11.3.5 du plan). Ce que 2025 jugera : les verdicts de la section 1 contre v1 tel que livré et contre la forme de v1 sur la même prévision ; ce sont les critères qui pourraient encore montrer que v2 a tort. Rien de l'année 2025 n'est rendu avant ce premier départ.
+**Le test de référence** est `ff8025637d4b4e2db77302a58f783fca`, commencé le 2026-11-02T22:38:31.273Z (code `28cf2a863bc7`, règles `97725aa5cf7b`, gel `7582a4cbb28c`), _données réservées_. Sa position, telle que sa barrière l'a consignée à son départ : **propre** (refus levé sur la condition (a)) ; la décision du propriétaire que la barrière a lue : « 2026-11-02, the owner's ruling on 2025: clean », commit `eb469ace0e3a`, issue propre, avec son exécution de preuves `a700fe0702dc4abd83a4be6bcb10d5db`. Le rapport imprime cette position ; il ne la recalcule jamais. Il s'écarte de : le rejeu `18daf1fc40a24300aeaba5e4f14d4107` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `4284bb3d13dd43d0a600882142f448bd` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `5ae065d3334a4a698f69f646f12c5706` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `69298e9f4bb04edb8363139bed160f4e` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `a71e4b1689444121958634d068a64db3` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `b1dca448e0fc436ca2e270c8e3c28a3f` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `daea4f58e6e64bc5a4ea6a5958acd215` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %) ; le rejeu `fac1d0f3813b4499b10e4622c8fc4997` (règles du commit `825b7bd134a8`, EAMP 2,58 %, couverture 92,2 %).
+
+2025 (_données réservées_) : EAMP de 2,83 %, couverture de 88,8 % (intervalle à 95 % [85,0 % ; 92,1 %], qui contient le nominal de 90 % ; montrée, jamais jugée), 2 recommandations ; verdicts : v2 contre v1 tel que livré, « meilleur » ; v2 contre la forme de v1, « meilleur ».
+
+| Comparaison (_données réservées_) | Différence d'EAMP | IC 95 % | État |
+|---|---|---|---|
+| v2 contre v1 tel que livré | −1,37 pt | [−1,69 pt ; −1,07 pt] | meilleur |
+| v2 contre la forme de v1 sur la même prévision | −0,55 pt | [−0,76 pt ; −0,35 pt] | meilleur |
+| la forme de v1 sur la prévision contre v1 tel que livré (rapportée, jamais jugée) | −0,82 pt | [−1,22 pt ; −0,43 pt] | meilleur |
+
+Queue froide (_données réservées_) : 523 heures communes sous le seuil de −12,0 °C, réparties sur 15 semaines du lundi au dimanche ; elle est testable (au moins 120 heures et 4 semaines) : v2 contre v1 tel que livré, −4,46 pt [−5,68 pt ; −3,46 pt] (meilleur) ; v2 contre la forme de v1, −0,74 pt [−0,93 pt ; −0,58 pt] (meilleur).
+
+| Heure finissant à (UTC) (_données réservées_) | Demande | Prévision de température | v2 | Forme de v1 sur la prévision | v1 tel que livré |
+|---|---|---|---|---|---|
+| 2025-01-22 13:00 UTC | 40 015 MW | −16,7 °C | +5,3 % | +6,6 % | +7,6 % | 
+| 2025-01-22 14:00 UTC | 38 943 MW | −15,6 °C | +5,1 % | +5,4 % | +6,3 % | 
+| 2025-01-21 13:00 UTC | 38 892 MW | −15,9 °C | +6,5 % | +8,1 % | +10,0 % | 
+| 2025-01-30 13:00 UTC | 38 838 MW | −18,0 °C | +2,6 % | +4,3 % | +6,5 % | 
+| 2025-12-09 13:00 UTC | 38 824 MW | −14,3 °C | +6,6 % | +7,9 % | +7,3 % | 
+
+
+**Fausses alertes, changements de niveau et coût de l'écho sur 2025**, de l'exécution de diagnostic `19ccce9a3f754d858ac2a52343ef8f42` du test de référence, après lui ; ils ne décident rien. Mêmes épisodes et mêmes changements qu'en section 7.
+
+| Durée | Facteur | Départs | « Réentraîner » | dont sans aide | « Recalibrer » | Gardés par l'exclusion de l'écho |
+|---|---|---|---|---|---|---|
+| 1 j | × 0,70 | 343 | 13 (3,8 %) | 0 | 0 | 0 |
+| 1 j | × 0,85 | 343 | 14 (4,1 %) | 0 | 0 | 0 |
+| 1 j | × 1,15 | 343 | 1 (0,3 %) | 0 | 0 | 0 |
+| 1 j | × 1,30 | 343 | 7 (2,0 %) | 0 | 0 | 0 |
+| 3 j | × 0,70 | 341 | 24 (7,0 %) | 1 | 0 | 8 |
+| 3 j | × 0,85 | 341 | 23 (6,7 %) | 0 | 0 | 1 |
+| 3 j | × 1,15 | 341 | 6 (1,8 %) | 0 | 0 | 0 |
+| 3 j | × 1,30 | 341 | 10 (2,9 %) | 0 | 0 | 0 |
+| 5 j | × 0,70 | 339 | 86 (25,4 %) | 38 | 0 | 21 |
+| 5 j | × 0,85 | 339 | 33 (9,7 %) | 6 | 0 | 3 |
+| 5 j | × 1,15 | 339 | 15 (4,4 %) | 0 | 0 | 0 |
+| 5 j | × 1,30 | 339 | 44 (13,0 %) | 18 | 0 | 0 |
+| 7 j | × 0,70 | 337 | 181 (53,7 %) | 105 | 0 | 24 |
+| 7 j | × 0,85 | 337 | 102 (30,3 %) | 59 | 0 | 6 |
+| 7 j | × 1,15 | 337 | 75 (22,3 %) | 38 | 0 | 0 |
+| 7 j | × 1,30 | 337 | 140 (41,5 %) | 84 | 0 | 2 |
+
+| Début | −10 % | −5 % | +5 % | +10 % | 
+|---|---|---|---|---|
+| 2025-01-06 (hiver) | 2 | — | 3 | 2 | 
+| 2025-04-07 (printemps) | 2 | 10 | 3 | 2 | 
+| 2025-07-07 (été) | 2 | 2 | 2 | 2 | 
+| 2025-10-06 (automne) | 2 | 2 | 6 | 2 | 
+
+| Écart-type quotidien | Essais | « Réentraîner » avec l'exclusion | sans l'exclusion | Supprimés par l'exclusion | Retardés |
+|---|---|---|---|---|---|
+| 6 % | 80 | 57 | 57 | 0 | 2 |
+| 10 % | 80 | 75 | 76 | 1 | 11 |
+| 15 % | 80 | 79 | 80 | 1 | 17 |
+
+
+**Une prévision qui alimente deux jours** (section 9.2 du plan ; étiquetée, ne choisit rien). Dans chaque saison, une prévision dont les propres points couvrent deux jours consécutifs est décalée dans les bornes et amenée à alimenter les deux, dans une même semaine et à cheval sur deux semaines. Les statistiques de chaque semaine touchée, ses 2 jours les plus extrêmes écartés, sont mises face à la moyenne de ses jours intacts ; l'argument dit qu'aucune ne la dépasse (compté par semaine et par défaillance : EAMP haute, biais haut ou bas, couverture basse).
+
+| Saison | Disposition | Jours | Décalage | Statistiques au-delà de la moyenne des jours intacts | Décisions changées | Règle 4 |
+|---|---|---|---|---|---|---|
+| hiver | dans une semaine | 2025-01-06 et 2025-01-07 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | dans une semaine | 2025-01-06 et 2025-01-07 | −5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2025-01-12 et 2025-01-13 | +5 °C | 0 | 0 | non déclenchée |
+| hiver | à cheval sur deux semaines | 2025-01-12 et 2025-01-13 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2025-04-07 et 2025-04-08 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | dans une semaine | 2025-04-07 et 2025-04-08 | −5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2025-04-13 et 2025-04-14 | +5 °C | 0 | 0 | non déclenchée |
+| printemps | à cheval sur deux semaines | 2025-04-13 et 2025-04-14 | −5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2025-07-07 et 2025-07-08 | +5 °C | 0 | 0 | non déclenchée |
+| été | dans une semaine | 2025-07-07 et 2025-07-08 | −5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2025-07-13 et 2025-07-14 | +5 °C | 0 | 0 | non déclenchée |
+| été | à cheval sur deux semaines | 2025-07-13 et 2025-07-14 | −5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2025-10-06 et 2025-10-07 | +5 °C | 0 | 0 | non déclenchée |
+| automne | dans une semaine | 2025-10-06 et 2025-10-07 | −5 °C | 0 | 0 | non déclenchée |
+| automne | à cheval sur deux semaines | 2025-10-12 et 2025-10-13 | +5 °C | 0 | 1 | non déclenchée |
+| automne | à cheval sur deux semaines | 2025-10-12 et 2025-10-13 | −5 °C | 0 | 1 | non déclenchée |
+
+Aucune statistique d'une semaine touchée ne dépasse la moyenne de ses jours intacts, comme l'argument le dit. Plus long délai d'un point de prévision en 2025 : 71 h.
+
+
+
+**Ce que dit l'exécution de qualité des données que le test de référence a lue**, `4c9eba5ce23a4b64907384432a1c72fe` (constats, qui ne décident rien) : la prévision a alimenté 100,0 % des 365 jours de 2025 ; plus long délai d'un point en 2025 : 71 h.
+
+L'export de 2025 ne révise aucun enregistrement de 2019 à 2024.
 
 **Ce que la barrière de 2025 ne peut pas faire respecter** (section 11.3 du plan) : que personne ne regarde la demande de 2025 sur le portail d'Hydro-Québec avant le test de référence, ni en diagnostiquant une récupération refusée, une exécution de qualité des données en échec ou un départ arrêté ; que personne ne calcule sur des enregistrements de 2025 hors de la commande de rejeu, dans un interpréteur par exemple, ce qui ne laisse aucun départ ; qu'une entrée de décision ne soit versée que sur la décision du propriétaire lui-même, car la barrière ne peut pas dire qui l'a écrite ; et que le magasin d'exécutions, qui liste les départs qui n'ont pas fini, soit gardé jusqu'au rendu, puisqu'il n'est pas versé au dépôt. Cela repose sur la conduite des développeurs, pas sur le code.
 
@@ -1423,7 +1506,7 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | SR 11-7, données et modèles de tiers : l'entrée de prévision de la NOAA | Couverts : ses portes de qualité, sa règle de disponibilité, son erreur contre les observations, sa dérive et la sensibilité à la disponibilité. Non couverts : la solidité et la gestion des changements du modèle de la NOAA lui-même. | Sections 2 et 8 ; rapport de qualité des données |
 | SR 11-7, surveillance continue : vérification du processus | Gardes contre l'information future ; horloge qui refuse les données postérieures, prévisions comprises ; empreintes des trois modèles vérifiées avant et après ; le rejeu refuse de tourner si les règles ou les dépendances diffèrent de l'étiquette `rules-frozen-v2` ; l'étiquette a été déplacée par une dérogation consignée dans `AGENTS.md` (section 8). Chaque garde a son bris. | Section 11 |
 | SR 11-7, surveillance continue : étalonnage comparatif | Deux modèles de comparaison (v1 tel que livré et la forme de v1 sur la même prévision), référence naïve, borne de la météo observée ; modèle figé contre plis réajustés sur 2023. | Sections 3, 7 et 8 |
-| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles de forme conforme dont la couverture est mesurée. Ils n'ont aucune garantie à échantillon fini (section 1). Le contrôle a posteriori au sens de SR 11-7 est 2025, données réservées : en attente. 2020–2023 a servi au choix, 2024 a été vue par les développeurs. | Sections 3, 5, 8 et 9 |
+| SR 11-7, analyse des résultats et contrôle a posteriori, avec intervalles | Plis mensuels avec embargo ; intervalles de forme conforme dont la couverture est mesurée. Ils n'ont aucune garantie à échantillon fini (section 1). Le contrôle a posteriori au sens de SR 11-7 est 2025, données réservées : fait, son test de référence propre. 2020–2023 a servi au choix, 2024 a été vue par les développeurs. | Sections 3, 5, 8 et 9 |
 | SR 11-7, seuils d'acceptabilité, puis recalibrage ou refonte | Seuils par saison tirés des semaines antérieures ; table de décision ordonnée, avec preuves ; règle de décision de v2 contre v1 fixée d'avance ; recommande sans agir. | Sections 1, 6, 8 et 9 |
 | SR 11-7, documentation et rapports de validation | Ce rapport et sa fiche du modèle, générés depuis les exécutions et estampillés de leurs identifiants et de l'empreinte du code. | Ce rapport |
 | NIST MAP 2.2, 2.3 | Usage prévu, hors champ, mise en garde météo, limites ; plan de validation et constats de qualité documentés. | Fiche du modèle ; plan |
@@ -1443,8 +1526,10 @@ Les citations, avec leurs sections et pages, sont dans `docs/standards.md` (en a
 | répétition de 2023 | `3466774bb42f4f44a32886d90c6f56f1` | 2026-11-02 20:43 UTC |
 | diagnostics de la répétition de 2023 (section 7) | `482fd1d00e824c019c6d50d3056bb4ce` | 2026-11-02 20:44 UTC |
 | rejeu de 2024 de cette chaîne | `b31fa66ab4c74c2295f0eb9235919062` | 2026-11-02 21:17 UTC |
-| diagnostics du rejeu de 2024 dont la section 8 montre les chiffres | `824c8fd343d047118f2a628c15f98152` | 2026-11-02 21:18 UTC |
+| diagnostics du rejeu de 2024 dont la section 8 montre les chiffres | `888a41cb44554862a975427bc7ad852e` | 2026-10-17 23:11 UTC |
 | solidité conceptuelle, ajoutée après le gel (section 3.1) | `07c7e63ce73c4486862352a90daf2cb8` | 2026-11-02 22:05 UTC |
 | bris | `e78b0700b74c47bc9e7398a7e5963674` | 2026-11-02 22:31 UTC |
+| rejeu de 2024 de référence | `18daf1fc40a24300aeaba5e4f14d4107` | 2026-10-17 23:11 UTC |
+| test de référence de 2025 | `ff8025637d4b4e2db77302a58f783fca` | 2026-11-02 22:38 UTC |
 
 Empreinte du code : `28cf2a863bc76768373a526c0e12a4853daadf08d8a7996bc2435db9835aadf6`. Empreinte des règles : `97725aa5cf7b49450b847b26e3b4dca0727c4803d5c6e894713640dfadc8078d`. `tests/test_report_stamp.py` échoue si le code du dépôt ne correspond plus à cette empreinte. Le rapport de v1 tel que publié reste dans l'historique, à l'étiquette `v1`.

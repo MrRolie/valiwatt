@@ -16,28 +16,28 @@ _Report generated from a chain of MLflow runs followed from the 2024 replay (sec
 
 ## In brief
 
-- **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending.
+- **Status: lower hourly error than v1 as shipped and than v1's form on the same forecast, on held-out data (2025).**
 - Over the 34,997 common hours of 2020–2023 (_in sample for the choice of family and input_), the mean absolute percentage error is 2.83% for v2, 3.48% for v1's form on the same forecast and 4.42% for v1 as shipped. These years served to choose the family and the input: v2's advantage there is biased upward by that choice, and it does not prove v2 better (section 3).
 - Its 90% intervals held demand 90.3% of the time from 2021-01 to 2023-12, and the 95% CI of that coverage contains the nominal. They hold it less often than the nominal in these groups: winter; hour block day (10–15 h); forecast-load deciles 7, 8, 9 and 10 (section 5). These are v2's intervals; coverage is never a criterion of the decision rule.
 - At the 5 busiest hours of 2019–2023, all in 2023-02, demand fell outside the interval 3 times out of 5, always above it. Reported, never judged.
 - 2024 (_seen by the developers_): MAPE 2.58%, coverage 92.2%, no recommendation; verdicts: v2 against v1 as shipped, "better"; v2 against v1's form, "better". A success on a year already seen is weak evidence: it supports no claim; v2 goes to 2025 as frozen (section 8).
-- 2025: pending; the test of record will be the first 2025 replay started under `rules-frozen-v2`, unless that start stops before it finishes and a dated ruling of the owner names the start that takes its place (section 9; plan section 11.3.5).
+- 2025: the test of record `ff8025637d4b4e2db77302a58f783fca` finished, its standing logged by its gate: "clean" (section 9).
 - The report also measures what the monitor could miss: on 2023, a sustained 10% rise in demand yielded "retrain" within 10 weeks at 4 of 4 starts, and on 2024 (seen by the developers), at 4 of 4; on 2024, a sustained bias of ±2% injected into the forecast did within 8 weeks at 4 of 8 cases (sections 7, 8 and 10).
 
 ## Model card
 
 | | |
 |---|---|
-| **Status** | **Status: candidate.** Chosen on 2020–2023 (in sample for the choice), shown on 2024 seen by the developers; the test on held-out data, 2025, is pending. Interval coverage and the busiest hours: beside the status, never in it (coverage: sections 4 (the peak hours), 5, 7 and 8; busiest hours: sections 3, 4, 7 and 8). |
+| **Status** | **Status: lower hourly error than v1 as shipped and than v1's form on the same forecast, on held-out data (2025).** Interval coverage and the busiest hours: beside the status, never in it (coverage: sections 4 (the peak hours), 5, 7, 8 and 9; busiest hours: sections 3, 4, 7, 8 and 9). |
 | **What it forecasts** | Québec's hourly electricity demand as published by Hydro-Québec, for the 24 hours of day D, issued at the end of day D−1 (Eastern Standard Time), with a 90% prediction interval. |
 | **Intended use** | To show, on a real forecast, validation and monitoring of the kind a model-risk team does. |
 | **Out of scope** | Any operational dispatch, any trading or pricing, any decision. Hydro-Québec publishes this data for information; it is not official data. |
 | **Data** | Hydro-Québec hourly demand; NOAA NBM temperature forecast for station CYUL, the Montréal airport, archived by the Iowa Environmental Mesonet (section 2); observed hourly temperature at Montréal (ECCC) for data quality, v1 as shipped and the optimistic bound, and at 5 other stations (Québec, Gatineau, Sherbrooke, Saguenay and Trois-Rivières) for a sensitivity analysis only. Designed on 2019–2023. |
-| **Model** | An additive model of the GAM family, fitted by penalized least squares: one temperature curve per local hour (splines, 10 knots at the quantiles of the training rows, degree 3, continued as a straight line outside the training range), v1's 72 constants per hour and day type, the demand of the day before and of the week before; standardized, then ridge, alpha 1.0. Frozen on the data up to 2023-12-24; hash `7aadbc5866c6`, that of this chain's frozen model, from which this date, the interval below and the curves of section 3 come. Compared with v1 as shipped and with v1's form on the same forecast, which never recommend anything. |
+| **Model** | An additive model of the GAM family, fitted by penalized least squares: one temperature curve per local hour (splines, 10 knots at the quantiles of the training rows, degree 3, continued as a straight line outside the training range), v1's 72 constants per hour and day type, the demand of the day before and of the week before; standardized, then ridge, alpha 1.0. Frozen on the data up to 2023-12-24; hash `7aadbc5866c6`, that of this chain's frozen model, from which this date, the interval below and the curves of section 3 come; 2025 is judged by the frozen model of the 2024 replay of record, hash `7aadbc5866c6`, the same. Compared with v1 as shipped and with v1's form on the same forecast, which never recommend anything. |
 | **Interval** | Forecast × (1 ± 6.22%). The half-width is a quantile of the 8,729 out-of-sample relative errors from 2023-01 to 2023-12 already scored when the frozen model is fitted: the form of a split conformal interval, without its finite-sample guarantee. The measured coverage is the evidence (sections 5 and 8). |
 | **Validation error** | MAPE 2.83% [2.69%, 2.95%] over its hours of 2020–2023 (_in sample for the choice of family and input_), against 7.81% for the naive baseline (section 3). |
 | **2024 replay** | _seen by the developers_: MAPE 2.58%, coverage 92.2%; no recommendation. What the rules can miss that year: a sustained bias of ±2% injected into the forecast yielded "retrain" within 8 weeks at 4 of 8 cases, and intervals cut to × 0.5 of their half-width yielded "recalibrate" at 3 of 4 starts, and milder cuts at 1 of 4 at most. Verdicts: "better" against v1 as shipped, "better" against v1's form (section 8). |
-| **2025** | Pending (section 9). |
+| **2025** | Test of record `ff8025637d4b4e2db77302a58f783fca`, standing "clean" (_held-out data_), verdicts "better" and "better" (section 9). |
 | **Weather caveat** | The temperature forecast is available, by assumption, 2 hours after its issue time; every result that depends on it rests on that assumption (section 2). The observed temperature of the target hour is only an optimistic bound; it issues no recommendation. |
 | **Limitations** | Section 10. |
 | **Author** | Built with Claude Code under the repository owner's direction. |
@@ -683,7 +683,7 @@ The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 
 **Post hoc.** This 2024 replay ran after a departure from v2's frozen rules, recorded in `AGENTS.md` (section "Departures from the v2 frozen rules"). The departure of 2026-11-02 ("2026-11-02, the 2025 export as Hydro-Québec published it: a departure") moved the tag to commit `7582a4cbb28c` and names `825b7bd134a8`, `7582a4cbb28c`. It departs from: the replay `18daf1fc40a24300aeaba5e4f14d4107` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `4284bb3d13dd43d0a600882142f448bd` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `5ae065d3334a4a698f69f646f12c5706` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `69298e9f4bb04edb8363139bed160f4e` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `a71e4b1689444121958634d068a64db3` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `b1dca448e0fc436ca2e270c8e3c28a3f` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `daea4f58e6e64bc5a4ea6a5958acd215` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `fac1d0f3813b4499b10e4622c8fc4997` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%).
 
 
-**v2's first 2024 replay** is `18daf1fc40a24300aeaba5e4f14d4107`. It started on 2026-10-17T23:11:15.047Z (code `521febded2db`, rules `998b1e492ebc`, freeze `825b7bd134a8`), and the report names it from its entry in the replay ledger. Its frozen artifacts, hash `eb412529206f`, are those 2025 will be judged on. This section's figures come from this chain's replay, `b31fa66ab4c74c2295f0eb9235919062`, started on 2026-11-02T21:17:19.559Z (code `28cf2a863bc7`). It is a **rerun** of the first and does not replace it: 2025 will be judged on the first's frozen artifacts. Its printed results are the same as the first's: MAPE, coverage, recommendations, verdicts, the frozen model's hash and the hash of the frozen artifacts that judged it. The replay ledger also holds other v2 2024 reruns, shown in the table below. `fac1d0f3813b4499b10e4622c8fc4997` started on 2026-10-18T07:53:18.050Z (code `53b698330073`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `4284bb3d13dd43d0a600882142f448bd` started on 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `b1dca448e0fc436ca2e270c8e3c28a3f` started on 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `5ae065d3334a4a698f69f646f12c5706` started on 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `69298e9f4bb04edb8363139bed160f4e` started on 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `daea4f58e6e64bc5a4ea6a5958acd215` started on 2026-10-19T18:55:30.349Z (code `7a331e59081c`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash. `a71e4b1689444121958634d068a64db3` started on 2026-10-21T00:10:11.670Z (code `60d58f9c3732`). Its printed results are the same as the first's, and so are its frozen model's hash and its frozen artifacts' hash.
+**The 2024 replay of record** is v2's first 2024 replay, `18daf1fc40a24300aeaba5e4f14d4107` (code `521febded2db`, rules `998b1e492ebc`, freeze `825b7bd134a8`): its frozen artifacts judge 2025, and this section's figures come from its run. This chain's replay, `b31fa66ab4c74c2295f0eb9235919062` (code `28cf2a863bc7`), is a **rerun**: shown beside the replay of record, it does not replace it, and 2025 is judged on the record's frozen artifacts, and it gives the same printed results. The replay ledger also holds other v2 2024 reruns, shown in the table below. `fac1d0f3813b4499b10e4622c8fc4997` started on 2026-10-18T07:53:18.050Z (code `53b698330073`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `4284bb3d13dd43d0a600882142f448bd` started on 2026-10-19T00:56:55.805Z (code `dd449fab8c3c`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `b1dca448e0fc436ca2e270c8e3c28a3f` started on 2026-10-19T04:58:57.354Z (code `20879b72f3a6`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `5ae065d3334a4a698f69f646f12c5706` started on 2026-10-19T07:17:02.345Z (code `4e3642ca90ec`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `69298e9f4bb04edb8363139bed160f4e` started on 2026-10-19T09:02:47.706Z (code `0cbfdfea6191`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `daea4f58e6e64bc5a4ea6a5958acd215` started on 2026-10-19T18:55:30.349Z (code `7a331e59081c`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash. `a71e4b1689444121958634d068a64db3` started on 2026-10-21T00:10:11.670Z (code `60d58f9c3732`). Its printed results are the same as the record's, and so are its frozen model's hash and its frozen artifacts' hash.
 
 **2024 side by side.** v1's replays come from their entries in the replay ledger: recorded, not re-run here.
 
@@ -691,7 +691,8 @@ The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 
 |---|---|---|---|---|
 | v1, `91f7e3faecee4a899381edd47b4ffc3f` (frozen first), recorded in the ledger | — | 4.23% | 89.4% | none |
 | v1, `9f87c124e34344a8a65e4a7679c3c458` (after its departure), recorded in the ledger | — | 4.23% | 89.4% | none |
-| v2, first, `18daf1fc40a24300aeaba5e4f14d4107`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, of record, `18daf1fc40a24300aeaba5e4f14d4107` | _seen by the developers_ | 2.58% | 92.2% | none |
+| v2, rerun, `b31fa66ab4c74c2295f0eb9235919062`, this chain's | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `fac1d0f3813b4499b10e4622c8fc4997`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `4284bb3d13dd43d0a600882142f448bd`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `b1dca448e0fc436ca2e270c8e3c28a3f`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
@@ -699,7 +700,6 @@ The monitoring rules this replay applies keep v1's logic (plan section 9.1): v1 
 | v2, rerun, `69298e9f4bb04edb8363139bed160f4e`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `daea4f58e6e64bc5a4ea6a5958acd215`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
 | v2, rerun, `a71e4b1689444121958634d068a64db3`, recorded in the ledger | _seen by the developers_ | 2.58% | 92.2% | none |
-| v2, rerun, `b31fa66ab4c74c2295f0eb9235919062`, this chain's | _seen by the developers_ | 2.58% | 92.2% | none |
 
 **v1's model in v2's harness**, reconciled with v1's latest replay in the ledger, `9f87c124e34344a8a65e4a7679c3c458`: MAPE 4.23% against 4.23% (relative gap 0.0e+00), coverage 89.39% against 89.43% (−0.04 pt), the gap the eve fix of the replayed year makes (plan section 6.3).
 
@@ -898,7 +898,90 @@ For each week in drift alarm, the Evidently report is kept in the run, and Evide
 
 ## 9. 2025, the test of record
 
-**Pending.** No 2025 replay has started. The test of record will be the first 2025 replay started under `rules-frozen-v2`, on exactly the artifacts frozen for v2's first 2024 replay, `18daf1fc40a24300aeaba5e4f14d4107`, behind a gate that finds it clean or refuses it; only a dated ruling of the owner lifts a refusal (plan section 11.3). It will be that first start, unless it stops before it finishes and a dated ruling of the owner names the start that takes its place (plan section 11.3.5). What 2025 will judge: section 1's verdicts against v1 as shipped and against v1's form on the same forecast; these are the criteria that could still show v2 wrong. Nothing of the year 2025 is rendered before that first start.
+**The test of record** is `ff8025637d4b4e2db77302a58f783fca`, started on 2026-11-02T22:38:31.273Z (code `28cf2a863bc7`, rules `97725aa5cf7b`, freeze `7582a4cbb28c`), _held-out data_. Its standing, as its gate logged it at its start: **clean** (a refusal lifted on condition (a)); the owner's ruling the gate read: "2026-11-02, the owner's ruling on 2025: clean", commit `eb469ace0e3a`, outcome clean, with its evidence run `a700fe0702dc4abd83a4be6bcb10d5db`. The report prints this standing; it never computes it again. It departs from: the replay `18daf1fc40a24300aeaba5e4f14d4107` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `4284bb3d13dd43d0a600882142f448bd` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `5ae065d3334a4a698f69f646f12c5706` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `69298e9f4bb04edb8363139bed160f4e` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `a71e4b1689444121958634d068a64db3` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `b1dca448e0fc436ca2e270c8e3c28a3f` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `daea4f58e6e64bc5a4ea6a5958acd215` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%); the replay `fac1d0f3813b4499b10e4622c8fc4997` (rules of commit `825b7bd134a8`, MAPE 2.58%, coverage 92.2%).
+
+2025 (_held-out data_): MAPE 2.83%, coverage 88.8% (95% interval [85.0%, 92.1%], which holds the 90% nominal; reported, never judged), 2 recommendations; verdicts: v2 against v1 as shipped, "better"; v2 against v1's form, "better".
+
+| Comparison (_held-out data_) | MAPE difference | 95% CI | State |
+|---|---|---|---|
+| v2 against v1 as shipped | −1.37 pt | [−1.69 pt, −1.07 pt] | better |
+| v2 against v1's form on the same forecast | −0.55 pt | [−0.76 pt, −0.35 pt] | better |
+| v1's form on the forecast against v1 as shipped (reported, never judged) | −0.82 pt | [−1.22 pt, −0.43 pt] | better |
+
+Cold tail (_held-out data_): 523 common hours below the threshold of −12.0 °C, spread over 15 Monday-to-Sunday weeks; it is testable (at least 120 hours and 4 weeks): v2 against v1 as shipped, −4.46 pt [−5.68 pt, −3.46 pt] (better); v2 against v1's form, −0.74 pt [−0.93 pt, −0.58 pt] (better).
+
+| Hour ending (UTC) (_held-out data_) | Demand | Forecast temperature | v2 | v1's form on the forecast | v1 as shipped |
+|---|---|---|---|---|---|
+| 2025-01-22 13:00 UTC | 40,015 MW | −16.7 °C | +5.3% | +6.6% | +7.6% | 
+| 2025-01-22 14:00 UTC | 38,943 MW | −15.6 °C | +5.1% | +5.4% | +6.3% | 
+| 2025-01-21 13:00 UTC | 38,892 MW | −15.9 °C | +6.5% | +8.1% | +10.0% | 
+| 2025-01-30 13:00 UTC | 38,838 MW | −18.0 °C | +2.6% | +4.3% | +6.5% | 
+| 2025-12-09 13:00 UTC | 38,824 MW | −14.3 °C | +6.6% | +7.9% | +7.3% | 
+
+
+**False alarms, level shifts and the echo's cost on 2025**, from the test of record's diagnostic run `19ccce9a3f754d858ac2a52343ef8f42`, after it; they decide nothing. The same episodes and the same shifts as in section 7.
+
+| Length | Factor | Starts | "Retrain" | of which clean | "Recalibrate" | Kept by the echo exclusion |
+|---|---|---|---|---|---|---|
+| 1 d | × 0.70 | 343 | 13 (3.8%) | 0 | 0 | 0 |
+| 1 d | × 0.85 | 343 | 14 (4.1%) | 0 | 0 | 0 |
+| 1 d | × 1.15 | 343 | 1 (0.3%) | 0 | 0 | 0 |
+| 1 d | × 1.30 | 343 | 7 (2.0%) | 0 | 0 | 0 |
+| 3 d | × 0.70 | 341 | 24 (7.0%) | 1 | 0 | 8 |
+| 3 d | × 0.85 | 341 | 23 (6.7%) | 0 | 0 | 1 |
+| 3 d | × 1.15 | 341 | 6 (1.8%) | 0 | 0 | 0 |
+| 3 d | × 1.30 | 341 | 10 (2.9%) | 0 | 0 | 0 |
+| 5 d | × 0.70 | 339 | 86 (25.4%) | 38 | 0 | 21 |
+| 5 d | × 0.85 | 339 | 33 (9.7%) | 6 | 0 | 3 |
+| 5 d | × 1.15 | 339 | 15 (4.4%) | 0 | 0 | 0 |
+| 5 d | × 1.30 | 339 | 44 (13.0%) | 18 | 0 | 0 |
+| 7 d | × 0.70 | 337 | 181 (53.7%) | 105 | 0 | 24 |
+| 7 d | × 0.85 | 337 | 102 (30.3%) | 59 | 0 | 6 |
+| 7 d | × 1.15 | 337 | 75 (22.3%) | 38 | 0 | 0 |
+| 7 d | × 1.30 | 337 | 140 (41.5%) | 84 | 0 | 2 |
+
+| Start | −10% | −5% | +5% | +10% | 
+|---|---|---|---|---|
+| 2025-01-06 (winter) | 2 | — | 3 | 2 | 
+| 2025-04-07 (spring) | 2 | 10 | 3 | 2 | 
+| 2025-07-07 (summer) | 2 | 2 | 2 | 2 | 
+| 2025-10-06 (fall) | 2 | 2 | 6 | 2 | 
+
+| Daily standard deviation | Trials | "Retrain" with the exclusion | without it | Suppressed by the exclusion | Delayed |
+|---|---|---|---|---|---|
+| 6% | 80 | 57 | 57 | 0 | 2 |
+| 10% | 80 | 75 | 76 | 1 | 11 |
+| 15% | 80 | 79 | 80 | 1 | 17 |
+
+
+**One forecast feeding two days** (plan section 9.2; labelled, it chooses nothing). In each season, a forecast whose own points cover two consecutive days is shifted inside the bounds and made to feed both, inside one week and across a week boundary. Each affected week's statistics, its 2 most extreme days set aside, are set against the mean of its untouched days; the argument says none lies beyond it (counted by week and by failure: MAPE high, bias high or low, coverage low).
+
+| Season | Placement | Days | Shift | Statistics beyond the untouched days' mean | Decisions changed | Rule 4 |
+|---|---|---|---|---|---|---|
+| winter | inside one week | 2025-01-06 and 2025-01-07 | +5 °C | 0 | 0 | did not fire |
+| winter | inside one week | 2025-01-06 and 2025-01-07 | −5 °C | 0 | 0 | did not fire |
+| winter | across two weeks | 2025-01-12 and 2025-01-13 | +5 °C | 0 | 0 | did not fire |
+| winter | across two weeks | 2025-01-12 and 2025-01-13 | −5 °C | 0 | 0 | did not fire |
+| spring | inside one week | 2025-04-07 and 2025-04-08 | +5 °C | 0 | 0 | did not fire |
+| spring | inside one week | 2025-04-07 and 2025-04-08 | −5 °C | 0 | 0 | did not fire |
+| spring | across two weeks | 2025-04-13 and 2025-04-14 | +5 °C | 0 | 0 | did not fire |
+| spring | across two weeks | 2025-04-13 and 2025-04-14 | −5 °C | 0 | 0 | did not fire |
+| summer | inside one week | 2025-07-07 and 2025-07-08 | +5 °C | 0 | 0 | did not fire |
+| summer | inside one week | 2025-07-07 and 2025-07-08 | −5 °C | 0 | 0 | did not fire |
+| summer | across two weeks | 2025-07-13 and 2025-07-14 | +5 °C | 0 | 0 | did not fire |
+| summer | across two weeks | 2025-07-13 and 2025-07-14 | −5 °C | 0 | 0 | did not fire |
+| fall | inside one week | 2025-10-06 and 2025-10-07 | +5 °C | 0 | 0 | did not fire |
+| fall | inside one week | 2025-10-06 and 2025-10-07 | −5 °C | 0 | 0 | did not fire |
+| fall | across two weeks | 2025-10-12 and 2025-10-13 | +5 °C | 0 | 1 | did not fire |
+| fall | across two weeks | 2025-10-12 and 2025-10-13 | −5 °C | 0 | 1 | did not fire |
+
+No statistic of a touched week lies beyond the mean of its untouched days, as the argument says. The longest lead of a forecast point in 2025: 71 h.
+
+
+
+**What the data-quality run the test of record read says**, `4c9eba5ce23a4b64907384432a1c72fe` (findings, which decide nothing): the forecast fed 100.0% of 2025's 365 days; the longest lead of a point in 2025: 71 h.
+
+The 2025 export revises no record from 2019 to 2024.
 
 **What the 2025 gate cannot enforce** (plan section 11.3): that nobody looks at 2025 demand on Hydro-Québec's portal before the test of record, nor in diagnosing a refused fetch, a failed data-quality run or a stopped start; that nobody computes on 2025 records outside the replay command, in an interpreter say, which leaves no started run; that a ruling entry is committed only from the owner's own decision, since the gate cannot tell who wrote it; and that the run store, which lists the starts that did not finish, is kept until the render, since it is not committed. These rest on the developers' conduct, not on code.
 
@@ -1423,7 +1506,7 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | SR 11-7, third-party data and models: NOAA's forecast input | Covered: its quality gates, its availability rule, its error against the observations, its drift and the sensitivity to availability. Not covered: the soundness and change management of NOAA's model itself. | Sections 2 and 8; data-quality report |
 | SR 11-7, ongoing monitoring: process verification | Lookahead guards; a clock that refuses later data, forecasts included; the three models' hashes checked before and after; the replay refuses to run if the rules or the dependencies differ from tag `rules-frozen-v2`; the tag was moved by a departure recorded in `AGENTS.md` (section 8). Each guard has its break. | Section 11 |
 | SR 11-7, ongoing monitoring: benchmarking | Two comparison models (v1 as shipped and v1's form on the same forecast), a naive baseline, the observed-weather bound; frozen model against refitted folds on 2023. | Sections 3, 7 and 8 |
-| SR 11-7, outcomes analysis and back-testing, with intervals | Monthly folds with an embargo; intervals of conformal form whose coverage is measured. They carry no finite-sample guarantee (section 1). The back-test in SR 11-7's sense is 2025, held-out data: pending. 2020–2023 served the choice, 2024 was seen by the developers. | Sections 3, 5, 8 and 9 |
+| SR 11-7, outcomes analysis and back-testing, with intervals | Monthly folds with an embargo; intervals of conformal form whose coverage is measured. They carry no finite-sample guarantee (section 1). The back-test in SR 11-7's sense is 2025, held-out data: done, its test of record clean. 2020–2023 served the choice, 2024 was seen by the developers. | Sections 3, 5, 8 and 9 |
 | SR 11-7, acceptability thresholds, then recalibration or redevelopment | Seasonal thresholds drawn from earlier weeks; an ordered decision table, with evidence; v2's decision rule against v1 fixed in advance; recommends without acting. | Sections 1, 6, 8 and 9 |
 | SR 11-7, documentation and validation reports | This report and its model card, generated from the runs and stamped with their identifiers and the code hash. | This report |
 | NIST MAP 2.2, 2.3 | Intended use, out of scope, weather caveat, limitations; validation plan and data-quality findings documented. | Model card; plan |
@@ -1443,8 +1526,10 @@ The quotations, with their sections and pages, are in `docs/standards.md`. The t
 | 2023 rehearsal | `3466774bb42f4f44a32886d90c6f56f1` | 2026-11-02 20:43 UTC |
 | the 2023 rehearsal's diagnostics (section 7) | `482fd1d00e824c019c6d50d3056bb4ce` | 2026-11-02 20:44 UTC |
 | this chain's 2024 replay | `b31fa66ab4c74c2295f0eb9235919062` | 2026-11-02 21:17 UTC |
-| the diagnostics of the 2024 replay whose numbers section 8 shows | `824c8fd343d047118f2a628c15f98152` | 2026-11-02 21:18 UTC |
+| the diagnostics of the 2024 replay whose numbers section 8 shows | `888a41cb44554862a975427bc7ad852e` | 2026-10-17 23:11 UTC |
 | conceptual soundness, added after the freeze (section 3.1) | `07c7e63ce73c4486862352a90daf2cb8` | 2026-11-02 22:05 UTC |
 | breaks | `e78b0700b74c47bc9e7398a7e5963674` | 2026-11-02 22:31 UTC |
+| the 2024 replay of record | `18daf1fc40a24300aeaba5e4f14d4107` | 2026-10-17 23:11 UTC |
+| the 2025 test of record | `ff8025637d4b4e2db77302a58f783fca` | 2026-11-02 22:38 UTC |
 
 Code hash: `28cf2a863bc76768373a526c0e12a4853daadf08d8a7996bc2435db9835aadf6`. Rules hash: `97725aa5cf7b49450b847b26e3b4dca0727c4803d5c6e894713640dfadc8078d`. `tests/test_report_stamp.py` fails if the repository's code no longer matches this hash. v1's report as published stays in the history, at tag `v1`.

@@ -312,6 +312,48 @@
       },
       "frozen_sha256": "eb412529206f9af7e8dc7a536e36a6c1eff47f252c9da40e44d0787fbab1b2fe",
       "standing": ""
+    },
+    {
+      "run_id": "ff8025637d4b4e2db77302a58f783fca",
+      "year": 2025,
+      "freeze_tag": "rules-frozen-v2",
+      "freeze_commit": "7582a4cbb28c492ed895b0e99caaca73c4d7f0eb",
+      "rules_sha256": "97725aa5cf7b49450b847b26e3b4dca0727c4803d5c6e894713640dfadc8078d",
+      "code_sha256": "28cf2a863bc76768373a526c0e12a4853daadf08d8a7996bc2435db9835aadf6",
+      "started_utc": "2026-11-02T22:38:31.273Z",
+      "ended_utc": "2026-11-02T22:39:22.890Z",
+      "status": "complete",
+      "mape": 0.028323330532742073,
+      "coverage": 0.8875814006626299,
+      "recommendations": [
+        {
+          "week_start": "2025-10-20",
+          "recommendation": "retrain"
+        },
+        {
+          "week_start": "2025-12-29",
+          "recommendation": "investigate_data"
+        }
+      ],
+      "departure": true,
+      "departure_from": [
+        "18daf1fc40a24300aeaba5e4f14d4107",
+        "4284bb3d13dd43d0a600882142f448bd",
+        "5ae065d3334a4a698f69f646f12c5706",
+        "69298e9f4bb04edb8363139bed160f4e",
+        "a71e4b1689444121958634d068a64db3",
+        "b1dca448e0fc436ca2e270c8e3c28a3f",
+        "daea4f58e6e64bc5a4ea6a5958acd215",
+        "fac1d0f3813b4499b10e4622c8fc4997"
+      ],
+      "evaluation": "held_out",
+      "model_sha256": "7aadbc5866c62438533417a145a6f1045f3f73fcdaae077172e2c07c5cc4ab04",
+      "verdict": {
+        "shipped": "better",
+        "family": "better"
+      },
+      "frozen_sha256": "eb412529206f9af7e8dc7a536e36a6c1eff47f252c9da40e44d0787fbab1b2fe",
+      "standing": "clean"
     }
   ]
 }
