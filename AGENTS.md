@@ -234,4 +234,15 @@ start by its start time as the refusal prints it (`YYYY-MM-DDTHH:MM:SS.mmmZ`), n
 hexadecimal characters would be read as a commit (the ruling of 2026-10-16 on when 2025 is clean). The 2025 gate
 reads a ruling only in those words. What each costs 2025 is stated once, in `docs/plan-v2.md` section 11.3.5.
 
-None yet.
+- **2026-11-02, the 2025 export as Hydro-Québec published it: a departure.** The tag moved from `825b7bd134a8` to
+  `7582a4cbb28c`, the one commit that touches a rule file. Hydro-Québec published 2025 without the year's last hour:
+  its export ends at 2026-01-01 04:00 UTC, while the 2024 publication held its own last hour, so v2's fetch, which
+  took only an export ending at 05:00, refused 2025 and wrote nothing. The owner ruled the amendment: an export
+  through 2025 ending exactly at 04:00 is that whole year as published, and the hour it lacks is a missing hour for
+  data quality, never filled; any other end still refuses, for 2025 and every later year. Seen before the ruling:
+  the dates of the published 2025 records only (the year's last hour absent; on 2 November, the fall-back's first
+  01:00 absent and its second 01:00 twice, which data quality's fall-back rule reads as every year), never a demand
+  value. No other check refuses the missing hour; in the 2025 replay it makes 31 December a day that fails data
+  quality, so the monitor's first rule adds one "investigate the data" recommendation for the week of 29 December,
+  which is a partial week and judged by no other rule. The 2025 start that follows runs with `--departure`, and its
+  condition (a) refuses until the owner's ruling (`docs/plan-v2.md`, section 11.3.5).

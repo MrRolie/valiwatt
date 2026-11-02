@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from test_departure_record import HistoryMissing, commit_of, git, is_ancestor, require_full_history, scratch_clone
+from test_departure_record import (HistoryMissing, commit_of, git, is_ancestor, pinned_freezes, require_full_history,
+                                    scratch_clone)
 from valiwatt.paths import REPO_ROOT
 
 PINS = {
@@ -114,23 +115,24 @@ def test_a_lightweight_tag_fails(tmp_path):
 
 
 def ledger_freeze_problems(entries: list[dict], root: Path = REPO_ROOT, tag: str = "rules-frozen-v2") -> list[str]:
-    """What ties a committed replay-ledger entry of `tag` to the tag itself, and fails: its freeze commit is not the
-    tag's commit, or its rules hash is not the hash of the rule files at the tag (monitor/rules.py `rules_sha256`)."""
+    """What ties a committed replay-ledger entry of `tag` to the tag, and fails: its freeze commit is none of the
+    commits the tag has been pinned to (it moves only by a departure, docs/plan-v2.md section 10.4), or its rules hash
+    is not the hash of the rule files at that commit (monitor/rules.py `rules_sha256`)."""
     from valiwatt.monitor.rules import rules_sha256
 
     require_full_history(root)
-    commit = tag_commit(root, tag)
-    if commit is None:
+    if tag_commit(root, tag) is None:
         return [f"tag {tag} is missing"]
-    rules = rules_sha256(commit)
+    freezes = pinned_freezes(root, "HEAD")
     problems = []
     for e in entries:
         if e["freeze_tag"] != tag:
             continue
-        if e["freeze_commit"] != commit:
-            problems.append(f"entry {e['run_id']} names freeze commit {e['freeze_commit']}, not {tag}'s {commit}")
-        if e["rules_sha256"] != rules:
-            problems.append(f"entry {e['run_id']} carries rules hash {e['rules_sha256']}, not the rules at {tag}")
+        if e["freeze_commit"] not in freezes:
+            problems.append(f"entry {e['run_id']} names freeze commit {e['freeze_commit']}, none of {tag}'s {freezes}")
+        elif e["rules_sha256"] != rules_sha256(e["freeze_commit"]):
+            problems.append(f"entry {e['run_id']} carries rules hash {e['rules_sha256']}, not the rules at its freeze "
+                            "commit")
     return problems
 
 

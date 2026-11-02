@@ -1061,3 +1061,8 @@ None yet.
   to the forecast or the forecast is not validation's, and the report refuses a breakdown that is not of the
   cold-peak table's first row. It changes no rule, no status and no verdict; the rules hash is the one the freeze tag
   carries.
+- 2026-11-02, the owner's ruling, a departure from v2's freeze (AGENTS.md): Hydro-Québec published 2025 one hour
+  short, its export ending at 2026-01-01 04:00 UTC, and the fetch of section 11.3, item 2, which refused it, now takes
+  an export through 2025 that ends exactly there as the whole year; the hour it lacks is a missing hour for data
+  quality. Any other end still refuses. `rules-frozen-v2` moved to commit 7582a4cbb28c; the 2025 start that follows
+  runs under the moved tag and is refused by condition (a) until the owner rules, clean or post hoc, on the evidence.
