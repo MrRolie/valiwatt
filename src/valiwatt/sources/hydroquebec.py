@@ -61,10 +61,19 @@ def bound_params(through: int) -> dict:
     return {"where": f"date <= '{data_last(through):%Y-%m-%dT%H:%M:%SZ}'"}
 
 
+# The owner's ruling of 2026-11-02, a departure from the v2 freeze (AGENTS.md, "Departures from the v2 frozen rules"):
+# Hydro-Québec published 2025 without its last hour; the export ends at 2026-01-01 04:00 UTC, one hour short, while
+# the 2024 publication held its own last hour. An export through 2025 ending exactly there is that whole year as
+# published. Seen before the ruling: the records' dates only, never a demand value. The hour it lacks is a missing
+# hour for data quality, never filled; any other end still refuses, for 2025 and every later year.
+SHORT_YEAR_ENDS = {2025: pd.Timestamp("2026-01-01T04:00Z")}
+
+
 def verify_export(text: str, expected_records: int, through: int | None = None) -> int:
     """Refuse an export whose header, row shape or row count is not what the portal's count under the same filter
     promises. With `through`, also refuse a record labelled after the window's last hour (the portal's bound did not
-    hold) and, past 2024, an export whose latest record is not that hour (only a whole year)."""
+    hold) and, past 2024, an export whose latest record is not that hour (only a whole year), unless it ends exactly
+    at the hour SHORT_YEAR_ENDS names for its year."""
     rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     if not rows or rows[0] != HEADER:
         raise FetchRefused(f"unexpected header {rows[0] if rows else None!r}; expected {HEADER}")
@@ -82,7 +91,7 @@ def verify_export(text: str, expected_records: int, through: int | None = None) 
             raise FetchRefused(f"{int(late.sum())} records are labelled after {last.isoformat()}, the bound of the "
                                f"window through {through}: the portal's filter did not hold")
         latest = labels.max() if len(labels) else None
-        if int(through) > THROUGH_DEFAULT and latest != last:
+        if int(through) > THROUGH_DEFAULT and latest != last and latest != SHORT_YEAR_ENDS.get(int(through)):
             raise FetchRefused(f"the export through {through} ends at {latest}, not at {last.isoformat()}: only a "
                                "whole year is fetched")
     return len(body)

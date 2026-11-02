@@ -243,10 +243,24 @@ def test_a_partial_2025_export_is_refused_and_writes_nothing(raw, monkeypatch):
     with pytest.raises(FetchRefused, match="whole year"):
         hydroquebec.fetch(through=2025)
     assert snapshot(raw.root) == before
-    portal(monkeypatch, last="2026-01-01T04:00Z")  # one hour short
+    portal(monkeypatch, last="2026-01-01T03:00Z")  # two hours short
     with pytest.raises(FetchRefused, match="whole year"):
         hydroquebec.fetch(through=2025)
     assert snapshot(raw.root) == before
+
+
+def test_the_2025_export_as_published_one_hour_short_is_fetched(raw, monkeypatch):
+    """The owner's ruling of 2026-11-02 (a v2 departure): Hydro-Québec's 2025 publication ends at 2026-01-01 04:00
+    UTC, and an export ending exactly there is fetched; ending at the year's last hour is fetched too (control). The
+    exception names 2025 only: another year one hour short still refuses."""
+    for last in ("2026-01-01T04:00Z", "2026-01-01T05:00Z"):
+        portal(monkeypatch, last=last)
+        hydroquebec.fetch(force=True, through=2025)
+        assert hydroquebec.csv_path(2025).exists()
+    assert hydroquebec.SHORT_YEAR_ENDS == {2025: pd.Timestamp("2026-01-01T04:00Z")}
+    with pytest.raises(FetchRefused, match="whole year"):
+        verify_export("date,moyenne_mw\n2027-01-01T04:00:00+00:00,1\n", 1, through=2026)
+    assert verify_export("date,moyenne_mw\n2027-01-01T05:00:00+00:00,1\n", 1, through=2026) == 1  # control
 
 
 def test_every_hydroquebec_request_is_bounded_by_the_portal(raw, monkeypatch):
