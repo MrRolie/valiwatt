@@ -246,3 +246,10 @@ reads a ruling only in those words. What each costs 2025 is stated once, in `doc
   quality, so the monitor's first rule adds one "investigate the data" recommendation for the week of 29 December,
   which is a partial week and judged by no other rule. The 2025 start that follows runs with `--departure`, and its
   condition (a) refuses until the owner's ruling (`docs/plan-v2.md`, section 11.3.5).
+- **2026-11-02, the owner's ruling on 2025: clean.** It applies to commit `eb469ace0e3a`, the code the 2025 start
+  runs, whose start condition (a) refused for the departure above alone. He ruled on his card, having seen the
+  evidence: v2's 2024 replay run again on the 2025 vintage, bounded to 2024, differs from v2's first 2024 replay in
+  none of its 8,784 hours, and the vintage revised no 2019–2024 record. The amendment was written from the dates of
+  the published records only. Disclosed with it: before the ruling, an answer from another AI assistant that he
+  pasted into the session said that the two readings of 2 November at 01:00 hold different demand values, giving no
+  value; nothing was changed for it.
