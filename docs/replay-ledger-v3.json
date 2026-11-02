@@ -28,6 +28,35 @@
       },
       "frozen_sha256": "ede4c2b93778380a9b7f17cd0369a19d65441a29a91fd78941d1479bd52147db",
       "standing": ""
+    },
+    {
+      "run_id": "a0f7add82aed47988e73ef827713c72a",
+      "year": 2025,
+      "freeze_tag": "v3-rules-frozen",
+      "freeze_commit": "6ffedf1741edcb39dd0e65c39f6be272e7310bf3",
+      "rules_sha256": "526e7ee3484c3d64be9f16824fe9880075214a9c32dc385f3427548e6041d175",
+      "code_sha256": "2d4e6e33ee98b10f51767bafbe04ba5d4f11cbafe1273ffa7a4f0ece7703c879",
+      "started_utc": "2026-11-02T23:16:05.287Z",
+      "ended_utc": "2026-11-02T23:17:24.461Z",
+      "status": "complete",
+      "mape": 0.0314275146131689,
+      "coverage": 0.877184965154804,
+      "recommendations": [
+        {
+          "week_start": "2025-12-29",
+          "recommendation": "investigate_data"
+        }
+      ],
+      "departure": false,
+      "departure_from": [],
+      "evaluation": "held_out",
+      "model_sha256": "5c64cc9af2736cec6c2e207b045be718b1c1d6a4b84deaafdc524fbe320d869a",
+      "verdict": {
+        "terms": "not_shown_better",
+        "family": "better"
+      },
+      "frozen_sha256": "dfd7685de63067d1a9184ebf085ed4288b97cb91107d0d7f7fbdfaf4babb7499",
+      "standing": "clean"
     }
   ]
 }

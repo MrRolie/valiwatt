@@ -14,9 +14,13 @@
     "frozen_2025": "95beb8658ae84eee90a990890dfff3fb"
   },
   "files": {
-    "validation.en.md": "378fbbce29cba2d0311946da0d4b7281a495826043263b6cf40c2a92fbbf80b9",
-    "validation.fr.md": "c06eec068ebd257268cbcaeba336e485c1dd11bf6f37e106c20709e56cadd3cd"
+    "validation.en.md": "eb348f223404e39945739ddcef197e5f5e20077350fdbc500d73850c46615d20",
+    "validation.fr.md": "93d6a8df6c9883d5eb75492a3833d4f37d5d7c19bb1fa3d5b2696792f1dbba26"
   },
-  "ledger_sha256": "b2d635144ebb75a500282e4127834f8ef42256de2dfd86dbc70172328bdb5001",
-  "standing_2025": null
+  "ledger_sha256": "ad18fae4d85afd1adedf3f7a11eb5769770e07a047050a5a38fdcf423f8199ff",
+  "standing_2025": {
+    "record_run_id": "a0f7add82aed47988e73ef827713c72a",
+    "finished": true,
+    "standing": "clean"
+  }
 }

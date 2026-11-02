@@ -16,17 +16,18 @@ Rapport généré à partir des exécutions MLflow de v3 (les exécutions de ré
 
 ## En bref
 
-- **Statut : candidat.** Choisi sur 2020–2024 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente.
+- **Statut : il n'est pas montré que les termes abaissent l'erreur horaire de la prévision de midi dans les fenêtres d'événements de pointe ; le modèle additif l'abaisse face à la forme de v1, sur données réservées (2025).**
 - **La prévision du jour J est émise à midi la veille** (12 h HNE le jour J−1, 13 h HAE en heure avancée ; soit 17 h UTC), et non plus à la fin de la veille comme celle de v2. Pourquoi midi : selon le tarif Flex D d'Hydro-Québec, un tarif résidentiel public (Tarifs d'électricité 2026, édition en vigueur le 2026-04-01, section 9), l'avis d'un événement de pointe est envoyé avant 15 h la veille (art. 2.71) ; une prévision qu'on compare à cet avis doit être émise avant lui, et celle de midi l'est 3 heures avant, 2 en heure avancée. Le texte du tarif est cité, non reproduit. Ce rapport ne dit jamais comment un événement de pointe est déclenché, seulement comment la prévision de midi se comporte dans les heures de pointe du tarif et comment elle classe ses fenêtres.
 - Validation sur 2020–2024 (_dans l'échantillon du choix des termes, des classes d'intervalles et du sous-ensemble qui décide_) : l'erreur absolue moyenne en pourcentage (EAMP) est de 3,25 % pour v3, 3,28 % pour la forme de v2 à midi, 4,11 % pour la forme de v1 à midi et 2,77 % pour la forme de v2 à minuit, chacune sur ses heures. Verdict des termes : « meilleur » ; verdict de la famille : « meilleur ». Ces années ont suggéré les termes, les classes d'intervalles et le sous-ensemble qui décide : ces verdicts ne soutiennent aucune affirmation (section 2).
 - Répétition de 2024 (_vu par les développeurs_) : EAMP de 2,95 %, couverture de 92,1 % ; verdict des termes « meilleur », de la famille « meilleur ». Une année déjà vue ne soutient aucune affirmation (section 3).
-- 2025 : en attente ; le test de référence sera le premier rejeu de 2025 commencé sous `v3-rules-frozen`, après le test de référence de v2 (section 4).
+- 2025 (_données réservées_) : EAMP de 3,14 %, couverture de 87,7 % ; verdict des termes « pas montré meilleur », de la famille « meilleur » ; position propre (section 4).
+- **Recommandation, dans la forme du moniteur : garder la forme de v2 à midi (la prévision de midi sans les termes).** Chaque affirmation que ce verdict touche est retirée. Rien ne bascule de soi-même : le modèle en usage ensuite relève de la décision du propriétaire.
 
 ## Fiche du modèle
 
 | | |
 |---|---|
-| **Statut** | **Statut : candidat.** Choisi sur 2020–2024 (dans l'échantillon du choix), montré sur 2024 vue par les développeurs ; le test sur données réservées, 2025, est en attente. |
+| **Statut** | **Statut : il n'est pas montré que les termes abaissent l'erreur horaire de la prévision de midi dans les fenêtres d'événements de pointe ; le modèle additif l'abaisse face à la forme de v1, sur données réservées (2025).** |
 | **Ce qu'il prévoit** | La demande horaire d'électricité du Québec publiée par Hydro-Québec, pour les 24 heures du jour J, émise à midi la veille (section 1), avec un intervalle de prévision dont la demi-largeur dépend de la température prévue. |
 | **Usage prévu** | Démontrer, sur une prévision réelle, une validation et une surveillance du type de celles d'une équipe de gestion du risque de modèle. |
 | **Hors champ** | Toute répartition opérationnelle de la production, tout négoce ou tarification, toute décision, et tout déclenchement d'un événement de pointe. Hydro-Québec publie ces données à titre informatif ; ce ne sont pas des données officielles. |
@@ -34,7 +35,7 @@ Rapport généré à partir des exécutions MLflow de v3 (les exécutions de ré
 | **Intervalle** (_dans l'échantillon du choix des termes, des classes d'intervalles et du sous-ensemble qui décide_) | Modèle figé pour 2025 : sous −11,1 °C, prévision × (1 ± 8,12 %) ; ailleurs, prévision × (1 ± 6,38 %) (section 2.4). |
 | **Validation** (_dans l'échantillon du choix des termes, des classes d'intervalles et du sous-ensemble qui décide_) | EAMP de v3 de 3,25 % [3,11 % ; 3,41 %] ; verdicts : termes « meilleur », famille « meilleur » (section 2). |
 | **Répétition de 2024** (_vu par les développeurs_) | EAMP de 2,95 %, couverture de 92,1 % (section 3). |
-| **2025** | En attente (section 4). |
+| **2025** | Test de référence `a0f7add82aed47988e73ef827713c72a` (section 4). |
 | **Mise en garde météo** | Une prévision météo du NBM (une exécution) est disponible, par hypothèse, 2 heures après son heure d'émission, et une heure observée d'ECCC dès son propre libellé ; tout résultat qui lit la prévision ou la moyenne de l'avant-veille repose sur ces hypothèses (section 1). La température observée de l'heure visée n'est qu'une borne optimiste. |
 | **Limites** | Section 6. |
 | **Auteur** | Construit avec Claude Code sous la direction du propriétaire du dépôt. |
@@ -342,13 +343,67 @@ Les heures les plus chargées de 2024 (rapportées, jamais jugées) :
 
 ## 4. 2025, le test de référence
 
-En attente. Le test de référence sera le premier rejeu de 2025 commencé sous `v3-rules-frozen`, après le test de référence de v2 et derrière la barrière de 2025 de v3 (section 11.3 du plan) ; aucun nombre de 2025 n'est montré avant.
+- Test de référence `a0f7add82aed47988e73ef827713c72a`, commencé le 2026-11-02T23:16:05.287Z, position propre (_données réservées_) : EAMP de 3,14 %, couverture de 87,7 % ; verdict des termes « pas montré meilleur », de la famille « meilleur ». Ses nombres viennent de son entrée de `docs/replay-ledger-v3.json`, et le détail ci-dessous de son exécution, dont les intervalles par blocs de semaines viennent de 1 000 rééchantillonnages.
+
+| Modèle (_données réservées_) | EAMP | IC 95 % | Couverture |
+|---|---|---|---|
+| v3 (production) | 3,14 % | [2,80 % ; 3,50 %] | 87,7 % |
+| la forme de v2 à midi | 3,20 % | [2,83 % ; 3,58 %] | 87,0 % |
+| la forme de v1 à midi | 3,96 % | [3,69 % ; 4,25 %] | 88,6 % |
+| la forme de v2 à minuit | 2,72 % | [2,43 % ; 3,03 %] | aucun intervalle |
+
+
+| Classe de v3 (_données réservées_) | Couverture (nominale : 90 %) | IC 95 % | Heures |
+|---|---|---|---|
+| froide | 83,7 % | [74,9 % ; 91,7 %] | 649 |
+| le reste | 88,0 % | [84,2 % ; 91,4 %] | 8 104 |
+| toutes | 87,7 % | [83,8 % ; 91,2 %] | 8 753 |
+
+
+Les sous-ensembles (_données réservées_) : 8 753 heures communes sur 53 semaines du lundi au dimanche ; la queue froide, les heures dont la température prévue (prévision de midi) est sous −11,1 °C, 649 heures sur 15 semaines, testable ; les fenêtres d'événements, 920 heures sur 19 semaines, testables.
+
+| Contraste (_données réservées_) | Sous-ensemble | Heures | Différence d'EAMP | IC 95 % | État |
+|---|---|---|---|---|---|
+| termes : v3 moins la forme de v2 à midi | toutes les heures communes | 8 753 | −0,06 pt | [−0,15 pt ; +0,02 pt] | non séparé |
+| termes : v3 moins la forme de v2 à midi | la queue froide | 649 | −0,33 pt | [−0,84 pt ; +0,07 pt] | non séparé |
+| termes : v3 moins la forme de v2 à midi | les fenêtres d'événements | 920 | −0,14 pt | [−0,33 pt ; +0,04 pt] | non séparé |
+| famille : la forme de v2 à midi moins la forme de v1 à midi | toutes les heures communes | 8 753 | −0,76 pt | [−1,00 pt ; −0,51 pt] | meilleur |
+| famille : la forme de v2 à midi moins la forme de v1 à midi | la queue froide | 649 | −0,70 pt | [−0,83 pt ; −0,60 pt] | meilleur |
+| famille : la forme de v2 à midi moins la forme de v1 à midi | les fenêtres d'événements | 920 | −0,30 pt | [−0,42 pt ; −0,17 pt] | meilleur |
+| changement entier à midi : v3 moins la forme de v1 à midi (rapporté, jamais jugé) | toutes les heures communes | 8 753 | −0,81 pt | [−1,05 pt ; −0,57 pt] | meilleur |
+| changement entier à midi : v3 moins la forme de v1 à midi (rapporté, jamais jugé) | la queue froide | 649 | −1,03 pt | [−1,56 pt ; −0,64 pt] | meilleur |
+| changement entier à midi : v3 moins la forme de v1 à midi (rapporté, jamais jugé) | les fenêtres d'événements | 920 | −0,44 pt | [−0,65 pt ; −0,22 pt] | meilleur |
+
+| Horizon : la forme de v2 à midi moins la forme de v2 à minuit, rapporté, jamais jugé (_données réservées_) | Heures | Différence d'EAMP | IC 95 % |
+|---|---|---|---|
+| les heures propres à l'horizon (la demande, la forme de v2 à midi et celle à minuit) | 8 751 | +0,48 pt | [+0,36 pt ; +0,59 pt] |
+| la queue froide | 649 | +0,48 pt | [−0,01 pt ; +0,88 pt] |
+| les fenêtres d'événements | 920 | +0,77 pt | [+0,47 pt ; +1,05 pt] |
+
+Les heures les plus chargées de 2025 (rapportées, jamais jugées) :
+
+| Heure de fin, UTC (_données réservées_) | Demande | Température prévue | v3 (production) | la forme de v2 à midi | la forme de v1 à midi | la forme de v2 à minuit |
+|---|---|---|---|---|---|---|
+| 2025-01-22 13:00 UTC | 40 015 MW | −17,0 °C | +8,8 % | +8,0 % | +9,3 % | +5,2 % |
+| 2025-01-22 14:00 UTC | 38 943 MW | −15,7 °C | +8,6 % | +7,9 % | +7,9 % | +5,0 % |
+| 2025-01-21 13:00 UTC | 38 892 MW | −16,5 °C | +10,8 % | +10,5 % | +12,5 % | +6,4 % |
+| 2025-01-30 13:00 UTC | 38 838 MW | −17,8 °C | +4,3 % | +5,0 % | +6,4 % | +2,6 % |
+| 2025-12-09 13:00 UTC | 38 824 MW | −13,3 °C | +12,3 % | +11,2 % | +13,1 % | +6,4 % |
+
+
+| 2025, hiver (_données réservées_) | Jours | W | w | k | v3 (production) | la forme de v2 à midi | la forme de v1 à midi | Fenêtres non admissibles |
+|---|---|---|---|---|---|---|---|---|
+| 2024-25 | 2025-01-01 au 2025-03-31 | 230 | 176 | 23 | 12 sur 23 | 14 sur 23 | 13 sur 23 | 0 |
+| 2025-26 | 2025-12-01 au 2025-12-31 | 230 | 54 | 7 | 3 sur 7 | 4 sur 7 | 5 sur 7 | 0 |
+
+
 
 ## 5. Le registre des rejeux de v3
 
 | Exécution | Année | Commencée | Étiquette | EAMP | Couverture | Termes | Famille | Position |
 |---|---|---|---|---|---|---|---|---|
 | `fe5d0e5bf99f411fa3c814f6ff51628c` | 2024 | 2026-10-28T17:37:41.982Z | _vu par les développeurs_ | 2,95 % | 92,1 % | meilleur | meilleur | aucune |
+| `a0f7add82aed47988e73ef827713c72a` | 2025 | 2026-11-02T23:16:05.287Z | _données réservées_ | 3,14 % | 87,7 % | pas montré meilleur | meilleur | propre |
 
 ## 6. Limites
 

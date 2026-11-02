@@ -16,17 +16,18 @@ Report generated from v3's MLflow runs (the runs of record the freeze record `do
 
 ## In brief
 
-- **Status: candidate.** Chosen on 2020–2024 (in sample for the choice), shown on 2024 seen by the developers; the held-out test, 2025, is pending.
+- **Status: the terms not shown to lower the noon forecast's hourly error in the peak-event windows; the additive model lowers it against v1's form, on held-out data (2025).**
 - **The forecast for day D is issued at noon the day before** (12:00 EST on D−1, 13:00 EDT under daylight time; that is 17:00 UTC), no longer at the end of the day before as v2's is. Why noon: under Hydro-Québec's Rate Flex D, a public residential rate (2026 Electricity Rates, edition effective 2026-04-01, Section 9), the notice of a peak event is sent before 15:00 the day before (art. 2.71); a forecast compared with that notice must be issued before it, and the noon forecast is issued 3 hours before it, 2 under daylight time. The rate's text is cited, not reproduced. This report never says how a peak event is called, only how well the noon forecast does in the rate's peak hours and how well it ranks its windows.
 - Validation on 2020–2024 (_in sample for the choice of the terms, the interval bins and the deciding subset_): the mean absolute percentage error (MAPE) is 3.25% for v3, 3.28% for v2's form at noon, 4.11% for v1's form at noon and 2.77% for v2's form at midnight, each on its own hours. Terms verdict: "better"; family verdict: "better". These years suggested the terms, the interval bins and the deciding subset: these verdicts support no claim (section 2).
 - The 2024 rehearsal (_seen by the developers_): MAPE 2.95%, coverage 92.1%; terms verdict "better", family verdict "better". A year already seen supports no claim (section 3).
-- 2025: pending; the test of record will be the first 2025 replay started under `v3-rules-frozen`, after v2's test of record (section 4).
+- 2025 (_held-out data_): MAPE 3.14%, coverage 87.7%; terms verdict "not shown better", family verdict "better"; standing clean (section 4).
+- **Recommendation, in the monitor's form: keep v2's form at noon (the noon forecast without the terms).** Every claim this verdict bears on is withdrawn. Nothing switches on its own: the model in use afterwards is the owner's ruling.
 
 ## Model card
 
 | | |
 |---|---|
-| **Status** | **Status: candidate.** Chosen on 2020–2024 (in sample for the choice), shown on 2024 seen by the developers; the held-out test, 2025, is pending. |
+| **Status** | **Status: the terms not shown to lower the noon forecast's hourly error in the peak-event windows; the additive model lowers it against v1's form, on held-out data (2025).** |
 | **What it forecasts** | Québec's hourly electricity demand as Hydro-Québec publishes it, for the 24 hours of day D, issued at noon the day before (section 1), with a forecast interval whose half-width depends on the forecast temperature. |
 | **Intended use** | To demonstrate, on a real forecast, validation and monitoring of the kind a model-risk team performs. |
 | **Out of scope** | Any operational dispatch, trading or pricing, any decision, and any call of a peak event. Hydro-Québec publishes this data for information only; it is not official data. |
@@ -34,7 +35,7 @@ Report generated from v3's MLflow runs (the runs of record the freeze record `do
 | **Interval** (_in sample for the choice of the terms, the interval bins and the deciding subset_) | The model frozen for 2025: below −11.1 °C, forecast × (1 ± 8.12%); elsewhere, forecast × (1 ± 6.38%) (section 2.4). |
 | **Validation** (_in sample for the choice of the terms, the interval bins and the deciding subset_) | v3's MAPE 3.25% [3.11%, 3.41%]; verdicts: terms "better", family "better" (section 2). |
 | **The 2024 rehearsal** (_seen by the developers_) | MAPE 2.95%, coverage 92.1% (section 3). |
-| **2025** | Pending (section 4). |
+| **2025** | Test of record `a0f7add82aed47988e73ef827713c72a` (section 4). |
 | **Weather caveat** | An NBM weather forecast (one run) is assumed available 2 hours after its run time, and an ECCC observed hour from its own label; every result that reads the forecast or the lag day's mean rests on these assumptions (section 1). The observed temperature at the target hour is an optimistic bound only. |
 | **Limitations** | Section 6. |
 | **Author** | Built with Claude Code under the repository owner's direction. |
@@ -342,13 +343,67 @@ The busiest hours of 2024 (reported, never judged):
 
 ## 4. 2025, the test of record
 
-Pending. The test of record will be the first 2025 replay started under `v3-rules-frozen`, after v2's test of record and behind v3's 2025 gate (plan section 11.3); no 2025 number is shown before it.
+- Test of record `a0f7add82aed47988e73ef827713c72a`, started 2026-11-02T23:16:05.287Z, standing clean (_held-out data_): MAPE 3.14%, coverage 87.7%; terms verdict "not shown better", family verdict "better". Its numbers come from its entry in `docs/replay-ledger-v3.json`, and the detail below from its run, whose week-block intervals come from 1,000 resamples.
+
+| Model (_held-out data_) | MAPE | 95% CI | Coverage |
+|---|---|---|---|
+| v3 (production) | 3.14% | [2.80%, 3.50%] | 87.7% |
+| v2's form at noon | 3.20% | [2.83%, 3.58%] | 87.0% |
+| v1's form at noon | 3.96% | [3.69%, 4.25%] | 88.6% |
+| v2's form at midnight | 2.72% | [2.43%, 3.03%] | no interval |
+
+
+| v3's bin (_held-out data_) | Coverage (nominal: 90%) | 95% CI | Hours |
+|---|---|---|---|
+| cold | 83.7% | [74.9%, 91.7%] | 649 |
+| the rest | 88.0% | [84.2%, 91.4%] | 8,104 |
+| all | 87.7% | [83.8%, 91.2%] | 8,753 |
+
+
+The subsets (_held-out data_): 8,753 common hours over 53 Monday-to-Sunday weeks; the cold tail, the hours whose forecast temperature (noon issue) is below −11.1 °C, 649 hours over 15 weeks, testable; the event windows, 920 hours over 19 weeks, testable.
+
+| Contrast (_held-out data_) | Subset | Hours | MAPE difference | 95% CI | State |
+|---|---|---|---|---|---|
+| terms: v3 minus v2's form at noon | all common hours | 8,753 | −0.06 pp | [−0.15 pp, +0.02 pp] | not separated |
+| terms: v3 minus v2's form at noon | the cold tail | 649 | −0.33 pp | [−0.84 pp, +0.07 pp] | not separated |
+| terms: v3 minus v2's form at noon | the event windows | 920 | −0.14 pp | [−0.33 pp, +0.04 pp] | not separated |
+| family: v2's form at noon minus v1's form at noon | all common hours | 8,753 | −0.76 pp | [−1.00 pp, −0.51 pp] | better |
+| family: v2's form at noon minus v1's form at noon | the cold tail | 649 | −0.70 pp | [−0.83 pp, −0.60 pp] | better |
+| family: v2's form at noon minus v1's form at noon | the event windows | 920 | −0.30 pp | [−0.42 pp, −0.17 pp] | better |
+| the whole change at noon: v3 minus v1's form at noon (reported, never judged) | all common hours | 8,753 | −0.81 pp | [−1.05 pp, −0.57 pp] | better |
+| the whole change at noon: v3 minus v1's form at noon (reported, never judged) | the cold tail | 649 | −1.03 pp | [−1.56 pp, −0.64 pp] | better |
+| the whole change at noon: v3 minus v1's form at noon (reported, never judged) | the event windows | 920 | −0.44 pp | [−0.65 pp, −0.22 pp] | better |
+
+| Horizon: v2's form at noon minus v2's form at midnight, reported, never judged (_held-out data_) | Hours | MAPE difference | 95% CI |
+|---|---|---|---|
+| the horizon's own hours (the target, v2's form at noon and v2's form at midnight) | 8,751 | +0.48 pp | [+0.36 pp, +0.59 pp] |
+| the cold tail | 649 | +0.48 pp | [−0.01 pp, +0.88 pp] |
+| the event windows | 920 | +0.77 pp | [+0.47 pp, +1.05 pp] |
+
+The busiest hours of 2025 (reported, never judged):
+
+| Hour ending, UTC (_held-out data_) | Demand | Forecast temperature | v3 (production) | v2's form at noon | v1's form at noon | v2's form at midnight |
+|---|---|---|---|---|---|---|
+| 2025-01-22 13:00 UTC | 40,015 MW | −17.0 °C | +8.8% | +8.0% | +9.3% | +5.2% |
+| 2025-01-22 14:00 UTC | 38,943 MW | −15.7 °C | +8.6% | +7.9% | +7.9% | +5.0% |
+| 2025-01-21 13:00 UTC | 38,892 MW | −16.5 °C | +10.8% | +10.5% | +12.5% | +6.4% |
+| 2025-01-30 13:00 UTC | 38,838 MW | −17.8 °C | +4.3% | +5.0% | +6.4% | +2.6% |
+| 2025-12-09 13:00 UTC | 38,824 MW | −13.3 °C | +12.3% | +11.2% | +13.1% | +6.4% |
+
+
+| 2025, winter (_held-out data_) | Days | W | w | k | v3 (production) | v2's form at noon | v1's form at noon | Windows not eligible |
+|---|---|---|---|---|---|---|---|---|
+| 2024-25 | 2025-01-01 to 2025-03-31 | 230 | 176 | 23 | 12 of 23 | 14 of 23 | 13 of 23 | 0 |
+| 2025-26 | 2025-12-01 to 2025-12-31 | 230 | 54 | 7 | 3 of 7 | 4 of 7 | 5 of 7 | 0 |
+
+
 
 ## 5. v3's replay ledger
 
 | Run | Year | Started | Label | MAPE | Coverage | Terms | Family | Standing |
 |---|---|---|---|---|---|---|---|---|
 | `fe5d0e5bf99f411fa3c814f6ff51628c` | 2024 | 2026-10-28T17:37:41.982Z | _seen by the developers_ | 2.95% | 92.1% | better | better | none |
+| `a0f7add82aed47988e73ef827713c72a` | 2025 | 2026-11-02T23:16:05.287Z | _held-out data_ | 3.14% | 87.7% | not shown better | better | clean |
 
 ## 6. Limitations
 
