@@ -24,11 +24,13 @@ def make_tag(clone: Path, name: str, commit: str) -> None:
 
 
 def v2_code_with_v3_tags(tmp_path: Path) -> Path:
-    """A scratch clone checked out at v2's code (the fork commit), its copied v3 tags deleted, then the four v3 tags
-    made again: `v3-fork` on the fork commit, the three others on scratch commits above it that touch no rule file and
-    no dependency (README.md)."""
+    """A scratch clone checked out at v2's code (the fork commit), `rules-frozen-v2` where the fork's pin puts it (the
+    tag moves later on the `v2` branch, by a departure, and the fork's code is checked against its own freeze), its
+    copied v3 tags deleted, then the four v3 tags made again: `v3-fork` on the fork commit, the three others on scratch
+    commits above it that touch no rule file and no dependency (README.md)."""
     clone = scratch_clone(tmp_path)
     git(clone, "checkout", "--quiet", "--detach", FORK)
+    make_tag(clone, "rules-frozen-v2", PINS["rules-frozen-v2"])
     for name in V3_TAGS:
         if tag_commit(clone, name):
             git(clone, "tag", "-d", name)
