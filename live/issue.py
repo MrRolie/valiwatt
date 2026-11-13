@@ -6,22 +6,36 @@ is one JSON line, hashed, appended to the log before the first hour it forecasts
 scores it: plumbing only, never a test."""
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from live.freeze import FROZEN_DIR, bin_of
+from live.freeze import FROZEN_DIR, RECORD, bin_of
+from valiwatt.paths import REPO_ROOT
 from valiwatt.forecast.features import day_origin
 from valiwatt.forecast.freeze import FrozenModel, FrozenModelError
 
 LOG = FROZEN_DIR.parent / "issues.jsonl"
+TAG = "rules-frozen-live"
 
 
-def load_frozen() -> tuple[FrozenModel, dict]:
+def tagged_record() -> dict:
+    """The freeze record as the tag holds it, never the working tree's copy."""
+    out = subprocess.run(["git", "show", f"{TAG}:live/FREEZE.json"], cwd=REPO_ROOT, capture_output=True, text=True)
+    if out.returncode != 0:
+        raise FrozenModelError(f"no freeze record at tag {TAG}: {out.stderr.strip()}")
+    return json.loads(out.stdout)
+
+
+def load_frozen(tagged: bool = True) -> tuple[FrozenModel, dict]:
+    """The frozen files, checked against the freeze record at the tag (tagged=False: the working tree's record, for
+    rehearsals before the tag)."""
     official = FrozenModel.from_json((FROZEN_DIR / "official.json").read_text())
     rule = json.loads((FROZEN_DIR / "experimental.json").read_text())
     expected = rule.pop("sha256")
@@ -30,22 +44,32 @@ def load_frozen() -> tuple[FrozenModel, dict]:
     if rule["official_sha256"] != official.sha256():
         raise FrozenModelError("experimental.json was frozen with another official model")
     rule["sha256"] = expected
+    rec = tagged_record() if tagged else json.loads(RECORD.read_text())
+    if (rec["official"]["sha256"], rec["experimental"]["sha256"]) != (official.sha256(), expected):
+        raise FrozenModelError("the frozen files differ from the freeze record live/FREEZE.json")
     return official, rule
+
+
+def apply_rule(forecast, temp, rule: dict) -> pd.DataFrame:
+    """The experimental rule on official forecasts: each hour's group from its forecast temperature by the rule's own
+    stored edges, then point = forecast × (1 + median), range = forecast × (1 + lo) to forecast × (1 + hi)."""
+    f = np.asarray(forecast, dtype=float)
+    group = bin_of(np.asarray(temp, dtype=float), rule["edges_c"], rule["labels"]).map(rule["bin_to_group"])
+    g = {k: group.map({lab: v[k] for lab, v in rule["groups"].items()}).astype(float).to_numpy()
+         for k in ("lo", "hi", "median")}
+    return pd.DataFrame({"group": group.to_numpy(), "experimental": f * (1 + g["median"]),
+                         "experimental_lower": f * (1 + g["lo"]), "experimental_upper": f * (1 + g["hi"])})
 
 
 def issue(official: FrozenModel, rule: dict, rows: pd.DataFrame) -> pd.DataFrame:
     """One row per hour of the day: official forecast and range, experimental forecast and range. rows: the day's
     feature rows as `AsOf.issued` builds them (temp_forecast among them)."""
     p = official.predict(rows)
-    group = bin_of(rows["temp_forecast"].to_numpy()).map(rule["bin_to_group"])
-    g = {k: group.map({lab: v[k] for lab, v in rule["groups"].items()}).astype(float).to_numpy()
-         for k in ("lo", "hi", "median")}
-    f = p["forecast"].to_numpy()
+    exp = apply_rule(p["forecast"].to_numpy(), rows["temp_forecast"].to_numpy(), rule)
     out = pd.DataFrame({"hour_ending_utc": rows.index, "hour": rows["hour"].to_numpy(),
-                        "temp_forecast": rows["temp_forecast"].to_numpy(),
-                        "official": f, "official_lower": p["lower"].to_numpy(), "official_upper": p["upper"].to_numpy(),
-                        "group": group.to_numpy(), "experimental": f * (1 + g["median"]),
-                        "experimental_lower": f * (1 + g["lo"]), "experimental_upper": f * (1 + g["hi"])})
+                        "temp_forecast": rows["temp_forecast"].to_numpy(), "official": p["forecast"].to_numpy(),
+                        "official_lower": p["lower"].to_numpy(), "official_upper": p["upper"].to_numpy()})
+    out = pd.concat([out, exp], axis=1)
     return out
 
 
@@ -59,15 +83,43 @@ def record(day: pd.Timestamp, issued_at: pd.Timestamp, official: FrozenModel, ru
     return body
 
 
-def append_log(body: dict, now: pd.Timestamp, log: Path = LOG) -> None:
-    """Refuses an issue logged at or after the end of its first hour: an hour's demand exists only at its end (v2's
-    origin is D 00:00 EST, so a live issue a few minutes after midnight, once D-1's last hour is in, still qualifies)."""
-    first_end = min(pd.Timestamp(h["hour_ending_utc"]) for h in body["hours"])
+def check_body(body: dict) -> None:
+    """A complete issue: 24 consecutive hour-ending labels starting one hour after its origin, its own hash."""
+    if pd.Timestamp(body["origin"]) != day_origin(pd.Timestamp(body["day"])):
+        raise RuntimeError(f"issue for {body['day']}: its origin is not the day's origin")
+    hours = [pd.Timestamp(h["hour_ending_utc"]) for h in body["hours"]]
+    expected = [pd.Timestamp(body["origin"]) + pd.Timedelta(hours=k) for k in range(1, 25)]
+    if hours != expected:
+        raise RuntimeError(f"issue for {body['day']}: its hours are not the 24 hours after its origin")
+    rest = {k: v for k, v in body.items() if k != "sha256"}
+    if hashlib.sha256(json.dumps(rest, sort_keys=True, default=str).encode()).hexdigest() != body["sha256"]:
+        raise RuntimeError(f"issue for {body['day']}: its hash does not match its content")
+
+
+def append_log(body: dict, now: pd.Timestamp | None = None, log: Path = LOG) -> bool:
+    """Append the day's issue unless the deadline has passed or the day already has one. The deadline is the end of
+    the day's first hour (docs/plan-live.md, "The daily issue"): an hour's demand exists only at its end. `now` is the
+    machine's clock; it is a parameter for tests and rehearsals only. The first issue logged for a day is the one that
+    counts: a later one is refused (returns False), never replaces it. The body's issued_at must not be after now."""
+    if now is not None and Path(log).resolve() == LOG.resolve():
+        raise RuntimeError("the live log takes the machine's clock only")
+    now = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    check_body(body)
+    first_end = pd.Timestamp(body["hours"][0]["hour_ending_utc"])
     if now >= first_end:
         raise RuntimeError(f"issue for {body['day']} at {now}: its first hour ended at {first_end}")
+    if pd.Timestamp(body["issued_at"]) > now:
+        raise RuntimeError(f"issue for {body['day']}: issued_at {body['issued_at']} is after now ({now})")
+    log = Path(log)
     log.parent.mkdir(parents=True, exist_ok=True)
-    with open(log, "a") as fh:
+    with open(log, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)  # the duplicate check and the write are one step
+        fh.seek(0)
+        if any(json.loads(line)["day"] == body["day"] for line in fh.read().splitlines() if line):
+            return False
         fh.write(json.dumps(body, sort_keys=True, default=str) + "\n")
+        fh.flush()
+    return True
 
 
 def rehearse(day: str) -> int:
@@ -92,7 +144,7 @@ def rehearse(day: str) -> int:
     forecasts = forecast_inputs(runs, design_days(LAST), last=LAST)
     table = asof.issued(temp, forecasts)  # each day's rows as issued at its own origin
     rows = table[table["day"] == d]
-    official, rule = load_frozen()
+    official, rule = load_frozen(tagged=False)
     out = issue(official, rule, rows)
     body = record(d, day_origin(d), official, rule, out)
     append_log(body, day_origin(d), log=FROZEN_DIR.parent / "rehearsal.jsonl")

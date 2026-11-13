@@ -63,12 +63,18 @@ def groups_of(counts: dict) -> dict:
     return mapping
 
 
-def bin_of(temp) -> pd.Series:
-    return pd.cut(pd.Series(temp, dtype=float), list(EDGES), labels=list(LABELS), right=False).astype(str)
+def bin_of(temp, edges=EDGES, labels=LABELS) -> pd.Series:
+    """Each hour's bin label, left-closed; "nan" where the temperature is missing."""
+    edges = [(-np.inf if i == 0 else np.inf) if v is None else float(v) for i, v in enumerate(edges)]
+    return pd.cut(pd.Series(temp, dtype=float), edges, labels=list(labels), right=False).astype(str)
 
 
 def experimental_rule(cal: pd.DataFrame, official_sha256: str) -> dict:
     """Rule (c) and its centring from the calibration rows (columns target, pred, temp)."""
+    bad = ~(np.isfinite(cal["target"]) & np.isfinite(cal["pred"]) & (cal["pred"] > 0) & np.isfinite(cal["temp"]))
+    if bad.any():
+        raise FrozenModelError(f"{int(bad.sum())} calibration hours lack a finite target, a positive finite forecast "
+                               "or a forecast temperature")
     e = (cal["target"] - cal["pred"]) / cal["pred"]
     b = bin_of(cal["temp"].to_numpy())
     b.index = cal.index
@@ -81,7 +87,7 @@ def experimental_rule(cal: pd.DataFrame, official_sha256: str) -> dict:
         x = e[g == lab].to_numpy(dtype=float)
         groups[lab] = {"n": int(len(x)), "lo": -conformal_quantile(-x, ALPHA / 2), "hi": conformal_quantile(x, ALPHA / 2),
                        "median": float(np.median(x))}
-        if not all(np.isfinite(v) for v in (groups[lab]["lo"], groups[lab]["hi"])):
+        if not all(np.isfinite(v) for v in groups[lab].values()):
             raise FrozenModelError(f"group {lab}: too few hours for the conformal quantiles")
     rule = {"rule": "c_mondrian_asym_centred", "alpha": ALPHA, "edges_c": [None if not np.isfinite(v) else v for v in EDGES],
             "labels": list(LABELS), "min_n": MIN_N, "bin_to_group": mapping, "groups": groups,
@@ -112,6 +118,8 @@ def build():
     cal = calibration_rows(oos, fit_clock(LIVE_YEAR)).dropna(subset=[col, "target"])
     cal = pd.DataFrame({"target": cal["target"], "pred": cal[col], "temp": f.loc[cal.index, "temp_forecast"]})
     q = conformal_quantile(((cal["target"] - cal["pred"]).abs() / cal["pred"]).to_numpy(), ALPHA)
+    if not (np.isfinite(q) and 0 < q < 1):
+        raise FrozenModelError(f"official half-width {q} is not a finite fraction")
 
     # The model: as fit_frozen fits it, on the table as of the live year's fit clock (7-day embargo).
     family, scenario = MODELS[PRODUCTION]

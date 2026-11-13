@@ -1,5 +1,7 @@
 """Tests of the live freeze's pre-declared rule and of the issue log's order guard (docs/plan-live.md).
 Run: uv run pytest live/tests (outside tests/, so v2's code hash is unchanged)."""
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -43,14 +45,90 @@ def test_rule_quantiles_and_median_per_group():
     assert cold["hi"] - cold["median"] > 0.04  # ~1.645 sd
 
 
-def _body(first_end):
-    return {"day": "2026-12-01", "hours": [{"hour_ending_utc": (first_end + pd.Timedelta(hours=h)).isoformat()}
-                                           for h in range(24)]}
+def _body(origin=pd.Timestamp("2026-12-01T05:00Z"), issued_at=None):
+    import hashlib
+    import json
+    body = {"day": "2026-12-01", "issued_at": (issued_at or origin).isoformat(), "origin": origin.isoformat(),
+            "official_sha256": "a", "experimental_sha256": "b",
+            "hours": [{"hour_ending_utc": (origin + pd.Timedelta(hours=h)).isoformat(), "official": 30000.0}
+                      for h in range(1, 25)]}
+    body["sha256"] = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+    return body
 
 
-def test_log_refuses_after_first_hour_ends(tmp_path):
-    first_end = pd.Timestamp("2026-12-01T06:00Z")
+ORIGIN = pd.Timestamp("2026-12-01T05:00Z")
+
+
+def test_log_refuses_at_or_after_first_hour_end(tmp_path):
     with pytest.raises(RuntimeError):
-        append_log(_body(first_end), first_end, log=tmp_path / "l.jsonl")
-    append_log(_body(first_end), first_end - pd.Timedelta(minutes=40), log=tmp_path / "l.jsonl")
+        append_log(_body(), ORIGIN + pd.Timedelta(hours=1), log=tmp_path / "l.jsonl")
+    assert append_log(_body(), ORIGIN + pd.Timedelta(minutes=20), log=tmp_path / "l.jsonl")
     assert (tmp_path / "l.jsonl").read_text().count("\n") == 1
+
+
+def test_log_keeps_the_first_issue_of_a_day(tmp_path):
+    log = tmp_path / "l.jsonl"
+    assert append_log(_body(), ORIGIN, log=log)
+    assert not append_log(_body(issued_at=ORIGIN + pd.Timedelta(minutes=5)), ORIGIN + pd.Timedelta(minutes=10), log=log)
+    assert log.read_text().count("\n") == 1
+
+
+def test_log_refuses_tampered_incomplete_or_future_issues(tmp_path):
+    log = tmp_path / "l.jsonl"
+    b = _body()
+    b["hours"][3]["official"] = 1.0
+    with pytest.raises(RuntimeError):
+        append_log(b, ORIGIN, log=log)
+    b = _body()
+    b["hours"] = b["hours"][:23]
+    with pytest.raises(RuntimeError):
+        append_log(b, ORIGIN, log=log)
+    with pytest.raises(RuntimeError):
+        append_log(_body(issued_at=ORIGIN + pd.Timedelta(minutes=30)), ORIGIN, log=log)
+    assert not log.exists()
+
+
+def test_apply_rule_uses_stored_edges_and_official_forecast():
+    from live.issue import apply_rule
+    rule = {"edges_c": [None, 0.0, None], "labels": ["cold", "warm"], "bin_to_group": {"cold": "cold", "warm": "warm"},
+            "groups": {"cold": {"lo": -0.03, "hi": 0.1, "median": 0.03}, "warm": {"lo": -0.02, "hi": 0.05, "median": 0.01}}}
+    out = apply_rule([30000.0, 20000.0, 25000.0], [-5.0, 12.0, np.nan], rule)
+    assert out["experimental"].round(6).tolist()[:2] == [30900.0, 20200.0]
+    assert out["experimental_lower"].round(6).tolist()[:2] == [29100.0, 19600.0]
+    assert out["experimental_upper"].round(6).tolist()[:2] == [33000.0, 21000.0]
+    assert np.isnan(out["experimental"].iloc[2])
+
+
+def test_rule_refuses_nonfinite_calibration():
+    cal = pd.DataFrame({"target": [1.0] * 300, "pred": [1.0] * 299 + [0.0], "temp": [5.0] * 300})
+    with pytest.raises(FrozenModelError):
+        experimental_rule(cal, "x" * 64)
+
+
+def test_log_refuses_an_origin_other_than_the_days():
+    b = _body()
+    b["origin"] = (ORIGIN + pd.Timedelta(hours=12)).isoformat()
+    with pytest.raises(RuntimeError):
+        append_log(b, ORIGIN, log=Path("/nonexistent/never-written.jsonl"))
+
+
+def test_live_log_refuses_a_supplied_clock():
+    from live.issue import LOG
+    with pytest.raises(RuntimeError):
+        append_log(_body(), ORIGIN, log=LOG)
+
+
+def test_load_frozen_refuses_files_not_in_the_record(tmp_path, monkeypatch):
+    import json as _json
+    import live.issue as iss
+    monkeypatch.setattr(iss, "tagged_record", lambda: {"official": {"sha256": "f" * 64}, "experimental": {"sha256": "e" * 64}})
+    with pytest.raises(FrozenModelError):
+        iss.load_frozen(tagged=True)
+
+
+@pytest.mark.parametrize("col", ["target", "temp"])
+def test_rule_refuses_nonfinite_target_or_temperature(col):
+    cal = pd.DataFrame({"target": [1.0] * 300, "pred": [1.0] * 300, "temp": [5.0] * 300})
+    cal.loc[7, col] = np.nan
+    with pytest.raises(FrozenModelError):
+        experimental_rule(cal, "x" * 64)
