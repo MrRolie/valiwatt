@@ -35,10 +35,14 @@ quantiles of the relative errors e = (actual − forecast)/forecast of the offic
 official forecast. The bias correction is the same bins' median of e: experimental point = official × (1 + median_bin).
 So the corrected point is the centre the range already implies, bin by bin. One global factor is not used: in 2024 the
 band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one factor would under-correct in the cold.
-- Bins on the day's mean forecast temperature: <−11, −11..0, 0..10, >10 °C; a bin with fewer than 200 calibration hours
-  merges into its warmer neighbour.
+- Bins on each hour's forecast temperature (the NBM value the model reads): <−20, −20..−11, −11..0, 0..10, >10 °C;
+  going coldest first, a bin with fewer than 200 calibration hours merges into its warmer neighbour (a warm leftover
+  merges into the group before it). The bounds are the split-conformal quantiles at α/2 on each side.
 - Window: the 12 monthly folds before the live start (the folds of 2025).
-- What was not measured: the corrected point's error. Before the freeze, the exact rule is scored once on the 2024–2025
+- Scored 2026-11-13 on the 2024-2025 folds (decision year 2025): range −592 MW [−840, −349] on the interval score vs
+  the official; corrected point MAPE −0.15 pp [−0.28, −0.02]; consistent with the measurement, no departure.
+  Both ranges covered under 90 % in 2025 (87.7 % official, 86.9 % experimental).
+- What was not measured before that: the corrected point's error. Before the freeze, the exact rule is scored once on the 2024–2025
   folds through the code path that issues live; if its interval score or its error departs materially from rule (c)'s
   measurement, the owner hears it before the tag.
 - The page's range text (e.g. "−3,5 % à +9,7 %") is relative to the official forecast.
