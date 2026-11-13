@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valiwatt Live · détails</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0e13;--panel:#10161d;--line:#1d2731;--mute:#9aa8b6;--text:#c9d4de;--bright:#e8eef4;--blue:#5cc8ff;--amber:#f0b45a;--orange:#ff7a45}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace}a{color:var(--blue)}
+.wrap{max-width:1440px;margin:0 auto;padding:16px 24px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;gap:22px;font-size:13px;flex-wrap:wrap}header strong{font-size:16px;letter-spacing:.12em;color:var(--bright)}
+.m{color:var(--mute)}.badge{border:1px solid var(--amber);color:var(--amber);padding:3px 8px;font-size:12px;white-space:nowrap}
+.seg{display:flex}.seg button{font-family:inherit;font-size:12px;padding:6px 10px;min-height:30px;cursor:pointer;border:1px solid #3a4a5a}.seg button+button{border-left:none}
+.panel{background:var(--panel);border:1px solid var(--line);padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.lab{font-size:12px;color:var(--mute);letter-spacing:.06em}.sub{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--mute)}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.g21{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:14px}.kv span:nth-child(odd){color:var(--mute)}
+table{border-collapse:collapse;font-size:13px}td,th{padding:3px 10px 3px 0;text-align:left;white-space:nowrap}th{color:var(--mute);font-weight:400}
+.mono{font-size:13px;color:var(--bright);word-break:break-all}
+#cov{position:relative;width:100%;height:300px}#cov svg{position:absolute;inset:0}.ax{position:absolute;font-size:12px;color:var(--mute);white-space:nowrap}
+@media (max-width:900px){.g3,.g21{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a id="back" href="index.html"></a><strong id="title"></strong><span class="m" id="when"></span>
+    <span class="seg" style="margin-left:auto"><button id="fr" onclick="VW.setLang('fr')">FR</button><button id="en" onclick="VW.setLang('en')">EN</button></span>
+    <span class="badge" id="badge"></span><span id="where" hidden></span><span id="fresh" hidden></span><span id="modeTag" hidden></span>
+  </header>
+  <section class="g3">
+    <div class="panel"><span class="lab" id="c1"></span><div class="kv" id="peak"></div><span class="sub" id="c1s"></span></div>
+    <div class="panel"><span class="lab" id="c2"></span><table id="ramps"></table><span class="sub" id="c2s"></span></div>
+    <div class="panel"><span class="lab" id="c3"></span><table id="peaks"></table><span class="sub" id="c3s"></span></div>
+  </section>
+  <section class="g21">
+    <div class="panel"><div style="display:flex;gap:18px;font-size:12px;color:var(--mute)"><span id="c4" style="letter-spacing:.06em"></span><span style="margin-left:auto" id="c4t"></span></div>
+      <div id="cov"><svg id="covsvg"></svg><div id="covax"></div></div><span class="sub" id="c4s"></span></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="panel"><span class="lab" id="c5"></span><table id="err"></table></div>
+      <div class="panel"><span class="lab" id="c6"></span><div class="kv" id="prov"></div></div>
+      <div class="panel"><span class="lab" id="c7"></span><span class="sub" id="c7s"></span></div>
+    </div>
+  </section>
+</div>
+<script src="app.js"></script>
+<script>
+"use strict";
+const D = {
+  fr: { back: "← Tableau", title: "VALIWATT LIVE · DÉTAILS TECHNIQUES", c1: "LA POINTE DE DEMANDE D'AUJOURD'HUI", fc: "prévue", ac: "mesurée", dev: "écart", lag: "décalage",
+    same: "à la même heure", later: (m) => `${m} min plus tard`, earlier: (m) => `${m} min plus tôt`, notyet: "pas encore passée",
+    c1s: "On planifie en fonction de la pointe : son niveau et son heure comptent plus que la moyenne.", c2: "HAUSSES DE LA DEMANDE",
+    morning: "matin, 4 h → 8 h", evening: "soir, 14 h → 18 h", c2s: "En MW par heure. Une hausse plus rapide que prévu laisse moins de temps aux équipes pour réagir.",
+    c3: "ÉVÉNEMENTS DE POINTE · HYDRO-QUÉBEC", c3s: "Les avis publiés par Hydro-Québec (code d'offre, secteur). Ils sont annoncés la veille : la prévision de minuit arrive après la décision.",
+    nopeaks: "aucun dans les 30 derniers jours", peaksErr: "liste indisponible pour l'instant", c4: "DANS LA PLAGE · 30 DERNIERS JOURS", c4t: "pointillé : cible 90 %",
+    c4s: (d) => `Part des heures dans la plage, par jour, pour la prévision choisie. Points gris : pas de prévision ce jour-là. L'essai compte à partir du ${d}`,
+    c5: "ERREUR · 30 DERNIERS JOURS", mode: "prévision", mape: "erreur abs. moy.", bias: "écart moyen", inr: "dans la plage", hours: "heures",
+    c6: "PROVENANCE", tag: "gel", off: "officielle", exp: "expérimentale", issued: "émise", hash: "empreinte", q: "demi-largeur officielle",
+    c7: "COMMENT L'ESSAI SERA TRANCHÉ", c7s: (d) => `Du ${d} au 31 mars : score d'intervalle (plage) et erreur absolue moyenne (point), comparés heure par heure, intervalle de confiance par semaines. « Meilleure » seulement si l'intervalle exclut zéro ; sinon « non départagées ». Règles fixées avant tout résultat (docs/plan-live.md).`,
+    official: "officielle", experimental: "expérimentale" },
+  en: { back: "← Dashboard", title: "VALIWATT LIVE · TECHNICAL DETAILS", c1: "TODAY'S DEMAND PEAK", fc: "forecast", ac: "measured", dev: "deviation", lag: "timing",
+    same: "same time", later: (m) => `${m} min later`, earlier: (m) => `${m} min earlier`, notyet: "not passed yet",
+    c1s: "Planning is built around the peak: its level and timing matter more than the average.", c2: "DEMAND RAMPS",
+    morning: "morning, 4:00 → 8:00", evening: "evening, 14:00 → 18:00", c2s: "In MW per hour. A ramp faster than forecast leaves operators less time to react.",
+    c3: "PEAK EVENTS · HYDRO-QUÉBEC", c3s: "Notices published by Hydro-Québec (offer code, sector). They are announced the day before: the midnight forecast comes after that decision.",
+    nopeaks: "none in the last 30 days", peaksErr: "list unavailable right now", c4: "IN RANGE · LAST 30 DAYS", c4t: "dashed: 90% target",
+    c4s: (d) => `Share of hours in range, per day, for the chosen forecast. Grey dots: no forecast that day. The trial counts from ${d}`,
+    c5: "ERROR · LAST 30 DAYS", mode: "forecast", mape: "mean abs. error", bias: "mean deviation", inr: "in range", hours: "hours",
+    c6: "PROVENANCE", tag: "freeze", off: "official", exp: "experimental", issued: "issued", hash: "hash", q: "official half-width",
+    c7: "HOW THE TRIAL WILL BE DECIDED", c7s: (d) => `From ${d} to March 31: interval score (range) and mean absolute error (point), paired hour by hour, week-block confidence interval. "Better" only when the interval excludes zero; otherwise "not separated". Rules fixed before any outcome (docs/plan-live.md).`,
+    official: "official", experimental: "experimental" },
+};
+function render() {
+  const L = D[state.lang], d = state.data, M = state.mode;
+  document.documentElement.lang = state.lang; header();
+  $("back").href = "index.html" + (location.search || "");
+  for (const k of ["back", "title", "c1", "c1s", "c2", "c2s", "c3", "c3s", "c4", "c4t", "c5", "c6", "c7"]) setText(k, L[k]);
+  setText("c4s", L.c4s(VW.dateLabel(d.verdict_from))); setText("c7s", L.c7s(VW.dateLabel(d.verdict_from)));
+  const H = VW.hoursOf(d.issue), act = VW.hourlyActual(d), F = (h) => h[M];
+  // peak
+  const pf = H.reduce((m, h) => (F(h) != null && (!m || F(h) > F(m)) ? h : m), null);
+  const ax = Object.keys(act).map(Number); const pa = ax.length ? ax.reduce((m, x) => (act[x] > act[m] ? x : m), ax[0]) : null;
+  const xIso = (x) => H.find((h) => h.x === x);
+  let rows = [[L.fc, pf ? `${fmt(F(pf))} MW · ${hm(pf.hour_ending_utc)}` : "—"]];
+  const passed = pf && pa != null && Math.max(...ax) >= pf.x + 1;
+  rows.push([L.ac, pa != null ? `${fmt(act[pa])} MW · ${xIso(pa) ? hm(xIso(pa).hour_ending_utc) : pa + " h"}` : "—"]);
+  if (pf && passed) { const dv = act[pa] - F(pf); rows.push([L.dev, `${dv >= 0 ? "+" : "−"}${fmt(Math.abs(dv))} MW (${dv >= 0 ? "+" : "−"}${pctU(Math.abs(100 * dv / F(pf)))})`]); const lag = (pa - pf.x) * 60; rows.push([L.lag, lag === 0 ? L.same : lag > 0 ? L.later(lag) : L.earlier(-lag)]); }
+  else rows.push([L.dev, L.notyet]);
+  $("peak").innerHTML = rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
+  // ramps (MW per hour between hour-ending marks)
+  const fAt = (x) => { const h = H.find((q) => q.x === x); return h ? F(h) : null; };
+  const ramp = (a, b, g) => (g(a) != null && g(b) != null ? (g(b) - g(a) >= 0 ? "+" : "−") + fmt(Math.abs((g(b) - g(a)) / (b - a))) + " MW/h" : "—");
+  const aAt = (x) => (act[x] != null ? act[x] : null);
+  $("ramps").innerHTML = `<tr><th></th><th>${L.fc}</th><th>${L.ac}</th></tr>` + [[L.morning, 5, 9], [L.evening, 15, 19]].map(([n, a, b]) => `<tr><td style="color:var(--mute)">${n}</td><td style="color:var(--amber)">${ramp(a, b, fAt)}</td><td style="color:var(--blue)">${ramp(a, b, aAt)}</td></tr>`).join("");
+  // peak events
+  const pk = d.peaks || [];
+  $("peaks").innerHTML = pk.length && pk[0].error ? `<tr><td>${L.peaksErr}</td></tr>` : pk.length ? pk.slice(-6).map((e) => `<tr><td>${VW.dateLabel(e.datedebut.slice(0, 10))}</td><td>${hm(e.datedebut)}–${hm(e.datefin)}</td><td style="color:var(--amber)">${e.offre}</td><td style="color:var(--mute)">${e.secteurclient}</td></tr>`).join("") : `<tr><td style="color:var(--mute)">${L.nopeaks}</td></tr>`;
+  // 30-day coverage
+  const el = $("cov"), W = el.clientWidth, X0 = 48, X1 = W - 12, cy = (v) => 10 + ((100 - v) / 30) * 270, n = d.days.length;
+  const cx = (k) => X0 + (k / (n - 1)) * (X1 - X0);
+  const vals = d.days.map((x) => VW.dayScore(x));
+  let s = `<line x1="${X0}" x2="${X1}" y1="${cy(90)}" y2="${cy(90)}" stroke="#e8eef4" stroke-dasharray="4 4" stroke-opacity=".7"/>`;
+  let seg = ""; vals.forEach((v, k) => { if (v == null) { seg += " "; return; } seg += (seg.endsWith(" ") || !seg ? "M" : "L") + cx(k).toFixed(1) + " " + cy(Math.max(70, v)).toFixed(1); });
+  s += `<path d="${seg.trim().replace(/ +M/g, " M")}" fill="none" stroke="#c9d4de" stroke-width="2"/>`;
+  s += vals.map((v, k) => (v == null ? `<circle cx="${cx(k)}" cy="${cy(70) + 8}" r="3" fill="#3a4a5a"/>` : v < 85 ? `<circle cx="${cx(k)}" cy="${cy(Math.max(70, v))}" r="4" fill="#ff7a45"/>` : "")).join("");
+  $("covsvg").setAttribute("viewBox", `0 0 ${W} 300`); $("covsvg").innerHTML = s;
+  $("covax").innerHTML = [100, 90, 80, 70].map((v) => `<span class="ax" style="left:0;top:${cy(v) - 8}px">${v}${state.lang === "en" ? "%" : " %"}</span>`).join("") + `<span class="ax" style="left:${X0 - 8}px;top:286px">${VW.dateLabel(d.days[0].day)}</span><span class="ax" style="right:12px;top:286px">${VW.dateLabel(d.days[n - 1].day)}</span>`;
+  // 30-day error, both forecasts
+  const agg = (m) => { let nn = 0, inr = 0, ae = 0, b = 0; for (const x of d.days) { const q = x.score && x.score[m]; if (!q || !q.n) continue; nn += q.n; inr += q.in_range; ae += q.mape * q.n; b += q.bias * q.n; } return nn ? { nn, inr: 100 * inr / nn, mape: ae / nn, bias: b / nn } : null; };
+  $("err").innerHTML = `<tr><th>${L.mode}</th><th>${L.mape}</th><th>${L.bias}</th><th>${L.inr}</th><th>${L.hours}</th></tr>` + ["official", "experimental"].map((m) => { const a = agg(m); return `<tr><td style="color:${m === M ? "var(--bright)" : "var(--mute)"}">${L[m]}</td>` + (a ? `<td>${pctU(a.mape)}</td><td>${(a.bias >= 0 ? "+" : "−") + pctU(Math.abs(a.bias))}</td><td>${pctU(a.inr)}</td><td>${a.nn}</td>` : `<td colspan="4" style="color:var(--mute)">—</td>`) + "</tr>"; }).join("");
+  // provenance
+  const fz = d.freeze, iss = d.issue && !d.issue.missed ? d.issue : null;
+  $("prov").innerHTML = [[L.tag, fz.tag], [L.off, fz.official_sha256.slice(0, 12)], [L.exp, fz.experimental_sha256.slice(0, 12)], [L.q, "±" + pctU(100 * fz.q)], [L.issued, iss ? `${VW.dateLabel(iss.day)} · ${hm(iss.issued_at)}` : "—"], [L.hash, iss ? `<a href="https://github.com/MrRolie/valiwatt/blob/live-hashes/hashes.txt">${iss.sha256.slice(0, 12)}</a>` : "—"]].map(([k, v]) => `<span>${k}</span><span class="mono">${v}</span>`).join("");
+}
+window.render = render;
+window.addEventListener("resize", () => render());
+(async () => { try { await VW.load(); render(); } catch (e) { document.body.append(String(e)); } })();
+</script>
+</body>
+</html>

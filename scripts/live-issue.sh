@@ -5,3 +5,4 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 scripts/live-capture.sh
 uv run --quiet python -m live.daily --issue >> data/live/issue.log 2>&1
+uv run --quiet python -m live.publish >> data/live/publish.log 2>&1

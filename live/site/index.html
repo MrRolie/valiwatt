@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valiwatt Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0e13;--panel:#10161d;--line:#1d2731;--mute:#9aa8b6;--text:#c9d4de;--bright:#e8eef4;--blue:#5cc8ff;--amber:#f0b45a;--orange:#ff7a45;--band:#8fa3b8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:'JetBrains Mono',ui-monospace,monospace}
+a{color:var(--blue)}a:hover{color:#9adcff}
+.wrap{max-width:1440px;margin:0 auto;padding:16px 24px;display:flex;flex-direction:column;gap:10px}
+header{display:flex;align-items:center;gap:18px;font-size:13px;letter-spacing:.04em;flex-wrap:wrap}
+header strong{font-size:16px;letter-spacing:.12em;color:var(--bright)}
+.m{color:var(--mute);white-space:nowrap}.tag{white-space:nowrap;background:var(--amber);color:var(--bg);padding:3px 8px;font-size:12px;font-weight:700}
+.badge{white-space:nowrap;border:1px solid var(--amber);color:var(--amber);padding:3px 8px;font-size:12px}
+.seg{display:flex}.seg button{font-family:inherit;font-size:12px;padding:6px 10px;min-height:30px;cursor:pointer;border:1px solid #3a4a5a}.seg button+button{border-left:none}
+.panel{background:var(--panel);border:1px solid var(--line);padding:10px 14px}
+.banner{display:flex;align-items:center;gap:16px}.pill{flex:none;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--bg);padding:6px 10px;white-space:nowrap}
+.sent{margin:0;font-family:'IBM Plex Sans',sans-serif;font-size:18px;color:var(--bright);line-height:1.3}
+.scope{margin-left:auto;flex:none;width:230px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--mute);text-align:right}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.kpi{display:flex;flex-direction:column;gap:3px}.lab{font-size:12px;color:var(--mute);letter-spacing:.06em}
+.big{font-size:28px;font-weight:500;color:var(--bright)}.big small{font-size:13px;color:var(--mute)}
+.sub{font-family:'IBM Plex Sans',sans-serif;font-size:13px;color:var(--mute)}
+.main{display:flex;gap:10px}.chartp{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--mute);align-items:center;flex-wrap:wrap}.legend span{display:flex;align-items:center;gap:8px;white-space:nowrap}
+#chart{position:relative;width:100%;height:412px}#chart svg{position:absolute;inset:0}
+.ax{position:absolute;font-size:12px;color:var(--mute);white-space:nowrap}
+#hbox{position:absolute;top:24px;width:220px;background:var(--bg);border:1px solid #3a4a5a;padding:8px 10px;display:none;flex-direction:column;gap:3px;font-size:13px;pointer-events:none}
+aside{width:296px;display:flex;flex-direction:column;gap:8px}aside .panel{display:flex;flex-direction:column;gap:4px}
+.bars{position:relative;height:52px;display:flex;align-items:flex-end;gap:6px}.bars .t90{position:absolute;left:0;right:0;border-top:1px dashed var(--bright)}
+.blab{display:flex;gap:6px}.blab span{flex:1;text-align:center;font-size:11px}
+.strip{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px}
+.cell{background:#141c24;padding:2px 3px;display:flex;flex-direction:column;align-items:center;border:1px solid transparent}
+.cell .bw{position:relative;width:100%;height:20px}.cell .z{position:absolute;left:0;right:0;top:10px;border-top:1px solid #3a4a5a}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.main{flex-direction:column}aside{width:auto}.strip{grid-template-columns:repeat(12,minmax(0,1fr))}.scope{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <strong>VALIWATT LIVE</strong><span class="m" id="where"></span><span class="m" id="when"></span><span class="m" id="fresh"></span>
+    <span class="tag" id="modeTag"></span>
+    <span class="seg" style="margin-left:auto"><button id="fr" onclick="VW.setLang('fr')">FR</button><button id="en" onclick="VW.setLang('en')">EN</button></span>
+    <span class="badge" id="badge"></span>
+  </header>
+  <section class="panel banner"><span class="pill" id="pill"></span><p class="sent" id="sent"></p><span class="scope" id="scope"></span></section>
+  <section class="kpis">
+    <div class="panel kpi"><span class="lab" id="k1"></span><span class="big" style="color:var(--blue)"><span id="v1"></span> <small>MW</small></span><span class="sub" id="s1"></span></div>
+    <div class="panel kpi"><span class="lab" id="k2"></span><span class="big" style="color:var(--amber)"><span id="v2"></span> <small>MW</small></span><span class="sub" id="s2"></span></div>
+    <div class="panel kpi"><span class="lab" id="k3"></span><span class="big"><span id="v3"></span> <small id="u3"></small></span><span class="sub" id="s3"></span></div>
+    <div class="panel kpi"><span class="lab" id="k4"></span><span class="big"><span id="v4"></span> <small>MW</small></span><span class="sub" id="s4"></span></div>
+    <div class="panel kpi"><span class="lab" id="k5"></span><span class="big"><span id="v5"></span> <small id="u5"></small></span><span class="sub" id="s5"></span></div>
+  </section>
+  <div class="main">
+    <section class="panel chartp">
+      <div class="legend">
+        <span id="lToday" style="letter-spacing:.06em"></span>
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#5cc8ff" stroke-width="2"/></svg><span id="lAct"></span></span>
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#f0b45a" stroke-width="1.5" stroke-dasharray="4 3"/></svg><span id="lFc"></span></span>
+        <span><svg width="22" height="10"><rect width="22" height="10" fill="#8fa3b8" fill-opacity=".14"/></svg><span id="lBand"></span></span>
+        <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#ff7a45"/></svg><span id="lOut"></span></span>
+        <span style="margin-left:auto"><span id="lMode"></span><span class="seg"><button id="mOff" onclick="VW.setMode('official')"></button><button id="mExp" onclick="VW.setMode('experimental')"></button></span></span>
+      </div>
+      <div id="chart"><svg id="svg"></svg><div id="axes"></div><div id="hbox"></div></div>
+    </section>
+    <aside>
+      <div class="panel"><span class="lab" id="r1"></span><span style="font-size:14px;color:var(--bright)" id="r1v"></span><span class="sub" id="r1s"></span></div>
+      <div class="panel"><span class="lab" id="r2"></span><span style="font-size:14px;color:var(--bright)" id="r2v"></span><span class="sub" id="r2s"></span></div>
+      <div class="panel"><span class="lab" id="r3"></span><div class="bars" id="bars"></div><div class="blab" id="blab"></div><span class="sub" id="r3s"></span></div>
+      <div class="panel"><span class="lab" id="r4"></span><span class="sub" style="color:var(--text);line-height:1.4" id="r4v"></span></div>
+    </aside>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <span style="font-size:12px;color:var(--mute);display:flex;gap:6px;flex-wrap:wrap"><span><span id="strip"></span> · <span style="color:#ff9a70" id="stripOut"></span> · <span id="stripNext"></span></span><a id="det" style="margin-left:auto;white-space:nowrap"></a></span>
+    <section class="strip" id="cells"></section>
+  </div>
+</div>
+<script src="app.js"></script>
+<script>
+"use strict";
+function render() {
+  const L = t(), d = state.data, M = state.mode;
+  document.documentElement.lang = state.lang; header();
+  btn($("mOff"), M === "official"); btn($("mExp"), M === "experimental", "#f0b45a");
+  for (const [id, k] of [["k1","k1"],["k2","k2"],["k3","k3"],["k4","k4"],["k5","k5"],["lToday","today"],["lAct","lAct"],["lFc","lFc"],["lOut","lOut"],["lMode","mode"],["mOff","mOff"],["mExp","mExp"],["r1","r1"],["r1s","r1s"],["r2","r2"],["r3","r3"],["r3s","r3s"],["r4","r4"],["strip","strip"],["stripOut","stripOut"],["stripNext","stripNext"],["det","details"],["scope","scope"]]) setText(id, L[k]);
+  $("lMode").style.marginRight = "8px";
+  $("det").href = "details.html" + (location.search || "");
+  setText("lBand", M === "experimental" ? L.lBandX : L.lBand);
+  setText("r4v", M === "experimental" ? L.r4exp : L.r4off);
+  const H = VW.hoursOf(d.issue), act = VW.hourlyActual(d);
+  const reads = d.readings.filter((r) => r[1] != null);
+  const last = reads.length ? reads[reads.length - 1] : null;
+  const nowX = last ? hourOf(last[0]) || 24 : 0;
+  const F = (h) => h[M], LO = (h) => h[M + "_lower"], HI = (h) => h[M + "_upper"];
+  const scored = H.filter((h) => act[h.x] != null && F(h) != null);
+  const inR = (h) => act[h.x] >= LO(h) && act[h.x] <= HI(h);
+  // KPIs
+  setText("v1", last ? fmt(last[1]) : "—"); setText("s1", last ? L.k1s(hm(last[0])) : "");
+  const cur = H.find((h) => h.x === Math.ceil(nowX + 1e-9)) || H.find((h) => h.x === Math.ceil(nowX));
+  setText("v2", cur ? fmt(F(cur)) : "—"); setText("s2", d.issue && !d.issue.missed ? L.k2s(hm(d.issue.issued_at)) : "");
+  const lastS = scored.length ? scored[scored.length - 1] : null;
+  const err = lastS ? (100 * (act[lastS.x] - F(lastS))) / act[lastS.x] : null;
+  setText("v3", err == null ? "—" : pct(err)); setText("u3", lastS ? (inR(lastS) ? (state.lang === "en" ? "in range" : "dans la plage") : (state.lang === "en" ? "out of range" : "hors de la plage")) : ""); setText("s3", L.k3s);
+  const pk = H.reduce((m, h) => (F(h) != null && (!m || F(h) > F(m)) ? h : m), null);
+  setText("v4", pk ? fmt(F(pk)) : "—"); setText("s4", pk ? L.k4s(hm(pk.hour_ending_utc)) : "");
+  const nIn = scored.filter(inR).length;
+  setText("v5", scored.length ? Math.round((100 * nIn) / scored.length) + (state.lang === "en" ? "%" : " %") : "—"); setText("u5", L.target); setText("s5", scored.length ? L.k5s(nIn, scored.length) : "");
+  // banner
+  const outs = scored.filter((h) => !inR(h));
+  let st, col, sent;
+  if (!H.length) { st = L.stNone; col = "#56687a"; sent = L.sNone; }
+  else if (lastS && !inR(lastS)) { st = L.stOut; col = "#ff7a45"; sent = L.sOut(pct(err)); }
+  else if (outs.length && lastS && lastS.x - outs[outs.length - 1].x <= 2) { st = L.stWatch; col = "#f0b45a"; sent = L.sWatch(hm(outs[outs.length - 1].hour_ending_utc)); }
+  else if (lastS) { st = L.stOk; col = "#5cc8ff"; sent = L.sOk(err >= 0 ? L.above(pctU(err)) : L.below(pctU(-err))); }
+  else { st = L.stOk; col = "#5cc8ff"; sent = ""; }
+  setText("pill", st); $("pill").style.background = col; setText("sent", sent);
+  // rail
+  const tc = cur || H[0];
+  setText("r1v", tc && tc.temp_forecast != null ? L.r1v(hm(tc.hour_ending_utc), VW.num1(tc.temp_forecast).replace(/^/, tc.temp_forecast < 0 ? "−" : "")) : "—");
+  if (scored.length) {
+    const mape = scored.reduce((s, h) => s + Math.abs(act[h.x] - F(h)) / act[h.x], 0) / scored.length * 100;
+    const bias = scored.reduce((s, h) => s + (act[h.x] - F(h)) / act[h.x], 0) / scored.length * 100;
+    setText("r2v", L.r2v(pctU(mape))); setText("r2s", L.r2s((bias >= 0 ? L.low : L.high) + (state.lang === "en" ? " by " : " de ") + pctU(Math.abs(bias))));
+  } else { setText("r2v", "—"); setText("r2s", ""); }
+  const week = d.days.slice(-7);
+  $("bars").innerHTML = week.map((x) => { const v = VW.dayScore(x); const h = v == null ? 4 : Math.max(4, (v - 70) / 30 * 52); return `<div style="flex:1;height:${h.toFixed(0)}px;background:${v == null ? "#2a3642" : v < 90 ? "#c26a3e" : "#56687a"}"></div>`; }).join("") + `<div class="t90" style="bottom:${(20 / 30 * 52).toFixed(0)}px"></div>`;
+  $("blab").innerHTML = week.map((x) => { const v = VW.dayScore(x); return `<span>${v == null ? "·" : v}<br><span style="color:var(--mute)">${VW.dateLabel(x.day).split(" ")[0].replace(",", "")}</span></span>`; }).join("");
+  chart(H, act, reads, nowX, F, LO, HI, inR);
+  // hour strip
+  $("cells").innerHTML = Array.from({ length: 24 }, (_, k) => {
+    const x = k + 1, h = H.find((q) => q.x === x), a = act[x];
+    const lab = state.lang === "en" ? `${k}:00` : `${k} h`;
+    if (h && a != null && F(h) != null) {
+      const e = (100 * (a - F(h))) / a, bh = Math.max(1, Math.min(10, Math.abs(e) / 3 * 10));
+      const bar = `position:absolute;left:20%;width:60%;height:${bh.toFixed(1)}px;background:${e >= 0 ? "#dfe7ee" : "#7f92a5"};${e >= 0 ? "bottom:10px" : "top:10px"}`;
+      return `<div class="cell" style="${inR(h) ? "" : "border-top:3px solid #ff7a45"}"><span style="font-size:11px;color:var(--mute)">${lab}</span><div class="bw"><div class="z"></div><div style="${bar}"></div></div><span style="font-size:11px;color:var(--bright)">${(e > 0 ? "+" : e < 0 ? "−" : "") + VW.num1(e)}</span></div>`;
+    }
+    return `<div class="cell" style="border:1px solid #2a3642"><span style="font-size:11px;color:var(--mute)">${lab}</span><div class="bw"><div class="z"></div></div><span style="font-size:11px;color:var(--amber);white-space:nowrap">${h && F(h) != null ? fmt(F(h)) : "·"}</span></div>`;
+  }).join("");
+}
+function chart(H, act, reads, nowX, F, LO, HI, inR) {
+  const el = $("chart"), W = el.clientWidth, Ht = 412, X0 = 56, X1 = W - 8, TOP = 16, BOT = 384;
+  const vals = reads.map((r) => r[1]).concat(H.flatMap((h) => [LO(h), HI(h)]).filter((v) => v != null));
+  if (!vals.length) { $("svg").innerHTML = ""; $("axes").innerHTML = ""; return; }
+  const step = 2000, vmin = Math.floor(Math.min(...vals) / step) * step - step / 2, vmax = Math.ceil(Math.max(...vals) / step) * step + step / 2;
+  const x = (h) => X0 + (h / 24) * (X1 - X0), y = (v) => BOT - ((v - vmin) / (vmax - vmin)) * (BOT - TOP);
+  const pts = H.filter((h) => F(h) != null);
+  const path = (arr, fx, fy) => arr.map((p, k) => (k ? "L" : "M") + fx(p).toFixed(1) + " " + fy(p).toFixed(1)).join(" ");
+  const band = pts.length ? path(pts, (h) => x(h.x), (h) => y(HI(h))) + " " + pts.slice().reverse().map((h) => "L" + x(h.x).toFixed(1) + " " + y(LO(h)).toFixed(1)).join(" ") + " Z" : "";
+  const exp = state.mode === "experimental";
+  let s = "";
+  const grid = []; for (let v = Math.ceil(vmin / step) * step; v <= vmax; v += step * 2) grid.push(v);
+  s += grid.map((v) => `<line x1="${X0}" x2="${X1}" y1="${y(v)}" y2="${y(v)}" stroke="#1d2731"/>`).join("");
+  s += `<path d="${band}" fill="#8fa3b8" fill-opacity=".14"/>` + (exp ? `<path d="${band}" fill="none" stroke="#8fa3b8" stroke-width="1.25" stroke-dasharray="4 3"/>` : "");
+  s += `<path d="${path(pts, (h) => x(h.x), (h) => y(F(h)))}" fill="none" stroke="#f0b45a" stroke-width="1.5" stroke-dasharray="5 4"/>`;
+  // the measured curve breaks wherever a reading is missing (outages, blanked fills): never drawn across a gap
+  const rp = reads.map((r, k) => { const gap = k === 0 || new Date(r[0]) - new Date(reads[k - 1][0]) > 15 * 60e3; return (gap ? "M" : "L") + x(hourOf(r[0]) || 24).toFixed(1) + " " + y(r[1]).toFixed(1); }).join(" ");
+  s += `<path d="${rp}" fill="none" stroke="#5cc8ff" stroke-width="2.25" stroke-linejoin="round"/>`;
+  if (nowX) s += `<line x1="${x(nowX)}" x2="${x(nowX)}" y1="${TOP}" y2="${BOT}" stroke="#5a6b7c" stroke-dasharray="2 3"/>`;
+  s += pts.filter((h) => act[h.x] != null && !inR(h)).map((h) => `<circle cx="${x(h.x)}" cy="${y(act[h.x])}" r="4" fill="#ff7a45"/>`).join("");
+  const hv = state.hover;
+  if (hv != null) {
+    const h = H.reduce((m, q) => (Math.abs(q.x - hv) < Math.abs(m.x - hv) ? q : m), H[0] || { x: hv });
+    if (h && F(h) != null) {
+      s += `<line x1="${x(h.x)}" x2="${x(h.x)}" y1="${TOP}" y2="${BOT}" stroke="#c9d4de" stroke-opacity=".6"/><circle cx="${x(h.x)}" cy="${y(F(h))}" r="4" fill="#f0b45a"/>` + (act[h.x] != null ? `<circle cx="${x(h.x)}" cy="${y(act[h.x])}" r="4" fill="#5cc8ff"/>` : "");
+      const L = t().hover, b = $("hbox");
+      b.style.display = "flex"; b.style.left = (x(h.x) > W - 260 ? x(h.x) - 232 : x(h.x) + 12) + "px";
+      b.innerHTML = `<span style="color:#e8eef4">${hm(new Date(new Date(h.hour_ending_utc).getTime() - 3600e3).toISOString())}–${hm(h.hour_ending_utc)}</span><span style="color:#f0b45a">${L.f} ${fmt(F(h))} MW</span><span style="color:#5cc8ff">${L.a} ${act[h.x] != null ? fmt(act[h.x]) + " MW" : ": " + L.soon}</span><span style="color:#9aa8b6">${L.r} ${fmt(LO(h))}–${fmt(HI(h))}</span>`;
+    }
+  } else $("hbox").style.display = "none";
+  $("svg").setAttribute("viewBox", `0 0 ${W} ${Ht}`); $("svg").innerHTML = s;
+  const lab = (l, top, left) => `<span class="ax" style="top:${top}px;left:${left}px">${l}</span>`;
+  $("axes").innerHTML = grid.map((v) => lab(fmt(v), y(v) - 9, 0)).join("") + [0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => lab(state.lang === "en" ? h + ":00" : h + " h", 392, x(h) - 14)).join("") + (nowX ? lab(t().now + " · " + hm(reads[reads.length - 1][0]), 0, x(nowX) + 6) : "");
+}
+$("chart").addEventListener("mousemove", (ev) => { const r = ev.currentTarget.getBoundingClientRect(); const W = r.width, X0 = 56, X1 = W - 8; const hv = ((ev.clientX - r.left - X0) / (X1 - X0)) * 24; state.hover = hv < 0 || hv > 24 ? null : hv; render(); });
+$("chart").addEventListener("mouseleave", () => { state.hover = null; render(); });
+window.addEventListener("resize", () => render());
+window.render = render;
+async function tick() { try { await VW.load(); render(); } catch (e) { setText("sent", "data.json: " + e); } }
+tick(); if (!new URLSearchParams(location.search).has("demo")) setInterval(tick, 60000);
+</script>
+</body>
+</html>
