@@ -55,12 +55,17 @@ band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one fact
   15-minute feed reaches, whether it measures the same quantity as the yearly export, and the NBM run available at the
   noon origin. Checking these reads the feed's schema and coverage, not its values; a blind, write-only capture may
   start before the freeze, read by nothing until the tag.
-- **The daily issue:** the newest compliant NBM run at the noon origin, as in v2's replay clock.
+- **The daily issue:** v2's origin, D 00:00 EST (`features.day_origin`), from demand through D−1's last hour and the
+  newest NBM run available by then. The issue runs a few minutes after midnight, once D−1's last hour is in the feed,
+  and is logged before D's first hour ends (`live/issue.py`, `append_log`).
+- **Consequence for the page:** v2's forecast is not issued at noon the day before (v3's horizon was). The prototype's
+  "émise la veille à 12 h", its Flex D card (peak notices go out the afternoon before) and its peak-forecast vintages
+  row are corrected in the page build.
 - **Proof of order:** each forecast's log line carries its issue time and its sha256, and is committed (or otherwise
   timestamped outside the machine) before the first hour it forecasts.
 
 ## Before the tag
-- Rehearse issue → log → score on a seen day of 2025.
+- Rehearse issue → log → score on a seen day of 2025 (`uv run python -m live.issue --rehearse <day>`).
 - A fresh-context review of this section and the freeze code.
 - New code lives in its own package and calls `valiwatt.forecast`; v2's modules, `config.FREEZES`, `THROUGH_YEARS` and
   their tests stay unchanged (the v3 report stamp hashes tests).
