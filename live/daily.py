@@ -18,6 +18,8 @@ from valiwatt.sources import hydroquebec
 from valiwatt.sources.nbm import AVAILABILITY_LAG
 
 CAPTURE = REPO_ROOT / "data" / "live" / "capture"
+# The issue waits this long after the origin: the feed runs ~22 min behind (measured 2026-11-13).
+WAIT = pd.Timedelta(minutes=25)
 
 
 def captured_readings(origin: pd.Timestamp | None = None) -> pd.DataFrame:
@@ -143,9 +145,18 @@ def run_issue() -> int:
     from live.issue import issue, load_frozen, record, append_log, log_missed
     from live.commit import commit_hash
 
+    from live.issue import LOG
+
     now = pd.Timestamp.now(tz="UTC")
     day = lst_today(now)
     o = day_origin(day)
+    if now < o + WAIT:
+        return 0  # D-1's last reading is not in the feed yet
+    if now >= o + pd.Timedelta(hours=1):  # past the deadline: record the day as missed if nothing is logged
+        log_missed(day, "not issued by the deadline (machine off or every attempt failed)")
+        return 0
+    if LOG.exists() and any(json.loads(x)["day"] == str(day.date()) for x in LOG.read_text().splitlines() if x):
+        return 0
     try:
         official, rule = load_frozen(tagged=True)
         raw = pd.concat([history(), hourly(captured_readings(o))], ignore_index=True)
