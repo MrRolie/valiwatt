@@ -45,7 +45,7 @@ table{border-collapse:collapse;font-size:13px}td,th{padding:3px 10px 3px 0;text-
     </div>
   </section>
 </div>
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 <script>
 "use strict";
 const D = {
@@ -104,7 +104,7 @@ function render() {
   let s = `<line x1="${X0}" x2="${X1}" y1="${cy(90)}" y2="${cy(90)}" stroke="#e8eef4" stroke-dasharray="4 4" stroke-opacity=".7"/>`;
   let seg = ""; vals.forEach((v, k) => { if (v == null) { seg += " "; return; } seg += (seg.endsWith(" ") || !seg ? "M" : "L") + cx(k).toFixed(1) + " " + cy(Math.max(70, v)).toFixed(1); });
   s += `<path d="${seg.trim().replace(/ +M/g, " M")}" fill="none" stroke="#c9d4de" stroke-width="2"/>`;
-  s += vals.map((v, k) => (v == null ? `<circle cx="${cx(k)}" cy="${cy(70) + 8}" r="3" fill="#3a4a5a"/>` : v < 85 ? `<circle cx="${cx(k)}" cy="${cy(Math.max(70, v))}" r="4" fill="#ff7a45"/>` : "")).join("");
+  s += vals.map((v, k) => (v == null ? `<circle cx="${cx(k)}" cy="${cy(72)}" r="3" fill="#3a4a5a"/>` : v < 85 ? `<circle cx="${cx(k)}" cy="${cy(Math.max(70, v))}" r="4" fill="#ff7a45"/>` : "")).join("");
   $("covsvg").setAttribute("viewBox", `0 0 ${W} 300`); $("covsvg").innerHTML = s;
   $("covax").innerHTML = [100, 90, 80, 70].map((v) => `<span class="ax" style="left:0;top:${cy(v) - 8}px">${v}${state.lang === "en" ? "%" : " %"}</span>`).join("") + `<span class="ax" style="left:${X0 - 8}px;top:286px">${VW.dateLabel(d.days[0].day)}</span><span class="ax" style="right:12px;top:286px">${VW.dateLabel(d.days[n - 1].day)}</span>`;
   // 30-day error, both forecasts

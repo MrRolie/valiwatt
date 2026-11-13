@@ -3,7 +3,7 @@
 const T = {
   fr: {
     where: "DEMANDE AU QUÉBEC", recv: (m) => `reçues il y a ${m} min`, auto: "MAJ toutes les 15 min", late: "flux d'Hydro-Québec en retard",
-    trial: (d) => `RODAGE · ESSAI COMPTÉ DÈS LE ${d}`, live: "ESSAI EN DIRECT", demo: "DÉMO · JOUR DE 2025 DÉJÀ VU",
+    trial: (d) => `RODAGE · COMPTE DÈS ${d}`, live: "ESSAI EN DIRECT", demo: "DÉMO · JOUR DE 2025 DÉJÀ VU",
     modeTag: "MODE EXPÉRIMENTAL", scope: "Ce tableau évalue la prévision, pas la capacité du réseau.",
     k1: "DEMANDE MESURÉE", k1s: (t) => `Lecture de ${t}.`, k2: "PRÉVISION POUR CETTE HEURE",
     k2s: (t) => `Émise à ${t}, d'après les données jusqu'à minuit.`, k3: "ÉCART ACTUEL",
@@ -25,11 +25,12 @@ const T = {
     sOk: (e) => `Dernière heure complète : la demande ${e} la prévision de minuit.`,
     above: (x) => `dépasse de ${x}`, below: (x) => `est inférieure de ${x} à`,
     sNone: "Aucune prévision n'a été émise à temps aujourd'hui. La demande mesurée s'affiche seule.",
+    sFirst: "Pas encore de prévision : le modèle lit la demande d'il y a 7 jours, et le flux d'Hydro-Québec ne garde que 48 h. Captée depuis le 11 nov., la première prévision complète est attendue le 19 nov.",
     hover: { f: "prévision", a: "mesurée", r: "plage", soon: "à venir" }, nodata: "aucune",
   },
   en: {
     where: "QUÉBEC DEMAND", recv: (m) => `received ${m} min ago`, auto: "updates every 15 min", late: "Hydro-Québec's feed is late",
-    trial: (d) => `SHAKEDOWN · TRIAL COUNTS FROM ${d}`, live: "LIVE TRIAL", demo: "DEMO · A SEEN DAY OF 2025",
+    trial: (d) => `SHAKEDOWN · COUNTS FROM ${d}`, live: "LIVE TRIAL", demo: "DEMO · A SEEN DAY OF 2025",
     modeTag: "EXPERIMENTAL MODE", scope: "This screen assesses the forecast, not the grid's capacity.",
     k1: "MEASURED DEMAND", k1s: (t) => `Reading at ${t}.`, k2: "FORECAST FOR THIS HOUR",
     k2s: (t) => `Issued at ${t} from data through midnight.`, k3: "CURRENT DEVIATION",
@@ -50,6 +51,7 @@ const T = {
     sWatch: (t) => `Back in range. The last exit from the range was at ${t}.`,
     sOk: (e) => `Last complete hour: demand is ${e} the midnight forecast.`, above: (x) => `${x} above`,
     below: (x) => `${x} below`, sNone: "No forecast was issued in time today. Measured demand is shown alone.",
+    sFirst: "No forecast yet: the model reads demand from 7 days earlier, and Hydro-Québec's feed keeps only 48 h. Captured since Nov 11, the first full forecast is expected on Nov 19.",
     hover: { f: "forecast", a: "measured", r: "range", soon: "to come" }, nodata: "none",
   },
 };
@@ -98,6 +100,6 @@ function header() {
   $("fresh").style.color = mins != null && mins > 45 ? "#ff9a70" : "";
   $("modeTag").style.display = state.mode === "experimental" ? "" : "none"; setText("modeTag", L.modeTag);
   const vf = new Date(d.verdict_from + "T05:00:00Z");
-  setText("badge", DEMO ? L.demo : (new Date(d.day + "T12:00:00Z") >= vf ? L.live : L.trial(dateLabel(d.verdict_from))));
+  setText("badge", DEMO ? L.demo : (new Date(d.day + "T12:00:00Z") >= vf ? L.live : L.trial(new Date(d.verdict_from + "T12:00:00Z").toLocaleDateString(loc(), { day: "numeric", month: "short", timeZone: "UTC" }))));
 }
 window.VW = { T, state, store, $, t, fmt, num1, pct, pctU, hm, hourOf, lst, dateLabel, load, setLang, setMode, hoursOf, hourlyActual, dayScore, setText, btn, header };
