@@ -122,6 +122,21 @@ def append_log(body: dict, now: pd.Timestamp | None = None, log: Path = LOG) -> 
     return True
 
 
+def log_missed(day, reason: str, log: Path = LOG) -> bool:
+    """Record a day that was not issued, unless it already has a line (an issue or a missed record)."""
+    line = {"day": str(pd.Timestamp(day).date()), "missed": True, "reason": reason[:500],
+            "at": pd.Timestamp.now(tz="UTC").isoformat()}
+    log = Path(log)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a+") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.seek(0)
+        if any(json.loads(x)["day"] == line["day"] for x in fh.read().splitlines() if x):
+            return False
+        fh.write(json.dumps(line, sort_keys=True) + "\n")
+    return True
+
+
 def rehearse(day: str) -> int:
     from live.freeze import LAST, THROUGH
     from valiwatt.forecast.features import AsOf

@@ -132,3 +132,19 @@ def test_rule_refuses_nonfinite_target_or_temperature(col):
     cal.loc[7, col] = np.nan
     with pytest.raises(FrozenModelError):
         experimental_rule(cal, "x" * 64)
+
+
+def test_flat_runs_are_fills_and_short_hours_are_missing():
+    from live.daily import hourly
+    ts = pd.date_range("2026-11-13T14:15Z", periods=16, freq="15min")
+    mw = [100.0, 101, 102, 103] + [24034.0] * 7 + [200.0, 201, 202, 203, 204]
+    h = hourly(pd.DataFrame({"ts_utc": ts, "mw": mw}))
+    assert h["ts_utc"].tolist() == [pd.Timestamp("2026-11-13T15:00Z"), pd.Timestamp("2026-11-13T18:00Z")]
+    assert h["mw"].tolist() == [101.5, 202.5]
+
+
+def test_three_equal_readings_are_kept():
+    from live.daily import hourly
+    ts = pd.date_range("2026-11-13T14:15Z", periods=4, freq="15min")
+    h = hourly(pd.DataFrame({"ts_utc": ts, "mw": [5.0, 5.0, 5.0, 6.0]}))
+    assert h["mw"].tolist() == [5.25]

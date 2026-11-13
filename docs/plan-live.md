@@ -63,8 +63,13 @@ band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one fact
   the tag. Settled from the publisher's documentation (2026-11-13): the export's hour is the mean of 5-minute samples,
   labelled at its end (2:00 = 1:05 to 2:00); the feed's value is a reading taken at its stamp. A live hour H is
   therefore the mean of the four readings stamped in (H − 1 h, H], labelled H: 4 samples where the export has 12. The
-  difference is measured once the export covers live days; the verdict's record vintage is the export. Still open:
-  the NBM run available at the origin.
+  difference is measured once the export covers live days; the verdict's record vintage is the export. Measured on the
+  first captures (2026-11-13): the feed normally runs about 22 minutes behind (D−1's last reading arrives near
+  00:22 EST), stalls in outages, and backfills an outage with one repeated value. Input rules, declared before any
+  outcome: a run of four or more identical consecutive readings is a fill and is blank; an hour short of four
+  readings is missing; an issue forecasts the hours whose inputs exist and leaves the others blank (counted, never
+  imputed); a day with no hour forecast is missed. The NBM's newest run was in the archive within two hours of its
+  run time (2026-11-13), as v2's availability rule assumes.
 - **The daily issue:** v2's origin, D 00:00 EST (`features.day_origin`), from demand through D−1's last hour and the
   newest NBM run available by then. The issue runs a few minutes after midnight, once D−1's last hour is in the feed,
   and is logged before D's first hour ends (`live/issue.py`, `append_log`).
