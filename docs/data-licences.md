@@ -80,7 +80,7 @@ Source: <https://climate.weather.gc.ca/index_e.html>
 
 Source: <https://climate.weather.gc.ca/prods_servs/attachment1_e.html>
 
-> Date modified: 2026-08-10
+> Date modified: 2026-10-22
 
 > The Government of Canada (Environment and Climate Change Canada) is the owner of all intellectual property rights
 > (including copyright) of this Software and Data Product. You are granted a limited, non-exclusive, non-assignable
