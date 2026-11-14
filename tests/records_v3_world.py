@@ -60,6 +60,14 @@ def install(mp, repo: Path, store: Path) -> None:
 
     for module in (rules, mrun, tracking, firstrun, paths):
         mp.setattr(module, "REPO_ROOT", Path(repo))
+    # The scratch machine holds no 2025 record whatever the real one holds (freeze_record._require_before_2025): only
+    # the 2025 vintage's paths move, beside the scratch repository (never inside it: a test that writes them must not
+    # dirty its tree), under their own names; every other vintage reads as before.
+    from valiwatt.sources import hydroquebec
+    for name in ("csv_path", "manifest_path"):
+        real = getattr(hydroquebec, name)
+        mp.setattr(hydroquebec, name, lambda through=2024, real=real:
+                   Path(repo).parent / "raw-2025" / Path(real(through)).name if int(through) == 2025 else real(through))
     mp.setattr(tracking, "MLRUNS", Path(store))
     mp.setattr(paths, "MLRUNS", Path(store))
     # MLflow caches each run's artifact repository by run ID for the process: a copy of a store holds the same run IDs

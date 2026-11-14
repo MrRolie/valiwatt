@@ -1,5 +1,5 @@
 {
-  "code_sha256": "9cc6cdd9aa23b0a466e85f92d033cf95b2b5005697ad5f1e8b7efae5b6c07ac9",
+  "code_sha256": "fafed109988e60b1e56ccbe566595a1d3762e2fba678c45eaa57a1bd5d7009db",
   "rules_sha256": "526e7ee3484c3d64be9f16824fe9880075214a9c32dc385f3427548e6041d175",
   "lineage": "of_record",
   "freeze_record": {
@@ -14,8 +14,8 @@
     "frozen_2025": "95beb8658ae84eee90a990890dfff3fb"
   },
   "files": {
-    "validation.en.md": "2ab01b3c84f8b6142c258d980960c9abaa941d82acd986de8b29b3a51bc4a666",
-    "validation.fr.md": "ec0833c8416bfae911c99da4a767c06500ad778ea44eba76a1f8f952cad05852"
+    "validation.en.md": "c297e3e63e6339b1f95ebb14de32a3f32cf45c7249c97c73b951d6211a290496",
+    "validation.fr.md": "baeed2bbc9c1156288fc94ff42dadfc6d468683c3657cc4c871b068b7f6d9123"
   },
   "ledger_sha256": "ad18fae4d85afd1adedf3f7a11eb5769770e07a047050a5a38fdcf423f8199ff",
   "standing_2025": {
