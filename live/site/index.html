@@ -78,7 +78,7 @@ aside{width:296px;display:flex;flex-direction:column;gap:8px}aside .panel{displa
     <section class="strip" id="cells"></section>
   </div>
 </div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 <script>
 "use strict";
 function render() {
@@ -126,7 +126,10 @@ function render() {
     setText("r2v", L.r2v(pctU(mape))); setText("r2s", L.r2s((bias >= 0 ? L.low : L.high) + (state.lang === "en" ? " by " : " de ") + pctU(Math.abs(bias))));
   } else { setText("r2v", "—"); setText("r2s", ""); }
   const week = d.days.slice(-7);
-  $("bars").innerHTML = week.map((x) => { const v = VW.dayScore(x); const h = v == null ? 4 : Math.max(4, (v - 70) / 30 * 52); return `<div style="flex:1;height:${h.toFixed(0)}px;background:${v == null ? "#2a3642" : v < 90 ? "#c26a3e" : "#56687a"}"></div>`; }).join("") + `<div class="t90" style="bottom:${(20 / 30 * 52).toFixed(0)}px"></div>`;
+  const anyDay = week.some((x) => VW.dayScore(x) != null);
+  $("bars").style.display = anyDay ? "" : "none"; $("blab").style.display = anyDay ? "" : "none";
+  setText("r3s", anyDay ? L.r3s : L.r3none(state.lang === "en" ? "Nov 19" : "19 novembre"));
+  $("bars").innerHTML = week.map((x) => { const v = VW.dayScore(x); const h = v == null ? 4 : Math.max(4, (v - 50) / 50 * 52); return `<div style="flex:1;height:${h.toFixed(0)}px;background:${v == null ? "#2a3642" : v < 90 ? "#c26a3e" : "#56687a"}"></div>`; }).join("") + `<div class="t90" style="bottom:${(40 / 50 * 52).toFixed(0)}px"></div>`;
   $("blab").innerHTML = week.map((x) => { const v = VW.dayScore(x); return `<span>${v == null ? "·" : v}<br><span style="color:var(--mute)">${VW.dateLabel(x.day).split(" ")[0].replace(",", "")}</span></span>`; }).join("");
   chart(H, act, reads, nowX, F, LO, HI, inR);
   // hour strip

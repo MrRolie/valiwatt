@@ -45,7 +45,7 @@ table{border-collapse:collapse;font-size:13px}td,th{padding:3px 10px 3px 0;text-
     </div>
   </section>
 </div>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 <script>
 "use strict";
 const D = {
@@ -66,7 +66,7 @@ const D = {
     morning: "morning, 4:00 → 8:00", evening: "evening, 14:00 → 18:00", c2s: "In MW per hour. A ramp faster than forecast leaves operators less time to react.",
     c3: "PEAK EVENTS · HYDRO-QUÉBEC", c3s: "Notices published by Hydro-Québec (offer code, sector). They are announced the day before: the midnight forecast comes after that decision.",
     nopeaks: "none in the last 30 days", peaksErr: "list unavailable right now", c4: "IN RANGE · LAST 30 DAYS", c4t: "dashed: 90% target",
-    c4s: (d) => `Share of hours in range, per day, for the chosen forecast. Grey dots: no forecast that day. The trial counts from ${d}`,
+    c4s: (d) => `Share of hours in range, per day, for the chosen forecast. Grey dots: no forecast that day. The trial counts from ${d}.`,
     c5: "ERROR · LAST 30 DAYS", mode: "forecast", mape: "mean abs. error", bias: "mean deviation", inr: "in range", hours: "hours",
     c6: "PROVENANCE", tag: "freeze", off: "official", exp: "experimental", issued: "issued", hash: "hash", q: "official half-width",
     c7: "HOW THE TRIAL WILL BE DECIDED", c7s: (d) => `From ${d} to March 31: interval score (range) and mean absolute error (point), paired hour by hour, week-block confidence interval. "Better" only when the interval excludes zero; otherwise "not separated". Rules fixed before any outcome (docs/plan-live.md).`,
@@ -98,15 +98,16 @@ function render() {
   const pk = d.peaks || [];
   $("peaks").innerHTML = pk.length && pk[0].error ? `<tr><td>${L.peaksErr}</td></tr>` : pk.length ? pk.slice(-6).map((e) => `<tr><td>${VW.dateLabel(e.datedebut.slice(0, 10))}</td><td>${hm(e.datedebut)}–${hm(e.datefin)}</td><td style="color:var(--amber)">${e.offre}</td><td style="color:var(--mute)">${e.secteurclient}</td></tr>`).join("") : `<tr><td style="color:var(--mute)">${L.nopeaks}</td></tr>`;
   // 30-day coverage
-  const el = $("cov"), W = el.clientWidth, X0 = 48, X1 = W - 12, cy = (v) => 10 + ((100 - v) / 30) * 270, n = d.days.length;
+  const el = $("cov"), W = el.clientWidth, X0 = 48, X1 = W - 12, n = d.days.length;
   const cx = (k) => X0 + (k / (n - 1)) * (X1 - X0);
   const vals = d.days.map((x) => VW.dayScore(x));
+  const lo = Math.max(0, Math.min(70, ...vals.filter((v) => v != null).map((v) => Math.floor(v / 10) * 10))), cy = (v) => 10 + ((100 - v) / (100 - lo)) * 270;
   let s = `<line x1="${X0}" x2="${X1}" y1="${cy(90)}" y2="${cy(90)}" stroke="#e8eef4" stroke-dasharray="4 4" stroke-opacity=".7"/>`;
-  let seg = ""; vals.forEach((v, k) => { if (v == null) { seg += " "; return; } seg += (seg.endsWith(" ") || !seg ? "M" : "L") + cx(k).toFixed(1) + " " + cy(Math.max(70, v)).toFixed(1); });
+  let seg = ""; vals.forEach((v, k) => { if (v == null) { seg += " "; return; } seg += (seg.endsWith(" ") || !seg ? "M" : "L") + cx(k).toFixed(1) + " " + cy(v).toFixed(1); });
   s += `<path d="${seg.trim().replace(/ +M/g, " M")}" fill="none" stroke="#c9d4de" stroke-width="2"/>`;
-  s += vals.map((v, k) => (v == null ? `<circle cx="${cx(k)}" cy="${cy(72)}" r="3" fill="#3a4a5a"/>` : v < 85 ? `<circle cx="${cx(k)}" cy="${cy(Math.max(70, v))}" r="4" fill="#ff7a45"/>` : "")).join("");
+  s += vals.map((v, k) => (v == null ? `<circle cx="${cx(k)}" cy="${cy(lo + 2)}" r="3" fill="#3a4a5a"/>` : v < 85 ? `<circle cx="${cx(k)}" cy="${cy(v)}" r="4" fill="#ff7a45"/>` : "")).join("");
   $("covsvg").setAttribute("viewBox", `0 0 ${W} 300`); $("covsvg").innerHTML = s;
-  $("covax").innerHTML = [100, 90, 80, 70].map((v) => `<span class="ax" style="left:0;top:${cy(v) - 8}px">${v}${state.lang === "en" ? "%" : " %"}</span>`).join("") + `<span class="ax" style="left:${X0 - 8}px;top:286px">${VW.dateLabel(d.days[0].day)}</span><span class="ax" style="right:12px;top:286px">${VW.dateLabel(d.days[n - 1].day)}</span>`;
+  $("covax").innerHTML = Array.from({ length: (100 - lo) / 10 + 1 }, (_, i) => 100 - 10 * i).map((v) => `<span class="ax" style="left:0;top:${cy(v) - 8}px">${v}${state.lang === "en" ? "%" : " %"}</span>`).join("") + `<span class="ax" style="left:${X0 - 8}px;top:286px">${VW.dateLabel(d.days[0].day)}</span><span class="ax" style="right:12px;top:286px">${VW.dateLabel(d.days[n - 1].day)}</span>`;
   // 30-day error, both forecasts
   const agg = (m) => { let nn = 0, inr = 0, ae = 0, b = 0; for (const x of d.days) { const q = x.score && x.score[m]; if (!q || !q.n) continue; nn += q.n; inr += q.in_range; ae += q.mape * q.n; b += q.bias * q.n; } return nn ? { nn, inr: 100 * inr / nn, mape: ae / nn, bias: b / nn } : null; };
   $("err").innerHTML = `<tr><th>${L.mode}</th><th>${L.mape}</th><th>${L.bias}</th><th>${L.inr}</th><th>${L.hours}</th></tr>` + ["official", "experimental"].map((m) => { const a = agg(m); return `<tr><td style="color:${m === M ? "var(--bright)" : "var(--mute)"}">${L[m]}</td>` + (a ? `<td>${pctU(a.mape)}</td><td>${(a.bias >= 0 ? "+" : "−") + pctU(Math.abs(a.bias))}</td><td>${pctU(a.inr)}</td><td>${a.nn}</td>` : `<td colspan="4" style="color:var(--mute)">—</td>`) + "</tr>"; }).join("");

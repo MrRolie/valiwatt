@@ -96,6 +96,37 @@ def write(now: pd.Timestamp | None = None) -> None:
     os.replace(tmp, OUT)
 
 
+def demo_days(day: str, raw: pd.Series, today_hours: pd.Series) -> list[dict]:
+    """The demo's 30 previous days, each issued as the replay issues it (live.issue.issue on AsOf.issued rows, the
+    frozen files of the tag) and scored on its measured hours by `scored`, as the live page's days are; the demo day
+    itself on its hours up to the demo's "now". Seen 2025 days: layout only."""
+    from live.freeze import LAST, THROUGH
+    from live.issue import issue, load_frozen, record
+    from valiwatt.forecast.validate import DQ_EXPERIMENT, design_days, forecast_inputs, temperature_sources
+    from valiwatt.monitor.run import load_raw
+    from valiwatt.paths import INTERIM
+    from valiwatt.quality import run as qrun
+    from valiwatt.tracking import latest_run
+
+    dq = latest_run(DQ_EXPERIMENT, f"tags.kind = 'dq' and tags.gates = 'passed' and attributes.status = 'FINISHED' "
+                    f"and params.through = '{THROUGH}'")
+    rawd, _ = load_raw(dq)
+    weather = pd.read_parquet(INTERIM / "weather.parquet")
+    from valiwatt.forecast.features import AsOf
+    asof = AsOf(rawd, last=LAST)
+    temp = temperature_sources(weather[weather.index <= LAST])["primary"]
+    table = asof.issued(temp, forecast_inputs(qrun.load_runs(dq, years=range(2019, THROUGH + 1)), design_days(LAST), last=LAST))
+    official, rule = load_frozen()
+    out = []
+    for k in range(30, -1, -1):
+        d = pd.Timestamp(day) - pd.Timedelta(days=k)
+        rows = table[table["day"] == d]
+        body = record(d, day_origin(d), official, rule, issue(official, rule, rows))
+        actual = today_hours if k == 0 else raw
+        out.append({"day": str(d.date()), "status": "issued", "score": scored(body, actual)})
+    return out
+
+
 def demo(day: str = "2025-01-21", now_hour: int = 18) -> None:
     """live/site/demo.json: the rehearsal issue of a seen 2025 day with that day's hourly demand up to `now_hour`
     (no 15-minute readings exist for 2025: the curve is hourly). For the page's layout only, labelled as a demo."""
@@ -110,7 +141,7 @@ def demo(day: str = "2025-01-21", now_hour: int = 18) -> None:
             "latest_reading": (o + pd.Timedelta(hours=now_hour)).isoformat(),
             "readings": [[t.isoformat(), float(v)] for t, v in hrs.items()],
             "hourly": [[t.isoformat(), float(v)] for t, v in hrs.items()], "issue": issue,
-            "days": [{"day": str((pd.Timestamp(day) - pd.Timedelta(days=k)).date()), "status": "missed"} for k in range(30, -1, -1)],
+            "days": demo_days(day, raw, hrs),
             "peaks": [], "freeze": {"tag": TAG, "official_sha256": rec["official"]["sha256"],
                                      "experimental_sha256": rec["experimental"]["sha256"], "q": rec["official"]["q"],
                                      "groups": rec["experimental"]["groups"]}, "verdict_from": VERDICT_FROM, "demo": True}
