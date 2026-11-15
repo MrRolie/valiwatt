@@ -1,0 +1,16 @@
+{
+  "title": "Valiwatt Live",
+  "description": "Quebec electricity demand, measured against the frozen day-ahead forecast. Reads the private Valiwatt Live server; holds no data itself.",
+  "file": "index.html",
+  "type": "web",
+  "general": {
+    "properties": {
+      "server": { "order": 0, "text": "Serveur / Server (http://host:port/)", "type": "textinput", "value": "" },
+      "lang": { "order": 1, "text": "Langue / Language", "type": "combo", "value": "fr",
+        "options": [ { "label": "Français", "value": "fr" }, { "label": "English", "value": "en" } ] },
+      "mode": { "order": 2, "text": "Prévision / Forecast", "type": "combo", "value": "official",
+        "options": [ { "label": "Officielle / Official", "value": "official" }, { "label": "Expérimentale / Experimental", "value": "experimental" } ] },
+      "bottom": { "order": 3, "text": "Barre des tâches px / Taskbar px", "type": "slider", "value": 48, "min": 0, "max": 120, "step": 1, "precision": 0 }
+    }
+  }
+}

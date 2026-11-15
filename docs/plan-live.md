@@ -110,4 +110,7 @@ The intraday "adjusted" line in prototype A3 is a mock. It is not part of the ru
 2. The demand feed (every 15 min) and the daily issue just after midnight, written as static JSON plus the
    append-only log and its hash commitments.
 3. The page from prototypes A3/A4, reading the JSON; FR by default, EN switch.
-4. The Wallpaper Engine skin on the same files.
+4. The Wallpaper Engine skin on the same files: `live/wallpaper/` frames the served page in wall mode
+   (`index.html?wall&lang=&mode=&bottom=`: no controls, scaled to the screen, filled down to the taskbar). It bundles no
+   data and no copy of the page. The server address is a Wallpaper Engine property, never a tracked value. When the
+   server cannot be reached, it says so over the page.

@@ -35,11 +35,14 @@ aside{width:296px;display:flex;flex-direction:column;gap:8px}aside .panel{displa
 .strip{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:3px}
 .cell{background:#141c24;padding:2px 3px;display:flex;flex-direction:column;align-items:center;border:1px solid transparent}
 .cell .bw{position:relative;width:100%;height:20px}.cell .z{position:absolute;left:0;right:0;top:10px;border-top:1px solid #3a4a5a}
+body.wall{overflow:hidden}body.wall .seg,body.wall #det,body.wall #hbox,body.wall #lModeBox{display:none!important}
+body.wall .wrap{max-width:none;padding:14px 20px}body.wall .main{flex:1;min-height:0}body.wall .chartp{min-height:0}body.wall #chart{flex:1;height:auto;min-height:240px}
+body.wall.tall .main{flex-direction:column}body.wall.tall aside{width:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}body.wall.tall .strip{grid-template-columns:repeat(12,minmax(0,1fr))}
 @media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.main{flex-direction:column}aside{width:auto}.strip{grid-template-columns:repeat(12,minmax(0,1fr))}.scope{display:none}}
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrapper">
   <header>
     <strong>VALIWATT LIVE</strong><span class="m" id="where"></span><span class="m" id="when"></span><span class="m" id="fresh"></span>
     <span class="tag" id="modeTag"></span>
@@ -62,7 +65,7 @@ aside{width:296px;display:flex;flex-direction:column;gap:8px}aside .panel{displa
         <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="#f0b45a" stroke-width="1.5" stroke-dasharray="4 3"/></svg><span id="lFc"></span></span>
         <span><svg width="22" height="10"><rect width="22" height="10" fill="#8fa3b8" fill-opacity=".14"/></svg><span id="lBand"></span></span>
         <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="#ff7a45"/></svg><span id="lOut"></span></span>
-        <span style="margin-left:auto"><span id="lMode"></span><span class="seg"><button id="mOff" onclick="VW.setMode('official')"></button><button id="mExp" onclick="VW.setMode('experimental')"></button></span></span>
+        <span style="margin-left:auto" id="lModeBox"><span id="lMode"></span><span class="seg"><button id="mOff" onclick="VW.setMode('official')"></button><button id="mExp" onclick="VW.setMode('experimental')"></button></span></span>
       </div>
       <div id="chart"><svg id="svg"></svg><div id="axes"></div><div id="hbox"></div></div>
     </section>
@@ -78,7 +81,7 @@ aside{width:296px;display:flex;flex-direction:column;gap:8px}aside .panel{displa
     <section class="strip" id="cells"></section>
   </div>
 </div>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 <script>
 "use strict";
 function render() {
@@ -145,7 +148,7 @@ function render() {
   }).join("");
 }
 function chart(H, act, reads, nowX, F, LO, HI, inR) {
-  const el = $("chart"), W = el.clientWidth, Ht = 412, X0 = 56, X1 = W - 8, TOP = 16, BOT = 384;
+  const el = $("chart"), W = el.clientWidth, Ht = el.clientHeight || 412, X0 = 56, X1 = W - 8, TOP = 16, BOT = Ht - 28;
   const vals = reads.map((r) => r[1]).concat(H.flatMap((h) => [LO(h), HI(h)]).filter((v) => v != null));
   if (!vals.length) { $("svg").innerHTML = ""; $("axes").innerHTML = ""; return; }
   const step = 2000, vmin = Math.floor(Math.min(...vals) / step) * step - step / 2, vmax = Math.ceil(Math.max(...vals) / step) * step + step / 2;
@@ -178,13 +181,29 @@ function chart(H, act, reads, nowX, F, LO, HI, inR) {
   } else $("hbox").style.display = "none";
   $("svg").setAttribute("viewBox", `0 0 ${W} ${Ht}`); $("svg").innerHTML = s;
   const lab = (l, top, left) => `<span class="ax" style="top:${top}px;left:${left}px">${l}</span>`;
-  $("axes").innerHTML = grid.map((v) => lab(fmt(v), y(v) - 9, 0)).join("") + [0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => lab(state.lang === "en" ? h + ":00" : h + " h", 392, x(h) - 14)).join("") + (nowX ? lab(t().now + " · " + hm(reads[reads.length - 1][0]), 0, x(nowX) + 6) : "");
+  $("axes").innerHTML = grid.map((v) => lab(fmt(v), y(v) - 9, 0)).join("") + [0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => lab(state.lang === "en" ? h + ":00" : h + " h", Ht - 20, x(h) - 14)).join("") + (nowX ? lab(t().now + " · " + hm(reads[reads.length - 1][0]), 0, x(nowX) + 6) : "");
 }
-$("chart").addEventListener("mousemove", (ev) => { const r = ev.currentTarget.getBoundingClientRect(); const W = r.width, X0 = 56, X1 = W - 8; const hv = ((ev.clientX - r.left - X0) / (X1 - X0)) * 24; state.hover = hv < 0 || hv > 24 ? null : hv; render(); });
+if (!VW.WALL) $("chart").addEventListener("mousemove", (ev) => { const r = ev.currentTarget.getBoundingClientRect(); const W = r.width, X0 = 56, X1 = W - 8; const hv = ((ev.clientX - r.left - X0) / (X1 - X0)) * 24; state.hover = hv < 0 || hv > 24 ? null : hv; render(); });
 $("chart").addEventListener("mouseleave", () => { state.hover = null; render(); });
-window.addEventListener("resize", () => render());
+// wall: scale the 1440-wide layout to the screen and fill it down to the taskbar (?bottom=, CSS px, default 48)
+function fit() {
+  if (!VW.WALL) return;
+  const q = new URLSearchParams(location.search), bottom = Math.max(0, Math.min(200, +q.get("bottom") || 48));
+  const W = innerWidth, H = innerHeight - bottom, tall = H > W;
+  const z = tall ? W / 1000 : Math.min(W / 1440, H / 900);
+  document.body.classList.add("wall"); document.body.classList.toggle("tall", tall);
+  document.body.style.zoom = z; $("wrapper").style.height = H / z + "px";
+}
+fit();
+window.addEventListener("resize", () => fit());
+// redraw whenever the chart box changes size (window, late web fonts, the wall fit): the SVG viewBox and the HTML
+// axis labels are both laid out from its measured height, and drawn at a stale height they part (seen 2026-11-15)
+let lastBox = "";
+new ResizeObserver(() => { const b = $("chart").clientWidth + "x" + $("chart").clientHeight; if (b !== lastBox && state.data) { lastBox = b; render(); } }).observe($("chart"));
 window.render = render;
-async function tick() { try { await VW.load(); render(); } catch (e) { setText("sent", "data.json: " + e); } }
+// a failed fetch still re-renders: the "received N min ago" age keeps running and turns orange past 45 min,
+// so old numbers never sit there looking current
+async function tick() { try { await VW.load(); render(); } catch (e) { if (state.data) render(); setText("sent", "data.json: " + e); } }
 tick(); if (!new URLSearchParams(location.search).has("demo")) setInterval(tick, 60000);
 </script>
 </body>

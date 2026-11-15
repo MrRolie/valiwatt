@@ -59,8 +59,14 @@ const store = {
   get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private window */ } },
 };
-const state = { lang: store.get("vw.lang", "fr"), mode: store.get("vw.mode", "official"), data: null, hover: null };
-const DEMO = new URLSearchParams(location.search).has("demo");
+const Q = new URLSearchParams(location.search);
+const DEMO = Q.has("demo");
+// ?wall: the Wallpaper Engine skin (live/wallpaper). No controls, language and mode from the URL, never stored.
+const WALL = Q.has("wall");
+const pick = (k, ok, dflt) => (ok.includes(Q.get(k)) ? Q.get(k) : dflt);
+const state = WALL
+  ? { lang: pick("lang", ["fr", "en"], "fr"), mode: pick("mode", ["official", "experimental"], "official"), data: null, hover: null }
+  : { lang: store.get("vw.lang", "fr"), mode: store.get("vw.mode", "official"), data: null, hover: null };
 const $ = (id) => document.getElementById(id);
 const t = () => T[state.lang];
 const loc = () => (state.lang === "en" ? "en-CA" : "fr-CA");
@@ -102,4 +108,4 @@ function header() {
   const vf = new Date(d.verdict_from + "T05:00:00Z");
   setText("badge", DEMO ? L.demo : (new Date(d.day + "T12:00:00Z") >= vf ? L.live : L.trial(new Date(d.verdict_from + "T12:00:00Z").toLocaleDateString(loc(), { day: "numeric", month: "short", timeZone: "UTC" }))));
 }
-window.VW = { T, state, store, $, t, fmt, num1, pct, pctU, hm, hourOf, lst, dateLabel, load, setLang, setMode, hoursOf, hourlyActual, dayScore, setText, btn, header };
+window.VW = { T, state, WALL, store, $, t, fmt, num1, pct, pctU, hm, hourOf, lst, dateLabel, load, setLang, setMode, hoursOf, hourlyActual, dayScore, setText, btn, header };

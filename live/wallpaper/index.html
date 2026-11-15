@@ -1,0 +1,67 @@
+<!doctype html>
+<!-- Valiwatt Live, Wallpaper Engine shell: frames the private server's page in wall mode (live/site/index.html?wall).
+     It bundles no data and no copy of the page, so a page fix needs no reinstall and no Hydro-Québec data ships.
+     The server address is a user property, never a tracked value. -->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Valiwatt Live</title>
+<style>
+html,body{margin:0;height:100%;background:#0a0e13;overflow:hidden;font-family:ui-monospace,monospace;color:#c9d4de}
+iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#0a0e13}
+#msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);max-width:60vw;padding:18px 24px;
+  background:#10161d;border:1px solid #ff7a45;font-size:18px;line-height:1.5;display:none;text-align:center}
+#msg b{color:#ff9a70;letter-spacing:.08em}
+</style>
+</head>
+<body>
+<iframe id="page" title="Valiwatt Live"></iframe>
+<div id="msg"></div>
+<script>
+"use strict";
+const P = { server: "", lang: "fr", mode: "official", bottom: 48 };
+let lastOk = null, src = "";
+const base = () => { const s = P.server.trim(); return s && !s.endsWith("/") ? s + "/" : s; };
+const hm = (d) => d.toLocaleTimeString(P.lang === "en" ? "en-CA" : "fr-CA", { hour: "numeric", minute: "2-digit" });
+function say(html) { const m = document.getElementById("msg"); m.innerHTML = html; m.style.display = html ? "block" : "none"; }
+function frame() {
+  const b = base();
+  if (!b) { say(P.lang === "en" ? "<b>NO SERVER</b><br>Set the server address in this wallpaper's properties."
+                                : "<b>AUCUN SERVEUR</b><br>Indiquez l'adresse du serveur dans les propriétés du fond d'écran."); return; }
+  const next = b + "?wall&lang=" + P.lang + "&mode=" + P.mode + "&bottom=" + P.bottom;
+  if (next !== src) { src = next; document.getElementById("page").src = next; }
+  probe();
+}
+// reachability: an opaque no-cors fetch resolves when the server answers and rejects when it cannot be reached
+async function probe() {
+  const b = base(); if (!b) return;
+  try {
+    await fetch(b + "data.json?t=" + Date.now(), { mode: "no-cors", cache: "no-store" });
+    if (lastOk === false || document.getElementById("msg").style.display === "block") document.getElementById("page").src = src;
+    lastOk = new Date(); say(""); document.getElementById("page").style.opacity = 1;
+  } catch (e) {
+    const since = lastOk instanceof Date ? hm(lastOk) : null;
+    lastOk = lastOk instanceof Date ? lastOk : false;
+    // never answered: hide the browser error page; answered before: dim the last numbers under the notice
+    document.getElementById("page").style.opacity = lastOk ? 0.25 : 0;
+    say(P.lang === "en" ? "<b>SERVER UNREACHABLE</b><br>" + (since ? "Last answer at " + since + ". " : "") + "The numbers behind this notice are not current."
+                        : "<b>SERVEUR INJOIGNABLE</b><br>" + (since ? "Dernière réponse à " + since + ". " : "") + "Les chiffres derrière cet avis ne sont pas à jour.");
+  }
+}
+window.wallpaperPropertyListener = {
+  applyUserProperties(p) {
+    if (p.server) P.server = String(p.server.value || "");
+    if (p.lang) P.lang = p.lang.value === "en" ? "en" : "fr";
+    if (p.mode) P.mode = p.mode.value === "experimental" ? "experimental" : "official";
+    if (p.bottom) P.bottom = Math.round(+p.bottom.value || 0);
+    frame();
+  },
+};
+// outside Wallpaper Engine (a browser check): the same properties from the query string
+const q = new URLSearchParams(location.search);
+for (const k of Object.keys(P)) if (q.has(k)) P[k] = k === "bottom" ? +q.get(k) : q.get(k);
+setInterval(probe, 60000);
+setTimeout(frame, 0);
+</script>
+</body>
+</html>
