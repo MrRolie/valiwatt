@@ -81,7 +81,7 @@ body.wall.tall .main{flex-direction:column}body.wall.tall aside{width:auto;displ
     <section class="strip" id="cells"></section>
   </div>
 </div>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 <script>
 "use strict";
 function render() {
@@ -131,7 +131,7 @@ function render() {
   const week = d.days.slice(-7);
   const anyDay = week.some((x) => VW.dayScore(x) != null);
   $("bars").style.display = anyDay ? "" : "none"; $("blab").style.display = anyDay ? "" : "none";
-  setText("r3s", anyDay ? L.r3s : L.r3none(state.lang === "en" ? "Nov 19" : "19 novembre"));
+  setText("r3s", anyDay ? L.r3s : L.r3none(state.lang === "en" ? "Nov 18" : "18 novembre"));
   $("bars").innerHTML = week.map((x) => { const v = VW.dayScore(x); const h = v == null ? 4 : Math.max(4, (v - 50) / 50 * 52); return `<div style="flex:1;height:${h.toFixed(0)}px;background:${v == null ? "#2a3642" : v < 90 ? "#c26a3e" : "#56687a"}"></div>`; }).join("") + `<div class="t90" style="bottom:${(40 / 50 * 52).toFixed(0)}px"></div>`;
   $("blab").innerHTML = week.map((x) => { const v = VW.dayScore(x); return `<span>${v == null ? "·" : v}<br><span style="color:var(--mute)">${VW.dateLabel(x.day).split(" ")[0].replace(",", "")}</span></span>`; }).join("");
   chart(H, act, reads, nowX, F, LO, HI, inR);

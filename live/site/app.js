@@ -25,7 +25,7 @@ const T = {
     sOk: (e) => `Dernière heure complète : la demande ${e} la prévision de minuit.`,
     above: (x) => `dépasse de ${x}`, below: (x) => `est inférieure de ${x} à`,
     sNone: "Aucune prévision n'a été émise à temps aujourd'hui. La demande mesurée s'affiche seule.",
-    sFirst: "Pas encore de prévision : le modèle lit la demande d'il y a 7 jours, et le flux d'Hydro-Québec ne garde que 48 h. Captée depuis le 11 nov., la première prévision complète est attendue le 19 nov.",
+    sFirst: "Pas encore de prévision : le modèle lit la demande d'il y a 7 jours, et le flux d'Hydro-Québec ne garde que 48 h. Captée depuis le 11 nov., la première prévision complète est attendue le 18 nov.",
     hover: { f: "prévision", a: "mesurée", r: "plage", soon: "à venir" }, nodata: "aucune",
   },
   en: {
@@ -51,7 +51,7 @@ const T = {
     sWatch: (t) => `Back in range. The last exit from the range was at ${t}.`,
     sOk: (e) => `Last complete hour: demand is ${e} the midnight forecast.`, above: (x) => `${x} above`,
     below: (x) => `${x} below`, sNone: "No forecast was issued in time today. Measured demand is shown alone.",
-    sFirst: "No forecast yet: the model reads demand from 7 days earlier, and Hydro-Québec's feed keeps only 48 h. Captured since Nov 11, the first full forecast is expected on Nov 19.",
+    sFirst: "No forecast yet: the model reads demand from 7 days earlier, and Hydro-Québec's feed keeps only 48 h. Captured since Nov 11, the first full forecast is expected on Nov 18.",
     hover: { f: "forecast", a: "measured", r: "range", soon: "to come" }, nodata: "none",
   },
 };
