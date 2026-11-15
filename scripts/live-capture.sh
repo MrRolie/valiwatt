@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Blind capture of Hydro-Québec's 15-minute demand feed (it keeps only ~48 h). Writes each response, gzipped, to
-# data/live/capture/; nothing reads these files before the rules-frozen-live tag (docs/plan-live.md, "The live inputs").
+# data/live/capture/; nothing reads these files before the live-frozen tag (docs/plan-live.md, "The live inputs").
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=data/live/capture

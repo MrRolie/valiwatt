@@ -22,7 +22,7 @@ from valiwatt.forecast.features import day_origin
 from valiwatt.forecast.freeze import FrozenModel, FrozenModelError
 
 LOG = FROZEN_DIR.parent / "issues.jsonl"
-TAG = "rules-frozen-live"
+TAG = "live-frozen"
 
 
 def tagged_record() -> dict:

@@ -106,7 +106,7 @@ band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one fact
 The intraday "adjusted" line in prototype A3 is a mock. It is not part of the ruling and does not ship as a forecast.
 
 ## Build order
-1. Walk-forward folds 2024–2025 and the 2026 freeze (official and experimental), tag `rules-frozen-live`.
+1. Walk-forward folds 2024–2025 and the 2026 freeze (official and experimental), tag `live-frozen` (named `rules-frozen-live` until the owner's ruling of 2026-11-15, same commit: that name matched v2/v3's `rules-frozen*` freeze guard).
 2. The demand feed (every 15 min) and the daily issue just after midnight, written as static JSON plus the
    append-only log and its hash commitments.
 3. The page from prototypes A3/A4, reading the JSON; FR by default, EN switch.
