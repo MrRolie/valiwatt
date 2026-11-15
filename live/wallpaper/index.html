@@ -63,7 +63,17 @@ async function probe() {
   catch (e) { unreachable(); }
 }
 async function start() {
-  if (built) { if (key() !== builtKey) location.reload(); return; } // a changed property after the page ran: start clean
+  if (built) {
+    if (key() === builtKey) return;
+    // a new server needs a clean start; language, forecast and taskbar apply in place, with no reload that would
+    // depend on Wallpaper Engine re-delivering the saved properties
+    if (JSON.parse(builtKey).server !== P.server) { location.reload(); return; }
+    const VW = window.VW; builtKey = key();
+    VW.Q.set("lang", P.lang); VW.Q.set("mode", P.mode); VW.Q.set("bottom", P.bottom);
+    VW.state.lang = P.lang; VW.state.mode = P.mode;
+    window.dispatchEvent(new Event("resize")); window.render();
+    return;
+  }
   if (started) return; started = true;
   try { await build(); } finally { started = false; }
 }
