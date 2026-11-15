@@ -1,52 +1,71 @@
 <!doctype html>
-<!-- Valiwatt Live, Wallpaper Engine shell: frames the private server's page in wall mode (live/site/index.html?wall).
-     It bundles no data and no copy of the page, so a page fix needs no reinstall and no Hydro-Québec data ships.
-     The server address is a user property, never a tracked value. -->
+<!-- Valiwatt Live, Wallpaper Engine shell. It fetches the private server's page (live/site/index.html), its code and
+     its data, and runs them in this document in wall mode. No frame: WE's browser crashes on a cross-origin frame
+     (measured on his PC 2026-11-15). It bundles no data and no copy of the page, so a page fix needs no reinstall and
+     no Hydro-Québec data ships. The server address is a user property, never a tracked value. -->
 <html lang="fr">
 <head>
 <meta charset="utf-8">
 <title>Valiwatt Live</title>
-<style>
-html,body{margin:0;height:100%;background:#0a0e13;overflow:hidden;font-family:ui-monospace,monospace;color:#c9d4de}
-iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#0a0e13}
-#msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);max-width:60vw;padding:18px 24px;
-  background:#10161d;border:1px solid #ff7a45;font-size:18px;line-height:1.5;display:none;text-align:center}
+<style id="shellcss">
+html,body{margin:0;background:#0a0e13;color:#c9d4de}
+#msg{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);max-width:60vw;padding:18px 24px;z-index:10;
+  background:#10161d;border:1px solid #ff7a45;font:18px/1.5 ui-monospace,monospace;display:none;text-align:center}
 #msg b{color:#ff9a70;letter-spacing:.08em}
+#veil{position:fixed;inset:0;background:#0a0e13;opacity:.75;z-index:9;display:none}
 </style>
 </head>
 <body>
-<iframe id="page" title="Valiwatt Live"></iframe>
-<div id="msg"></div>
+<div id="veil"></div><div id="msg"></div>
 <script>
 "use strict";
+// one scope: the page's own code (app.js) runs in this document and declares globals of its own
+(() => {
 const P = { server: "", lang: "fr", mode: "official", bottom: 48 };
-let lastOk = null, src = "";
+let built = false, builtKey = "", lastOk = null, started = false;
+const key = () => JSON.stringify(P);
 const base = () => { const s = P.server.trim(); return s && !s.endsWith("/") ? s + "/" : s; };
 const hm = (d) => d.toLocaleTimeString(P.lang === "en" ? "en-CA" : "fr-CA", { hour: "numeric", minute: "2-digit" });
-function say(html) { const m = document.getElementById("msg"); m.innerHTML = html; m.style.display = html ? "block" : "none"; }
-function frame() {
+function say(html) {
+  const m = document.getElementById("msg"), v = document.getElementById("veil");
+  m.innerHTML = html; m.style.display = html ? "block" : "none"; v.style.display = html && built ? "block" : "none";
+}
+function unreachable() {
+  const since = lastOk ? hm(lastOk) : null;
+  say(P.lang === "en" ? "<b>SERVER UNREACHABLE</b><br>" + (since ? "Last answer at " + since + ". " : "") + "The numbers behind this notice are not current."
+                      : "<b>SERVEUR INJOIGNABLE</b><br>" + (since ? "Dernière réponse à " + since + ". " : "") + "Les chiffres derrière cet avis ne sont pas à jour.");
+}
+const loadScript = (attrs) => new Promise((ok, no) => { const s = document.createElement("script"); Object.assign(s, attrs); s.onload = ok; s.onerror = () => no(new Error("script " + (attrs.src || ""))); document.body.appendChild(s); if (!attrs.src) ok(); });
+// build once: the server's page, its styles and its code, run here with relative URLs resolved against the server
+async function build() {
   const b = base();
   if (!b) { say(P.lang === "en" ? "<b>NO SERVER</b><br>Set the server address in this wallpaper's properties."
                                 : "<b>AUCUN SERVEUR</b><br>Indiquez l'adresse du serveur dans les propriétés du fond d'écran."); return; }
-  const next = b + "?wall&lang=" + P.lang + "&mode=" + P.mode + "&bottom=" + P.bottom;
-  if (next !== src) { src = next; document.getElementById("page").src = next; }
-  probe();
+  let html;
+  try { const r = await fetch(b + "index.html?t=" + Date.now(), { cache: "no-store" }); if (!r.ok) throw new Error(r.status); html = await r.text(); }
+  catch (e) { unreachable(); return; }
+  lastOk = new Date(); say("");
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const baseEl = document.createElement("base"); baseEl.href = b; document.head.prepend(baseEl);
+  for (const el of doc.head.querySelectorAll("style, link")) document.head.appendChild(document.importNode(el, true));
+  const scripts = [...doc.body.querySelectorAll("script")];
+  scripts.forEach((s) => s.remove());
+  for (const el of [...doc.body.childNodes]) document.body.appendChild(document.importNode(el, true));
+  builtKey = key();
+  window.VW_QUERY = "?wall&lang=" + P.lang + "&mode=" + P.mode + "&bottom=" + P.bottom;
+  built = true;
+  for (const s of scripts) await loadScript(s.src ? { src: new URL(s.getAttribute("src"), b).href } : { textContent: s.textContent });
 }
-// reachability: an opaque no-cors fetch resolves when the server answers and rejects when it cannot be reached
+// reachability after the build: the page keeps its own clock (its data's age turns orange), this says it outright
 async function probe() {
-  const b = base(); if (!b) return;
-  try {
-    await fetch(b + "data.json?t=" + Date.now(), { mode: "no-cors", cache: "no-store" });
-    if (lastOk === false || document.getElementById("msg").style.display === "block") document.getElementById("page").src = src;
-    lastOk = new Date(); say(""); document.getElementById("page").style.opacity = 1;
-  } catch (e) {
-    const since = lastOk instanceof Date ? hm(lastOk) : null;
-    lastOk = lastOk instanceof Date ? lastOk : false;
-    // never answered: hide the browser error page; answered before: dim the last numbers under the notice
-    document.getElementById("page").style.opacity = lastOk ? 0.25 : 0;
-    say(P.lang === "en" ? "<b>SERVER UNREACHABLE</b><br>" + (since ? "Last answer at " + since + ". " : "") + "The numbers behind this notice are not current."
-                        : "<b>SERVEUR INJOIGNABLE</b><br>" + (since ? "Dernière réponse à " + since + ". " : "") + "Les chiffres derrière cet avis ne sont pas à jour.");
-  }
+  const b = base(); if (!b || !built) return;
+  try { await fetch(b + "data.json?t=" + Date.now(), { method: "HEAD", cache: "no-store" }); lastOk = new Date(); say(""); }
+  catch (e) { unreachable(); }
+}
+async function start() {
+  if (built) { if (key() !== builtKey) location.reload(); return; } // a changed property after the page ran: start clean
+  if (started) return; started = true;
+  try { await build(); } finally { started = false; }
 }
 window.wallpaperPropertyListener = {
   applyUserProperties(p) {
@@ -54,14 +73,15 @@ window.wallpaperPropertyListener = {
     if (p.lang) P.lang = p.lang.value === "en" ? "en" : "fr";
     if (p.mode) P.mode = p.mode.value === "experimental" ? "experimental" : "official";
     if (p.bottom) P.bottom = Math.round(+p.bottom.value || 0);
-    frame();
+    start();
   },
 };
 // outside Wallpaper Engine (a browser check): the same properties from the query string
 const q = new URLSearchParams(location.search);
 for (const k of Object.keys(P)) if (q.has(k)) P[k] = k === "bottom" ? +q.get(k) : q.get(k);
-setInterval(probe, 60000);
-setTimeout(frame, 0);
+setInterval(() => (built ? probe() : start()), 60000);
+setTimeout(start, 0);
+})();
 </script>
 </body>
 </html>

@@ -59,7 +59,9 @@ const store = {
   get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private window */ } },
 };
-const Q = new URLSearchParams(location.search);
+// the Wallpaper Engine shell runs this code in its own document (a cross-origin frame crashes WE's browser,
+// 2026-11-15) and hands its query in VW_QUERY
+const Q = new URLSearchParams(window.VW_QUERY || location.search);
 const DEMO = Q.has("demo");
 // ?wall: the Wallpaper Engine skin (live/wallpaper). No controls, language and mode from the URL, never stored.
 const WALL = Q.has("wall");
@@ -108,4 +110,4 @@ function header() {
   const vf = new Date(d.verdict_from + "T05:00:00Z");
   setText("badge", DEMO ? L.demo : (new Date(d.day + "T12:00:00Z") >= vf ? L.live : L.trial(new Date(d.verdict_from + "T12:00:00Z").toLocaleDateString(loc(), { day: "numeric", month: "short", timeZone: "UTC" }))));
 }
-window.VW = { T, state, WALL, store, $, t, fmt, num1, pct, pctU, hm, hourOf, lst, dateLabel, load, setLang, setMode, hoursOf, hourlyActual, dayScore, setText, btn, header };
+window.VW = { T, state, WALL, Q, store, $, t, fmt, num1, pct, pctU, hm, hourOf, lst, dateLabel, load, setLang, setMode, hoursOf, hourlyActual, dayScore, setText, btn, header };

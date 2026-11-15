@@ -11,6 +11,9 @@ SITE = Path(__file__).resolve().parent / "site"
 class NoCache(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store, max-age=0")
+        # the Wallpaper Engine shell (a local file, Origin: null) fetches the page, its code and its data; the
+        # server binds only the private tailnet address, and nothing it serves needs credentials
+        self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 
     def list_directory(self, path):  # no directory listings

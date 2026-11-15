@@ -81,7 +81,7 @@ body.wall.tall .main{flex-direction:column}body.wall.tall aside{width:auto;displ
     <section class="strip" id="cells"></section>
   </div>
 </div>
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 <script>
 "use strict";
 function render() {
@@ -188,7 +188,7 @@ $("chart").addEventListener("mouseleave", () => { state.hover = null; render(); 
 // wall: scale the 1440-wide layout to the screen and fill it down to the taskbar (?bottom=, CSS px, default 48)
 function fit() {
   if (!VW.WALL) return;
-  const q = new URLSearchParams(location.search), bottom = Math.max(0, Math.min(200, +q.get("bottom") || 48));
+  const q = VW.Q, bottom = Math.max(0, Math.min(200, +q.get("bottom") || 48));
   const W = innerWidth, H = innerHeight - bottom, tall = H > W;
   const z = tall ? W / 1000 : Math.min(W / 1440, H / 900);
   document.body.classList.add("wall"); document.body.classList.toggle("tall", tall);
@@ -204,7 +204,7 @@ window.render = render;
 // a failed fetch still re-renders: the "received N min ago" age keeps running and turns orange past 45 min,
 // so old numbers never sit there looking current
 async function tick() { try { await VW.load(); render(); } catch (e) { if (state.data) render(); setText("sent", "data.json: " + e); } }
-tick(); if (!new URLSearchParams(location.search).has("demo")) setInterval(tick, 60000);
+tick(); if (!VW.Q.has("demo")) setInterval(tick, 60000);
 </script>
 </body>
 </html>
