@@ -196,3 +196,17 @@ re-issued at noon.
    (`index.html?wall&lang=&mode=&bottom=`: no controls, scaled to the screen, filled down to the taskbar). It bundles no
    data and no copy of the page. The server address is a Wallpaper Engine property, never a tracked value. When the
    server cannot be reached, it says so over the page.
+
+## Next winter's candidate: the peak-event notice (owner's ruling 2026-11-17: capture the timing first)
+- Finding, on seen data (v2's 2025 test hours, so a hypothesis only): on hours inside a Hydro-Québec peak event
+  (`evenements-pointe`, 99 distinct windows from 2024-12 to 2025-12), the official error (A − F)/F averaged +4.91 %,
+  against +2.31 % on non-event winter hours at the same local hour with a forecast temperature within 3 °C. That is a
+  difference of +2.59 points, 95 % day-block CI [+1.84, +3.90] over 39 event days; the range held 61.6 % of event
+  hours. Events are called on the days Hydro-Québec expects the most demand, and the model under-forecasts them even
+  at equal temperature.
+- Before it can be an input: when an event reaches the public feed is unknown (Flex D residential notice by 15:00 the
+  day before; the other offers are unverified). Only an event published before D's origin is usable for D.
+- What runs this winter: `scripts/live-events-capture.sh` snapshots the feed hourly into `data/live/events/` (cron
+  :11). Each event's first-seen time is read from the snapshots after the winter. No forecast reads them. A line built
+  on this is designed and frozen for the winter of 2027–28, with its own ruling.
+
