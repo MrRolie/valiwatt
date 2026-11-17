@@ -1,0 +1,77 @@
+{
+ "check_2025_seen_deciding_only_a_stop": {
+  "coverage": 0.8996,
+  "days": 359,
+  "noon_hours_13_24_mape": {
+   "midnight": 2.854,
+   "update": 1.8596
+  },
+  "six_hours_7_24_mape": {
+   "midnight": 2.7491,
+   "update": 2.29
+  }
+ },
+ "choice": {
+  "design_mape_pairs": 2.0294,
+  "m": 1,
+  "rho": 0.93
+ },
+ "coverage_design": 0.9,
+ "declared_at": "a4a9ef5",
+ "design_days": 1798,
+ "design_years": [
+  2020,
+  2024
+ ],
+ "grid": {
+  "m=1 rho=0.8": 2.247,
+  "m=1 rho=0.85": 2.1536,
+  "m=1 rho=0.9": 2.0628,
+  "m=1 rho=0.93": 2.0294,
+  "m=1 rho=0.95": 2.0331,
+  "m=1 rho=0.97": 2.0779,
+  "m=1 rho=0.99": 2.192,
+  "m=1 rho=1.0": 2.2859,
+  "m=2 rho=0.8": 2.2793,
+  "m=2 rho=0.85": 2.1941,
+  "m=2 rho=0.9": 2.1124,
+  "m=2 rho=0.93": 2.0843,
+  "m=2 rho=0.95": 2.0907,
+  "m=2 rho=0.97": 2.1368,
+  "m=2 rho=0.99": 2.2507,
+  "m=2 rho=1.0": 2.3436,
+  "m=3 rho=0.8": 2.3078,
+  "m=3 rho=0.85": 2.2289,
+  "m=3 rho=0.9": 2.154,
+  "m=3 rho=0.93": 2.1294,
+  "m=3 rho=0.95": 2.1374,
+  "m=3 rho=0.97": 2.1839,
+  "m=3 rho=0.99": 2.2969,
+  "m=3 rho=1.0": 2.3886
+ },
+ "lib_sha256": "789dfb48f79cff06bbab82eb2c88df215fdb65bfe80276272e5e52f67ff2a395",
+ "oos_sha256": "e7b8e3d1436a8de4c5171e44c20224411c866cd7aab75a4886c3629bff6cd9ac",
+ "params_sha256": "d775ee8e11c19d3d2f9bbd5162fc492bc5c697cf36004b9bf0bae5355d4df1af",
+ "per_year_choice_deciding_nothing": {
+  "2020": [
+   1,
+   0.93
+  ],
+  "2021": [
+   1,
+   0.95
+  ],
+  "2022": [
+   1,
+   0.93
+  ],
+  "2023": [
+   1,
+   0.93
+  ],
+  "2024": [
+   1,
+   0.93
+  ]
+ }
+}
