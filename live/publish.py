@@ -84,7 +84,25 @@ def payload(now: pd.Timestamp) -> dict:
                    "experimental_sha256": rec["experimental"]["sha256"], "q": rec["official"]["q"],
                    "groups": rec["experimental"]["groups"]},
         "verdict_from": VERDICT_FROM,
+        **updates_of(str(day.date())),
     }
+
+
+def updates_of(day: str) -> dict:
+    """Line 3 on the page: the day's newest update and the midnight peak paths (live/updates.py). A display: any failure
+    here leaves the rest of the page as it was."""
+    try:
+        from live.updates import LOG as ULOG
+        if not ULOG.exists():
+            return {}
+        ups = [x for x in (json.loads(line) for line in ULOG.read_text().splitlines() if line) if x.get("day") == day]
+        if not ups:
+            return {}
+        newest = max(ups, key=lambda x: x["k"])
+        midnight = next((x for x in ups if x["k"] == 0), None)
+        return {"update": newest, "midnight_peak": midnight["peak"] if midnight else None}
+    except Exception as exc:  # noqa: BLE001 (a display never breaks the page)
+        return {"update_error": str(exc)[:200]}
 
 
 def write(now: pd.Timestamp | None = None) -> None:
@@ -145,7 +163,21 @@ def demo(day: str = "2025-01-21", now_hour: int = 18) -> None:
             "peaks": [], "freeze": {"tag": TAG, "official_sha256": rec["official"]["sha256"],
                                      "experimental_sha256": rec["experimental"]["sha256"], "q": rec["official"]["q"],
                                      "groups": rec["experimental"]["groups"]}, "verdict_from": VERDICT_FROM, "demo": True}
+    body.update(demo_updates(issue, raw, now_hour))
     (SITE / "demo.json").write_text(json.dumps(body, default=str))
+
+
+def demo_updates(issue: dict, raw: pd.Series, now_hour: int) -> dict:
+    """Line 3 for the demo: the update at k = now_hour and the midnight peak paths, from the frozen update files, on the
+    seen day's measured hours up to now_hour. Layout only."""
+    from live.updates import load, make
+    params, e_lib, doy = load(tagged=False)
+    labels = [pd.Timestamp(h["hour_ending_utc"]) for h in issue["hours"]]
+    actual = np.array([raw.get(t, np.nan) for t in labels], dtype=float)
+    o = pd.Timestamp(issue["origin"])
+    k = make(issue["day"], now_hour, o + pd.Timedelta(hours=now_hour, minutes=25), issue, actual, params, e_lib, doy)
+    m = make(issue["day"], 0, o + pd.Timedelta(minutes=25), issue, actual, params, e_lib, doy)
+    return {"update": k, "midnight_peak": m["peak"]}
 
 
 if __name__ == "__main__":
