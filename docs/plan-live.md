@@ -103,7 +103,73 @@ band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one fact
   their tests stay unchanged (the v3 report stamp hashes tests).
 
 ## Out of scope
-The intraday "adjusted" line in prototype A3 is a mock. It is not part of the ruling and does not ship as a forecast.
+The intraday "adjusted" line in prototype A3 was a mock and does not ship. The updates below replace it, under their
+own ruling, rules and tag.
+
+## Line 3, the updates: the owner's ruling, 2026-11-16
+His card: "Build both", an hourly re-forecast that carries forward the latest error, and sampled paths for the daily
+peak. Both are frozen and tagged before 2026-12-01 and scored this winter against the midnight official. `live-frozen`
+and its verdict are unchanged: the updates are a third line beside them, with their own tag `live-updates-frozen`.
+
+Why: within a day, the official forecast's errors persist. A first look at v2's 2025 test hours (seen data, three
+values of ρ tried on it, so no claim) put the remaining hours' MAPE at 2.99 % for the midnight issue and 1.98 % when
+re-issued at noon.
+
+### The re-forecast, pre-declared
+- Base: the official midnight forecast F (`live-frozen`, unchanged). Hour k of day D is complete when its four
+  readings exist (the input rules above). At each complete hour k (1 to 23), at k + 25 min, the update issues every
+  later hour h > k of D:
+  `U(k, h) = F(h) × (1 + ē(k) × ρ^(h − k))`, where ē(k) is the mean relative error (A − F)/F of the last m complete
+  hours up to k. The hours used are all at or before k and all of D (the update never reaches back past D's origin).
+  With no complete hour of D yet, U = F.
+- Design set: v2's walk-forward on 2020–2024 (monthly refits, 7-day embargo, the production model;
+  `data/analysis/live-updates/folds.py`). Grid: ρ ∈ {0.80, 0.85, 0.90, 0.93, 0.95, 0.97, 0.99, 1.00}, m ∈ {1, 2, 3}.
+  Criterion: the mean absolute percentage error over every pair (k, h > k) of every complete day, pooled. Ties go to
+  the smaller m, then the smaller ρ.
+- Range: for each lead ℓ = h − k (1 to 23), the α/2 and 1 − α/2 quantiles (α = 0.10) of the updated relative
+  error (A − U)/U on the design set; U × (1 + q_lo), U × (1 + q_hi). If a lead has n < 2,000, it merges into the
+  next shorter lead (lead 23 has at most one pair per day).
+- Check on 2025 (seen data, deciding nothing but a stop), on the 2025 walk-forward folds of the same procedure:
+  if the chosen rule does not lower the noon re-issue's MAPE
+  on hours 13–24 against F, the build stops and the finding is reported before any tag.
+
+### The peak paths, pre-declared
+- At midnight and at each update, 1,000 paths of D's remaining hours: U(k, h) × (1 + r(h)), where r is the vector of
+  updated relative errors for hours h > k of one design day, drawn with replacement. That day comes from 2020–2024,
+  within ±30 days of D's calendar date, and has the same k. A whole day is drawn at once, so the hour-to-hour
+  persistence is kept. The path's peak is the max of the measured hours ≤ k and the path hours > k.
+- Published: the peak's P10, P50 and P90, and the peak hour most frequent across the paths. The paths are a display. Their scores are
+  reported and decide nothing: 80 % peak-interval coverage (P10–P90) and the pinball loss of P50, for the midnight
+  issue and the noon update.
+
+### The verdict, declared before any outcome
+- Period, target, scored hours and CI: as the winter's verdict above (2026-12-01 to 2027-03-31, the live vintage,
+  then the export of record, week-block bootstrap).
+- Primary: the noon update (k = 12, the hour ending 12:00 EST) against F on hours 13–24, MAPE paired by hour.
+  "Update better" or "midnight better" when the 95 % CI excludes 0, else "not separated". If the noon update is
+  missing (hour 12 incomplete), the latest earlier update stands in, and the count is reported.
+- Reported, deciding nothing:
+  - the 06:00 update on hours 7–24;
+  - the range's coverage and interval score by lead;
+  - the peak paths' scores.
+- Limit: as the winter's verdict. The design comes from monthly refits; live, one frozen model ages through the winter.
+
+### Proof and timing
+- Every update is appended to the issue log with its own record and hash, and its hash is pushed to `live-hashes` when it is issued: the push time proves the update came before the hours it forecasts.
+- Deadline: update k counts only if issued before hour k + 1 ends (the midnight rule's mirror). A late update, or one
+  whose hash push fails, is missed and counted, and the latest earlier update stands for its hours.
+- Updates go to their own append-only log, `data/live/updates.jsonl`, in their own module and cron step: a failure in
+  the updates can neither block nor change the midnight issue or its log.
+- Only hours h > k are ever scored for an update k.
+
+### Data exposure and the tag
+- 2026 data has been on the private page since 2026-11-11, so the condition "no 2026 data before the freeze" cannot
+  hold for line 3 as it did for `live-frozen`. What holds: the design code reads only the 2020–2025 folds; no 2026 value
+  enters a choice; no live error (A − F)/F exists before the first live issue, on 2026-11-18. Aim: the tag before
+  that issue. If the tag slips past it, this section records the date, and nothing measured on live hours touches the rule.
+- "Before the tag" above applies to this tag too: a rehearsal on a seen day of 2025 and a fresh-context review.
+- Reported beside the pooled choice, deciding nothing: the (ρ, m) each design year alone would choose. The 2020 folds
+  train on one year, so their errors may persist more than the live model's.
 
 ## Build order
 1. Walk-forward folds 2024–2025 and the 2026 freeze (official and experimental), tag `live-frozen` (named `rules-frozen-live` until the owner's ruling of 2026-11-15, same commit: that name matched v2/v3's `rules-frozen*` freeze guard).
