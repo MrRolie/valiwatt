@@ -136,3 +136,24 @@ def test_load_refuses_files_that_differ_from_the_record(tmp_path, monkeypatch):
     rec.write_text(json.dumps({"params_sha256": "other", "lib_sha256": p["lib_sha256"]}))
     with pytest.raises(FrozenModelError, match="UPDATES-FREEZE"):
         up.load(tagged=False)
+
+
+def test_the_decay_runs_from_the_hour_the_error_came_from():
+    e = np.full((1, 24), np.nan); e[0, 4] = 0.10  # hour 5 has its error; hours 6..k do not
+    eb, j = up.ebar_at(e, 8, 1)
+    assert eb[0] == pytest.approx(0.10) and j[0] == 5
+    U, _ = up.updated(np.full((1, 24), 100.0), eb, 8, 0.5, j)
+    assert U[0, 0] == pytest.approx(100 * (1 + 0.10 * 0.5 ** (9 - 5)))
+    U_k, _ = up.updated(np.full((1, 24), 100.0), eb, 8, 0.5)  # without the anchor: the design days' case, j = k
+    assert U_k[0, 0] == pytest.approx(100 * (1 + 0.10 * 0.5))
+
+
+def test_lead_merge_goes_to_the_shorter_lead_and_ties_go_to_smaller_m_then_rho(monkeypatch):
+    rng = np.random.default_rng(1)
+    F = np.full((90, 24), 100.0); A = F * (1 + rng.normal(0, 0.02, (90, 24)))
+    monkeypatch.setattr(up, "NMIN", 200)
+    r = up.lead_range(F, A, 1, 0.9)
+    assert r["23"]["group"] == r["22"]["group"] and min(r["23"]["group"]) < 23  # 90 pairs at lead 23: merged down
+    assert r["1"]["group"] == [1]
+    monkeypatch.setattr(up, "mape_pairs", lambda F, A, m, rho: 1.0)  # all equal
+    assert up.choose(F, A)[0] == (1, 0.80)

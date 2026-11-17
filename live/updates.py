@@ -47,18 +47,28 @@ def ebar(e: np.ndarray, k: int, m: int) -> np.ndarray:
     """Mean relative error of the last m complete hours up to k. e: (days, 24), NaN where an hour is not complete or has
     no forecast; positions 0..k-1 are D's hours 1..k. The hours used are the last m finite ones at or before k, never
     before D's origin; none: 0 (U = F)."""
+    return ebar_at(e, k, m)[0]
+
+
+def ebar_at(e: np.ndarray, k: int, m: int) -> tuple[np.ndarray, np.ndarray]:
+    """ē as `ebar`, and j: the hour the newest error used comes from (k when hour k has its error, as on every design
+    day; k when none, where ē = 0). The decay runs from j (docs/plan-live.md, review of 2026-11-16)."""
     e = np.atleast_2d(e)
-    out = np.zeros(e.shape[0])
+    out, j = np.zeros(e.shape[0]), np.full(e.shape[0], k)
     for i, row in enumerate(e):
-        known = row[:k][np.isfinite(row[:k])]
-        out[i] = known[-m:].mean() if known.size else 0.0
-    return out
+        idx = np.flatnonzero(np.isfinite(row[:k]))
+        if idx.size:
+            out[i] = row[idx[-m:]].mean()
+            j[i] = idx[-1] + 1
+    return out, j
 
 
-def updated(F: np.ndarray, eb: np.ndarray, k: int, rho: float) -> tuple[np.ndarray, np.ndarray]:
-    """U(k, h) for h = k+1..24 (positions k..23) and their leads h - k."""
+def updated(F: np.ndarray, eb: np.ndarray, k: int, rho: float, j=None) -> tuple[np.ndarray, np.ndarray]:
+    """U(k, h) for h = k+1..24 (positions k..23) and their leads h - k; the error decays by ρ^(h − j)."""
     lead = np.arange(1, 25 - k)
-    return np.atleast_2d(F)[:, k:] * (1 + np.asarray(eb)[:, None] * rho ** lead[None, :]), lead
+    j = np.full(np.atleast_2d(F).shape[0], k) if j is None else np.asarray(j)
+    decay = rho ** (np.arange(k + 1, 25)[None, :] - j[:, None])
+    return np.atleast_2d(F)[:, k:] * (1 + np.asarray(eb)[:, None] * decay), lead
 
 
 # ---- the design (run once, as declared) -----------------------------------------------------------------------------
@@ -205,7 +215,7 @@ def load(tagged: bool = True) -> tuple[dict, np.ndarray, np.ndarray]:
 
 
 # ---- one update -----------------------------------------------------------------------------------------------------
-def peak_paths(F: np.ndarray, A: np.ndarray, k: int, params: dict, e_lib, doy_lib, day, eb: float) -> dict:
+def peak_paths(F: np.ndarray, A: np.ndarray, k: int, params: dict, e_lib, doy_lib, day, eb: float, j: int | None = None) -> dict:
     """1,000 paths of D's remaining hours from whole design days within ±window of D's calendar date: the updated
     relative error r = (e − ē_d ρ^ℓ)/(1 + ē_d ρ^ℓ) of one design day at the same k. Peak = max(measured hours ≤ k, path)."""
     m, rho = params["m"], params["rho"]
@@ -219,8 +229,10 @@ def peak_paths(F: np.ndarray, A: np.ndarray, k: int, params: dict, e_lib, doy_li
     ebd = ebar(ed, k, m) if k else np.zeros(len(pick))
     damp = ebd[:, None] * rho ** lead[None, :]
     r = (ed[:, k:] - damp) / (1 + damp)
-    U, _ = updated(F, np.array([eb]), k, rho)
+    U, _ = updated(F, np.array([eb]), k, rho, None if j is None else np.array([j]))
     paths = U * (1 + r)  # (n, 24-k)
+    if not (np.isfinite(paths).any() or np.isfinite(A[:k]).any()):
+        return {"p10": None, "p50": None, "p90": None, "hour_ending": None}
     meas = A[:k] if k else np.array([])
     meas_max = np.nanmax(meas) if np.isfinite(meas).any() else -np.inf
     meas_hour = int(np.nanargmax(meas)) + 1 if np.isfinite(meas).any() else None
@@ -242,8 +254,12 @@ def make(day, k: int, issued_at: pd.Timestamp, issue_body: dict, actual: np.ndar
     A = np.asarray(actual, dtype=float).copy()
     A[k:] = np.nan  # never a value after k
     e = (A - F) / F
-    eb = float(ebar(e[None, :], k, params["m"])[0]) if k else 0.0
-    U, lead = updated(F, np.array([eb]), k, params["rho"])
+    if k:
+        eba, ja = ebar_at(e[None, :], k, params["m"])
+        eb, j = float(eba[0]), int(ja[0])
+    else:
+        eb, j = 0.0, 0
+    U, lead = updated(F, np.array([eb]), k, params["rho"], np.array([j]))
     U = U[0]
     hours = []
     if k:  # k = 0 carries the peak paths only: the midnight issue already holds its hours
@@ -255,8 +271,8 @@ def make(day, k: int, issued_at: pd.Timestamp, issue_body: dict, actual: np.ndar
                   "upper": None if not np.isfinite(hi[j]) else round(float(hi[j]), 3)} for j in range(len(U))]
     body = {"day": issue_body["day"], "k": int(k), "issued_at": pd.Timestamp(issued_at).isoformat(),
             "origin": issue_body["origin"], "issue_sha256": issue_body["sha256"], "updates_sha256": params["sha256"],
-            "ebar": round(eb, 6), "hours": hours,
-            "peak": peak_paths(F, A, k, params, e_lib, doy_lib, issue_body["day"], eb)}
+            "ebar": round(eb, 6), "ebar_hour": j, "hours": hours,
+            "peak": peak_paths(F, A, k, params, e_lib, doy_lib, issue_body["day"], eb, j)}
     body["sha256"] = _sha(body)
     return body
 
@@ -306,10 +322,30 @@ def due(origin: pd.Timestamp, complete: np.ndarray, done: set, now: pd.Timestamp
     return None
 
 
-def run() -> int:
+PUSHES = FROZEN_DIR.parent / "updates-pushes.jsonl"  # (day, k, sha256, pushed_at): an update counts only if pushed in time
+
+
+def pushed(day: str) -> dict:
+    if not PUSHES.exists():
+        return {}
+    return {(x := json.loads(line))["k"]: x for line in PUSHES.read_text().splitlines()
+            if line and json.loads(line)["day"] == day}
+
+
+def push(up: dict) -> None:
+    """Push an update's hash (bounded wait behind the midnight issue's push) and record when it completed."""
     from live.commit import commit_hash
+    commit_hash({"day": f"{up['day']} update k={up['k']}", "sha256": up["sha256"], "issued_at": up["issued_at"]},
+                wait_s=60)
+    with open(PUSHES, "a") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        fh.write(json.dumps({"day": up["day"], "k": up["k"], "sha256": up["sha256"],
+                             "pushed_at": pd.Timestamp.now(tz="UTC").isoformat()}) + "\n")
+
+
+def run() -> int:
     from live.daily import captured_readings, drop_fills, hourly, lst_today
-    from live.issue import LOG as ISSUES
+    from live.issue import LOG as ISSUES, check_body
 
     now = pd.Timestamp.now(tz="UTC")
     day = lst_today(now)
@@ -318,19 +354,28 @@ def run() -> int:
     body = next((b for b in issues if b.get("day") == str(day.date()) and not b.get("missed")), None)
     if body is None:
         return 0  # no midnight issue, no update
-    hv = hourly(drop_fills(captured_readings()))
+    check_body(body)
+    logged = [json.loads(x) for x in LOG.read_text().splitlines()
+              if x and json.loads(x).get("day") == body["day"]] if LOG.exists() else []
+    # an update logged but whose push failed: retry while its deadline holds (it counts only if pushed in time)
+    done_push = pushed(body["day"])
+    for up in logged:
+        if up["k"] not in done_push and now < deadline(up):
+            try:
+                push(up)
+            except Exception as exc:  # noqa: BLE001 (a failed retry must not stop the update that is due now)
+                print(f"{up['day']} update k={up['k']}: push retry failed: {exc}")
+    hv = hourly(drop_fills(captured_readings(since=origin)))  # D's hours come only from captures taken after its origin
     s = hv.set_index("ts_utc")["mw"]
     labels = [pd.Timestamp(h["hour_ending_utc"]) for h in body["hours"]]
     actual = np.array([s.get(t, np.nan) for t in labels], dtype=float)
-    done = {json.loads(x)["k"] for x in LOG.read_text().splitlines()
-            if x and json.loads(x).get("day") == body["day"]} if LOG.exists() else set()
-    k = due(origin, np.isfinite(actual), done, now)
+    k = due(origin, np.isfinite(actual), {u["k"] for u in logged}, now)
     if k is None:
         return 0
     params, e_lib, doy = load()
     up = make(day, k, now, body, actual, params, e_lib, doy)
     if append(up):
-        commit_hash({"day": f"{up['day']} update k={k}", "sha256": up["sha256"], "issued_at": up["issued_at"]})
+        push(up)
         print(f"{up['day']} update k={k}: ebar {up['ebar']:+.4f}, peak P50 {up['peak']['p50']}")
     return 0
 

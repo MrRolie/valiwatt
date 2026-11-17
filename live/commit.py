@@ -11,14 +11,32 @@ BRANCH = "live-hashes"
 WORKTREE = REPO_ROOT / "data" / "live" / "hashes-worktree"
 
 
+GIT_TIMEOUT = 90  # seconds: a hung push must not hold the lock past an issue's deadline
+
+
 def _git(*args, cwd=WORKTREE):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True,
+                          timeout=GIT_TIMEOUT).stdout
 
 
-def commit_hash(body: dict) -> None:
-    # the midnight issue and the hourly updates push from separate cron steps: one push at a time
+def commit_hash(body: dict, wait_s: float | None = None) -> None:
+    """One push at a time (the midnight issue and the hourly updates run in separate cron steps). The midnight issue
+    waits for the lock (wait_s None); an update waits at most wait_s and gives up, so it never delays the issue for
+    long, and every git call times out."""
+    import time
     with open(WORKTREE.parent / "hashes.lock", "a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        if wait_s is None:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        else:
+            end = time.monotonic() + wait_s
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        raise TimeoutError("the hash push lock stayed busy")
+                    time.sleep(2)
         _commit_hash(body)
 
 

@@ -9,7 +9,7 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 url="https://donnees.hydroquebec.com/api/explore/v2.1/catalog/datasets/demande-electricite-quebec/exports/json?timezone=UTC"
 tmp=$(mktemp)
 if curl -fsS --max-time 60 "$url" -o "$tmp" && [ -s "$tmp" ]; then
-  gzip -c "$tmp" > "$out/$ts.json.gz"
+  gzip -c "$tmp" > "$out/.$ts.json.gz.part" && mv "$out/.$ts.json.gz.part" "$out/$ts.json.gz"  # never read half-written
 else
   echo "$ts fetch failed" >> "$out/failures.log"
 fi

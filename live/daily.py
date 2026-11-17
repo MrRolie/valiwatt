@@ -22,11 +22,14 @@ CAPTURE = REPO_ROOT / "data" / "live" / "capture"
 WAIT = pd.Timedelta(minutes=25)
 
 
-def captured_readings(origin: pd.Timestamp | None = None) -> pd.DataFrame:
+def captured_readings(origin: pd.Timestamp | None = None, since: pd.Timestamp | None = None) -> pd.DataFrame:
     """Every 15-minute reading captured, the newest capture's value where two disagree; only readings stamped at or
-    before `origin` when given."""
+    before `origin` when given. `since`: read only the captures taken at or after it (by the file's own UTC stamp), for
+    callers that need recent hours only; the midnight issue reads them all."""
     parts = []
     for path in sorted(CAPTURE.glob("*.json.gz")):
+        if since is not None and pd.Timestamp(path.name.split(".")[0]) < pd.Timestamp(since).tz_convert("UTC"):
+            continue
         rows = json.loads(gzip.decompress(path.read_bytes()))
         if rows:
             df = pd.DataFrame(rows)

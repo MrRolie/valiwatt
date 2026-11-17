@@ -61,7 +61,7 @@ def peak_events(now: pd.Timestamp) -> list[dict]:
 def payload(now: pd.Timestamp) -> dict:
     day = lst_today(now)
     o = day_origin(day)
-    readings = drop_fills(captured_readings())
+    readings = drop_fills(captured_readings(since=o - pd.Timedelta(days=33)))  # the 31 scored days, and a margin
     seen = readings[readings["mw"].notna()]
     act = hourly(readings).set_index("ts_utc")["mw"]
     log = read_log()

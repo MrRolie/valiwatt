@@ -120,10 +120,12 @@ re-issued at noon.
   readings exist (the input rules above). At each complete hour k (1 to 23), at k + 25 min, the update issues every
   later hour h > k of D:
   `U(k, h) = F(h) × (1 + ē(k) × ρ^(h − k))`, where ē(k) is the mean relative error (A − F)/F of the last m complete
-  hours up to k. The hours used are all at or before k and all of D (the update never reaches back past D's origin).
+  hours up to k. (Settled at the review of 2026-11-16, before the tag: the decay runs from j, the hour the newest
+  error used comes from, `ρ^(h − j)`. j = k on every design day; j < k only when hour k is complete but has no
+  forecast.) The hours used are all at or before k and all of D (the update never reaches back past D's origin).
   With no complete hour of D yet, U = F.
 - Design set: v2's walk-forward on 2020–2024 (monthly refits, 7-day embargo, the production model;
-  `data/analysis/live-updates/folds.py`). Grid: ρ ∈ {0.80, 0.85, 0.90, 0.93, 0.95, 0.97, 0.99, 1.00}, m ∈ {1, 2, 3}.
+  `live/updates_folds.py`, which writes `data/analysis/live-updates/out/oos.parquet`; the record holds its sha256). Grid: ρ ∈ {0.80, 0.85, 0.90, 0.93, 0.95, 0.97, 0.99, 1.00}, m ∈ {1, 2, 3}.
   Criterion: the mean absolute percentage error over every pair (k, h > k) of every complete day, pooled. Ties go to
   the smaller m, then the smaller ρ.
 - Range: for each lead ℓ = h − k (1 to 23), the α/2 and 1 − α/2 quantiles (α = 0.10) of the updated relative
@@ -138,7 +140,8 @@ re-issued at noon.
   updated relative errors for hours h > k of one design day, drawn with replacement. That day comes from 2020–2024,
   within ±30 days of D's calendar date, and has the same k. A whole day is drawn at once, so the hour-to-hour
   persistence is kept. The path's peak is the max of the measured hours ≤ k and the path hours > k.
-- Published: the peak's P10, P50 and P90, and the peak hour most frequent across the paths. The paths are a display. Their scores are
+- Published: the peak's P10, P50 and P90, and the peak hour most frequent across the paths. A measured hour with no
+  complete reading does not enter the peak: a display limit, declared. The paths are a display. Their scores are
   reported and decide nothing: 80 % peak-interval coverage (P10–P90) and the pinball loss of P50, for the midnight
   issue and the noon update.
 
@@ -155,9 +158,16 @@ re-issued at noon.
 - Limit: as the winter's verdict. The design comes from monthly refits; live, one frozen model ages through the winter.
 
 ### Proof and timing
-- Every update is appended to the issue log with its own record and hash, and its hash is pushed to `live-hashes` when it is issued: the push time proves the update came before the hours it forecasts.
-- Deadline: update k counts only if issued before hour k + 1 ends (the midnight rule's mirror). A late update, or one
-  whose hash push fails, is missed and counted, and the latest earlier update stands for its hours.
+- Every update is appended to its own log with its own record and hash, and its hash is pushed to `live-hashes`. The
+  push's completion is recorded in `data/live/updates-pushes.jsonl` (day, k, sha256, pushed_at), and a failed push is
+  retried while the deadline holds. The push time proves the update existed before hour k + 1 ended and before hours
+  k + 2 onward began. It is issued 25 to 55 minutes into hour k + 1, using no reading of hour k + 1.
+- Deadline: update k counts only if it is logged AND its hash push completes before hour k + 1 ends (the midnight
+  rule's mirror). A late update, or one whose push does not complete in time, is missed and counted, and the latest
+  earlier update stands for its hours.
+- An update logged in time stands, including as the noon stand-in, even if its hour k is later blanked as a fill or
+  revised by later feed data. Whether hour k counts as complete can depend on readings stamped after k (a fill run
+  can cross the hour's end): this decides only whether update k is issued, never its values.
 - Updates go to their own append-only log, `data/live/updates.jsonl`, in their own module and cron step: a failure in
   the updates can neither block nor change the midnight issue or its log.
 - Only hours h > k are ever scored for an update k.
