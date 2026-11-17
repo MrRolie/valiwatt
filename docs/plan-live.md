@@ -106,6 +106,11 @@ band centred near +3 % below −11 °C and near +1.3 % above 10 °C, so one fact
 The intraday "adjusted" line in prototype A3 was a mock and does not ship. The updates below replace it, under their
 own ruling, rules and tag.
 
+## The live page's other sources
+Besides the yearly history (`docs/data-licences.md`), the page reads two more Hydro-Québec datasets, each CC BY-NC 4.0
+by the portal's own metadata (checked 2026-11-16): `demande-electricite-quebec`, the 15-minute feed, and
+`evenements-pointe`, the winter peak events. The same terms apply: private until the owner's CC BY-NC ruling.
+
 ## Line 3, the updates: the owner's ruling, 2026-11-16
 His card: "Build both", an hourly re-forecast that carries forward the latest error, and sampled paths for the daily
 peak. Both are frozen and tagged before 2026-12-01 and scored this winter against the midnight official. `live-frozen`
