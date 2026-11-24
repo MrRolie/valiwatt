@@ -19,9 +19,26 @@
 
 <!-- /at-a-glance -->
 
-valiwatt validates and monitors a forecast of Québec's hourly electricity demand the way a model-risk team would.
-The project is about the checks around the forecast: how the model is tested before it is trusted, how it is watched
-once it runs, and what it says when it should no longer be trusted.
+valiwatt validates a forecast of Québec's electricity demand, made a day ahead for every hour, the way a model-risk
+team at a bank would check a model: how it is tested before it is trusted, how it is watched once it runs, and what it
+says when it should no longer be trusted. The box above holds the results.
+
+**For whom, and why.** For anyone who builds or reviews forecasting models. valiwatt goes past an accuracy score: a
+model used for real decisions also needs validation under hard conditions, monitoring once it runs, and documentation
+a non-specialist can follow. Québec's demand is a good test bed: public hourly data, strong seasons, weather stations
+with real gaps, a real shift in 2020 and the February 2023 cold peak.
+
+Built with Claude Code under the repository owner's direction. No independent human reviewed the code: the reviews
+were made by AI agents in fresh contexts and by another vendor's AI model, which is not independent validation in the
+sense of SR 11-7, the US banking supervisors' guidance on model risk management.
+
+![The forecast's monthly error, 2020 to 2023](docs/report/figures/validation/validation-monthly-mape.en.png)
+
+_The monthly error (MAPE, the mean absolute percentage error) of v2, the forecast, beside v1's form on the same weather
+forecast, v1 as shipped and the same hour one week earlier, 2020 to 2023, walk-forward (in sample for the choice of
+family and input). The held-out test, 2025, is in the box above._
+
+## What it checks
 
 **What it measures.** The validation report measures the forecast's error on 2020–2023, out of sample, against the
 model v1 shipped and against v1's form on the same weather forecast, under a decision rule fixed in the plan before
@@ -29,28 +46,21 @@ any v2 replay; how often its prediction intervals cover the actual demand, overa
 monitor recommended when 2023 was rehearsed and 2024 replayed hour by hour, under rules frozen before v2's 2024
 replay; and how often the rules raise a false alarm or miss a real change. Every measured number comes from a tracked
 run, and every result carries its evaluation label: 2020–2023 served to choose the model, and 2024 had been seen by
-the developers through v1 before v2 was chosen, so neither proves v2 better. Only 2025, held out, can.
-
-**What the freeze covers.** v2's monitoring rules keep v1's logic: v1 tuned them on its 2023 rehearsal, and v1's
-departure, made after v1's 2024 results had been seen, changed some of them. v2 re-derived the thresholds, the alarm
-levels and the drift inputs for its own model and weather input, and added a day-level criterion for a missing
-forecast (plan section 9.3). The rehearsal the report shows, like the 2024 replay, ran on the frozen rules: the rules
-hash is unchanged since the freeze, and only files outside the rules (the `NOT_RULES` list: the report code, the break
-registry, the command line) changed after it. v2's 2024 replays in the replay ledger carry one model hash and one
-frozen-artifact hash (`tests/test_tags.py` checks it); nothing recorded at the freeze ties the rehearsal's model to
-it. What backs the order of freeze and replay, and how to check it, is below.
+the developers through v1 before v2 was chosen, so neither proves v2 better. Only 2025, held out, could: its test of
+record is in the box at the top and in section 9 of the validation report.
 
 **Status: the box at the top of this page states it**, rendered from the same runs as the model card's status in the
-validation report, the reference. It reads *candidate* until a 2025 replay starts; then that the 2025 test of record
-did not finish, while it has not; then what that test showed, under the decision rule of
-[`docs/plan-v2.md`](docs/plan-v2.md), or, if the owner ruled the 2025 start post hoc, that 2025 is not a held-out
-test. v1, the first version, stays in the history at the tag `v1`, its report as published included. What is built:
+validation report, the reference, under the decision rule of [`docs/plan-v2.md`](docs/plan-v2.md); had the owner ruled
+the 2025 start post hoc, it would say that 2025 is not a held-out test. v1, the first version, stays in the history at
+the tag `v1`, its report as published included. What is built:
 
 - the data layer and its gates, the weather forecast included;
-- a day-ahead forecast: an additive model of the GAM family on NOAA's National Blend of Models temperature forecast,
-  one temperature curve per hour, with the day before's and the week before's demand; walk-forward validation beside
-  two comparison models (v1 as shipped, and v1's form on the same forecast); prediction intervals of split-conformal
-  shape (without that method's finite-sample coverage guarantee: their coverage is measured out of sample);
+- a day-ahead forecast: an additive model of the GAM family (a generalized additive model: demand as a sum of smooth
+  curves, one per input, such as the temperature at each hour) on NOAA's National Blend of Models temperature
+  forecast, one temperature curve per hour, with the day before's and the week before's demand; walk-forward
+  validation beside two comparison models (v1 as shipped, and v1's form on the same forecast); prediction intervals of
+  split-conformal shape (each band's width set from the model's errors on data held aside from its fit; without that
+  method's finite-sample coverage guarantee: their coverage is measured out of sample);
 - frozen models registered in MLflow;
 - a monitor that replays a year hour by hour and recommends *investigate the data*, *recalibrate* or *retrain*, its
   rules frozen by the `rules-frozen-v2` tag before v2's 2024 replay (what backs that order, and how to check it: below);
@@ -67,8 +77,9 @@ sure it is, 2024 replayed but already seen, what the monitor's silence is worth,
 [French](docs/report/story.fr.md), the reference; [English](docs/report/story.en.md). The full reports, rendered from
 the same runs, are the reference behind it; each opens with an « En bref » block ("In brief" in English):
 
-- validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF:
-  [French](docs/report/validation.fr.md), the reference; [English](docs/report/validation.en.md);
+- validation and monitoring, with the model card and a mapping to SR 11-7 and the NIST AI RMF
+  ([`docs/standards.md`](docs/standards.md) quotes both): [French](docs/report/validation.fr.md), the reference;
+  [English](docs/report/validation.en.md);
 - data quality: [French](docs/report/dq.fr.md); [English](docs/report/dq.en.md).
 
 **The weather forecast.** The forecast is issued at the end of the day before from a temperature forecast already
@@ -107,25 +118,40 @@ Steps can also run one at a time: `valiwatt fetch`, `dq`, `validate`, `freeze --
 frozen by the `rules-frozen-v2` tag; the 2023 rehearsal does not need it.
 `valiwatt safety` scans git's index (every file the next commit would carry) and every object in the history for anything that must not be published.
 
-**2025, once Hydro-Québec publishes it.** No 2025 demand is to be read before then. The gate cannot enforce all of
-it; these rest on the developers' conduct (plan section 11.3; report section 9): that nobody looks at 2025 demand on
-the portal before the test of record, nor computes on 2025 records outside the replay command; that a ruling entry
-comes only from the owner; and that the run store, which lists the starts that did not finish, is kept until the
-render. The 2025 test uses the model frozen for 2024. Its training data end on 2023-12-24, as the report's model card
-gives it: the walk-forward embargo leaves out the last 7 days before 2024. The model is therefore two years old by the
-end of 2025, by design, and a level drift in demand accepted since then shows as bias (plan section 16).
-Afterwards: `valiwatt fetch --through 2025` and `valiwatt dq --through 2025`, then `valiwatt replay --year 2025`, which
+## 2025, the test of record
+
+Hydro-Québec has published 2025, and v2's test of record on it has run: its standing, as its gate logged it at its
+start, is clean, after a refusal lifted by a dated ruling of the owner (validation report, section 9). No 2025 demand
+was to be read before that test. The gate could not enforce all of it; these rested on the developers' conduct (plan
+section 11.3; report section 9): nobody was to look at 2025 demand on the portal before the test of record, nor compute
+on 2025 records outside the replay command; a ruling entry was to come only from the owner; and the run store, which
+lists the starts that did not finish, was to be kept until the render. The 2025 test used the model frozen for 2024.
+Its training data end on 2023-12-24, as the report's model card gives it: the walk-forward embargo leaves out
+the last 7 days before 2024. The model was therefore two years old by the end of 2025, by design, and a level drift in
+demand accepted since then shows as bias (plan section 16).
+It ran as `valiwatt fetch --through 2025` and `valiwatt dq --through 2025`, then `valiwatt replay --year 2025`, which
 runs only by that command and only behind its gate. The gate finds the start clean or refuses it with its evidence; no
 flag lifts a refusal, only the owner's ruling entry in `AGENTS.md` does, and `valiwatt evidence` produces what he rules
 on, deciding nothing. Every start is recorded, and the earliest is the test of record, unless it stopped before it
-finished and a ruling of the owner names the start that takes its place. Nothing of the 2025 vintage is rendered before
-the first 2025 start.
+finished and a ruling of the owner names the start that takes its place. Nothing of the 2025 vintage was rendered
+before the first 2025 start.
 
 **A later vintage.** A clone that fetches after Hydro-Québec has published 2025 reads a later vintage of 2019–2024,
 whose records Hydro-Québec may have revised: its numbers may differ from the committed reports, and the 2025
 data-quality run lists every revised record. Such a clone's store lacks the replays of record: the report shows them
 from their entries in the committed replay ledger, labelled as recorded in the ledger and not re-run here, and says
 what only the original store holds.
+
+## How the freeze is backed
+
+**What the freeze covers.** v2's monitoring rules keep v1's logic: v1 tuned them on its 2023 rehearsal, and v1's
+departure, made after v1's 2024 results had been seen, changed some of them. v2 re-derived the thresholds, the alarm
+levels and the drift inputs for its own model and weather input, and added a day-level criterion for a missing
+forecast (plan section 9.3). The rehearsal the report shows, like the 2024 replay, ran on the frozen rules: the rules
+hash is unchanged since the freeze, and only files outside the rules (the `NOT_RULES` list: the report code, the break
+registry, the command line) changed after it. v2's 2024 replays in the replay ledger carry one model hash and one
+frozen-artifact hash (`tests/test_tags.py` checks it); nothing recorded at the freeze ties the rehearsal's model to
+it. What backs the order of freeze and replay, and how to check it, is below.
 
 ### Checking the freeze from a clone
 
@@ -178,7 +204,7 @@ The rules every part of the project follows.
 - **No lookahead.** Models, intervals and thresholds are fitted on 2019–2023 only, and the code refuses design
   analysis that reads 2024 or 2025, which are replayed as production. v2 was nevertheless chosen after 2024 had been
   seen through v1 (plan section 0), so its 2024 replay is labelled seen by the developers. Validation is walk-forward
-  with an embargo. A forecast is used only from the time it is assumed available, and any result that leans on
+  with an embargo, a gap left between the end of a model's training data and the period it predicts. A forecast is used only from the time it is assumed available, and any result that leans on
   observed weather in place of a weather forecast says so. The replay reads raw records, forecasts included, through
   a clock that refuses anything later.
 - **A check that cannot fail is not a check.** Every gate and monitor has a test that injects the fault it must catch:
@@ -224,11 +250,6 @@ FAQ asks for, with the date the data was retrieved.
 > Weather forecasts: NOAA National Blend of Models NBS guidance for station CYUL (Montréal-Trudeau), downloaded from the Iowa Environmental Mesonet archive of Iowa State University (https://mesonet.agron.iastate.edu/). This project interpolated these three-hourly forecasts to hourly values and converted them to degrees Celsius: the values it uses are modified and are not original NOAA data.
 >
 > Neither Hydro-Québec, Environment and Climate Change Canada, NOAA nor the Iowa Environmental Mesonet produced, reviewed or endorsed this work, and the project is affiliated with neither NOAA nor the Iowa Environmental Mesonet.
->
-> Built with Claude Code under the repository owner's direction.
-
-No independent human reviewed the code: the reviews were made by AI agents in fresh contexts and by another vendor's
-AI model, which is not independent validation in SR 11-7's sense.
 
 ## Licence
 
